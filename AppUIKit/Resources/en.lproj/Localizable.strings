@@ -1,0 +1,6 @@
+"risk.safe" = "Safe";
+"risk.medium" = "Medium";
+"risk.critical" = "Critical";
+"privacyFooter.default" = "Processed locally · never uploaded";
+"mappingInfo.savedTTL" = "Mapping saved · 24h TTL";
+"mappingInfo.restoreWith" = "Restore with";

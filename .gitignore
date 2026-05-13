@@ -1,0 +1,22 @@
+.DS_Store
+Derived/
+Tuist/.build/
+Tuist/Dependencies/
+*.xcodeproj
+*.xcworkspace
+build/
+*.xcarchive
+*.dmg
+
+# Internal documentation (local only; not published with the repo)
+internal-docs/
+
+# Xcode / signing noise
+xcuserdata/
+*.xcuserstate
+*.moved-aside
+*.mobileprovision
+*.provisionprofile
+**/Secrets.xcconfig
+
+.env

@@ -1,0 +1,3 @@
+"storageError.keyGenerationFailed" = "Failed to generate encryption key: %@";
+"storageError.keychainReadFailed" = "Failed to read encryption key from Keychain: %@";
+"storageError.keychainWriteFailed" = "Failed to store encryption key in Keychain: %@";

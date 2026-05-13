@@ -1,0 +1,47 @@
+import DetectionCore
+import Foundation
+import MaskingCore
+import StorageCore
+
+final class InMemoryLocalStore: LocalStoring {
+    private var settings = AppSettings.default
+    private var dictionaries: [CustomDictionaryItem] = []
+    private var mappings: [MaskingResult] = []
+    private var events: [LocalEvent] = []
+    private var license = LicenseState()
+    private let maskingEngine = MaskingEngine()
+
+    func loadSettings() throws -> AppSettings { settings }
+    func saveSettings(_ settings: AppSettings) throws { self.settings = settings }
+    func loadCustomDictionaries() throws -> [CustomDictionaryItem] { dictionaries }
+    func saveCustomDictionaries(_ items: [CustomDictionaryItem]) throws { dictionaries = items }
+    func saveMapping(_ result: MaskingResult) throws { mappings.append(result) }
+
+    func restore(text: String) throws -> String? {
+        cleanupExpired()
+        guard let mapping = mappings.last(where: { result in result.mapping.keys.contains(where: text.contains) }) else { return nil }
+        return maskingEngine.restore(text: text, mapping: mapping.mapping)
+    }
+
+    func mappingSummaries() throws -> [StoredMappingSummary] {
+        cleanupExpired()
+        return mappings.map { StoredMappingSummary(id: $0.id, createdAt: $0.createdAt, expiresAt: $0.expiresAt, placeholderCount: $0.mapping.count) }
+    }
+
+    func deleteMapping(id: UUID) throws { mappings.removeAll { $0.id == id } }
+    func clearMappings() throws { mappings.removeAll() }
+    func cleanupExpiredMappings() throws { cleanupExpired() }
+    func appendEvent(_ event: LocalEvent) throws { events.append(event) }
+    func loadEvents() throws -> [LocalEvent] { events }
+    func clearEvents() throws { events.removeAll() }
+    func loadLicenseState() throws -> LicenseState { license }
+    func saveLicenseState(_ state: LicenseState) throws { license = state }
+
+    private func cleanupExpired() {
+        let now = Date()
+        mappings.removeAll { result in
+            guard let expiresAt = result.expiresAt else { return false }
+            return expiresAt <= now
+        }
+    }
+}

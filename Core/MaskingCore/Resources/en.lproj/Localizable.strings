@@ -1,0 +1,4 @@
+"mappingTTL.oneHour" = "1 hour";
+"mappingTTL.sixHours" = "6 hours";
+"mappingTTL.twentyFourHours" = "24 hours";
+"mappingTTL.neverStore" = "Never store mapping";

@@ -1,0 +1,166 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-notarize:
+    runs-on: macos-15
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Tuist
+        run: brew install tuist
+
+      - name: Install dependencies
+        run: tuist install
+
+      - name: Import Developer ID certificate
+        env:
+          P12_BASE64: ${{ secrets.MACOS_APPLICATION_CERTIFICATE_P12 }}
+          P12_PASSWORD: ${{ secrets.MACOS_APPLICATION_CERTIFICATE_P12_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "${P12_BASE64:-}" || { echo "Missing secret MACOS_APPLICATION_CERTIFICATE_P12"; exit 1; }
+          test -n "${P12_PASSWORD:-}" || { echo "Missing secret MACOS_APPLICATION_CERTIFICATE_P12_PASSWORD"; exit 1; }
+
+          KEYCHAIN_PASSWORD="github-actions-signing"
+          KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          echo "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          rm -f "$RUNNER_TEMP/certificate.p12"
+
+      - name: Generate Xcode project
+        run: tuist generate
+
+      - name: Write ExportOptions.plist (Developer ID)
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          test -n "${TEAM_ID:-}" || { echo "Missing secret APPLE_TEAM_ID"; exit 1; }
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>developer-id-application</string>
+            <key>signingStyle</key>
+            <string>automatic</string>
+            <key>teamID</key>
+            <string>${TEAM_ID}</string>
+            <key>destination</key>
+            <string>export</string>
+          </dict>
+          </plist>
+          PLIST
+          sed -i '' 's/^[[:space:]]*//' "$RUNNER_TEMP/ExportOptions.plist"
+
+      - name: Archive
+        env:
+          DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -workspace Offsend.xcworkspace \
+            -scheme Offsend \
+            -configuration Release \
+            -destination "platform=macOS" \
+            -archivePath "build/Offsend.xcarchive" \
+            DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
+            CODE_SIGN_IDENTITY="Developer ID Application" \
+            clean archive
+
+      - name: Export signed .app
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -exportArchive \
+            -archivePath "build/Offsend.xcarchive" \
+            -exportPath "build/export" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
+
+      - name: Read app version from exported bundle
+        id: app_version
+        run: |
+          set -euo pipefail
+          PLIST="build/export/Offsend.app/Contents/Info.plist"
+          test -f "$PLIST"
+          VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")"
+          BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+          echo "Marketing version=$VERSION build=$BUILD"
+
+      - name: Create DMG
+        env:
+          APP_PATH: build/export/Offsend.app
+          DMG_PATH: build/Offsend-${{ steps.app_version.outputs.version }}.dmg
+        run: bash Scripts/build_dmg.sh
+
+      - name: Notarize DMG (notarytool)
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          DMG_PATH: build/Offsend-${{ steps.app_version.outputs.version }}.dmg
+        run: bash Scripts/notarize.sh
+
+      - name: Install Sparkle CLI (sign_update)
+        run: |
+          set -euo pipefail
+          SPARKLE_VERSION="2.9.1"
+          curl -fsSL "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz" -o "$RUNNER_TEMP/sparkle.tar.xz"
+          mkdir -p "$RUNNER_TEMP/sparkle"
+          tar -xJf "$RUNNER_TEMP/sparkle.tar.xz" -C "$RUNNER_TEMP/sparkle" --strip-components 1
+          test -x "$RUNNER_TEMP/sparkle/bin/sign_update"
+          echo "SIGN_UPDATE=$RUNNER_TEMP/sparkle/bin/sign_update" >> "$GITHUB_ENV"
+
+      - name: Sparkle — sign DMG for appcast (optional)
+        env:
+          SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
+          DMG_PATH: build/Offsend-${{ steps.app_version.outputs.version }}.dmg
+        run: |
+          set -euo pipefail
+          if [[ -z "${SPARKLE_EDDSA_PRIVATE_KEY:-}" ]]; then
+            echo "Skipping Sparkle signing: add repository secret SPARKLE_EDDSA_PRIVATE_KEY to emit edSignature for appcast."
+            exit 0
+          fi
+          KEY_PATH="$RUNNER_TEMP/sparkle_eddsa_priv"
+          printf '%s' "$SPARKLE_EDDSA_PRIVATE_KEY" > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          echo "Sparkle output (use in appcast <enclosure> attributes):"
+          "$SIGN_UPDATE" "$DMG_PATH" -f "$KEY_PATH"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Offsend-${{ steps.app_version.outputs.version }}-${{ steps.app_version.outputs.build }}
+          path: |
+            build/Offsend-${{ steps.app_version.outputs.version }}.dmg
+            build/export/Offsend.app
+
+      - name: Push version tag
+        env:
+          VERSION: ${{ steps.app_version.outputs.version }}
+        run: |
+          set -euo pipefail
+          TAG="v${VERSION}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "refs/tags/$TAG"

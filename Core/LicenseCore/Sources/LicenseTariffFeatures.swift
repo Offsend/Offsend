@@ -1,0 +1,60 @@
+import Foundation
+
+/// Keys in `LicensePricingPlan.features` from `/pricing` (and future license payloads).
+public enum LicenseTariffFeatureKey: String, CaseIterable, Sendable {
+    case safePasteUnlimited = "safe_paste_unlimited"
+    case advancedDetectors = "advanced_detectors"
+    case customDictionaries = "custom_dictionaries"
+}
+
+/// Resolved booleans for in-app gating (settings, optional runtime checks).
+public struct LicenseTariffFeatures: Equatable, Sendable {
+    public var safePasteUnlimited: Bool
+    public var advancedDetectors: Bool
+    public var customDictionaries: Bool
+
+    public static let freeTier = Self(safePasteUnlimited: false, advancedDetectors: false, customDictionaries: false)
+
+    /// When Pro is active but the catalog has no per-feature map (nil/empty), treat as full access.
+    public static let proWithoutFeatureMap = Self(safePasteUnlimited: true, advancedDetectors: true, customDictionaries: true)
+
+    public init(safePasteUnlimited: Bool, advancedDetectors: Bool, customDictionaries: Bool) {
+        self.safePasteUnlimited = safePasteUnlimited
+        self.advancedDetectors = advancedDetectors
+        self.customDictionaries = customDictionaries
+    }
+
+    public init(features: [String: Bool]) {
+        self.safePasteUnlimited = Self.bool(for: .safePasteUnlimited, in: features)
+        self.advancedDetectors = Self.bool(for: .advancedDetectors, in: features)
+        self.customDictionaries = Self.bool(for: .customDictionaries, in: features)
+    }
+
+    private static func bool(for key: LicenseTariffFeatureKey, in features: [String: Bool]) -> Bool {
+        features[key.rawValue] == true
+    }
+}
+
+public enum LicenseTariffFeaturesResolver: Sendable {
+    /// Resolves feature flags for UI gating. Free tier never reads the pricing map; Pro uses the best-matching catalog plan.
+    public static func resolve(isPro: Bool, pricing: LicensePricingPresentation) -> LicenseTariffFeatures {
+        guard isPro else { return .freeTier }
+        guard let plan = resolveCatalogPlan(pricing: pricing) else {
+            return .proWithoutFeatureMap
+        }
+        guard let raw = plan.features, !raw.isEmpty else {
+            return .proWithoutFeatureMap
+        }
+        return LicenseTariffFeatures(features: raw)
+    }
+
+    private static func resolveCatalogPlan(pricing: LicensePricingPresentation) -> LicensePricingPlan? {
+        if let byDefault = pricing.plans.first(where: { $0.planId == pricing.defaultCheckoutPlanId }) {
+            return byDefault
+        }
+        if let marked = pricing.plans.first(where: { $0.isDefault == true }) {
+            return marked
+        }
+        return pricing.plans.first
+    }
+}
