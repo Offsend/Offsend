@@ -17,6 +17,32 @@ public struct LicensePricingPlan: Codable, Equatable, Sendable, Identifiable {
 
     public var id: String { planId }
 
+    public init(
+        planId: String,
+        name: String,
+        description: String?,
+        billingInterval: String?,
+        priceMinor: Int?,
+        priceDisplay: String?,
+        trialDays: Int?,
+        deviceLimit: Int?,
+        isDefault: Bool?,
+        ctaLabel: String?,
+        features: [String: Bool]?
+    ) {
+        self.planId = planId
+        self.name = name
+        self.description = description
+        self.billingInterval = billingInterval
+        self.priceMinor = priceMinor
+        self.priceDisplay = priceDisplay
+        self.trialDays = trialDays
+        self.deviceLimit = deviceLimit
+        self.isDefault = isDefault
+        self.ctaLabel = ctaLabel
+        self.features = features
+    }
+
     enum CodingKeys: String, CodingKey {
         case planId = "plan_id"
         case name
@@ -37,6 +63,12 @@ public struct LicensePricingUI: Codable, Equatable, Sendable {
     public var subheadline: String?
     public var restoreLabel: String?
 
+    public init(headline: String? = nil, subheadline: String? = nil, restoreLabel: String? = nil) {
+        self.headline = headline
+        self.subheadline = subheadline
+        self.restoreLabel = restoreLabel
+    }
+
     enum CodingKeys: String, CodingKey {
         case headline
         case subheadline
@@ -50,6 +82,20 @@ public struct LicensePricingCatalog: Codable, Equatable, Sendable {
     public var plans: [LicensePricingPlan]
     public var ui: LicensePricingUI?
     public var cacheTtlSeconds: Int?
+
+    public init(
+        status: String,
+        currency: String? = nil,
+        plans: [LicensePricingPlan],
+        ui: LicensePricingUI? = nil,
+        cacheTtlSeconds: Int? = nil
+    ) {
+        self.status = status
+        self.currency = currency
+        self.plans = plans
+        self.ui = ui
+        self.cacheTtlSeconds = cacheTtlSeconds
+    }
 
     enum CodingKeys: String, CodingKey {
         case status

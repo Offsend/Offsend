@@ -46,6 +46,12 @@ public struct LicenseActivatedDevice: Codable, Equatable, Sendable {
     public var deviceName: String?
     public var lastSeenAt: Date?
 
+    public init(activationId: String, deviceName: String? = nil, lastSeenAt: Date? = nil) {
+        self.activationId = activationId
+        self.deviceName = deviceName
+        self.lastSeenAt = lastSeenAt
+    }
+
     enum CodingKeys: String, CodingKey {
         case activationId = "activation_id"
         case deviceName = "device_name"
@@ -59,6 +65,20 @@ public struct LicenseVerifySuccess: Equatable, Sendable {
     public var deviceLimit: Int?
     public var expiresAt: Date?
     public var graceUntil: Date?
+
+    public init(
+        licenseToken: String,
+        plan: String,
+        deviceLimit: Int? = nil,
+        expiresAt: Date? = nil,
+        graceUntil: Date? = nil
+    ) {
+        self.licenseToken = licenseToken
+        self.plan = plan
+        self.deviceLimit = deviceLimit
+        self.expiresAt = expiresAt
+        self.graceUntil = graceUntil
+    }
 }
 
 public struct LicenseValidateResult: Equatable, Sendable {
@@ -67,6 +87,20 @@ public struct LicenseValidateResult: Equatable, Sendable {
     public var billingState: String
     public var expiresAt: Date?
     public var graceUntil: Date?
+
+    public init(
+        licenseToken: String?,
+        licenseStatus: String,
+        billingState: String,
+        expiresAt: Date? = nil,
+        graceUntil: Date? = nil
+    ) {
+        self.licenseToken = licenseToken
+        self.licenseStatus = licenseStatus
+        self.billingState = billingState
+        self.expiresAt = expiresAt
+        self.graceUntil = graceUntil
+    }
 }
 
 struct CheckoutCreateRequest: Encodable {
