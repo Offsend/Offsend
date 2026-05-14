@@ -6,12 +6,18 @@ let appBuildNumber = "1"
 let bundlePrefix = "io.offsend"
 let macOSDeploymentTarget: DeploymentTargets = .macOS("13.0")
 
-/// Developer ID for Release on app and embedded frameworks. Passing `CODE_SIGN_IDENTITY` via `xcodebuild`
-/// applies to SwiftPM targets too and conflicts with their automatic Apple Development signing.
+/// Developer ID + Hardened Runtime for Release (required for notarization). Do not pass CODE_SIGN_IDENTITY
+/// via `xcodebuild` — it applies to SwiftPM targets and conflicts with their automatic Apple Development signing.
 let developerIDReleaseSigning: Settings = .settings(
     configurations: [
         .debug(name: "Debug", settings: [:]),
-        .release(name: "Release", settings: ["CODE_SIGN_IDENTITY": "Developer ID Application"])
+        .release(
+            name: "Release",
+            settings: [
+                "CODE_SIGN_IDENTITY": "Developer ID Application",
+                "ENABLE_HARDENED_RUNTIME": "YES"
+            ]
+        )
     ],
     defaultSettings: .recommended
 )
@@ -184,7 +190,13 @@ let appTarget = Target.target(
         ],
         configurations: [
             .debug(name: "Debug", settings: [:]),
-            .release(name: "Release", settings: ["CODE_SIGN_IDENTITY": "Developer ID Application"])
+            .release(
+                name: "Release",
+                settings: [
+                    "CODE_SIGN_IDENTITY": "Developer ID Application",
+                    "ENABLE_HARDENED_RUNTIME": "YES"
+                ]
+            )
         ],
         defaultSettings: .recommended
     )
