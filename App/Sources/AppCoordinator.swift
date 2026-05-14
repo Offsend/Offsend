@@ -923,7 +923,7 @@ final class AppCoordinator: ObservableObject {
     }
 }
 
-#if OFFSEND_INTERNAL
+#if DEBUG
 extension AppCoordinator {
     /// JWT-shaped string with `{}` payload; not valid for `/license/validate`, but satisfies local token presence for Pro gating.
     private static let debugSyntheticLicenseJWT: String = {

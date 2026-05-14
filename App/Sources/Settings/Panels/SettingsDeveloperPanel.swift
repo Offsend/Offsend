@@ -1,4 +1,4 @@
-#if OFFSEND_INTERNAL
+#if DEBUG
 import AppUIKit
 import LicenseCore
 import StorageCore

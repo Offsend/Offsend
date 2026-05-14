@@ -75,7 +75,7 @@ jobs:
           DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID || secrets.TEAM_ID }}
         run: |
           set -euo pipefail
-          # `-configuration Release` matches `Project.swift`: internal UI is gated by `OFFSEND_INTERNAL` (Debug only), not only `DEBUG`.
+          # `-configuration Release`: internal UI is behind `#if DEBUG` and is not compiled into shipping builds.
           # Do not pass CODE_SIGN_IDENTITY: it applies to SwiftPM targets and conflicts with automatic signing.
           xcodebuild \
             -workspace Offsend.xcworkspace \

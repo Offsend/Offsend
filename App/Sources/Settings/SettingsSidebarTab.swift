@@ -5,7 +5,7 @@ enum SettingsSidebarTab: String, CaseIterable, Identifiable {
     case masking
     case privacy
     case license
-    #if OFFSEND_INTERNAL
+    #if DEBUG
     case developer
     #endif
 
@@ -25,7 +25,7 @@ enum SettingsSidebarTab: String, CaseIterable, Identifiable {
             return OffsendStrings.settingsTabPrivacy
         case .license:
             return OffsendStrings.settingsTabLicense
-        #if OFFSEND_INTERNAL
+        #if DEBUG
         case .developer:
             return OffsendStrings.settingsTabDeveloper
         #endif
@@ -46,7 +46,7 @@ enum SettingsSidebarTab: String, CaseIterable, Identifiable {
             return OffsendStrings.settingsSubtitlePrivacy
         case .license:
             return OffsendStrings.settingsSubtitleLicense
-        #if OFFSEND_INTERNAL
+        #if DEBUG
         case .developer:
             return OffsendStrings.settingsSubtitleDeveloper
         #endif
@@ -67,7 +67,7 @@ enum SettingsSidebarTab: String, CaseIterable, Identifiable {
             return "lock.shield"
         case .license:
             return "crown"
-        #if OFFSEND_INTERNAL
+        #if DEBUG
         case .developer:
             return "ladybug"
         #endif

@@ -185,7 +185,7 @@ final class MenuBarStatusItemController: NSObject {
 
         addDisabledItem(OffsendStrings.appName)
 
-        #if OFFSEND_INTERNAL
+        #if DEBUG
         addActionItem(OffsendStrings.menuStartOnboarding, action: #selector(openOnboardingItem))
         menu.addItem(.separator())
         #else

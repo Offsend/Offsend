@@ -54,7 +54,7 @@ struct MenuBarContent: View {
     }
 
     private var shouldShowOnboardingMenuItem: Bool {
-        #if OFFSEND_INTERNAL
+        #if DEBUG
         true
         #else
         !coordinator.settings.hasCompletedOnboarding
