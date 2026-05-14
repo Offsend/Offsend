@@ -120,31 +120,46 @@ jobs:
           DMG_PATH: build/Offsend-${{ steps.app_version.outputs.version }}.dmg
         run: bash Scripts/notarize.sh
 
-      - name: Install Sparkle CLI (sign_update)
+      - name: Install Sparkle CLI (generate_appcast)
         run: |
           set -euo pipefail
           SPARKLE_VERSION="2.9.1"
           curl -fsSL "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz" -o "$RUNNER_TEMP/sparkle.tar.xz"
           mkdir -p "$RUNNER_TEMP/sparkle"
           tar -xJf "$RUNNER_TEMP/sparkle.tar.xz" -C "$RUNNER_TEMP/sparkle" --strip-components 1
-          test -x "$RUNNER_TEMP/sparkle/bin/sign_update"
-          echo "SIGN_UPDATE=$RUNNER_TEMP/sparkle/bin/sign_update" >> "$GITHUB_ENV"
+          test -x "$RUNNER_TEMP/sparkle/bin/generate_appcast"
+          echo "GENERATE_APPCAST=$RUNNER_TEMP/sparkle/bin/generate_appcast" >> "$GITHUB_ENV"
 
-      - name: Sparkle — sign DMG for appcast (optional)
+      - name: Sparkle — generate appcast.xml
         env:
           SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
-          DMG_PATH: build/Offsend-${{ steps.app_version.outputs.version }}.dmg
+          VERSION: ${{ steps.app_version.outputs.version }}
         run: |
           set -euo pipefail
-          if [[ -z "${SPARKLE_EDDSA_PRIVATE_KEY:-}" ]]; then
-            echo "Skipping Sparkle signing: add repository secret SPARKLE_EDDSA_PRIVATE_KEY to emit edSignature for appcast."
-            exit 0
+          test -n "${SPARKLE_EDDSA_PRIVATE_KEY:-}" || { echo "Missing repository secret SPARKLE_EDDSA_PRIVATE_KEY (required for generate_appcast)."; exit 1; }
+          ARCHIVE_DIR="$RUNNER_TEMP/sparkle_archives"
+          mkdir -p "$ARCHIVE_DIR"
+          REPO="${{ github.repository }}"
+          PREV="$ARCHIVE_DIR/appcast-prev.xml"
+          rm -f "$PREV"
+          if curl -fsSL --fail --retry 2 -o "$PREV" "https://github.com/${REPO}/releases/latest/download/appcast.xml" && [[ -s "$PREV" ]]; then
+            mv "$PREV" "$ARCHIVE_DIR/appcast.xml"
+            echo "Using existing appcast from latest GitHub Release for merge"
+          elif [[ -f appcast/appcast.xml ]]; then
+            cp appcast/appcast.xml "$ARCHIVE_DIR/appcast.xml"
+            echo "Using appcast/appcast.xml from checkout (bootstrap)"
           fi
-          KEY_PATH="$RUNNER_TEMP/sparkle_eddsa_priv"
-          printf '%s' "$SPARKLE_EDDSA_PRIVATE_KEY" > "$KEY_PATH"
-          chmod 600 "$KEY_PATH"
-          echo "Sparkle output (use in appcast <enclosure> attributes):"
-          "$SIGN_UPDATE" "$DMG_PATH" -f "$KEY_PATH"
+          DMG_NAME="Offsend-${VERSION}.dmg"
+          cp "build/${DMG_NAME}" "$ARCHIVE_DIR/"
+          DOWNLOAD_PREFIX="https://github.com/${REPO}/releases/download/v${VERSION}/"
+          printf '%s' "$SPARKLE_EDDSA_PRIVATE_KEY" | "$GENERATE_APPCAST" \
+            --ed-key-file - \
+            --download-url-prefix "$DOWNLOAD_PREFIX" \
+            --maximum-deltas 0 \
+            --maximum-versions 0 \
+            "$ARCHIVE_DIR"
+          mkdir -p appcast
+          cp "$ARCHIVE_DIR/appcast.xml" appcast/appcast.xml
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -153,6 +168,7 @@ jobs:
           path: |
             build/Offsend-${{ steps.app_version.outputs.version }}.dmg
             build/export/Offsend.app
+            appcast/appcast.xml
 
       - name: Push version tag
         env:
@@ -164,3 +180,24 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a "$TAG" -m "Release $TAG"
           git push origin "refs/tags/$TAG"
+
+      - name: Create or update GitHub Release (DMG + appcast)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.app_version.outputs.version }}
+        run: |
+          set -euo pipefail
+          TAG="v${VERSION}"
+          DMG="build/Offsend-${VERSION}.dmg"
+          APPCAST="appcast/appcast.xml"
+          test -f "$APPCAST"
+          REPO="${{ github.repository }}"
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$DMG" "$APPCAST" --repo "$REPO" --clobber
+          else
+            gh release create "$TAG" "$DMG" "$APPCAST" \
+              --repo "$REPO" \
+              --title "Offsend ${VERSION}" \
+              --generate-notes \
+              --latest
+          fi
