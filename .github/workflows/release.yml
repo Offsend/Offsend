@@ -58,7 +58,7 @@ jobs:
           <plist version="1.0">
           <dict>
             <key>method</key>
-            <string>developer-id-application</string>
+            <string>developer-id</string>
             <key>signingStyle</key>
             <string>automatic</string>
             <key>teamID</key>
