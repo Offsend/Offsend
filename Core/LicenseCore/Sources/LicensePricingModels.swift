@@ -91,6 +91,36 @@ public struct LicensePricingPresentation: Equatable, Sendable {
     public var defaultPlanDeviceLimit: Int?
     public var featureBulletLabels: [String]
 
+    public init(
+        showsPrice: Bool,
+        headline: String,
+        subheadline: String,
+        buyButtonTitle: String,
+        defaultCheckoutPlanId: String,
+        primaryPriceDisplay: String?,
+        productDisplayName: String,
+        plans: [LicensePricingPlan],
+        restoreGroupTitle: String?,
+        restoreGroupSubtitle: String?,
+        defaultPlanDescription: String?,
+        defaultPlanDeviceLimit: Int?,
+        featureBulletLabels: [String]
+    ) {
+        self.showsPrice = showsPrice
+        self.headline = headline
+        self.subheadline = subheadline
+        self.buyButtonTitle = buyButtonTitle
+        self.defaultCheckoutPlanId = defaultCheckoutPlanId
+        self.primaryPriceDisplay = primaryPriceDisplay
+        self.productDisplayName = productDisplayName
+        self.plans = plans
+        self.restoreGroupTitle = restoreGroupTitle
+        self.restoreGroupSubtitle = restoreGroupSubtitle
+        self.defaultPlanDescription = defaultPlanDescription
+        self.defaultPlanDeviceLimit = defaultPlanDeviceLimit
+        self.featureBulletLabels = featureBulletLabels
+    }
+
     public static func fallback(_ strings: LicensePricingFallbackStrings, defaultPlanId: String) -> LicensePricingPresentation {
         LicensePricingPresentation(
             showsPrice: false,
