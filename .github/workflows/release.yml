@@ -48,10 +48,10 @@ jobs:
 
       - name: Write ExportOptions.plist (Developer ID)
         env:
-          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID || secrets.TEAM_ID }}
         run: |
           set -euo pipefail
-          test -n "${TEAM_ID:-}" || { echo "Missing secret APPLE_TEAM_ID"; exit 1; }
+          test -n "${TEAM_ID:-}" || { echo "Missing secret: set repository secret APPLE_TEAM_ID (or TEAM_ID) to your Apple Developer Team ID"; exit 1; }
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -72,7 +72,7 @@ jobs:
 
       - name: Archive
         env:
-          DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID || secrets.TEAM_ID }}
         run: |
           set -euo pipefail
           xcodebuild \
@@ -115,7 +115,7 @@ jobs:
       - name: Notarize DMG (notarytool)
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID || secrets.TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
           DMG_PATH: build/Offsend-${{ steps.app_version.outputs.version }}.dmg
         run: bash Scripts/notarize.sh
