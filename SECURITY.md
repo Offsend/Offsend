@@ -2,7 +2,11 @@
 
 ## Local Processing
 
-Detection, masking, restore, and risk scoring run locally in the macOS app. No prompt content or clipboard content is sent to cloud services.
+Detection, masking, restore, and risk scoring run locally in the macOS app. No prompt content or clipboard content is sent to remote services for those features.
+
+## Network
+
+Separate from the masking pipeline, the app may use HTTPS for **license** flows (pricing, activation; see `LicenseCore`) and **updates** via Sparkle (`SUFeedURL` in `App/Resources/Info.plist`). Those requests do not carry clipboard text or masked content from Safe Paste / Restore.
 
 ## Secret Handling
 
