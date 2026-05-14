@@ -214,7 +214,7 @@ struct SettingsView: View {
                         }
                     case .license:
                         SettingsLicensePanel()
-                    #if DEBUG
+                    #if OFFSEND_INTERNAL
                     case .developer:
                         SettingsDeveloperPanel()
                     #endif

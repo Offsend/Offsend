@@ -137,6 +137,9 @@
 "settings.developer.simulatedPlanHint" = "Overrides the in-app plan for UI and gating checks. Uses a synthetic license token; server validation and billing portal will not work.";
 "settings.developer.tariffFeatures" = "Tariff features";
 "settings.developer.tariffFeaturesHint" = "Resolved for the active plan from cached /pricing (`features`). Free tier is always OFF; Pro with an empty feature map defaults to ON.";
+"settings.developer.feature.safePasteUnlimited" = "Safe Paste unlimited";
+"settings.developer.feature.advancedDetectors" = "Advanced detectors";
+"settings.developer.feature.customDictionaries" = "Custom dictionaries";
 "settings.theme.light" = "Light";
 "settings.theme.dark" = "Dark";
 "settings.theme.auto" = "Auto";

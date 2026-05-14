@@ -1,4 +1,4 @@
-#if DEBUG
+#if OFFSEND_INTERNAL
 import AppUIKit
 import LicenseCore
 import StorageCore
@@ -31,24 +31,35 @@ struct SettingsDeveloperPanel: View {
                 hint: OffsendStrings.settingsDeveloperTariffFeaturesHint
             ) {
                 let tf = coordinator.tariffFeatures
-                OFSettingsRow(label: LicenseTariffFeatureKey.safePasteUnlimited.rawValue, hint: nil) {
-                    Text(tf.safePasteUnlimited ? "ON" : "OFF")
+                OFSettingsRow(label: localizedFeatureLabel(.safePasteUnlimited), hint: nil) {
+                    Text(tf.safePasteUnlimited ? OffsendStrings.commonOn : OffsendStrings.commonOff)
                         .font(.system(size: 12, weight: .semibold, design: .monospaced))
                         .foregroundColor(tf.safePasteUnlimited ? .green : .secondary)
                 }
                 OFSettingsGroupDivider()
-                OFSettingsRow(label: LicenseTariffFeatureKey.advancedDetectors.rawValue, hint: nil) {
-                    Text(tf.advancedDetectors ? "ON" : "OFF")
+                OFSettingsRow(label: localizedFeatureLabel(.advancedDetectors), hint: nil) {
+                    Text(tf.advancedDetectors ? OffsendStrings.commonOn : OffsendStrings.commonOff)
                         .font(.system(size: 12, weight: .semibold, design: .monospaced))
                         .foregroundColor(tf.advancedDetectors ? .green : .secondary)
                 }
                 OFSettingsGroupDivider()
-                OFSettingsRow(label: LicenseTariffFeatureKey.customDictionaries.rawValue, hint: nil) {
-                    Text(tf.customDictionaries ? "ON" : "OFF")
+                OFSettingsRow(label: localizedFeatureLabel(.customDictionaries), hint: nil) {
+                    Text(tf.customDictionaries ? OffsendStrings.commonOn : OffsendStrings.commonOff)
                         .font(.system(size: 12, weight: .semibold, design: .monospaced))
                         .foregroundColor(tf.customDictionaries ? .green : .secondary)
                 }
             }
+        }
+    }
+
+    private func localizedFeatureLabel(_ key: LicenseTariffFeatureKey) -> String {
+        switch key {
+        case .safePasteUnlimited:
+            OffsendStrings.settingsDeveloperFeatureSafePasteUnlimited
+        case .advancedDetectors:
+            OffsendStrings.settingsDeveloperFeatureAdvancedDetectors
+        case .customDictionaries:
+            OffsendStrings.settingsDeveloperFeatureCustomDictionaries
         }
     }
 }

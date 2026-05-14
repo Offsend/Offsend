@@ -16,8 +16,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Tuist
-        run: brew install tuist
+      - name: Install Tuist and create-dmg
+        run: brew install tuist create-dmg
 
       - name: Install dependencies
         run: tuist install
@@ -75,6 +75,7 @@ jobs:
           DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID || secrets.TEAM_ID }}
         run: |
           set -euo pipefail
+          # `-configuration Release` matches `Project.swift`: internal UI is gated by `OFFSEND_INTERNAL` (Debug only), not only `DEBUG`.
           # Do not pass CODE_SIGN_IDENTITY: it applies to SwiftPM targets and conflicts with automatic signing.
           xcodebuild \
             -workspace Offsend.xcworkspace \

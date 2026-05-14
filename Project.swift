@@ -189,12 +189,18 @@ let appTarget = Target.target(
             "SWIFT_STRICT_CONCURRENCY": "complete"
         ],
         configurations: [
-            .debug(name: "Debug", settings: [:]),
+            .debug(name: "Debug", settings: [
+                // `DEBUG`: standard assert behavior. `OFFSEND_INTERNAL`: internal-only UI
+                // (Developer, onboarding in menu). Do not rely on `DEBUG` alone — in some Tuist/Xcode
+                // graphs it can leak into `Release` when archiving.
+                "SWIFT_ACTIVE_COMPILATION_CONDITIONS": "DEBUG OFFSEND_INTERNAL $(inherited)"
+            ]),
             .release(
                 name: "Release",
                 settings: [
                     "CODE_SIGN_IDENTITY": "Developer ID Application",
-                    "ENABLE_HARDENED_RUNTIME": "YES"
+                    "ENABLE_HARDENED_RUNTIME": "YES",
+                    "SWIFT_ACTIVE_COMPILATION_CONDITIONS": ""
                 ]
             )
         ],
