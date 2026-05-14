@@ -6,6 +6,16 @@ let appBuildNumber = "1"
 let bundlePrefix = "io.offsend"
 let macOSDeploymentTarget: DeploymentTargets = .macOS("13.0")
 
+/// Developer ID for Release on app and embedded frameworks. Passing `CODE_SIGN_IDENTITY` via `xcodebuild`
+/// applies to SwiftPM targets too and conflicts with their automatic Apple Development signing.
+let developerIDReleaseSigning: Settings = .settings(
+    configurations: [
+        .debug(name: "Debug", settings: [:]),
+        .release(name: "Release", settings: ["CODE_SIGN_IDENTITY": "Developer ID Application"])
+    ],
+    defaultSettings: .recommended
+)
+
 let externalPackages: [Package] = [
     .remote(url: "https://github.com/sindresorhus/KeyboardShortcuts", requirement: .upToNextMajor(from: "2.3.0")),
     .remote(url: "https://github.com/stephencelis/SQLite.swift", requirement: .upToNextMajor(from: "0.15.0")),
@@ -19,7 +29,8 @@ let coreTargets: [Target] = [
         product: .framework,
         bundleId: "\(bundlePrefix).licensecore",
         deploymentTargets: macOSDeploymentTarget,
-        sources: ["Core/LicenseCore/Sources/**"]
+        sources: ["Core/LicenseCore/Sources/**"],
+        settings: developerIDReleaseSigning
     ),
     .target(
         name: "DetectionCore",
@@ -27,7 +38,8 @@ let coreTargets: [Target] = [
         product: .framework,
         bundleId: "\(bundlePrefix).detectioncore",
         deploymentTargets: macOSDeploymentTarget,
-        sources: ["Core/DetectionCore/Sources/**"]
+        sources: ["Core/DetectionCore/Sources/**"],
+        settings: developerIDReleaseSigning
     ),
     .target(
         name: "MaskingCore",
@@ -37,7 +49,8 @@ let coreTargets: [Target] = [
         deploymentTargets: macOSDeploymentTarget,
         sources: ["Core/MaskingCore/Sources/**"],
         resources: ["Core/MaskingCore/Resources/**"],
-        dependencies: [.target(name: "DetectionCore")]
+        dependencies: [.target(name: "DetectionCore")],
+        settings: developerIDReleaseSigning
     ),
     .target(
         name: "RiskScoringCore",
@@ -46,7 +59,8 @@ let coreTargets: [Target] = [
         bundleId: "\(bundlePrefix).riskscoringcore",
         deploymentTargets: macOSDeploymentTarget,
         sources: ["Core/RiskScoringCore/Sources/**"],
-        dependencies: [.target(name: "DetectionCore")]
+        dependencies: [.target(name: "DetectionCore")],
+        settings: developerIDReleaseSigning
     ),
     .target(
         name: "StorageCore",
@@ -60,7 +74,8 @@ let coreTargets: [Target] = [
             .target(name: "DetectionCore"),
             .target(name: "MaskingCore"),
             .package(product: "SQLite")
-        ]
+        ],
+        settings: developerIDReleaseSigning
     )
 ]
 
@@ -71,7 +86,8 @@ let serviceTargets: [Target] = [
         product: .framework,
         bundleId: "\(bundlePrefix).clipboardservice",
         deploymentTargets: macOSDeploymentTarget,
-        sources: ["Services/ClipboardService/Sources/**"]
+        sources: ["Services/ClipboardService/Sources/**"],
+        settings: developerIDReleaseSigning
     ),
     .target(
         name: "PasteService",
@@ -79,7 +95,8 @@ let serviceTargets: [Target] = [
         product: .framework,
         bundleId: "\(bundlePrefix).pasteservice",
         deploymentTargets: macOSDeploymentTarget,
-        sources: ["Services/PasteService/Sources/**"]
+        sources: ["Services/PasteService/Sources/**"],
+        settings: developerIDReleaseSigning
     ),
     .target(
         name: "HotkeyService",
@@ -88,7 +105,8 @@ let serviceTargets: [Target] = [
         bundleId: "\(bundlePrefix).hotkeyservice",
         deploymentTargets: macOSDeploymentTarget,
         sources: ["Services/HotkeyService/Sources/**"],
-        dependencies: [.package(product: "KeyboardShortcuts")]
+        dependencies: [.package(product: "KeyboardShortcuts")],
+        settings: developerIDReleaseSigning
     ),
     .target(
         name: "PermissionsService",
@@ -96,7 +114,8 @@ let serviceTargets: [Target] = [
         product: .framework,
         bundleId: "\(bundlePrefix).permissionsservice",
         deploymentTargets: macOSDeploymentTarget,
-        sources: ["Services/PermissionsService/Sources/**"]
+        sources: ["Services/PermissionsService/Sources/**"],
+        settings: developerIDReleaseSigning
     ),
     .target(
         name: "AnalyticsCore",
@@ -108,7 +127,8 @@ let serviceTargets: [Target] = [
         dependencies: [
             .target(name: "DetectionCore"),
             .target(name: "StorageCore")
-        ]
+        ],
+        settings: developerIDReleaseSigning
     )
 ]
 
@@ -120,7 +140,8 @@ let uiTargets: [Target] = [
         bundleId: "\(bundlePrefix).appuikit",
         deploymentTargets: macOSDeploymentTarget,
         sources: ["AppUIKit/Sources/**"],
-        resources: ["AppUIKit/Resources/**"]
+        resources: ["AppUIKit/Resources/**"],
+        settings: developerIDReleaseSigning
     )
 ]
 
@@ -153,13 +174,20 @@ let appTarget = Target.target(
         .target(name: "AppUIKit"),
         .package(product: "Sparkle")
     ],
-    settings: .settings(base: [
-        "PRODUCT_NAME": "\(appName)",
-        "MARKETING_VERSION": "\(appMarketingVersion)",
-        "CURRENT_PROJECT_VERSION": "\(appBuildNumber)",
-        "ENABLE_USER_SCRIPT_SANDBOXING": "YES",
-        "SWIFT_STRICT_CONCURRENCY": "complete"
-    ])
+    settings: .settings(
+        base: [
+            "PRODUCT_NAME": "\(appName)",
+            "MARKETING_VERSION": "\(appMarketingVersion)",
+            "CURRENT_PROJECT_VERSION": "\(appBuildNumber)",
+            "ENABLE_USER_SCRIPT_SANDBOXING": "YES",
+            "SWIFT_STRICT_CONCURRENCY": "complete"
+        ],
+        configurations: [
+            .debug(name: "Debug", settings: [:]),
+            .release(name: "Release", settings: ["CODE_SIGN_IDENTITY": "Developer ID Application"])
+        ],
+        defaultSettings: .recommended
+    )
 )
 
 let testTargets: [Target] = [

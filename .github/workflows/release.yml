@@ -75,6 +75,7 @@ jobs:
           DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID || secrets.TEAM_ID }}
         run: |
           set -euo pipefail
+          # Do not pass CODE_SIGN_IDENTITY: it applies to SwiftPM targets and conflicts with automatic signing.
           xcodebuild \
             -workspace Offsend.xcworkspace \
             -scheme Offsend \
@@ -82,7 +83,6 @@ jobs:
             -destination "platform=macOS" \
             -archivePath "build/Offsend.xcarchive" \
             DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
-            CODE_SIGN_IDENTITY="Developer ID Application" \
             clean archive
 
       - name: Export signed .app
