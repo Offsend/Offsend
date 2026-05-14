@@ -15,11 +15,32 @@ fi
 
 echo "Submitting for notarization: $DMG_PATH ($(stat -f%z "$DMG_PATH") bytes)"
 
-xcrun notarytool submit "$DMG_PATH" \
-  --apple-id "$APPLE_ID" \
-  --team-id "$APPLE_TEAM_ID" \
-  --password "$APPLE_APP_PASSWORD" \
-  --wait
+# notarytool may exit 0 even when status is Invalid; always inspect JSON before stapling.
+NOTARY_JSON="$(
+  xcrun notarytool submit "$DMG_PATH" \
+    --apple-id "$APPLE_ID" \
+    --team-id "$APPLE_TEAM_ID" \
+    --password "$APPLE_APP_PASSWORD" \
+    --wait \
+    --output-format json
+)"
+
+STATUS="$(printf '%s' "$NOTARY_JSON" | /usr/bin/python3 -c 'import sys, json; print(json.load(sys.stdin).get("status", ""))')"
+SUBMISSION_ID="$(printf '%s' "$NOTARY_JSON" | /usr/bin/python3 -c 'import sys, json; print(json.load(sys.stdin).get("id", ""))')"
+
+if [[ "$STATUS" != "Accepted" ]]; then
+  echo "Notarization finished with status: ${STATUS:-unknown}" >&2
+  echo "notarytool JSON response:" >&2
+  printf '%s\n' "$NOTARY_JSON" >&2
+  if [[ -n "$SUBMISSION_ID" ]]; then
+    echo "Apple notarization log (notarytool log):" >&2
+    xcrun notarytool log "$SUBMISSION_ID" \
+      --apple-id "$APPLE_ID" \
+      --team-id "$APPLE_TEAM_ID" \
+      --password "$APPLE_APP_PASSWORD" >&2 || true
+  fi
+  exit 1
+fi
 
 xcrun stapler staple "$DMG_PATH"
 
