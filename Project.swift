@@ -1,8 +1,8 @@
 import ProjectDescription
 
 let appName = "Offsend"
-let appMarketingVersion = "0.0.3"
-let appBuildNumber = "1"
+let appMarketingVersion = "0.0.4"
+let appBuildNumber = "2"
 let bundlePrefix = "io.offsend"
 let macOSDeploymentTarget: DeploymentTargets = .macOS("13.0")
 

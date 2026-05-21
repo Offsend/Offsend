@@ -163,7 +163,12 @@ struct OnboardingView: View {
 
     private var welcome: some View {
         VStack(alignment: .leading, spacing: 16) {
-            iconTile(icon: OffsendAsset.Images.logo.swiftUIImage, tint: .white, background: .ofBlueDim)
+
+            OffsendAsset.Images.logoFull.swiftUIImage
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(height: 28)
+                .foregroundStyle(Color.ofText)
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(OffsendStrings.onboardingWelcomeTitle)
@@ -179,6 +184,7 @@ struct OnboardingView: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 featureRow(icon: "lock.fill", text: OffsendStrings.onboardingWelcomeFeatureClipboard)
+                featureRow(icon: "folder.fill", text: OffsendStrings.onboardingWelcomeFeatureDirectoryCheck)
                 featureRow(icon: "desktopcomputer", text: OffsendStrings.onboardingWelcomeFeatureLocal)
                 featureRow(icon: "bolt.fill", text: OffsendStrings.onboardingWelcomeFeatureFast)
             }

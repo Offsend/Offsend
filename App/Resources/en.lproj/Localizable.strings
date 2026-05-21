@@ -77,6 +77,7 @@
 "onboarding.welcome.title" = "Safe Paste for AI";
 "onboarding.welcome.subtitle" = "Offsend masks sensitive data before it reaches ChatGPT, Claude, Gemini, Slack, Notion, IDEs, or any other app.";
 "onboarding.welcome.feature.clipboard" = "Checks new clipboard text locally";
+"onboarding.welcome.feature.directoryCheck" = "Check Directory audits AI ignore files in project folders";
 "onboarding.welcome.feature.local" = "Everything stays on your Mac";
 "onboarding.welcome.feature.fast" = "Designed for fast local scanning";
 "onboarding.privacy.title" = "Privacy-first by default";
