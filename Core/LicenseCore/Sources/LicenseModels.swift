@@ -10,7 +10,9 @@ public struct LicenseConfiguration: Sendable, Equatable {
     }
 
     public static let production = LicenseConfiguration(apiBaseURL: URL(string: "https://license.offsend.io")!)
+    #if DEBUG
     public static let develop = LicenseConfiguration(apiBaseURL: URL(string: "http://localhost:3000")!)
+    #endif
 }
 
 public enum LicenseServiceError: LocalizedError, Equatable {
