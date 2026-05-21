@@ -5,6 +5,8 @@ public enum LicenseTariffFeatureKey: String, CaseIterable, Sendable {
     case safePasteUnlimited = "safe_paste_unlimited"
     case advancedDetectors = "advanced_detectors"
     case customDictionaries = "custom_dictionaries"
+    case workspaceAuditFull = "workspace_audit_full"
+    case workspaceAuditAutofix = "workspace_audit_autofix"
 }
 
 /// Resolved booleans for in-app gating (settings, optional runtime checks).
@@ -12,22 +14,46 @@ public struct LicenseTariffFeatures: Equatable, Sendable {
     public var safePasteUnlimited: Bool
     public var advancedDetectors: Bool
     public var customDictionaries: Bool
+    public var workspaceAuditFull: Bool
+    public var workspaceAuditAutofix: Bool
 
-    public static let freeTier = Self(safePasteUnlimited: false, advancedDetectors: false, customDictionaries: false)
+    public static let freeTier = Self(
+        safePasteUnlimited: false,
+        advancedDetectors: false,
+        customDictionaries: false,
+        workspaceAuditFull: false,
+        workspaceAuditAutofix: false
+    )
 
     /// When Pro is active but the catalog has no per-feature map (nil/empty), treat as full access.
-    public static let proWithoutFeatureMap = Self(safePasteUnlimited: true, advancedDetectors: true, customDictionaries: true)
+    public static let proWithoutFeatureMap = Self(
+        safePasteUnlimited: true,
+        advancedDetectors: true,
+        customDictionaries: true,
+        workspaceAuditFull: true,
+        workspaceAuditAutofix: true
+    )
 
-    public init(safePasteUnlimited: Bool, advancedDetectors: Bool, customDictionaries: Bool) {
+    public init(
+        safePasteUnlimited: Bool,
+        advancedDetectors: Bool,
+        customDictionaries: Bool,
+        workspaceAuditFull: Bool,
+        workspaceAuditAutofix: Bool
+    ) {
         self.safePasteUnlimited = safePasteUnlimited
         self.advancedDetectors = advancedDetectors
         self.customDictionaries = customDictionaries
+        self.workspaceAuditFull = workspaceAuditFull
+        self.workspaceAuditAutofix = workspaceAuditAutofix
     }
 
     public init(features: [String: Bool]) {
         self.safePasteUnlimited = Self.bool(for: .safePasteUnlimited, in: features)
         self.advancedDetectors = Self.bool(for: .advancedDetectors, in: features)
         self.customDictionaries = Self.bool(for: .customDictionaries, in: features)
+        self.workspaceAuditFull = Self.bool(for: .workspaceAuditFull, in: features)
+        self.workspaceAuditAutofix = Self.bool(for: .workspaceAuditAutofix, in: features)
     }
 
     private static func bool(for key: LicenseTariffFeatureKey, in features: [String: Bool]) -> Bool {

@@ -35,9 +35,10 @@ struct MenuBarContent: View {
 
             Divider()
 
+            Button(OffsendStrings.menuCheckDirectory) { openWindow(id: "directory-check") }
             Button(OffsendStrings.menuOpenSettings) { openWindow(id: "settings") }
             Button(OffsendStrings.menuCheckForUpdates) {
-                coordinator.lastStatusMessage = OffsendStrings.statusSparkleReleaseBuilds
+                coordinator.checkForSparkleUpdates(sender: nil)
             }
 
             Divider()

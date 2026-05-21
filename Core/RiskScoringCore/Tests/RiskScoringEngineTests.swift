@@ -132,7 +132,7 @@ final class RiskScoringEngineTests: XCTestCase {
 
     func testWeightIncludesEveryDetectorTypeWithoutDefault() {
         for type in SensitiveEntityType.allCases {
-            XCTAssertGreaterThan(RiskScoringEngine.weight(for: type), 0, "Не задан вес для \(type)")
+            XCTAssertGreaterThan(RiskScoringEngine.weight(for: type), 0, "Missing risk weight for detector type: \(type)")
         }
     }
 

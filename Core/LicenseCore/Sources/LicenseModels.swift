@@ -9,7 +9,8 @@ public struct LicenseConfiguration: Sendable, Equatable {
         self.checkoutPlanId = checkoutPlanId
     }
 
-    public static let production = LicenseConfiguration(apiBaseURL: URL(string: "https://api.offsend.io")!)
+    public static let production = LicenseConfiguration(apiBaseURL: URL(string: "https://license.offsend.io")!)
+    public static let develop = LicenseConfiguration(apiBaseURL: URL(string: "http://localhost:3000")!)
 }
 
 public enum LicenseServiceError: LocalizedError, Equatable {
@@ -105,7 +106,12 @@ public struct LicenseValidateResult: Equatable, Sendable {
 
 struct CheckoutCreateRequest: Encodable {
     var email: String?
-    var plan: String
+    var planId: String
+
+    enum CodingKeys: String, CodingKey {
+        case email
+        case planId = "plan_id"
+    }
 }
 
 struct CheckoutCreateResponse: Decodable {

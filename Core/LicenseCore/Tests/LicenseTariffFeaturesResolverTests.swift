@@ -41,6 +41,8 @@ final class LicenseTariffFeaturesResolverTests: XCTestCase {
                 LicenseTariffFeatureKey.safePasteUnlimited.rawValue: true,
                 LicenseTariffFeatureKey.advancedDetectors.rawValue: true,
                 LicenseTariffFeatureKey.customDictionaries.rawValue: true,
+                LicenseTariffFeatureKey.workspaceAuditFull.rawValue: true,
+                LicenseTariffFeatureKey.workspaceAuditAutofix.rawValue: true,
             ]
         )
         let pricing = presentation(plans: [plan])
@@ -64,6 +66,8 @@ final class LicenseTariffFeaturesResolverTests: XCTestCase {
                 LicenseTariffFeatureKey.safePasteUnlimited.rawValue: true,
                 LicenseTariffFeatureKey.advancedDetectors.rawValue: false,
                 LicenseTariffFeatureKey.customDictionaries.rawValue: true,
+                LicenseTariffFeatureKey.workspaceAuditFull.rawValue: true,
+                LicenseTariffFeatureKey.workspaceAuditAutofix.rawValue: false,
             ]
         )
         let other = LicensePricingPlan(
@@ -88,6 +92,8 @@ final class LicenseTariffFeaturesResolverTests: XCTestCase {
         XCTAssertTrue(f.safePasteUnlimited)
         XCTAssertFalse(f.advancedDetectors)
         XCTAssertTrue(f.customDictionaries)
+        XCTAssertTrue(f.workspaceAuditFull)
+        XCTAssertFalse(f.workspaceAuditAutofix)
     }
 
     func testProEmptyFeatureMapMeansAllEnabled() {

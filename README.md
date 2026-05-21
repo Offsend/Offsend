@@ -11,7 +11,7 @@ A native **macOS** menu bar app that sits between your clipboard and the target 
 [![Swift](https://img.shields.io/badge/Swift-5.9+-F05138?logo=swift&logoColor=white)](https://swift.org/)
 [![Tuist](https://img.shields.io/badge/project-Tuist-6236FF?logo=tuist&logoColor=white)](https://tuist.io/)
 
-[Features](#features) · [Quick start](#quick-start) · [Privacy](#privacy) · [Development](#development) · [Security](#security)
+[Features](#features) · [Check Directory](#check-directory) · [Quick start](#quick-start) · [Privacy](#privacy) · [Development](#development) · [Security](#security)
 
 </div>
 
@@ -33,8 +33,28 @@ You copy a log, ticket, or code snippet that contains tokens, emails, or interna
 
 - **Safe Paste** — scan the clipboard, show a risk sheet when needed, mask, then paste or copy a safe version.
 - **Restore** — bring back originals from **locally encrypted** mappings (Keychain-backed key).
+- **Check Directory** — audit a project folder for AI workspace privacy files (ignore lists, tool rules) before sensitive paths end up in an AI context.
 - **Settings** — detectors, custom dictionaries, mapping TTL, hotkeys, login item, optional clipboard watch, licensing.
 - **Native stack** — Swift, shared UI in `AppUIKit`, no heavyweight runtime around the clipboard.
+
+### Check Directory
+
+Before you let Cursor, Copilot, Claude Code, or other AI tools read your repo, it helps to know whether the usual guardrails are in place — `.cursorignore`, `.aiexclude`, and similar files that keep secrets and env files out of context.
+
+**Check Directory** is a small, friendly audit built into Offsend:
+
+1. Open it from the menu bar (**Check Directory**).
+2. Drop a project folder, choose one with **Choose Folder**, or paste a folder path — if your clipboard already holds a directory, Offsend picks it up automatically.
+3. Read a clear PASS / WARNING / FAIL summary: what is missing, which sensitive patterns should be in ignore files, and what is already set up well.
+
+Everything runs **on your Mac**. Offsend inspects file names and ignore rules on disk; it does **not** upload your project or file contents anywhere.
+
+| Plan | What you get |
+|------|----------------|
+| **Free** | Required Cursor privacy files and sensitive ignore patterns (e.g. `.env*`, keys, credentials). |
+| **Pro** | Full coverage across more AI tools, recommended rules, and **Fix it** — one click to create or update the right ignore files for you. |
+
+Think of it as a quick pre-flight check for AI-assisted work: same local-first mindset as Safe Paste, but for how your **folder** is configured instead of what is on the clipboard right now.
 
 ### Default shortcuts
 
@@ -115,7 +135,7 @@ Developer ID signing, notarization, Sparkle appcast, and GitHub Actions are orch
 |------|---------|
 | `App/` | App entry, coordinators, settings, onboarding |
 | `AppUIKit/` | Shared UI components and theming |
-| `Core/` | `DetectionCore`, `MaskingCore`, `RiskScoringCore`, `StorageCore`, `LicenseCore` |
+| `Core/` | `DetectionCore`, `MaskingCore`, `RiskScoringCore`, `StorageCore`, `LicenseCore`, `WorkspacePolicyCore` |
 | `Services/` | Clipboard, paste simulation, hotkeys, permissions, local analytics |
 | `Tuist/` | Tuist project helpers |
 | `Scripts/` | Bootstrap, lint, DMG helper scripts |

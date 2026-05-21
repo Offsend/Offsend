@@ -164,7 +164,7 @@ public final class LicenseService: @unchecked Sendable {
 
     public func createCheckout(email: String?, planId: String? = nil) async throws -> URL {
         let plan = planId.flatMap { $0.isEmpty ? nil : $0 } ?? configuration.checkoutPlanId
-        let body = CheckoutCreateRequest(email: email, plan: plan)
+        let body = CheckoutCreateRequest(email: email, planId: plan)
         let data = try await api.postJSON(path: "/checkout/create", body: body, bearerToken: nil)
         let response = try decoder.decode(CheckoutCreateResponse.self, from: data)
         guard response.status == "ok", let urlString = response.checkoutUrl, let url = URL(string: urlString) else {

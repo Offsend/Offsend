@@ -83,6 +83,7 @@ struct PostCheckoutLicenseActivationCard: View {
                                 }
                             }
                         }
+                        .disabled(!canActivateThisMac)
                         .padding(.top, 14)
                     }
                 }
@@ -117,6 +118,13 @@ struct PostCheckoutLicenseActivationCard: View {
         let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty { return trimmed }
         return coordinator.licensePostCheckoutFlowEmail?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    /// Matches `AppCoordinator.verifyLicenseActivation` preconditions so the button is not tappable until a request can be sent.
+    private var canActivateThisMac: Bool {
+        let trimmed = effectiveEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.contains("@") else { return false }
+        return code.filter(\.isNumber).count == 6
     }
 
     private var deviceLimitCallout: some View {

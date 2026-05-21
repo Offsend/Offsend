@@ -61,6 +61,27 @@ final class DetectionEngineTests: XCTestCase {
         XCTAssertEqual(result.scannedCharacterCount, 10)
     }
 
+    func testSpacedCardNumberNotDetectedAsPhone() {
+        let text = "4242 4242 4242 4242"
+        let result = engine.scan(DetectionRequest(text: text))
+        XCTAssertTrue(result.entities.contains { $0.type == .creditCardLike }, "Expected card-like entity, got: \(result.entities.map(\.type))")
+        XCTAssertFalse(result.entities.contains { $0.type == .phone }, "PAN-shaped value must not be a phone: \(result.entities.map(\.type))")
+        XCTAssertEqual(result.entities.first { $0.type == .creditCardLike }?.value, text)
+    }
+
+    func testIPv4ListNotDetectedAsPhones() {
+        let text = """
+        160.79.104.10
+        34.36.57.103
+        104.16.174.226
+        104.16.175.22
+        """
+        let result = engine.scan(DetectionRequest(text: text))
+        XCTAssertFalse(result.entities.contains { $0.type == .phone }, "IPv4 quads must not be phones: \(result.entities.map(\.type))")
+        let ips = result.entities.filter { $0.type == .ipAddress }.map(\.value).sorted()
+        XCTAssertEqual(ips, ["104.16.174.226", "104.16.175.22", "160.79.104.10", "34.36.57.103"])
+    }
+
     func testPhotoFilenameDateAndTimeNotDetectedAsPhone() {
         let dashed = "photo_2026-04-23 16.50.15.jpeg"
         let dotted = "photo_2026.04.23 16.50.15.jpeg"

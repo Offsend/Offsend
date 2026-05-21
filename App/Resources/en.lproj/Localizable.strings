@@ -3,6 +3,7 @@
 "window.settings" = "Settings";
 "window.localMappings" = "Local Mappings";
 "window.privacy" = "Privacy";
+"window.directoryCheck" = "Check Directory";
 
 "common.on.lowercase" = "on";
 "common.off.lowercase" = "off";
@@ -115,6 +116,7 @@
 "menu.openSettings" = "Open Settings";
 "menu.viewLocalMappings" = "View Local Mappings";
 "menu.privacy" = "Privacy";
+"menu.checkDirectory" = "Check Directory";
 "menu.checkForUpdates" = "Check for Updates";
 "menu.lastAction" = "Last action: %@";
 "menu.quit" = "Quit";
@@ -135,11 +137,17 @@
 "settings.subtitle.developer" = "Debug-only tools for local testing.";
 "settings.developer.simulatedPlan" = "Simulated plan";
 "settings.developer.simulatedPlanHint" = "Overrides the in-app plan for UI and gating checks. Uses a synthetic license token; server validation and billing portal will not work.";
+"settings.developer.licenseServer" = "License API server";
+"settings.developer.licenseServerHint" = "Activation, pricing, validation, checkout, and billing portal use this base URL. The change applies immediately.";
+"settings.developer.licenseServer.production" = "Production";
+"settings.developer.licenseServer.develop" = "Develop";
 "settings.developer.tariffFeatures" = "Tariff features";
 "settings.developer.tariffFeaturesHint" = "Resolved for the active plan from cached /pricing (`features`). Free tier is always OFF; Pro with an empty feature map defaults to ON.";
 "settings.developer.feature.safePasteUnlimited" = "Safe Paste unlimited";
 "settings.developer.feature.advancedDetectors" = "Advanced detectors";
 "settings.developer.feature.customDictionaries" = "Custom dictionaries";
+"settings.developer.feature.workspaceAuditFull" = "Workspace audit (full)";
+"settings.developer.feature.workspaceAuditAutofix" = "Workspace audit autofix";
 "settings.theme.light" = "Light";
 "settings.theme.dark" = "Dark";
 "settings.theme.auto" = "Auto";
@@ -301,6 +309,36 @@
 "localMappings.noExpiration" = "No expiration";
 "localMappings.expires" = "Expires %@";
 "localMappings.empty" = "No saved mappings yet.";
+
+"directoryCheck.title" = "Check Directory";
+"directoryCheck.subtitle" = "Audit AI workspace privacy files";
+"directoryCheck.description" = "Drop a project folder here or choose one manually. Offsend checks local AI tool ignore files and privacy rules without uploading content.";
+"directoryCheck.chooseFolder" = "Choose Folder";
+"directoryCheck.fixIt" = "Fix it";
+"directoryCheck.dropTitle" = "Drop a folder to audit";
+"directoryCheck.dropHint" = "If the clipboard already contains a folder, it is selected automatically.";
+"directoryCheck.empty" = "No directory selected yet.";
+"directoryCheck.selectedDirectory" = "Selected: %@";
+"directoryCheck.status.pass" = "PASS";
+"directoryCheck.status.warning" = "WARNING";
+"directoryCheck.status.fail" = "FAIL";
+"directoryCheck.section.errors" = "Errors";
+"directoryCheck.section.required" = "Missing required files";
+"directoryCheck.section.sensitivePatterns" = "Missing sensitive ignore patterns";
+"directoryCheck.section.recommended" = "Recommended improvements";
+"directoryCheck.section.foundFiles" = "Found policy files";
+"directoryCheck.foundFileSubtitle" = "Detected in this directory.";
+"directoryCheck.allGoodTitle" = "Required checks passed";
+"directoryCheck.allGoodSubtitle" = "No missing required policy files or sensitive ignore patterns were found.";
+"directoryCheck.fixResultTitle" = "Fix result";
+"directoryCheck.fixNoChanges" = "No files needed changes.";
+"directoryCheck.fixCreated" = "Created: %@";
+"directoryCheck.fixUpdated" = "Updated: %@";
+"directoryCheck.freeScopeNote" = "Free audit covers Cursor required privacy files and sensitive ignore patterns. Upgrade to Pro for all AI tools, recommended rules, and one-click fix.";
+"directoryCheck.fixItPro" = "Fix it with Pro";
+"directoryCheck.proUpsellTitle" = "Automate workspace privacy setup";
+"directoryCheck.proUpsellBody" = "Pro audits Copilot, Claude Code, Windsurf, and other AI tools, then creates or updates ignore files for you.";
+"directoryCheck.proUpsellCta" = "Upgrade to Pro";
 
 "safePaste.warning.truncated" = "Only the first 50,000 characters were scanned.";
 "safePaste.section.maskedPreview" = "MASKED PREVIEW";

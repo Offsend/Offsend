@@ -11,6 +11,7 @@ public struct OFPanel<Content: View>: View {
 
     public var body: some View {
         content
+            .frame(maxWidth: .infinity)
             .background(Color.ofBg1)
             .cornerRadius(OFRadius.lg)
             .overlay(
