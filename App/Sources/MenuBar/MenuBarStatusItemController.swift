@@ -14,7 +14,8 @@ final class MenuBarStatusItemController: NSObject {
     private var toggleClipboardMonitoring: (() -> Void)?
     private var openOnboarding: (() -> Void)?
     private var openSettings: (() -> Void)?
-    private var checkForUpdates: (() -> Void)?
+    private var openDirectoryCheck: (() -> Void)?
+    private var checkForUpdates: ((Any?) -> Void)?
 
     override init() {
         super.init()
@@ -32,7 +33,7 @@ final class MenuBarStatusItemController: NSObject {
         refreshBeforeOpen: @escaping () -> Void,
         toggleProtection: @escaping () -> Void,
         toggleClipboardMonitoring: @escaping () -> Void,
-        checkForUpdates: @escaping () -> Void
+        checkForUpdates: @escaping (Any?) -> Void
     ) {
         self.safePaste = safePaste
         self.showClipboardStatus = showClipboardStatus
@@ -45,10 +46,12 @@ final class MenuBarStatusItemController: NSObject {
 
     func configureWindowActions(
         openOnboarding: @escaping () -> Void,
-        openSettings: @escaping () -> Void
+        openSettings: @escaping () -> Void,
+        openDirectoryCheck: @escaping () -> Void
     ) {
         self.openOnboarding = openOnboarding
         self.openSettings = openSettings
+        self.openDirectoryCheck = openDirectoryCheck
     }
 
     func update(
@@ -206,6 +209,9 @@ final class MenuBarStatusItemController: NSObject {
         addActionItem(OffsendStrings.menuRestorePlaceholders, action: #selector(restoreItem), keyEquivalent: "R", modifiers: [.command, .shift])
         menu.addItem(.separator())
 
+        addActionItem(OffsendStrings.menuCheckDirectory, action: #selector(openDirectoryCheckItem))
+        menu.addItem(.separator())
+
         let protectionTitle = OffsendStrings.menuProtection(settings.protectionEnabled ? OffsendStrings.commonOn : OffsendStrings.commonOff)
         addActionItem(protectionTitle, action: #selector(toggleProtectionItem), state: settings.protectionEnabled ? .on : .off)
 
@@ -271,8 +277,12 @@ final class MenuBarStatusItemController: NSObject {
         openSettings?()
     }
 
-    @objc private func checkForUpdatesItem() {
-        checkForUpdates?()
+    @objc private func openDirectoryCheckItem() {
+        openDirectoryCheck?()
+    }
+
+    @objc private func checkForUpdatesItem(_ sender: Any?) {
+        checkForUpdates?(sender)
     }
 
     @objc private func quitItem() {

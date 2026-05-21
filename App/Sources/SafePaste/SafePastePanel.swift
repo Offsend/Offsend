@@ -88,6 +88,7 @@ private struct SafePastePopupView: View {
                 OFDivider()
                 OFPrivacyFooter(hotkey: "⌘⇧V")
             }
+            .frame(maxWidth: .infinity)
         }
         .animation(.easeInOut(duration: 0.2), value: assessment.score)
     }
@@ -240,27 +241,27 @@ private struct SafePastePopupView: View {
             OFButton(
                 title: assessment.hasCriticalSecret ? OffsendStrings.safePasteActionCopySafeVersion : OffsendStrings.safePasteActionMaskAndPaste,
                 variant: assessment.hasCriticalSecret ? .danger : .primary,
-                icon: assessment.hasCriticalSecret ? "shield.fill" : "shield.lefthalf.filled"
+                icon: assessment.hasCriticalSecret ? "shield.fill" : "shield.lefthalf.filled",
+                fillsWidth: true
             ) {
                 close(assessment.hasCriticalSecret ? .copySafeVersion : .maskAndPaste)
             }
             .keyboardShortcut(.defaultAction)
-            .frame(maxWidth: .infinity)
 
-            // HStack(spacing: 8) {
-                OFButton(title: OffsendStrings.safePasteActionCancel, variant: .ghost) {
+            HStack(spacing: 8) {
+                OFButton(title: OffsendStrings.safePasteActionCancel, variant: .ghost, fillsWidth: true) {
                     close(.cancel)
                 }
 
-                // Spacer()
-
-                // if !assessment.hasCriticalSecret {
-                    OFButton(title: OffsendStrings.safePasteActionPasteOriginal, variant: .outline) {
+                if !assessment.hasCriticalSecret {
+                    OFButton(title: OffsendStrings.safePasteActionPasteOriginal, variant: .outline, fillsWidth: true) {
                         close(.pasteOriginal)
                     }
-                // }
-            // }
+                }
+            }
+            .frame(maxWidth: .infinity)
         }
+        .frame(maxWidth: .infinity)
         .padding(.horizontal, OFSpacing.xl)
         .padding(.vertical, OFSpacing.md)
     }

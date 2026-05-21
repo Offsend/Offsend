@@ -102,6 +102,19 @@ private enum PhoneMatchSanitizer {
     private static let clockTimeDots = try! NSRegularExpression(pattern: #"^(?:[01]?\d|2[0-3])\.[0-5]\d\.[0-5]\d$"#)
     /// `node-id=44305-5998` (Figma), US ZIP+4, and similar IDs — not phone numbers.
     private static let fiveDigitsDashFourDigits = try! NSRegularExpression(pattern: #"^\d{5}-\d{4}$"#)
+    /// E.164 allows at most 15 digits; 16+ with only digit/separator characters is almost always a PAN-like token (e.g. `4242 4242 4242 4242`).
+    private static var digitSeparatorPhoneShape: CharacterSet {
+        var set = CharacterSet.decimalDigits
+        set.formUnion(.whitespacesAndNewlines)
+        set.insert(charactersIn: ".-+()")
+        return set
+    }
+
+    /// Same shape as `DetectionRule` IPv4; loose phone regex matches dotted quads and prefixes like `104.16.175`.
+    private static let ipv4Address = try! NSRegularExpression(
+        pattern: #"^(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)$"#,
+        options: []
+    )
 
     static func shouldRejectPhoneValue(_ value: String) -> Bool {
         let range = NSRange(value.startIndex..<value.endIndex, in: value)
@@ -109,7 +122,15 @@ private enum PhoneMatchSanitizer {
         if isoCalendarDateDots.firstMatch(in: value, options: [], range: range) != nil { return true }
         if clockTimeDots.firstMatch(in: value, options: [], range: range) != nil { return true }
         if fiveDigitsDashFourDigits.firstMatch(in: value, options: [], range: range) != nil { return true }
+        if ipv4Address.firstMatch(in: value, options: [], range: range) != nil { return true }
+        if shouldRejectTooManyDigitsForE164PhoneShape(value) { return true }
         return false
+    }
+
+    private static func shouldRejectTooManyDigitsForE164PhoneShape(_ value: String) -> Bool {
+        let digitCount = value.filter(\.isNumber).count
+        guard digitCount >= 16 else { return false }
+        return value.unicodeScalars.allSatisfy { digitSeparatorPhoneShape.contains($0) }
     }
 }
 
@@ -223,6 +244,11 @@ public enum OverlapResolver {
         // Fuzzy length/heuristic: must not suppress a concrete `https?://…` URL match on overlap.
         if entity.type == .highEntropyString { return 95 }
         if entity.type.isSecret { return 1_000 }
+        // Loose `phone` regex overlaps spaced digit groups; prefer PAN detection when both match.
+        if entity.type == .creditCardLike { return 120 }
+        // Prefer full IPv4 over partial phone matches (`104.16.175` + trailing `.22`).
+        if entity.type == .ipAddress { return 115 }
+        if entity.type == .phone { return 85 }
         switch entity.source {
         case .customDictionary:
             return 500

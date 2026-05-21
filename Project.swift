@@ -1,7 +1,7 @@
 import ProjectDescription
 
 let appName = "Offsend"
-let appMarketingVersion = "0.0.2"
+let appMarketingVersion = "0.0.3"
 let appBuildNumber = "1"
 let bundlePrefix = "io.offsend"
 let macOSDeploymentTarget: DeploymentTargets = .macOS("13.0")
@@ -66,6 +66,15 @@ let coreTargets: [Target] = [
         deploymentTargets: macOSDeploymentTarget,
         sources: ["Core/RiskScoringCore/Sources/**"],
         dependencies: [.target(name: "DetectionCore")],
+        settings: developerIDReleaseSigning
+    ),
+    .target(
+        name: "WorkspacePolicyCore",
+        destinations: .macOS,
+        product: .framework,
+        bundleId: "\(bundlePrefix).workspacepolicycore",
+        deploymentTargets: macOSDeploymentTarget,
+        sources: ["Core/WorkspacePolicyCore/Sources/**"],
         settings: developerIDReleaseSigning
     ),
     .target(
@@ -171,6 +180,7 @@ let appTarget = Target.target(
         .target(name: "DetectionCore"),
         .target(name: "MaskingCore"),
         .target(name: "RiskScoringCore"),
+        .target(name: "WorkspacePolicyCore"),
         .target(name: "StorageCore"),
         .target(name: "ClipboardService"),
         .target(name: "PasteService"),
@@ -246,6 +256,15 @@ let testTargets: [Target] = [
         deploymentTargets: macOSDeploymentTarget,
         sources: ["Core/LicenseCore/Tests/**"],
         dependencies: [.target(name: "LicenseCore")]
+    ),
+    .target(
+        name: "WorkspacePolicyCoreTests",
+        destinations: .macOS,
+        product: .unitTests,
+        bundleId: "\(bundlePrefix).workspacepolicycore.tests",
+        deploymentTargets: macOSDeploymentTarget,
+        sources: ["Core/WorkspacePolicyCore/Tests/**"],
+        dependencies: [.target(name: "WorkspacePolicyCore")]
     )
 ]
 

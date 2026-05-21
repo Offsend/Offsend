@@ -13,6 +13,29 @@ import RiskScoringCore
 import ServiceManagement
 import StorageCore
 
+#if DEBUG
+enum DebugLicenseAPIEnvironment: String, CaseIterable, Identifiable {
+    case production
+    case develop
+
+    var id: String { rawValue }
+
+    static let userDefaultsKey = "io.offsend.debug.licenseAPIEnvironment"
+
+    static func loadFromUserDefaults() -> Self {
+        let raw = UserDefaults.standard.string(forKey: userDefaultsKey) ?? Self.production.rawValue
+        return Self(rawValue: raw) ?? .production
+    }
+
+    var licenseConfiguration: LicenseConfiguration {
+        switch self {
+        case .production: .production
+        case .develop: .develop
+        }
+    }
+}
+#endif
+
 @MainActor
 final class AppCoordinator: ObservableObject {
     @Published var settings: AppSettings
@@ -41,7 +64,7 @@ final class AppCoordinator: ObservableObject {
     let menuBarStatusItemController = MenuBarStatusItemController()
     let store: LocalStoring
     let analytics: LocalAnalyticsRecording
-    let licenseService = LicenseService()
+    var licenseService: LicenseService
 
     @Published var licenseActivationDeviceLimit: [LicenseActivatedDevice] = []
     /// `nil` = normal license UI. Non-`nil` (including `""`) = post-checkout deeplink flow with optional email prefill.
@@ -65,6 +88,8 @@ final class AppCoordinator: ObservableObject {
 
     private static let marketingAppVersion: String =
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+
+    private let sparkleUpdater = OffsendSparkleUpdater()
 
     private var openSettingsWindowAction: (() -> Void)?
 
@@ -93,9 +118,16 @@ final class AppCoordinator: ObservableObject {
             self.lastStatusMessage = OffsendStrings.statusStorageUnavailable(error.localizedDescription)
         }
 
+        #if DEBUG
+        licenseService = LicenseService(configuration: DebugLicenseAPIEnvironment.loadFromUserDefaults().licenseConfiguration)
+        #else
+        licenseService = LicenseService()
+        #endif
+
         self.store = store
         self.analytics = analytics
         self.lastAppliedLaunchAtLoginPreference = settings.launchAtLogin
+
         menuBarStatusItemController.configureActions(
             safePaste: { [weak self] in self?.performSafePaste() },
             showClipboardStatus: { [weak self] in self?.showClipboardStatus() },
@@ -111,8 +143,8 @@ final class AppCoordinator: ObservableObject {
                 settings.clipboardMonitoringEnabled.toggle()
                 saveSettings()
             },
-            checkForUpdates: { [weak self] in
-                self?.lastStatusMessage = OffsendStrings.statusSparkleReleaseBuilds
+            checkForUpdates: { [weak self] sender in
+                self?.sparkleUpdater.checkForUpdates(sender: sender)
             }
         )
 
@@ -128,6 +160,10 @@ final class AppCoordinator: ObservableObject {
         refreshMenuBarStatusItem()
 
         Task { await performStartupLicenseTasks() }
+    }
+
+    func checkForSparkleUpdates(sender: Any?) {
+        sparkleUpdater.checkForUpdates(sender: sender)
     }
 
     func performSafePaste() {
@@ -491,13 +527,15 @@ final class AppCoordinator: ObservableObject {
 
     func configureMenuBarStatusItem(
         openOnboarding: @escaping () -> Void,
-        openSettings: @escaping () -> Void
+        openSettings: @escaping () -> Void,
+        openDirectoryCheck: @escaping () -> Void
     ) {
         OffsendApplicationDelegate.coordinator = self
         openSettingsWindowAction = openSettings
         menuBarStatusItemController.configureWindowActions(
             openOnboarding: openOnboarding,
-            openSettings: openSettings
+            openSettings: openSettings,
+            openDirectoryCheck: openDirectoryCheck
         )
         refreshMenuBarStatusItem()
     }
@@ -925,6 +963,20 @@ final class AppCoordinator: ObservableObject {
 
 #if DEBUG
 extension AppCoordinator {
+    var debugLicenseAPIEnvironment: DebugLicenseAPIEnvironment {
+        DebugLicenseAPIEnvironment.loadFromUserDefaults()
+    }
+
+    func debugSetLicenseAPIEnvironment(_ environment: DebugLicenseAPIEnvironment) {
+        UserDefaults.standard.set(environment.rawValue, forKey: DebugLicenseAPIEnvironment.userDefaultsKey)
+        licenseService = LicenseService(configuration: environment.licenseConfiguration)
+        objectWillChange.send()
+        Task {
+            await refreshLicensePricingCatalog()
+            await refreshLicenseFromServerIfStale(trigger: .settingsLicenseScreen)
+        }
+    }
+
     /// JWT-shaped string with `{}` payload; not valid for `/license/validate`, but satisfies local token presence for Pro gating.
     private static let debugSyntheticLicenseJWT: String = {
         let emptyJSON = Data("{}".utf8)

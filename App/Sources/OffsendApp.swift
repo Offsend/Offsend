@@ -32,6 +32,14 @@ struct OffsendApp: App {
                 .tracksDockIconWindow(using: coordinator.dockIconVisibilityService)
         }
         .defaultSize(width: 560, height: 420)
+
+        WindowGroup(OffsendStrings.windowDirectoryCheck, id: "directory-check") {
+            DirectoryCheckView()
+                .environmentObject(coordinator)
+                .tracksDockIconWindow(using: coordinator.dockIconVisibilityService)
+        }
+        .defaultSize(width: 640, height: 560)
+        .windowResizability(.contentSize)
     }
 
     private func showInitialOnboardingIfNeeded() {
@@ -46,7 +54,8 @@ struct OffsendApp: App {
     private func configureMenuBarStatusItem() {
         coordinator.configureMenuBarStatusItem(
             openOnboarding: { openWindow(id: "onboarding") },
-            openSettings: { openWindow(id: "settings") }
+            openSettings: { openWindow(id: "settings") },
+            openDirectoryCheck: { openWindow(id: "directory-check") }
         )
         Task { @MainActor in
             showInitialOnboardingIfNeeded()
