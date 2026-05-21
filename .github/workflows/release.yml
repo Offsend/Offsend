@@ -202,3 +202,17 @@ jobs:
               --generate-notes \
               --latest
           fi
+
+      - name: Rebuild website
+        env:
+          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          APP_ID: ${{ secrets.DIGITALOCEAN_APP_ID }}
+        run: |
+          set -euo pipefail
+          test -n "${DIGITALOCEAN_TOKEN:-}" || { echo "Missing repository secret DIGITALOCEAN_TOKEN"; exit 1; }
+          test -n "${APP_ID:-}" || { echo "Missing repository secret DIGITALOCEAN_APP_ID"; exit 1; }
+          curl -fsSL -X POST \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $DIGITALOCEAN_TOKEN" \
+            -d '{"force_build": true}' \
+            "https://api.digitalocean.com/v2/apps/$APP_ID/deployments"
