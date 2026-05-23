@@ -14,6 +14,8 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>13.0</string>
+	<key>LSMultipleInstancesProhibited</key>
+	<true/>
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
@@ -39,5 +41,7 @@
 	<string>https://github.com/Offsend/Offsend/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
     <string>kpMMDBPEEN3LJ1EtaKhgic1WhGiUy5emgfdJnK46DBw=</string>
+	<key>TelemetryDeckAppID</key>
+	<string>$(TELEMETRYDECK_APP_ID)</string>
 </dict>
 </plist>

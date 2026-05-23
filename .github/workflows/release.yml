@@ -2,6 +2,11 @@ name: Release
 
 on:
   workflow_dispatch:
+    inputs:
+      marketing_version:
+        description: "Marketing version (CFBundleShortVersionString, e.g. 0.0.6)"
+        required: true
+        type: string
 
 concurrency:
   group: release-${{ github.ref }}
@@ -73,8 +78,14 @@ jobs:
       - name: Archive
         env:
           DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID || secrets.TEAM_ID }}
+          TELEMETRYDECK_APP_ID: ${{ secrets.TELEMETRYDECK_APP_ID }}
+          MARKETING_VERSION: ${{ github.event.inputs.marketing_version }}
+          BUILD_NUMBER: ${{ github.run_number }}
         run: |
           set -euo pipefail
+          test -n "${TELEMETRYDECK_APP_ID:-}" || { echo "Missing repository secret TELEMETRYDECK_APP_ID (TelemetryDeck App ID from dashboard)"; exit 1; }
+          test -n "${MARKETING_VERSION:-}" || { echo "Missing workflow input marketing_version"; exit 1; }
+          echo "Building marketing version=$MARKETING_VERSION build=$BUILD_NUMBER"
           # `-configuration Release`: internal UI is behind `#if DEBUG` and is not compiled into shipping builds.
           # Do not pass CODE_SIGN_IDENTITY: it applies to SwiftPM targets and conflicts with automatic signing.
           xcodebuild \
@@ -84,6 +95,9 @@ jobs:
             -destination "platform=macOS" \
             -archivePath "build/Offsend.xcarchive" \
             DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
+            TELEMETRYDECK_APP_ID="$TELEMETRYDECK_APP_ID" \
+            MARKETING_VERSION="$MARKETING_VERSION" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             clean archive
 
       - name: Export signed .app
@@ -103,9 +117,12 @@ jobs:
           test -f "$PLIST"
           VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")"
           BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST")"
+          TELEMETRY_ID="$(/usr/libexec/PlistBuddy -c 'Print :TelemetryDeckAppID' "$PLIST" 2>/dev/null || true)"
+          test -n "${TELEMETRY_ID:-}" || { echo "TelemetryDeckAppID is missing or empty in exported Info.plist"; exit 1; }
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "build=$BUILD" >> "$GITHUB_OUTPUT"
           echo "Marketing version=$VERSION build=$BUILD"
+          echo "TelemetryDeck configured (App ID length: ${#TELEMETRY_ID})"
 
       - name: Create DMG
         env:

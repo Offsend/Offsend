@@ -1,10 +1,16 @@
+import AnalyticsCore
 import AppKit
 import SwiftUI
 
 @main
 struct OffsendApp: App {
     @NSApplicationDelegateAdaptor(OffsendApplicationDelegate.self) private var appDelegate
-    @StateObject private var coordinator = AppCoordinator()
+    @StateObject private var coordinator: AppCoordinator
+
+    init() {
+        TelemetryDeckBootstrap.initializeIfConfigured()
+        _coordinator = StateObject(wrappedValue: AppCoordinator())
+    }
     @State private var didRequestInitialOnboarding = false
     @Environment(\.openWindow) private var openWindow
 

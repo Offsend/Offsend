@@ -17,8 +17,8 @@ struct SettingsPrivacyPanel: View {
             summaryCard
                 .padding(.bottom, 22)
 
-            OFSettingsGroup(title: OffsendStrings.settingsPrivacySectionDiagnostics, hint: OffsendStrings.settingsPrivacyDiagnosticsAnalyticsHint) {
-                OFSettingsRow(label: OffsendStrings.settingsAnalyticsOptIn, hint: nil, alignTop: true) {
+            OFSettingsGroup(title: OffsendStrings.settingsPrivacySectionDiagnostics, hint: OffsendStrings.settingsPrivacyDiagnosticsLocalHint) {
+                OFSettingsRow(label: OffsendStrings.settingsAnalyticsOptIn, hint: OffsendStrings.settingsAnalyticsOptInHint, alignTop: true) {
                     OFToggle(isOn: binder.setting(\.analyticsOptIn))
                 }
             }

@@ -19,7 +19,10 @@ struct SettingsGeneralPanel: View {
                     OFToggle(isOn: binder.setting(\.launchAtLogin))
                 }
                 OFSettingsGroupDivider()
-                OFSettingsRow(label: OffsendStrings.settingsMonitorClipboardChanges, hint: nil) {
+                OFSettingsRow(
+                    label: OffsendStrings.settingsMonitorClipboardChanges,
+                    hint: OffsendStrings.settingsMonitorClipboardChangesHint
+                ) {
                     OFToggle(isOn: binder.setting(\.clipboardMonitoringEnabled))
                 }
             }
@@ -29,12 +32,22 @@ struct SettingsGeneralPanel: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
-            OFSettingsGroup(title: OffsendStrings.settingsGeneralSectionBehavior) {
-                OFSettingsRow(label: OffsendStrings.settingsDefaultActionNoRisk, hint: nil) {
+            OFSettingsGroup(
+                title: OffsendStrings.settingsGeneralSectionBehavior,
+                hint: OffsendStrings.settingsGeneralSectionBehaviorHint
+            ) {
+                OFSettingsRow(
+                    label: OffsendStrings.settingsDefaultActionNoRisk,
+                    hint: OffsendStrings.settingsDefaultActionNoRiskHint
+                ) {
                     OFSelectMenu(
                         selection: binder.setting(\.defaultNoRiskAction),
                         options: DefaultNoRiskAction.allCases.map {
-                            OFSelectOption(value: $0, label: AppLocalization.defaultNoRiskActionName($0))
+                            OFSelectOption(
+                                value: $0,
+                                label: AppLocalization.defaultNoRiskActionName($0),
+                                detail: AppLocalization.defaultNoRiskActionDetail($0)
+                            )
                         }
                     )
                 }
@@ -128,7 +141,7 @@ struct SettingsGeneralPanel: View {
                 } else {
                     ForEach(Array(coordinator.settings.excludedClipboardApplications.enumerated()), id: \.element.id) { idx, app in
                         HStack(spacing: 12) {
-                            OFAppTile(name: app.displayName)
+                            OFAppTile(name: app.displayName, bundleIdentifier: app.bundleIdentifier)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(app.displayName)
                                     .font(.system(size: 12.5, weight: .medium))
@@ -197,9 +210,10 @@ struct SettingsGeneralPanel: View {
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
         guard let bundle = Bundle(url: url), let bundleIdentifier = bundle.bundleIdentifier else { return }
-        guard !coordinator.settings.excludedClipboardApplications.contains(where: {
-            $0.bundleIdentifier.caseInsensitiveCompare(bundleIdentifier) == .orderedSame
-        }) else { return }
+        guard ExcludedClipboardApplication.matches(
+            bundleIdentifier: bundleIdentifier,
+            in: coordinator.settings.excludedClipboardApplications
+        ) == nil else { return }
 
         let displayName =
             bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String

@@ -15,6 +15,17 @@ enum AppLocalization {
         }
     }
 
+    static func defaultNoRiskActionDetail(_ action: DefaultNoRiskAction) -> String {
+        switch action {
+        case .pasteOriginal:
+            return OffsendStrings.settingsDefaultActionPasteOriginalDetail
+        case .copyOriginal:
+            return OffsendStrings.settingsDefaultActionCopyOriginalDetail
+        case .showToast:
+            return OffsendStrings.settingsDefaultActionShowToastDetail
+        }
+    }
+
     static func restoreBehaviorName(_ behavior: RestoreBehavior) -> String {
         switch behavior {
         case .copyToClipboard:

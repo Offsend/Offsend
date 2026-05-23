@@ -2,7 +2,7 @@ import DetectionCore
 import Foundation
 import MaskingCore
 
-public enum DefaultNoRiskAction: String, Codable, CaseIterable, Identifiable {
+public enum DefaultNoRiskAction: String, Codable, CaseIterable, Identifiable, Sendable {
     case pasteOriginal
     case copyOriginal
     case showToast
@@ -10,14 +10,14 @@ public enum DefaultNoRiskAction: String, Codable, CaseIterable, Identifiable {
     public var id: String { rawValue }
 }
 
-public enum RestoreBehavior: String, Codable, CaseIterable, Identifiable {
+public enum RestoreBehavior: String, Codable, CaseIterable, Identifiable, Sendable {
     case copyToClipboard
     case pasteIntoActiveApp
 
     public var id: String { rawValue }
 }
 
-public struct ExcludedClipboardApplication: Codable, Equatable, Identifiable {
+public struct ExcludedClipboardApplication: Codable, Equatable, Identifiable, Sendable {
     public var displayName: String
     public var bundleIdentifier: String
 
@@ -27,9 +27,18 @@ public struct ExcludedClipboardApplication: Codable, Equatable, Identifiable {
         self.displayName = displayName
         self.bundleIdentifier = bundleIdentifier
     }
+
+    public static func matches(
+        bundleIdentifier: String,
+        in excludedApplications: [ExcludedClipboardApplication]
+    ) -> ExcludedClipboardApplication? {
+        excludedApplications.first {
+            $0.bundleIdentifier.caseInsensitiveCompare(bundleIdentifier) == .orderedSame
+        }
+    }
 }
 
-public struct AppSettings: Codable, Equatable {
+public struct AppSettings: Codable, Equatable, Sendable {
     public var hasCompletedOnboarding: Bool
     public var protectionEnabled: Bool
     public var clipboardMonitoringEnabled: Bool
@@ -122,11 +131,7 @@ public struct LicenseState: Codable, Equatable {
     public var maskedThisMonth: Int
     /// `yyyy-MM` in the user’s calendar / time zone; when it changes, `maskedThisMonth` resets for the free-tier quota.
     public var freeMaskedUsageMonthKey: String?
-    /// Legacy field from pre–magic-code builds; not written to Keychain.
-    public var licenseEmail: String?
     public var activatedAt: Date?
-    /// Legacy grace end; superseded by `graceUntil` when set.
-    public var offlineGraceExpiresAt: Date?
 
     public var subscriptionExpiresAt: Date?
     public var graceUntil: Date?
@@ -138,9 +143,7 @@ public struct LicenseState: Codable, Equatable {
         case plan
         case maskedThisMonth
         case freeMaskedUsageMonthKey
-        case licenseEmail
         case activatedAt
-        case offlineGraceExpiresAt
         case subscriptionExpiresAt
         case graceUntil
         case licenseBillingState
@@ -152,9 +155,7 @@ public struct LicenseState: Codable, Equatable {
         plan: Plan = .free,
         maskedThisMonth: Int = 0,
         freeMaskedUsageMonthKey: String? = nil,
-        licenseEmail: String? = nil,
         activatedAt: Date? = nil,
-        offlineGraceExpiresAt: Date? = nil,
         subscriptionExpiresAt: Date? = nil,
         graceUntil: Date? = nil,
         licenseBillingState: String? = nil,
@@ -164,9 +165,7 @@ public struct LicenseState: Codable, Equatable {
         self.plan = plan
         self.maskedThisMonth = maskedThisMonth
         self.freeMaskedUsageMonthKey = freeMaskedUsageMonthKey
-        self.licenseEmail = licenseEmail
         self.activatedAt = activatedAt
-        self.offlineGraceExpiresAt = offlineGraceExpiresAt
         self.subscriptionExpiresAt = subscriptionExpiresAt
         self.graceUntil = graceUntil
         self.licenseBillingState = licenseBillingState
@@ -179,15 +178,9 @@ public struct LicenseState: Codable, Equatable {
         self.plan = try container.decode(Plan.self, forKey: .plan)
         self.maskedThisMonth = try container.decodeIfPresent(Int.self, forKey: .maskedThisMonth) ?? 0
         self.freeMaskedUsageMonthKey = try container.decodeIfPresent(String.self, forKey: .freeMaskedUsageMonthKey)
-        self.licenseEmail = try container.decodeIfPresent(String.self, forKey: .licenseEmail)
         self.activatedAt = try container.decodeIfPresent(Date.self, forKey: .activatedAt)
-        self.offlineGraceExpiresAt = try container.decodeIfPresent(Date.self, forKey: .offlineGraceExpiresAt)
         self.subscriptionExpiresAt = try container.decodeIfPresent(Date.self, forKey: .subscriptionExpiresAt)
-        var decodedGrace = try container.decodeIfPresent(Date.self, forKey: .graceUntil)
-        if decodedGrace == nil {
-            decodedGrace = self.offlineGraceExpiresAt
-        }
-        self.graceUntil = decodedGrace
+        self.graceUntil = try container.decodeIfPresent(Date.self, forKey: .graceUntil)
         self.licenseBillingState = try container.decodeIfPresent(String.self, forKey: .licenseBillingState)
         self.licenseStatus = try container.decodeIfPresent(String.self, forKey: .licenseStatus)
         self.lastLicenseValidationAt = try container.decodeIfPresent(Date.self, forKey: .lastLicenseValidationAt)
@@ -198,9 +191,7 @@ public struct LicenseState: Codable, Equatable {
         try container.encode(plan, forKey: .plan)
         try container.encode(maskedThisMonth, forKey: .maskedThisMonth)
         try container.encodeIfPresent(freeMaskedUsageMonthKey, forKey: .freeMaskedUsageMonthKey)
-        try container.encodeIfPresent(licenseEmail, forKey: .licenseEmail)
         try container.encodeIfPresent(activatedAt, forKey: .activatedAt)
-        try container.encodeIfPresent(offlineGraceExpiresAt, forKey: .offlineGraceExpiresAt)
         try container.encodeIfPresent(subscriptionExpiresAt, forKey: .subscriptionExpiresAt)
         try container.encodeIfPresent(graceUntil, forKey: .graceUntil)
         try container.encodeIfPresent(licenseBillingState, forKey: .licenseBillingState)

@@ -1,7 +1,7 @@
 import Foundation
 
 /// Parsed custom URL (`offsend://…`) for in-app routing.
-enum OffsendDeepLink: Equatable {
+enum OffsendDeepLink: Equatable, Sendable {
     /// Return from web checkout; optional `email` query pre-fills activation.
     case checkoutSuccess(prefillEmail: String?)
 }
@@ -11,7 +11,7 @@ enum OffsendDeepLinkParser {
     typealias Parser = (URL) -> OffsendDeepLink?
 
     /// Ordered list; first non-nil match wins.
-    static var parsers: [Parser] = [
+    static let parsers: [Parser] = [
         parseCheckoutSuccess
     ]
 

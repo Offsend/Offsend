@@ -29,7 +29,7 @@ struct SettingsLicensePanel: View {
     }
 
     private var graceDate: Date? {
-        coordinator.licenseState.graceUntil ?? coordinator.licenseState.offlineGraceExpiresAt
+        coordinator.licenseState.graceUntil
     }
 
     private var entitlement: LicenseOfflineEntitlement {

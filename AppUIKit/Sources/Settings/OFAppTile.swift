@@ -1,17 +1,42 @@
+import AppKit
 import SwiftUI
 
 public struct OFAppTile: View {
     private let name: String
+    private let bundleIdentifier: String?
     private let size: CGFloat
 
-    public init(name: String, size: CGFloat = 28) {
+    public init(name: String, bundleIdentifier: String? = nil, size: CGFloat = 28) {
         self.name = name
+        self.bundleIdentifier = bundleIdentifier
         self.size = size
     }
 
     public var body: some View {
+        Group {
+            if let icon = appIcon {
+                Image(nsImage: icon)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: size / 4.5))
+            } else {
+                letterTile
+            }
+        }
+        .frame(width: size, height: size)
+    }
+
+    private var appIcon: NSImage? {
+        guard let bundleIdentifier,
+              let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier)
+        else { return nil }
+        return NSWorkspace.shared.icon(forFile: url.path)
+    }
+
+    private var letterTile: some View {
         let hue = Double((Int(name.unicodeScalars.first?.value ?? 65) * 37) % 360)
-        ZStack {
+        return ZStack {
             RoundedRectangle(cornerRadius: size / 4.5)
                 .fill(
                     LinearGradient(
@@ -27,6 +52,5 @@ public struct OFAppTile: View {
                 .font(.system(size: size * 0.42, weight: .bold))
                 .foregroundColor(.white)
         }
-        .frame(width: size, height: size)
     }
 }

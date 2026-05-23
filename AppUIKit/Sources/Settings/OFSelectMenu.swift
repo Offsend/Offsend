@@ -3,10 +3,12 @@ import SwiftUI
 public struct OFSelectOption<V: Hashable>: Hashable {
     public let value: V
     public let label: String
+    public let detail: String?
 
-    public init(value: V, label: String) {
+    public init(value: V, label: String, detail: String? = nil) {
         self.value = value
         self.label = label
+        self.detail = detail
     }
 }
 
@@ -28,8 +30,16 @@ public struct OFSelectMenu<V: Hashable>: View {
                 Button {
                     selection = option.value
                 } label: {
-                    HStack {
-                        Text(option.label)
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(option.label)
+                            if let detail = option.detail {
+                                Text(detail)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer(minLength: 12)
                         if selection == option.value {
                             Image(systemName: "checkmark")
                         }
