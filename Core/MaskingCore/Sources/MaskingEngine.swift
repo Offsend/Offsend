@@ -23,7 +23,7 @@ public struct MaskingResult: Codable, Equatable, Identifiable {
     }
 }
 
-public enum MappingTTL: String, Codable, CaseIterable, Identifiable {
+public enum MappingTTL: String, Codable, CaseIterable, Identifiable, Sendable {
     case oneHour
     case sixHours
     case twentyFourHours

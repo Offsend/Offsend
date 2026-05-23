@@ -1,15 +1,22 @@
 import StorageCore
 import SwiftUI
 
+@MainActor
 struct SettingsCoordinatorBinder {
     var coordinator: AppCoordinator
 
-    func setting<Value>(_ keyPath: WritableKeyPath<AppSettings, Value>) -> Binding<Value> {
+    func setting<Value: Sendable>(_ keyPath: WritableKeyPath<AppSettings, Value>) -> Binding<Value> {
         Binding(
-            get: { coordinator.settings[keyPath: keyPath] },
-            set: {
-                coordinator.settings[keyPath: keyPath] = $0
-                coordinator.saveSettings()
+            get: {
+                MainActor.assumeIsolated {
+                    coordinator.settings[keyPath: keyPath]
+                }
+            },
+            set: { newValue in
+                MainActor.assumeIsolated {
+                    coordinator.settings[keyPath: keyPath] = newValue
+                    coordinator.saveSettings()
+                }
             }
         )
     }

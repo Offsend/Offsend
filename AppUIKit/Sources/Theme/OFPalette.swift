@@ -75,7 +75,6 @@ public enum OFSettingsChromeAppearance: String, CaseIterable, Hashable, Codable 
     case auto
 
     public static let appStorageKey = "offsend.settings.chromeAppearance"
-    public static let legacyChromeDarkBoolKey = "offsend.settings.chromeDark"
 
     /// Resolved system light/dark, **not** SwiftUI `Environment.colorScheme` — it can stay `.light` after switching from forced light to **Auto** if `preferredColorScheme` was `nil`.
     public static func resolvedSystemColorScheme() -> ColorScheme {
@@ -103,15 +102,6 @@ public enum OFSettingsChromeAppearance: String, CaseIterable, Hashable, Codable 
         case .dark: return .dark
         case .auto: return Self.resolvedSystemColorScheme()
         }
-    }
-
-    /// Copies the legacy boolean `chromeDark` into `appStorageKey` once, so existing installs keep their choice; new installs default to `.auto` via `@AppStorage` default.
-    public static func migrateFromLegacyUserDefaultsIfNeeded() {
-        let defaults = UserDefaults.standard
-        guard defaults.object(forKey: appStorageKey) == nil else { return }
-        guard defaults.object(forKey: legacyChromeDarkBoolKey) != nil else { return }
-        let raw = defaults.bool(forKey: legacyChromeDarkBoolKey) ? Self.dark.rawValue : Self.light.rawValue
-        defaults.set(raw, forKey: appStorageKey)
     }
 }
 

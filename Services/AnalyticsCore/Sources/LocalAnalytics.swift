@@ -1,33 +1,21 @@
-import DetectionCore
 import Foundation
 import StorageCore
 
-public protocol LocalAnalyticsRecording {
-    func record(_ type: String, riskLevel: RiskLevel?, metadata: [String: String])
-}
-
-public extension LocalAnalyticsRecording {
-    func record(_ type: String) {
-        record(type, riskLevel: nil, metadata: [:])
-    }
-
-    func record(_ type: String, riskLevel: RiskLevel?) {
-        record(type, riskLevel: riskLevel, metadata: [:])
-    }
-}
-
-public final class LocalAnalytics: LocalAnalyticsRecording {
+/// On-device counters only — never transmitted.
+public final class LocalAnalytics: @unchecked Sendable {
     private let store: LocalStoring
 
     public init(store: LocalStoring) {
         self.store = store
     }
 
-    public func record(_ type: String, riskLevel: RiskLevel? = nil, metadata: [String: String] = [:]) {
+    public func track(_ event: AnalyticsEvent) {
         do {
-            try store.appendEvent(LocalEvent(type: type, riskLevel: riskLevel, metadata: metadata))
+            try store.appendEvent(
+                LocalEvent(type: event.name, riskLevel: event.riskLevel, metadata: event.metadata)
+            )
         } catch {
-            // Analytics is local-only and must never break Safe Paste.
+            // Local analytics must never break Safe Paste.
         }
     }
 }

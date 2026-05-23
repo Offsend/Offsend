@@ -503,7 +503,7 @@ struct DirectoryCheckView: View {
         return nil
     }
 
-    private func fileURL(from item: NSSecureCoding?) -> URL? {
+    nonisolated private func fileURL(from item: NSSecureCoding?) -> URL? {
         if let url = item as? URL {
             return url
         }
@@ -519,7 +519,7 @@ struct DirectoryCheckView: View {
         return nil
     }
 
-    private func isDirectory(_ url: URL) -> Bool {
+    nonisolated private func isDirectory(_ url: URL) -> Bool {
         var isDirectory: ObjCBool = false
         return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue
     }

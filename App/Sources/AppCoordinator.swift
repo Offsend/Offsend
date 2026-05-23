@@ -63,7 +63,7 @@ final class AppCoordinator: ObservableObject {
     let dockIconVisibilityService = DockIconVisibilityService()
     let menuBarStatusItemController = MenuBarStatusItemController()
     let store: LocalStoring
-    let analytics: LocalAnalyticsRecording
+    let analytics: AppAnalytics
     var licenseService: LicenseService
 
     @Published var licenseActivationDeviceLimit: [LicenseActivatedDevice] = []
@@ -100,21 +100,21 @@ final class AppCoordinator: ObservableObject {
 
     init() {
         var store: LocalStoring
-        var analytics: LocalAnalytics
+        var initialSettings: AppSettings
         do {
             store = try SecureLocalStore()
-            self.settings = try store.loadSettings()
+            initialSettings = try store.loadSettings()
+            self.settings = initialSettings
             self.customDictionaries = try store.loadCustomDictionaries()
             self.licenseState = try store.loadLicenseState()
-            analytics = LocalAnalytics(store: store)
             try store.cleanupExpiredMappings()
             self.mappingSummaries = try store.mappingSummaries()
         } catch {
             store = InMemoryLocalStore()
-            self.settings = .default
+            initialSettings = .default
+            self.settings = initialSettings
             self.customDictionaries = []
             self.licenseState = LicenseState()
-            analytics = LocalAnalytics(store: store)
             self.lastStatusMessage = OffsendStrings.statusStorageUnavailable(error.localizedDescription)
         }
 
@@ -125,7 +125,10 @@ final class AppCoordinator: ObservableObject {
         #endif
 
         self.store = store
-        self.analytics = analytics
+        self.analytics = AppAnalytics(
+            local: LocalAnalytics(store: store),
+            product: TelemetryDeckAnalytics(isEnabled: initialSettings.analyticsOptIn)
+        )
         self.lastAppliedLaunchAtLoginPreference = settings.launchAtLogin
 
         menuBarStatusItemController.configureActions(
@@ -177,17 +180,23 @@ final class AppCoordinator: ObservableObject {
             return
         }
 
-        analytics.record("safe_paste_triggered")
-
         if let snapshot = clipboardAssessmentSnapshot(for: text) {
-            analytics.record("safe_paste_used_cached_scan", riskLevel: snapshot.assessment.level, metadata: ["entities": "\(snapshot.detection.entities.count)"])
+            analytics.track(.safePasteUsed(
+                riskLevel: snapshot.assessment.level,
+                entityCount: snapshot.detection.entities.count,
+                usedCachedScan: true
+            ))
             handleSafePaste(snapshot: snapshot)
             return
         }
 
         let (detection, assessment) = assessClipboardText(text)
         rememberClipboardAssessment(text: text, detection: detection, assessment: assessment)
-        analytics.record("scan_completed", riskLevel: assessment.level, metadata: ["entities": "\(detection.entities.count)"])
+        analytics.track(.safePasteUsed(
+            riskLevel: assessment.level,
+            entityCount: detection.entities.count,
+            usedCachedScan: false
+        ))
 
         handleSafePaste(snapshot: ClipboardAssessmentSnapshot(text: text, detection: detection, assessment: assessment), showsPopupForNewRisk: true)
     }
@@ -203,7 +212,7 @@ final class AppCoordinator: ObservableObject {
                 lastStatusMessage = OffsendStrings.statusNoMatchingMapping
                 return
             }
-            analytics.record("restore_used")
+            analytics.track(.restoreUsed)
             let pastedIntoActiveApp = settings.restoreBehavior == .pasteIntoActiveApp && pasteService.canPasteIntoActiveApp
             if pastedIntoActiveApp {
                 pasteText(restored)
@@ -234,8 +243,6 @@ final class AppCoordinator: ObservableObject {
 
         let (detection, assessment) = assessClipboardText(text)
         rememberClipboardAssessment(text: text, detection: detection, assessment: assessment)
-        analytics.record("clipboard_status_opened", riskLevel: assessment.level, metadata: ["entities": "\(detection.entities.count)"])
-
         guard !detection.entities.isEmpty, assessment.recommendedAction != .allow else {
             clipboardAssessmentStatus = .safe
             lastStatusMessage = detection.wasTruncated ? OffsendStrings.statusClipboardLooksSafeScanned : OffsendStrings.statusClipboardLooksSafe
@@ -253,7 +260,7 @@ final class AppCoordinator: ObservableObject {
         do {
             try store.saveMapping(result)
             try refreshMappingSummaries()
-            analytics.record("mask_clicked")
+            analytics.track(.maskApplied)
         } catch {
             lastStatusMessage = OffsendStrings.statusCouldNotSaveMapping(error.localizedDescription)
         }
@@ -282,7 +289,7 @@ final class AppCoordinator: ObservableObject {
             lastStatusMessage = OffsendStrings.statusCriticalSecretBlocked
             return
         }
-        analytics.record("paste_original_clicked", riskLevel: assessment.level)
+        analytics.track(.pasteOriginalChosen(riskLevel: assessment.level))
         pasteText(originalText)
         lastStatusMessage = OffsendStrings.statusOriginalTextPasted
     }
@@ -292,7 +299,7 @@ final class AppCoordinator: ObservableObject {
         try? store.saveMapping(result)
         try? refreshMappingSummaries()
         clipboardService.writeString(result.maskedText)
-        analytics.record("mask_clicked")
+        analytics.track(.maskApplied)
         lastStatusMessage = OffsendStrings.statusSafeVersionCopied
 
         syncClipboardAssessmentStatus(for: result.maskedText)
@@ -302,7 +309,7 @@ final class AppCoordinator: ObservableObject {
     func completeOnboarding() {
         settings.hasCompletedOnboarding = true
         saveSettings()
-        analytics.record("onboarding_completed")
+        analytics.track(.onboardingCompleted)
     }
 
     func copyOnboardingSampleToClipboard(_ text: String) {
@@ -317,6 +324,7 @@ final class AppCoordinator: ObservableObject {
     }
 
     func saveSettings() {
+        analytics.setProductAnalyticsEnabled(settings.analyticsOptIn)
         do {
             try store.saveSettings(settings)
             if settings.launchAtLogin != lastAppliedLaunchAtLoginPreference {
@@ -475,12 +483,10 @@ final class AppCoordinator: ObservableObject {
         state.plan = .free
         state.subscriptionExpiresAt = nil
         state.graceUntil = nil
-        state.offlineGraceExpiresAt = nil
         state.licenseBillingState = nil
         state.licenseStatus = nil
         state.activatedAt = nil
         state.lastLicenseValidationAt = nil
-        state.licenseEmail = nil
         licenseState = state
         licenseActivationDeviceLimit = []
         try? store.saveLicenseState(state)
@@ -550,14 +556,7 @@ final class AppCoordinator: ObservableObject {
         case .checkoutSuccess(let prefill):
             guard licenseState.plan != .pro else { return }
             let trimmed = prefill?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let fromStored = licenseState.licenseEmail?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let resolved: String
-            if trimmed.isEmpty {
-                resolved = fromStored
-            } else {
-                resolved = trimmed
-            }
-            licensePostCheckoutFlowEmail = resolved
+            licensePostCheckoutFlowEmail = trimmed.isEmpty ? nil : trimmed
             openSettingsWindowAction?()
         }
     }
@@ -593,7 +592,6 @@ final class AppCoordinator: ObservableObject {
     }
 
     private func performStartupLicenseTasks() async {
-        migrateLegacyProLicenseWithoutStoredToken()
         persistFreeTierMaskedUsageMonthReconciliationIfNeeded()
         reconcileLicensePlanWithOfflineEntitlement()
         async let pricing: Void = refreshLicensePricingCatalog()
@@ -615,29 +613,6 @@ final class AppCoordinator: ObservableObject {
         )
     }
 
-    private func migrateLegacyProLicenseWithoutStoredToken() {
-        var state = licenseState
-        guard state.plan == .pro else { return }
-        let token = (try? licenseService.storedLicenseToken()) ?? nil
-        guard token == nil || token!.isEmpty else { return }
-        state = LicenseState(
-            plan: .free,
-            maskedThisMonth: state.maskedThisMonth,
-            freeMaskedUsageMonthKey: state.freeMaskedUsageMonthKey,
-            licenseEmail: nil,
-            activatedAt: nil,
-            offlineGraceExpiresAt: nil,
-            subscriptionExpiresAt: nil,
-            graceUntil: nil,
-            licenseBillingState: nil,
-            licenseStatus: nil,
-            lastLicenseValidationAt: nil
-        )
-        licenseState = state
-        try? store.saveLicenseState(state)
-        lastStatusMessage = OffsendStrings.statusLicenseMigratedFromLegacy
-    }
-
     private func reconcileLicensePlanWithOfflineEntitlement() {
         let token = (try? licenseService.storedLicenseToken()) ?? ""
         var state = licenseState
@@ -651,7 +626,7 @@ final class AppCoordinator: ObservableObject {
         }
         let unlocked = LicenseOfflineEntitlement.isProUnlocked(
             expiresAt: state.subscriptionExpiresAt,
-            graceUntil: state.graceUntil ?? state.offlineGraceExpiresAt
+            graceUntil: state.graceUntil
         )
         let newPlan: LicenseState.Plan = unlocked ? .pro : .free
         if newPlan != state.plan {
@@ -671,7 +646,7 @@ final class AppCoordinator: ObservableObject {
         let token = (try? licenseService.storedLicenseToken()) ?? ""
         let unlocked = !token.isEmpty && LicenseOfflineEntitlement.isProUnlocked(
             expiresAt: state.subscriptionExpiresAt,
-            graceUntil: state.graceUntil ?? state.offlineGraceExpiresAt
+            graceUntil: state.graceUntil
         )
         state.plan = unlocked ? .pro : .free
         licenseState = state
@@ -687,7 +662,6 @@ final class AppCoordinator: ObservableObject {
         state.licenseStatus = "active"
         state.activatedAt = Date()
         state.lastLicenseValidationAt = Date()
-        state.licenseEmail = nil
         licenseState = state
         try? store.saveLicenseState(state)
     }
@@ -728,6 +702,23 @@ final class AppCoordinator: ObservableObject {
         pasteService.pasteIntoActiveApp()
     }
 
+    @discardableResult
+    private func handleNoRiskClipboardText(_ text: String) -> String? {
+        switch settings.defaultNoRiskAction {
+        case .pasteOriginal:
+            guard pasteService.canPasteIntoActiveApp else {
+                return OffsendStrings.statusAccessibilityMissingClipboardUnchanged
+            }
+            pasteService.pasteIntoActiveApp()
+            return nil
+        case .copyOriginal:
+            clipboardService.writeString(text)
+            return nil
+        case .showToast:
+            return nil
+        }
+    }
+
     private func pasteText(_ text: String) {
         if settings.preserveOriginalClipboard {
             clipboardService.temporarilyWrite(text, restoreAfter: 0.8) {
@@ -739,17 +730,6 @@ final class AppCoordinator: ObservableObject {
         }
     }
 
-    private func handleNoRiskClipboardText(_ text: String) {
-        switch settings.defaultNoRiskAction {
-        case .pasteOriginal:
-            pasteOriginalFromClipboard()
-        case .copyOriginal:
-            clipboardService.writeString(text)
-        case .showToast:
-            break
-        }
-    }
-
     private func handleMonitoredClipboardText(_ text: String) {
         guard settings.protectionEnabled, settings.clipboardMonitoringEnabled else {
             clipboardAssessmentStatus = .idle
@@ -758,9 +738,8 @@ final class AppCoordinator: ObservableObject {
 
         let (detection, assessment) = assessClipboardText(text)
         rememberClipboardAssessment(text: text, detection: detection, assessment: assessment)
-        analytics.record("clipboard_monitor_scan_completed", riskLevel: assessment.level, metadata: ["entities": "\(detection.entities.count)"])
 
-        if let excludedApplicationName = frontmostExcludedClipboardApplicationName(), assessment.recommendedAction == .warn {
+        if let excludedApplicationName = frontmostExcludedClipboardApplicationName() {
             clipboardAssessmentStatus = .idle
             lastStatusMessage = OffsendStrings.statusClipboardMonitoringPausedForApp(excludedApplicationName)
             refreshMenuBarStatusItem()
@@ -814,6 +793,11 @@ final class AppCoordinator: ObservableObject {
             return
         }
 
+        if frontmostExcludedClipboardApplicationName() != nil {
+            clipboardAssessmentStatus = .idle
+            return
+        }
+
         guard !detection.entities.isEmpty, assessment.recommendedAction != .allow else {
             clipboardAssessmentStatus = .safe
             return
@@ -841,8 +825,11 @@ final class AppCoordinator: ObservableObject {
     private func handleSafePaste(snapshot: ClipboardAssessmentSnapshot, showsPopupForNewRisk: Bool = false) {
         guard snapshot.hasRisk else {
             clipboardAssessmentStatus = .safe
-            handleNoRiskClipboardText(snapshot.text)
-            lastStatusMessage = snapshot.detection.wasTruncated ? OffsendStrings.statusNoSensitiveDataScanned : OffsendStrings.statusNoSensitiveData
+            if let statusOverride = handleNoRiskClipboardText(snapshot.text) {
+                lastStatusMessage = statusOverride
+            } else {
+                lastStatusMessage = snapshot.detection.wasTruncated ? OffsendStrings.statusNoSensitiveDataScanned : OffsendStrings.statusNoSensitiveData
+            }
             return
         }
 
@@ -867,9 +854,10 @@ final class AppCoordinator: ObservableObject {
             return nil
         }
 
-        return settings.excludedClipboardApplications.first {
-            $0.bundleIdentifier.caseInsensitiveCompare(bundleIdentifier) == .orderedSame
-        }?.displayName
+        return ExcludedClipboardApplication.matches(
+            bundleIdentifier: bundleIdentifier,
+            in: settings.excludedClipboardApplications
+        )?.displayName
     }
 
     private func showSafePastePopup(
@@ -1001,7 +989,6 @@ extension AppCoordinator {
                 state.plan = .pro
                 state.subscriptionExpiresAt = farFuture
                 state.graceUntil = nil
-                state.offlineGraceExpiresAt = nil
                 state.licenseBillingState = "active"
                 state.licenseStatus = "active"
                 state.activatedAt = Date()

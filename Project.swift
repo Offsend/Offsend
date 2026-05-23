@@ -1,8 +1,9 @@
 import ProjectDescription
 
+let appMarketingVersion = "0.0.5" // Local default; release workflow overrides via MARKETING_VERSION input
+let appBuildNumber = "3" // Local default; release workflow overrides via github.run_number
+
 let appName = "Offsend"
-let appMarketingVersion = "0.0.4"
-let appBuildNumber = "2"
 let bundlePrefix = "io.offsend"
 let macOSDeploymentTarget: DeploymentTargets = .macOS("13.0")
 
@@ -25,7 +26,8 @@ let developerIDReleaseSigning: Settings = .settings(
 let externalPackages: [Package] = [
     .remote(url: "https://github.com/sindresorhus/KeyboardShortcuts", requirement: .upToNextMajor(from: "2.3.0")),
     .remote(url: "https://github.com/stephencelis/SQLite.swift", requirement: .upToNextMajor(from: "0.15.0")),
-    .remote(url: "https://github.com/sparkle-project/Sparkle", requirement: .upToNextMajor(from: "2.6.0"))
+    .remote(url: "https://github.com/sparkle-project/Sparkle", requirement: .upToNextMajor(from: "2.6.0")),
+    .remote(url: "https://github.com/TelemetryDeck/SwiftSDK", requirement: .upToNextMajor(from: "2.0.0"))
 ]
 
 let coreTargets: [Target] = [
@@ -141,7 +143,8 @@ let serviceTargets: [Target] = [
         sources: ["Services/AnalyticsCore/Sources/**"],
         dependencies: [
             .target(name: "DetectionCore"),
-            .target(name: "StorageCore")
+            .target(name: "StorageCore"),
+            .package(product: "TelemetryDeck")
         ],
         settings: developerIDReleaseSigning
     )
@@ -196,7 +199,8 @@ let appTarget = Target.target(
             "MARKETING_VERSION": "\(appMarketingVersion)",
             "CURRENT_PROJECT_VERSION": "\(appBuildNumber)",
             "ENABLE_USER_SCRIPT_SANDBOXING": "YES",
-            "SWIFT_STRICT_CONCURRENCY": "complete"
+            "SWIFT_STRICT_CONCURRENCY": "complete",
+            "TELEMETRYDECK_APP_ID": ""
         ],
         configurations: [
             .debug(name: .debug),
@@ -265,6 +269,24 @@ let testTargets: [Target] = [
         deploymentTargets: macOSDeploymentTarget,
         sources: ["Core/WorkspacePolicyCore/Tests/**"],
         dependencies: [.target(name: "WorkspacePolicyCore")]
+    ),
+    .target(
+        name: "AnalyticsCoreTests",
+        destinations: .macOS,
+        product: .unitTests,
+        bundleId: "\(bundlePrefix).analyticscore.tests",
+        deploymentTargets: macOSDeploymentTarget,
+        sources: ["Services/AnalyticsCore/Tests/**"],
+        dependencies: [.target(name: "AnalyticsCore")]
+    ),
+    .target(
+        name: "StorageCoreTests",
+        destinations: .macOS,
+        product: .unitTests,
+        bundleId: "\(bundlePrefix).storagecore.tests",
+        deploymentTargets: macOSDeploymentTarget,
+        sources: ["Core/StorageCore/Tests/**"],
+        dependencies: [.target(name: "StorageCore")]
     )
 ]
 

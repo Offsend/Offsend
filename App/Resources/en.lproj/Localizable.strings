@@ -48,7 +48,6 @@
 "status.license.deviceLimit" = "Device limit reached. Remove a device from your license.";
 "status.license.verifyFailed" = "Activation failed: %@";
 "status.license.useFree" = "Switched to Free.";
-"status.license.migratedFromLegacy" = "Previous local activation was reset. Activate with your purchase email.";
 "status.accessibilityMissingClipboardUnchanged" = "Accessibility missing. Clipboard unchanged.";
 "status.clipboardLooksSafeScanned" = "Clipboard looks safe in scanned text";
 "status.clipboardLooksSafe" = "Clipboard looks safe";
@@ -74,12 +73,12 @@
 "onboarding.button.continue" = "Continue";
 "onboarding.footer.privacy" = "Your text never leaves your Mac · no cloud, no tracking";
 "onboarding.sampleText" = "Please summarize contract CN-4812 for Acme Corp. Contact ivan@acme.com. API key: sk-abcdefghijklmnopqrstuvwxyzABCDEF123456";
-"onboarding.welcome.title" = "Safe Paste for AI";
-"onboarding.welcome.subtitle" = "Offsend masks sensitive data before it reaches ChatGPT, Claude, Gemini, Slack, Notion, IDEs, or any other app.";
-"onboarding.welcome.feature.clipboard" = "Checks new clipboard text locally";
-"onboarding.welcome.feature.directoryCheck" = "Check Directory audits AI ignore files in project folders";
+"onboarding.welcome.title" = "Work with AI without leaking secrets";
+"onboarding.welcome.subtitle" = "Offsend masks sensitive text before you paste, and checks project folders before AI tools read them.";
+"onboarding.welcome.feature.clipboard" = "Masks secrets before you paste into AI and chat apps";
+"onboarding.welcome.feature.directoryCheck" = "Checks project folders for missing AI privacy rules";
 "onboarding.welcome.feature.local" = "Everything stays on your Mac";
-"onboarding.welcome.feature.fast" = "Designed for fast local scanning";
+"onboarding.welcome.feature.fast" = "Fast, runs entirely on your Mac";
 "onboarding.privacy.title" = "Privacy-first by default";
 "onboarding.privacy.subtitle" = "The app is built around local processing and explicit user intent.";
 "onboarding.privacy.feature.clipboard" = "Clipboard monitoring scans new text locally.";
@@ -188,7 +187,7 @@
 "settings.privacy.stat.cloud" = "Sent to cloud";
 "settings.privacy.stat.always" = "never";
 "settings.privacy.section.diagnostics" = "Diagnostics";
-"settings.privacy.diagnostics.analyticsHint" = "Local counters only — no clipboard or prompt content.";
+"settings.privacy.diagnostics.localHint" = "Local event counters stay on this Mac only and are never sent anywhere. They appear in Local events above. No clipboard or prompt content.";
 "settings.license.plan.free" = "FREE";
 "settings.license.plan.pro" = "PRO";
 "settings.license.currentBadge" = "CURRENT";
@@ -252,15 +251,21 @@
 "settings.license.pricing.deviceLimit" = "Up to %d devices";
 "settings.launchAtLogin" = "Launch at login";
 "settings.enableSafePasteProtection" = "Enable Safe Paste protection";
-"settings.monitorClipboardChanges" = "Monitor clipboard changes";
+"settings.monitorClipboardChanges" = "Scan clipboard when you copy";
+"settings.monitorClipboardChangesHint" = "Offsend checks copied text locally and warns you if it finds secrets. Safe Paste still works when this is off.";
 "settings.excludedApps" = "Excluded apps";
 "settings.excludedAppsDescription" = "Clipboard monitoring is paused while one of these apps is active. Manual Safe Paste still works.";
 "settings.addApplication" = "Add Application...";
 "settings.remove" = "Remove";
-"settings.defaultActionNoRisk" = "Default action when no risk found";
-"settings.defaultAction.pasteOriginal" = "Paste original";
-"settings.defaultAction.copyOriginal" = "Copy original";
-"settings.defaultAction.showToast" = "Show toast";
+"settings.defaultActionNoRisk" = "If the clipboard is clean";
+"settings.defaultActionNoRiskHint" = "When Safe Paste finds no sensitive data.";
+"settings.general.section.behaviorHint" = "What happens after you press Safe Paste and the scan is clean.";
+"settings.defaultAction.pasteOriginal" = "Paste automatically";
+"settings.defaultAction.pasteOriginalDetail" = "Insert into the active app, like Cmd+V. Requires Accessibility.";
+"settings.defaultAction.copyOriginal" = "Confirm only";
+"settings.defaultAction.copyOriginalDetail" = "Leave the text in your clipboard and paste manually when ready.";
+"settings.defaultAction.showToast" = "Status only";
+"settings.defaultAction.showToastDetail" = "Show a confirmation without pasting or changing the clipboard.";
 "settings.hotkey.safePaste" = "Safe Paste";
 "settings.hotkey.restorePlaceholders" = "Restore placeholders";
 "settings.resetToDefaults" = "Reset to defaults";
@@ -279,8 +284,8 @@
 "settings.restoreBehavior.pasteIntoActiveApp" = "Paste into active app";
 "settings.preserveOriginalClipboard" = "Preserve original clipboard after paste";
 "settings.allowPasteOriginalForCriticalSecrets" = "Allow Paste Original for critical secrets";
-"settings.analyticsOptIn" = "Analytics opt-in";
-"settings.analyticsDescription" = "Analytics are local counters only. Prompt content, clipboard content, entity values, mappings, and window titles are never stored or sent. Excluded app names are stored only in local settings.";
+"settings.analyticsOptIn" = "Share anonymous usage analytics";
+"settings.analyticsOptIn.hint" = "Helps us improve Offsend. You can turn this off anytime.";
 "settings.clearAllLocalMappings" = "Clear all local mappings";
 "settings.clearLocalHistory" = "Clear local history";
 "settings.exportPrivacyReport" = "Export Privacy Report to Clipboard";
@@ -295,10 +300,10 @@
 
 "privacy.title" = "Privacy";
 "privacy.item.localProcessing" = "Text is processed locally on your Mac.";
-"privacy.item.clipboard" = "Clipboard is read only when you use Safe Paste or Restore.";
+"privacy.item.clipboard" = "Clipboard is read only when you use Offsend or Restore.";
 "privacy.item.neverUploaded" = "Prompt content, masked text, and entity values are never uploaded.";
 "privacy.item.encryptedMappings" = "Placeholder mappings stay local and encrypted with a Keychain-backed key.";
-"privacy.item.analytics" = "Analytics are local counters and never include content.";
+"privacy.item.analytics" = "Optional anonymous usage analytics to improve the app; local counters never leave your Mac.";
 "privacy.item.monitoringOff" = "Clipboard monitoring is off by default and disabled in this release.";
 "privacy.currentLocalState" = "Current Local State";
 

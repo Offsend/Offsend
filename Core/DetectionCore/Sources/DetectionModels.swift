@@ -67,7 +67,7 @@ public struct SensitiveEntity: Identifiable, Equatable {
     }
 }
 
-public enum SensitiveEntityType: String, CaseIterable, Codable, Hashable {
+public enum SensitiveEntityType: String, CaseIterable, Codable, Hashable, Sendable {
     case email
     case phone
     case money
@@ -194,14 +194,14 @@ public struct CustomDictionaryItem: Identifiable, Codable, Equatable {
     }
 }
 
-public enum RiskLevel: String, Codable, Equatable, CaseIterable {
+public enum RiskLevel: String, Codable, Equatable, CaseIterable, Sendable {
     case low
     case medium
     case high
     case critical
 }
 
-public enum RecommendedAction: String, Codable, Equatable {
+public enum RecommendedAction: String, Codable, Equatable, Sendable {
     case allow
     case warn
     case mask
