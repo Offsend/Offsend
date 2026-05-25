@@ -126,6 +126,7 @@
 "settings.tab.detection" = "Detection";
 "settings.tab.masking" = "Masking";
 "settings.tab.privacy" = "Privacy";
+"settings.tab.directoryCheck" = "Directory Check";
 "settings.tab.license" = "License";
 "settings.tab.developer" = "Developer";
 "settings.subtitle.general" = "Startup, behavior, and appearance.";
@@ -133,6 +134,7 @@
 "settings.subtitle.detection" = "What kinds of data Offsend scans for.";
 "settings.subtitle.masking" = "How placeholders and restore behave.";
 "settings.subtitle.privacy" = "Local data and diagnostics.";
+"settings.subtitle.directoryCheck" = "Workspace privacy rules and audit behavior.";
 "settings.subtitle.license" = "Plan and activation.";
 "settings.subtitle.developer" = "Debug-only tools for local testing.";
 "settings.developer.simulatedPlan" = "Simulated plan";
@@ -142,7 +144,7 @@
 "settings.developer.licenseServer.production" = "Production";
 "settings.developer.licenseServer.develop" = "Develop";
 "settings.developer.tariffFeatures" = "Tariff features";
-"settings.developer.tariffFeaturesHint" = "Resolved for the active plan from cached /pricing (`features`). Free tier is always OFF; Pro with an empty feature map defaults to ON.";
+"settings.developer.tariffFeaturesHint" = "Toggle overrides apply on top of the catalog resolution from cached /pricing (`features`). Free tier is always OFF; Pro with an empty feature map defaults to ON.";
 "settings.developer.feature.safePasteUnlimited" = "Safe Paste unlimited";
 "settings.developer.feature.advancedDetectors" = "Advanced detectors";
 "settings.developer.feature.customDictionaries" = "Custom dictionaries";
@@ -328,6 +330,8 @@
 "directoryCheck.status.pass" = "PASS";
 "directoryCheck.status.warning" = "WARNING";
 "directoryCheck.status.fail" = "FAIL";
+"directoryCheck.tag.warn" = "WARN";
+"directoryCheck.tag.info" = "INFO";
 "directoryCheck.section.errors" = "Errors";
 "directoryCheck.section.required" = "Missing required files";
 "directoryCheck.section.sensitivePatterns" = "Missing sensitive ignore patterns";
@@ -345,6 +349,44 @@
 "directoryCheck.proUpsellTitle" = "Automate workspace privacy setup";
 "directoryCheck.proUpsellBody" = "Pro audits Copilot, Claude Code, Windsurf, and other AI tools, then creates or updates ignore files for you.";
 "directoryCheck.proUpsellCta" = "Upgrade to Pro";
+
+"settings.directoryCheck.summaryTitle" = "Directory Check";
+"settings.directoryCheck.summarySubtitle" = "Audit project folders for missing AI privacy files and sensitive patterns. Everything runs locally.";
+"settings.directoryCheck.openWindow" = "Open Directory Check…";
+"settings.directoryCheck.statRules" = "Tool rules";
+"settings.directoryCheck.statPatterns" = "Sensitive patterns";
+"settings.directoryCheck.statSkipped" = "Skipped folders";
+"settings.directoryCheck.statProExtra" = "+%d with Pro";
+"settings.directoryCheck.section.behavior" = "Behavior";
+"settings.directoryCheck.confirmFix" = "Confirm before applying fix";
+"settings.directoryCheck.confirmFixHint" = "Show a confirmation dialog listing files that will be created or updated before writing.";
+"settings.directoryCheck.section.skipped" = "Skipped subdirectories";
+"settings.directoryCheck.skippedHint" = "Folder names excluded from the scan in addition to .git, node_modules, .build, and DerivedData.";
+"settings.directoryCheck.skippedEmpty" = "Only the built-in folders (.git, node_modules, .build, DerivedData) are skipped.";
+"settings.directoryCheck.skippedPlaceholder" = "Folder name (e.g. vendor, dist)";
+"settings.directoryCheck.skippedAdd" = "Add folder name";
+"settings.directoryCheck.skippedNoEffectNote" = "Most built-in checks look at the project root only — skipped folders take effect when rules use recursive patterns.";
+"settings.directoryCheck.section.tools" = "Tool checks";
+"settings.directoryCheck.toolsHint" = "Required checks are always on. Disable individual recommended or informational rules to hide them from the audit.";
+"settings.directoryCheck.section.patterns" = "Sensitive patterns";
+"settings.directoryCheck.patternsHint" = "Pattern groups checked across detected AI ignore files. Read-only — kept as a reference.";
+"settings.directoryCheck.section.template" = "Ignore template";
+"settings.directoryCheck.templateHint" = "Lines written into auto-generated ignore files (e.g. .cursorignore) when Offsend creates them.";
+"settings.directoryCheck.templateReset" = "Reset to default";
+"settings.directoryCheck.templateLocked" = "Editing the ignore template is a Pro feature.";
+"settings.directoryCheck.severity.required" = "REQUIRED";
+"settings.directoryCheck.severity.recommended" = "RECOMMENDED";
+"settings.directoryCheck.severity.informational" = "INFORMATIONAL";
+"settings.directoryCheck.scope.free" = "FREE";
+"settings.directoryCheck.scope.pro" = "PRO";
+"settings.directoryCheck.scope.info" = "INFO";
+"settings.directoryCheck.requiredLocked" = "Required checks cannot be disabled.";
+"settings.directoryCheck.proLocked" = "Available in Pro";
+
+"directoryCheck.confirm.title" = "Apply workspace privacy fix?";
+"directoryCheck.confirm.body" = "The following files in \"%@\" will be created or updated:\n%@";
+"directoryCheck.confirm.apply" = "Apply Fix";
+"directoryCheck.confirm.cancel" = "Cancel";
 
 "safePaste.warning.truncated" = "Only the first 50,000 characters were scanned.";
 "safePaste.section.maskedPreview" = "MASKED PREVIEW";

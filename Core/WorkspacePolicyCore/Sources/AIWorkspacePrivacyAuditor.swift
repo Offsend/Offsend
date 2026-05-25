@@ -27,10 +27,17 @@ public final class AIWorkspacePrivacyAuditor {
             )
         }
 
+        let skippedDirectoryNames = Self.builtInSkippedDirectoryNames
+            .union(configuration.additionalSkippedDirectoryNames)
+
         let ruleFindings = configuration.rules.map { rule in
             AIWorkspacePrivacyRuleFinding(
                 rule: rule,
-                matchedRelativePaths: matchedRelativePaths(for: rule, in: standardizedURL)
+                matchedRelativePaths: matchedRelativePaths(
+                    for: rule,
+                    in: standardizedURL,
+                    skippedDirectoryNames: skippedDirectoryNames
+                )
             )
         }
 
@@ -62,10 +69,14 @@ public final class AIWorkspacePrivacyAuditor {
         return fileManager.isReadableFile(atPath: url.path)
     }
 
-    private func matchedRelativePaths(for rule: AIWorkspacePrivacyRule, in rootURL: URL) -> [String] {
+    private func matchedRelativePaths(
+        for rule: AIWorkspacePrivacyRule,
+        in rootURL: URL,
+        skippedDirectoryNames: Set<String>
+    ) -> [String] {
         let matches = rule.relativePathPatterns.flatMap { pattern -> [String] in
             if pattern.contains("*") || pattern.contains("?") {
-                return globMatches(pattern: pattern, in: rootURL)
+                return globMatches(pattern: pattern, in: rootURL, skippedDirectoryNames: skippedDirectoryNames)
             }
 
             let candidate = rootURL.appendingPathComponent(pattern)
@@ -75,7 +86,11 @@ public final class AIWorkspacePrivacyAuditor {
         return Array(Set(matches)).sorted()
     }
 
-    private func globMatches(pattern: String, in rootURL: URL) -> [String] {
+    private func globMatches(
+        pattern: String,
+        in rootURL: URL,
+        skippedDirectoryNames: Set<String>
+    ) -> [String] {
         let baseRelativePath = Self.staticDirectoryPrefix(for: pattern)
         let searchRootURL = baseRelativePath.isEmpty ? rootURL : rootURL.appendingPathComponent(baseRelativePath)
         if let directMatches = directChildGlobMatches(pattern: pattern, baseRelativePath: baseRelativePath, searchRootURL: searchRootURL) {
@@ -93,7 +108,7 @@ public final class AIWorkspacePrivacyAuditor {
         let glob = GlobPattern(pattern)
         return enumerator.compactMap { item -> String? in
             guard let url = item as? URL else { return nil }
-            if shouldSkipDescendants(of: url) {
+            if shouldSkipDescendants(of: url, skippedDirectoryNames: skippedDirectoryNames) {
                 enumerator.skipDescendants()
                 return nil
             }
@@ -129,9 +144,10 @@ public final class AIWorkspacePrivacyAuditor {
         return String(prefix[..<slashIndex])
     }
 
-    private func shouldSkipDescendants(of url: URL) -> Bool {
-        let ignoredDirectories: Set<String> = [".git", "node_modules", ".build", "DerivedData"]
-        guard ignoredDirectories.contains(url.lastPathComponent),
+    static let builtInSkippedDirectoryNames: Set<String> = [".git", "node_modules", ".build", "DerivedData"]
+
+    private func shouldSkipDescendants(of url: URL, skippedDirectoryNames: Set<String>) -> Bool {
+        guard skippedDirectoryNames.contains(url.lastPathComponent),
               (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
         else {
             return false

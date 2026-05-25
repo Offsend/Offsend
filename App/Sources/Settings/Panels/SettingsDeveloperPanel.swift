@@ -54,38 +54,31 @@ struct SettingsDeveloperPanel: View {
                 title: OffsendStrings.settingsDeveloperTariffFeatures,
                 hint: OffsendStrings.settingsDeveloperTariffFeaturesHint
             ) {
-                let tf = coordinator.tariffFeatures
-                OFSettingsRow(label: localizedFeatureLabel(.safePasteUnlimited), hint: nil) {
-                    Text(tf.safePasteUnlimited ? OffsendStrings.commonOn : OffsendStrings.commonOff)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundColor(tf.safePasteUnlimited ? .green : .secondary)
-                }
-                OFSettingsGroupDivider()
-                OFSettingsRow(label: localizedFeatureLabel(.advancedDetectors), hint: nil) {
-                    Text(tf.advancedDetectors ? OffsendStrings.commonOn : OffsendStrings.commonOff)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundColor(tf.advancedDetectors ? .green : .secondary)
-                }
-                OFSettingsGroupDivider()
-                OFSettingsRow(label: localizedFeatureLabel(.customDictionaries), hint: nil) {
-                    Text(tf.customDictionaries ? OffsendStrings.commonOn : OffsendStrings.commonOff)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundColor(tf.customDictionaries ? .green : .secondary)
-                }
-                OFSettingsGroupDivider()
-                OFSettingsRow(label: localizedFeatureLabel(.workspaceAuditFull), hint: nil) {
-                    Text(tf.workspaceAuditFull ? OffsendStrings.commonOn : OffsendStrings.commonOff)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundColor(tf.workspaceAuditFull ? .green : .secondary)
-                }
-                OFSettingsGroupDivider()
-                OFSettingsRow(label: localizedFeatureLabel(.workspaceAuditAutofix), hint: nil) {
-                    Text(tf.workspaceAuditAutofix ? OffsendStrings.commonOn : OffsendStrings.commonOff)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundColor(tf.workspaceAuditAutofix ? .green : .secondary)
+                ForEach(Array(LicenseTariffFeatureKey.allCases.enumerated()), id: \.element) { index, key in
+                    if index > 0 {
+                        OFSettingsGroupDivider()
+                    }
+                    OFSettingsRow(label: localizedFeatureLabel(key), hint: nil) {
+                        OFToggle(isOn: tariffFeatureBinding(key))
+                    }
                 }
             }
         }
+    }
+
+    private func tariffFeatureBinding(_ key: LicenseTariffFeatureKey) -> Binding<Bool> {
+        Binding(
+            get: {
+                switch key {
+                case .safePasteUnlimited: coordinator.tariffFeatures.safePasteUnlimited
+                case .advancedDetectors: coordinator.tariffFeatures.advancedDetectors
+                case .customDictionaries: coordinator.tariffFeatures.customDictionaries
+                case .workspaceAuditFull: coordinator.tariffFeatures.workspaceAuditFull
+                case .workspaceAuditAutofix: coordinator.tariffFeatures.workspaceAuditAutofix
+                }
+            },
+            set: { coordinator.debugSetTariffFeatureOverride(key, enabled: $0) }
+        )
     }
 
     private func licenseServerEnvironmentTitle(_ env: DebugLicenseAPIEnvironment) -> String {

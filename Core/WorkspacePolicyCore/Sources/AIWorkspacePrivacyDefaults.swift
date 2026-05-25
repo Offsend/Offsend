@@ -128,6 +128,89 @@ public extension AIWorkspacePrivacyRule {
             )
         ),
         AIWorkspacePrivacyRule(
+            id: "aider-ignore",
+            toolName: "Aider",
+            title: ".aiderignore",
+            relativePathPatterns: [".aiderignore"],
+            severity: .recommended,
+            scansForSensitivePatterns: true,
+            remediation: "Add .aiderignore for Aider workspace exclusions.",
+            fix: AIWorkspacePrivacyFileFix(
+                relativePath: ".aiderignore",
+                contents: AIWorkspacePrivacyIgnoreTemplate.contents
+            )
+        ),
+        AIWorkspacePrivacyRule(
+            id: "cline-ignore",
+            toolName: "Cline",
+            title: ".clineignore",
+            relativePathPatterns: [".clineignore"],
+            severity: .recommended,
+            scansForSensitivePatterns: true,
+            remediation: "Add .clineignore for Cline workspace exclusions.",
+            fix: AIWorkspacePrivacyFileFix(
+                relativePath: ".clineignore",
+                contents: AIWorkspacePrivacyIgnoreTemplate.contents
+            )
+        ),
+        AIWorkspacePrivacyRule(
+            id: "roo-ignore",
+            toolName: "Roo Code",
+            title: ".rooignore",
+            relativePathPatterns: [".rooignore"],
+            severity: .recommended,
+            scansForSensitivePatterns: true,
+            remediation: "Add .rooignore for Roo Code workspace exclusions.",
+            fix: AIWorkspacePrivacyFileFix(
+                relativePath: ".rooignore",
+                contents: AIWorkspacePrivacyIgnoreTemplate.contents
+            )
+        ),
+        AIWorkspacePrivacyRule(
+            id: "zed-ignore",
+            toolName: "Zed",
+            title: ".zedignore",
+            relativePathPatterns: [".zedignore"],
+            severity: .recommended,
+            scansForSensitivePatterns: true,
+            remediation: "Add .zedignore for Zed AI assistant exclusions.",
+            fix: AIWorkspacePrivacyFileFix(
+                relativePath: ".zedignore",
+                contents: AIWorkspacePrivacyIgnoreTemplate.contents
+            )
+        ),
+        AIWorkspacePrivacyRule(
+            id: "cody-ignore",
+            toolName: "Sourcegraph Cody",
+            title: ".codyignore",
+            relativePathPatterns: [".codyignore"],
+            severity: .recommended,
+            scansForSensitivePatterns: true,
+            remediation: "Add .codyignore for Sourcegraph Cody workspace exclusions.",
+            fix: AIWorkspacePrivacyFileFix(
+                relativePath: ".codyignore",
+                contents: AIWorkspacePrivacyIgnoreTemplate.contents
+            )
+        ),
+        AIWorkspacePrivacyRule(
+            id: "agents-md",
+            toolName: "Codex / Agents",
+            title: "AGENTS.md",
+            relativePathPatterns: ["AGENTS.md"],
+            severity: .informational,
+            scansForSensitivePatterns: false,
+            remediation: "Add AGENTS.md to describe how agentic tools should handle sensitive files."
+        ),
+        AIWorkspacePrivacyRule(
+            id: "claude-md",
+            toolName: "Claude Code",
+            title: "CLAUDE.md",
+            relativePathPatterns: ["CLAUDE.md"],
+            severity: .informational,
+            scansForSensitivePatterns: false,
+            remediation: "Add CLAUDE.md to give Claude Code project-specific privacy guidance."
+        ),
+        AIWorkspacePrivacyRule(
             id: "git-ignore",
             toolName: "Git",
             title: ".gitignore",
@@ -189,6 +272,158 @@ public extension AIWorkspaceSensitivePattern {
             acceptedPatterns: ["secrets.json", "**/secrets.json"],
             severity: .required,
             remediation: "Ignore secrets.json files."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "gcp-credentials",
+            title: "GCP service account keys",
+            acceptedPatterns: [
+                "service-account*.json",
+                "**/service-account*.json",
+                "gcp-credentials*.json",
+                "**/gcp-credentials*.json"
+            ],
+            severity: .recommended,
+            remediation: "Ignore GCP service account JSON keys."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "azure-credentials",
+            title: "Azure credentials",
+            acceptedPatterns: [
+                ".azure/",
+                "**/.azure/",
+                "azureauth.json",
+                "**/azureauth.json"
+            ],
+            severity: .recommended,
+            remediation: "Ignore Azure CLI credentials and tokens."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "kube-config",
+            title: "Kubernetes config",
+            acceptedPatterns: [
+                "kubeconfig",
+                "**/kubeconfig",
+                "*.kubeconfig",
+                "**/*.kubeconfig",
+                ".kube/",
+                "**/.kube/"
+            ],
+            severity: .required,
+            remediation: "Ignore kubeconfig files that grant cluster access."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "terraform-state",
+            title: "Terraform state",
+            acceptedPatterns: [
+                "*.tfstate",
+                "**/*.tfstate",
+                "*.tfstate.*",
+                "**/*.tfstate.*"
+            ],
+            severity: .recommended,
+            remediation: "Ignore Terraform state files that often embed secrets."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "terraform-vars",
+            title: "Terraform variables",
+            acceptedPatterns: ["*.tfvars", "**/*.tfvars"],
+            severity: .recommended,
+            remediation: "Ignore Terraform tfvars files that may hold credentials."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "pkcs12-p12",
+            title: "PKCS#12 (.p12) certificates",
+            acceptedPatterns: ["*.p12", "**/*.p12"],
+            severity: .recommended,
+            remediation: "Ignore .p12 certificate bundles that contain private keys."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "pkcs12-pfx",
+            title: "PKCS#12 (.pfx) certificates",
+            acceptedPatterns: ["*.pfx", "**/*.pfx"],
+            severity: .recommended,
+            remediation: "Ignore .pfx certificate bundles that contain private keys."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "pgp-keys",
+            title: "PGP private keys",
+            acceptedPatterns: [
+                "*.gpg",
+                "**/*.gpg",
+                "secring.*",
+                "**/secring.*"
+            ],
+            severity: .recommended,
+            remediation: "Ignore PGP/GnuPG private keyrings."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "netrc-files",
+            title: ".netrc",
+            acceptedPatterns: [
+                ".netrc",
+                "**/.netrc",
+                "_netrc",
+                "**/_netrc"
+            ],
+            severity: .recommended,
+            remediation: "Ignore .netrc / _netrc files that store HTTP credentials."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "npmrc-files",
+            title: ".npmrc",
+            acceptedPatterns: [".npmrc", "**/.npmrc"],
+            severity: .recommended,
+            remediation: "Ignore .npmrc — it commonly contains npm auth tokens."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "pypirc-files",
+            title: ".pypirc",
+            acceptedPatterns: [".pypirc", "**/.pypirc"],
+            severity: .recommended,
+            remediation: "Ignore .pypirc — it commonly contains PyPI upload tokens."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "htpasswd-files",
+            title: ".htpasswd",
+            acceptedPatterns: [".htpasswd", "**/.htpasswd"],
+            severity: .recommended,
+            remediation: "Ignore .htpasswd files containing hashed credentials."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "docker-config",
+            title: "Docker config",
+            acceptedPatterns: [
+                ".docker/",
+                "**/.docker/",
+                ".dockerconfigjson",
+                "**/.dockerconfigjson"
+            ],
+            severity: .recommended,
+            remediation: "Ignore Docker config that stores registry auth tokens."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "firebase-keys",
+            title: "Firebase admin keys",
+            acceptedPatterns: [
+                "serviceAccountKey.json",
+                "**/serviceAccountKey.json",
+                "firebase-adminsdk-*.json",
+                "**/firebase-adminsdk-*.json"
+            ],
+            severity: .required,
+            remediation: "Ignore Firebase Admin SDK JSON keys."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "db-dumps",
+            title: "Database dumps",
+            acceptedPatterns: [
+                "*.sql.gz",
+                "**/*.sql.gz",
+                "*.dump",
+                "**/*.dump"
+            ],
+            severity: .informational,
+            remediation: "Consider ignoring database dumps which often contain PII."
         )
     ]
 }

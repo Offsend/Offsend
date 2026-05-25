@@ -212,6 +212,8 @@ struct SettingsView: View {
                                 .padding(.bottom, 22)
                             SettingsPrivacyPanel()
                         }
+                    case .directoryCheck:
+                        SettingsDirectoryCheckPanel()
                     case .license:
                         SettingsLicensePanel()
                     #if DEBUG

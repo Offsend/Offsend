@@ -52,6 +52,17 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var allowPasteOriginalForCriticalSecrets: Bool
     public var excludedClipboardApplications: [ExcludedClipboardApplication]
 
+    // MARK: Directory Check
+
+    /// IDs of `AIWorkspacePrivacyRule` the user has disabled. Required rules are still enforced regardless of this set.
+    public var directoryCheckDisabledRuleIDs: Set<String>
+    /// When true, the Directory Check Fix action shows a confirmation alert before writing files.
+    public var directoryCheckConfirmFix: Bool
+    /// Pro override for `AIWorkspacePrivacyIgnoreTemplate.contents`. `nil` keeps the built-in template.
+    public var directoryCheckCustomIgnoreTemplate: String?
+    /// Extra directory names skipped while walking the workspace (merged with the built-in list).
+    public var directoryCheckExtraSkippedDirectories: [String]
+
     private enum CodingKeys: String, CodingKey {
         case hasCompletedOnboarding
         case protectionEnabled
@@ -65,6 +76,10 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case analyticsOptIn
         case allowPasteOriginalForCriticalSecrets
         case excludedClipboardApplications
+        case directoryCheckDisabledRuleIDs
+        case directoryCheckConfirmFix
+        case directoryCheckCustomIgnoreTemplate
+        case directoryCheckExtraSkippedDirectories
     }
 
     public init(
@@ -81,7 +96,11 @@ public struct AppSettings: Codable, Equatable, Sendable {
         allowPasteOriginalForCriticalSecrets: Bool = false,
         excludedClipboardApplications: [ExcludedClipboardApplication] = [
             ExcludedClipboardApplication(displayName: "Figma", bundleIdentifier: "com.figma.Desktop")
-        ]
+        ],
+        directoryCheckDisabledRuleIDs: Set<String> = [],
+        directoryCheckConfirmFix: Bool = true,
+        directoryCheckCustomIgnoreTemplate: String? = nil,
+        directoryCheckExtraSkippedDirectories: [String] = []
     ) {
         self.hasCompletedOnboarding = hasCompletedOnboarding
         self.protectionEnabled = protectionEnabled
@@ -95,6 +114,10 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.analyticsOptIn = analyticsOptIn
         self.allowPasteOriginalForCriticalSecrets = allowPasteOriginalForCriticalSecrets
         self.excludedClipboardApplications = excludedClipboardApplications
+        self.directoryCheckDisabledRuleIDs = directoryCheckDisabledRuleIDs
+        self.directoryCheckConfirmFix = directoryCheckConfirmFix
+        self.directoryCheckCustomIgnoreTemplate = directoryCheckCustomIgnoreTemplate
+        self.directoryCheckExtraSkippedDirectories = directoryCheckExtraSkippedDirectories
     }
 
     public init(from decoder: Decoder) throws {
@@ -114,7 +137,23 @@ public struct AppSettings: Codable, Equatable, Sendable {
             excludedClipboardApplications: try container.decodeIfPresent(
                 [ExcludedClipboardApplication].self,
                 forKey: .excludedClipboardApplications
-            ) ?? AppSettings.default.excludedClipboardApplications
+            ) ?? AppSettings.default.excludedClipboardApplications,
+            directoryCheckDisabledRuleIDs: try container.decodeIfPresent(
+                Set<String>.self,
+                forKey: .directoryCheckDisabledRuleIDs
+            ) ?? [],
+            directoryCheckConfirmFix: try container.decodeIfPresent(
+                Bool.self,
+                forKey: .directoryCheckConfirmFix
+            ) ?? true,
+            directoryCheckCustomIgnoreTemplate: try container.decodeIfPresent(
+                String.self,
+                forKey: .directoryCheckCustomIgnoreTemplate
+            ),
+            directoryCheckExtraSkippedDirectories: try container.decodeIfPresent(
+                [String].self,
+                forKey: .directoryCheckExtraSkippedDirectories
+            ) ?? []
         )
     }
 

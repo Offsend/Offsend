@@ -117,11 +117,30 @@ public final class AIWorkspacePrivacyFixer {
             return .failed(invalidPathError(fix.relativePath))
         }
 
-        if fileManager.fileExists(atPath: url.path) {
-            return .unchanged
+        do {
+            try fileManager.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            return try coordinateFileWrite(at: url) { coordinatedURL in
+                guard !fileManager.fileExists(atPath: coordinatedURL.path) else {
+                    return .unchanged
+                }
+                try normalizedContents(fix.contents).write(
+                    to: coordinatedURL,
+                    atomically: true,
+                    encoding: .utf8
+                )
+                return .created(fix.relativePath)
+            }
+        } catch {
+            return .failed(
+                AIWorkspacePrivacyAuditError(
+                    id: "create-file-failed",
+                    message: "Could not create \(fix.relativePath): \(error.localizedDescription)"
+                )
+            )
         }
-
-        return writeContents(fix.contents, to: url, relativePath: fix.relativePath, didCreateFile: true)
     }
 
     private func mergeLines(from fix: AIWorkspacePrivacyFileFix, in rootURL: URL) -> FileWriteOutcome {
@@ -155,25 +174,33 @@ public final class AIWorkspacePrivacyFixer {
         }
 
         do {
-            let existingContents: String
-            let didCreateFile: Bool
-            if fileManager.fileExists(atPath: url.path) {
-                existingContents = try String(contentsOf: url, encoding: .utf8)
-                didCreateFile = false
-            } else {
-                try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-                existingContents = IgnoreFileParser.defaultHeader + "\n"
-                didCreateFile = true
+            try fileManager.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            let fileExists = fileManager.fileExists(atPath: url.path)
+            let options: NSFileCoordinator.WritingOptions = fileExists ? .forMerging : []
+
+            return try coordinateFileWrite(at: url, options: options) { coordinatedURL in
+                let existingContents: String
+                let didCreateFile: Bool
+                if fileManager.fileExists(atPath: coordinatedURL.path) {
+                    existingContents = try String(contentsOf: coordinatedURL, encoding: .utf8)
+                    didCreateFile = false
+                } else {
+                    existingContents = IgnoreFileParser.defaultHeader + "\n"
+                    didCreateFile = true
+                }
+
+                let existingPatterns = IgnoreFileParser.patterns(in: existingContents)
+                let missingLines = lines.filter { !existingPatterns.contains($0) }
+                guard !missingLines.isEmpty else { return .unchanged }
+
+                let separator = existingContents.hasSuffix("\n") ? "" : "\n"
+                let updatedContents = existingContents + separator + missingLines.joined(separator: "\n") + "\n"
+                try updatedContents.write(to: coordinatedURL, atomically: true, encoding: .utf8)
+                return didCreateFile ? .created(relativePath) : .updated(relativePath)
             }
-
-            let existingPatterns = IgnoreFileParser.patterns(in: existingContents)
-            let missingLines = lines.filter { !existingPatterns.contains($0) }
-            guard !missingLines.isEmpty else { return .unchanged }
-
-            let separator = existingContents.hasSuffix("\n") ? "" : "\n"
-            let updatedContents = existingContents + separator + missingLines.joined(separator: "\n") + "\n"
-            try updatedContents.write(to: url, atomically: true, encoding: .utf8)
-            return didCreateFile ? .created(relativePath) : .updated(relativePath)
         } catch {
             return .failed(
                 AIWorkspacePrivacyAuditError(
@@ -191,9 +218,21 @@ public final class AIWorkspacePrivacyFixer {
         didCreateFile: Bool
     ) -> FileWriteOutcome {
         do {
-            try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try normalizedContents(contents).write(to: url, atomically: true, encoding: .utf8)
-            return didCreateFile ? .created(relativePath) : .updated(relativePath)
+            try fileManager.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            return try coordinateFileWrite(at: url) { coordinatedURL in
+                guard !fileManager.fileExists(atPath: coordinatedURL.path) else {
+                    return .unchanged
+                }
+                try normalizedContents(contents).write(
+                    to: coordinatedURL,
+                    atomically: true,
+                    encoding: .utf8
+                )
+                return didCreateFile ? .created(relativePath) : .updated(relativePath)
+            }
         } catch {
             return .failed(
                 AIWorkspacePrivacyAuditError(
@@ -202,6 +241,29 @@ public final class AIWorkspacePrivacyFixer {
                 )
             )
         }
+    }
+
+    private func coordinateFileWrite<T>(
+        at url: URL,
+        options: NSFileCoordinator.WritingOptions = [],
+        _ work: (URL) throws -> T
+    ) throws -> T {
+        let coordinator = NSFileCoordinator()
+        var coordinationError: NSError?
+        var capturedResult: Result<T, Error>?
+
+        coordinator.coordinate(
+            writingItemAt: url,
+            options: options,
+            error: &coordinationError
+        ) { coordinatedURL in
+            capturedResult = Result { try work(coordinatedURL) }
+        }
+
+        if let coordinationError {
+            throw coordinationError
+        }
+        return try capturedResult!.get()
     }
 
     private func isWritableDirectory(_ url: URL) -> Bool {

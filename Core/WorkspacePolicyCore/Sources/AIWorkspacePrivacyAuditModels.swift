@@ -3,13 +3,18 @@ import Foundation
 public struct AIWorkspacePrivacyAuditConfiguration: Equatable {
     public let rules: [AIWorkspacePrivacyRule]
     public let sensitivePatterns: [AIWorkspaceSensitivePattern]
+    /// Additional directory names whose descendants are skipped during the workspace walk
+    /// (merged with the auditor's built-in defaults like `.git`, `node_modules`, `.build`, `DerivedData`).
+    public let additionalSkippedDirectoryNames: Set<String>
 
     public init(
         rules: [AIWorkspacePrivacyRule],
-        sensitivePatterns: [AIWorkspaceSensitivePattern] = AIWorkspaceSensitivePattern.defaultPatterns
+        sensitivePatterns: [AIWorkspaceSensitivePattern] = AIWorkspaceSensitivePattern.defaultPatterns,
+        additionalSkippedDirectoryNames: Set<String> = []
     ) {
         self.rules = rules
         self.sensitivePatterns = sensitivePatterns
+        self.additionalSkippedDirectoryNames = additionalSkippedDirectoryNames
     }
 
     public static let `default` = AIWorkspacePrivacyAuditConfiguration(
@@ -17,10 +22,40 @@ public struct AIWorkspacePrivacyAuditConfiguration: Equatable {
         sensitivePatterns: AIWorkspaceSensitivePattern.defaultPatterns
     )
 
-    /// Free tier: Cursor required checks and required sensitive ignore patterns only.
+    /// Rule IDs covered by the Free tier. Pro adds detection for niche tooling
+    /// (Continue, Windsurf/Codeium, Gemini, generic LLM, Aider, Cline, Roo, Zed, Cody).
+    public static let freeTierRuleIDs: Set<String> = [
+        "cursor-ignore",
+        "cursor-indexing-ignore",
+        "cursor-project-rules",
+        "copilot-exclude",
+        "claude-ignore",
+        "claude-md",
+        "agents-md",
+        "git-ignore"
+    ]
+
+    /// Sensitive-pattern IDs covered by the Free tier. Pro adds patterns for cloud
+    /// providers, infra (Terraform), certificates, package managers, and DB dumps.
+    public static let freeTierPatternIDs: Set<String> = [
+        "env-files",
+        "pem-files",
+        "key-files",
+        "credentials-json",
+        "secrets-json",
+        "kube-config",
+        "firebase-keys",
+        "ssh-files",
+        "aws-files",
+        "npmrc-files",
+        "pypirc-files"
+    ]
+
+    /// Free tier scope: detection for the most popular AI tools and the most critical
+    /// secret patterns. Pro extends coverage and unlocks autofix / customization.
     public static let freeTier = AIWorkspacePrivacyAuditConfiguration(
-        rules: AIWorkspacePrivacyRule.defaultRules.filter { $0.severity == .required },
-        sensitivePatterns: AIWorkspaceSensitivePattern.defaultPatterns.filter { $0.severity == .required }
+        rules: AIWorkspacePrivacyRule.defaultRules.filter { freeTierRuleIDs.contains($0.id) },
+        sensitivePatterns: AIWorkspaceSensitivePattern.defaultPatterns.filter { freeTierPatternIDs.contains($0.id) }
     )
 }
 
