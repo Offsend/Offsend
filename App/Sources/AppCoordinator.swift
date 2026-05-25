@@ -34,6 +34,25 @@ enum DebugLicenseAPIEnvironment: String, CaseIterable, Identifiable {
         }
     }
 }
+
+enum DebugTariffFeatureOverrides {
+    static let userDefaultsKey = "io.offsend.debug.tariffFeatureOverrides"
+
+    static func load() -> [LicenseTariffFeatureKey: Bool] {
+        guard let raw = UserDefaults.standard.dictionary(forKey: userDefaultsKey) as? [String: Bool] else {
+            return [:]
+        }
+        return Dictionary(uniqueKeysWithValues: raw.compactMap { key, value in
+            guard let featureKey = LicenseTariffFeatureKey(rawValue: key) else { return nil }
+            return (featureKey, value)
+        })
+    }
+
+    static func save(_ overrides: [LicenseTariffFeatureKey: Bool]) {
+        let raw = Dictionary(uniqueKeysWithValues: overrides.map { ($0.key.rawValue, $0.value) })
+        UserDefaults.standard.set(raw, forKey: userDefaultsKey)
+    }
+}
 #endif
 
 @MainActor
@@ -80,11 +99,20 @@ final class AppCoordinator: ObservableObject {
 
     /// Feature flags from the active catalog plan (`/pricing` → `features`), for Pro; free tier is always denied.
     var tariffFeatures: LicenseTariffFeatures {
-        LicenseTariffFeaturesResolver.resolve(
+        let resolved = LicenseTariffFeaturesResolver.resolve(
             isPro: licenseState.plan == .pro,
             pricing: licensePricing
         )
+        #if DEBUG
+        return Self.applyingDebugTariffOverrides(resolved, overrides: debugTariffFeatureOverrides)
+        #else
+        return resolved
+        #endif
     }
+
+    #if DEBUG
+    @Published var debugTariffFeatureOverrides: [LicenseTariffFeatureKey: Bool] = DebugTariffFeatureOverrides.load()
+    #endif
 
     private static let marketingAppVersion: String =
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
@@ -951,6 +979,34 @@ final class AppCoordinator: ObservableObject {
 
 #if DEBUG
 extension AppCoordinator {
+    private static func applyingDebugTariffOverrides(
+        _ features: LicenseTariffFeatures,
+        overrides: [LicenseTariffFeatureKey: Bool]
+    ) -> LicenseTariffFeatures {
+        guard !overrides.isEmpty else { return features }
+        var result = features
+        for (key, value) in overrides {
+            switch key {
+            case .safePasteUnlimited:
+                result.safePasteUnlimited = value
+            case .advancedDetectors:
+                result.advancedDetectors = value
+            case .customDictionaries:
+                result.customDictionaries = value
+            case .workspaceAuditFull:
+                result.workspaceAuditFull = value
+            case .workspaceAuditAutofix:
+                result.workspaceAuditAutofix = value
+            }
+        }
+        return result
+    }
+
+    func debugSetTariffFeatureOverride(_ key: LicenseTariffFeatureKey, enabled: Bool) {
+        debugTariffFeatureOverrides[key] = enabled
+        DebugTariffFeatureOverrides.save(debugTariffFeatureOverrides)
+    }
+
     var debugLicenseAPIEnvironment: DebugLicenseAPIEnvironment {
         DebugLicenseAPIEnvironment.loadFromUserDefaults()
     }
@@ -976,7 +1032,11 @@ extension AppCoordinator {
     }()
 
     /// Sets Free (clears token) or simulated Pro (synthetic token + active subscription dates) for local UI and entitlement checks.
+    /// Also clears any sticky per-feature overrides so the picker reflects the chosen plan's baseline.
     func debugApplySimulatedLicensePlan(_ plan: LicenseState.Plan) {
+        debugTariffFeatureOverrides = [:]
+        DebugTariffFeatureOverrides.save([:])
+
         switch plan {
         case .free:
             switchToFreePlan()

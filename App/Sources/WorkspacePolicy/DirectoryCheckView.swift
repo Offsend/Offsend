@@ -24,7 +24,49 @@ struct DirectoryCheckView: View {
     }
 
     private var auditConfiguration: AIWorkspacePrivacyAuditConfiguration {
-        coordinator.tariffFeatures.workspaceAuditFull ? .default : .freeTier
+        let base: AIWorkspacePrivacyAuditConfiguration = coordinator.tariffFeatures.workspaceAuditFull ? .default : .freeTier
+        let disabled = coordinator.settings.directoryCheckDisabledRuleIDs
+        let extraSkipped = Set(
+            coordinator.settings.directoryCheckExtraSkippedDirectories
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        )
+        let customTemplate = coordinator.tariffFeatures.workspaceAuditFull
+            ? trimmedCustomTemplate(coordinator.settings.directoryCheckCustomIgnoreTemplate)
+            : nil
+
+        let resolvedRules: [AIWorkspacePrivacyRule] = base.rules.compactMap { rule in
+            if rule.severity != .required, disabled.contains(rule.id) {
+                return nil
+            }
+            guard let customTemplate, let fix = rule.fix else { return rule }
+            return AIWorkspacePrivacyRule(
+                id: rule.id,
+                toolName: rule.toolName,
+                title: rule.title,
+                relativePathPatterns: rule.relativePathPatterns,
+                severity: rule.severity,
+                scansForSensitivePatterns: rule.scansForSensitivePatterns,
+                remediation: rule.remediation,
+                fix: AIWorkspacePrivacyFileFix(
+                    relativePath: fix.relativePath,
+                    contents: customTemplate,
+                    strategy: fix.strategy
+                )
+            )
+        }
+
+        return AIWorkspacePrivacyAuditConfiguration(
+            rules: resolvedRules,
+            sensitivePatterns: base.sensitivePatterns,
+            additionalSkippedDirectoryNames: extraSkipped
+        )
+    }
+
+    private func trimmedCustomTemplate(_ contents: String?) -> String? {
+        guard let contents else { return nil }
+        let trimmed = contents.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : contents
     }
 
     private var canAutofix: Bool {
@@ -87,6 +129,10 @@ struct DirectoryCheckView: View {
             prefillDirectoryFromPasteboard()
         }
         .onChange(of: coordinator.licenseState) { _ in
+            guard let selectedDirectory else { return }
+            audit(directoryURL: selectedDirectory)
+        }
+        .onChange(of: coordinator.tariffFeatures) { _ in
             guard let selectedDirectory else { return }
             audit(directoryURL: selectedDirectory)
         }
@@ -264,7 +310,7 @@ struct DirectoryCheckView: View {
             if !result.errors.isEmpty {
                 findingGroup(title: OffsendStrings.directoryCheckSectionErrors, icon: "exclamationmark.triangle.fill") {
                     ForEach(result.errors) { error in
-                        findingRow(title: error.message, subtitle: error.id, color: .ofRed)
+                        findingRow(title: error.message, subtitle: error.id, tag: .fail)
                     }
                 }
             }
@@ -272,7 +318,7 @@ struct DirectoryCheckView: View {
             if !result.missingRequiredRules.isEmpty {
                 findingGroup(title: OffsendStrings.directoryCheckSectionRequired, icon: "xmark.octagon.fill") {
                     ForEach(result.missingRequiredRules) { finding in
-                        findingRow(title: finding.rule.title, subtitle: finding.rule.remediation, color: .ofRed)
+                        findingRow(title: finding.rule.title, subtitle: finding.rule.remediation, tag: .fail)
                     }
                 }
             }
@@ -280,7 +326,7 @@ struct DirectoryCheckView: View {
             if !result.missingSensitivePatterns.isEmpty {
                 findingGroup(title: OffsendStrings.directoryCheckSectionSensitivePatterns, icon: "key.fill") {
                     ForEach(result.missingSensitivePatterns) { finding in
-                        findingRow(title: finding.pattern.title, subtitle: finding.pattern.remediation, color: severityColor(finding.pattern.severity))
+                        findingRow(title: finding.pattern.title, subtitle: finding.pattern.remediation, tag: severityTag(finding.pattern.severity))
                     }
                 }
             }
@@ -288,7 +334,7 @@ struct DirectoryCheckView: View {
             if !result.missingRecommendedRules.isEmpty {
                 findingGroup(title: OffsendStrings.directoryCheckSectionRecommended, icon: "exclamationmark.circle.fill") {
                     ForEach(result.missingRecommendedRules) { finding in
-                        findingRow(title: finding.rule.title, subtitle: finding.rule.remediation, color: .ofAmber)
+                        findingRow(title: finding.rule.title, subtitle: finding.rule.remediation, tag: .warn)
                     }
                 }
             }
@@ -300,7 +346,7 @@ struct DirectoryCheckView: View {
                 findingRow(
                     title: OffsendStrings.directoryCheckAllGoodTitle,
                     subtitle: OffsendStrings.directoryCheckAllGoodSubtitle,
-                    color: .ofGreen
+                    tag: .pass
                 )
             }
 
@@ -309,13 +355,13 @@ struct DirectoryCheckView: View {
             }
 
             if let fixMessage {
-                findingRow(title: OffsendStrings.directoryCheckFixResultTitle, subtitle: fixMessage, color: .ofBlue)
+                findingRow(title: OffsendStrings.directoryCheckFixResultTitle, subtitle: fixMessage, tag: .info)
             }
 
             if !result.foundRelativePaths.isEmpty {
                 findingGroup(title: OffsendStrings.directoryCheckSectionFoundFiles, icon: "checkmark.circle.fill") {
                     ForEach(result.foundRelativePaths, id: \.self) { path in
-                        findingRow(title: path, subtitle: OffsendStrings.directoryCheckFoundFileSubtitle, color: .ofGreen)
+                        findingRow(title: path, subtitle: OffsendStrings.directoryCheckFoundFileSubtitle, tag: .pass)
                     }
                 }
             }
@@ -363,12 +409,10 @@ struct DirectoryCheckView: View {
         }
     }
 
-    private func findingRow(title: String, subtitle: String, color: Color) -> some View {
-        HStack(alignment: .top, spacing: OFSpacing.sm) {
-            Circle()
-                .fill(color)
-                .frame(width: 8, height: 8)
-                .padding(.top, 5)
+    private func findingRow(title: String, subtitle: String, tag: FindingTag) -> some View {
+        HStack(alignment: .top, spacing: OFSpacing.md) {
+            findingTagBadge(tag)
+                .padding(.top, 1)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
@@ -389,6 +433,22 @@ struct DirectoryCheckView: View {
             RoundedRectangle(cornerRadius: OFRadius.md)
                 .stroke(Color.ofBorder, lineWidth: 1)
         )
+    }
+
+    private func findingTagBadge(_ tag: FindingTag) -> some View {
+        Text(tag.title)
+            .font(.system(size: 10, weight: .bold, design: .monospaced))
+            .tracking(0.5)
+            .foregroundColor(tag.textColor)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(tag.backgroundColor)
+            .cornerRadius(OFRadius.sm)
+            .overlay(
+                RoundedRectangle(cornerRadius: OFRadius.sm)
+                    .stroke(tag.textColor.opacity(0.35), lineWidth: 1)
+            )
+            .frame(minWidth: 52)
     }
 
     private func statusBadge(for status: AIWorkspacePrivacyAuditStatus) -> some View {
@@ -446,6 +506,7 @@ struct DirectoryCheckView: View {
 
     private func fix(_ result: AIWorkspacePrivacyAuditResult) {
         guard canAutofix else { return }
+        guard !coordinator.settings.directoryCheckConfirmFix || confirmFix(for: result) else { return }
 
         let fixResult = fixer.fix(result: result, configuration: auditConfiguration)
         if fixResult.errors.isEmpty {
@@ -454,6 +515,43 @@ struct DirectoryCheckView: View {
             fixMessage = fixResult.errors.map(\.message).joined(separator: "\n")
         }
         auditResult = auditor.audit(directoryURL: result.directoryURL, configuration: auditConfiguration)
+    }
+
+    private func confirmFix(for result: AIWorkspacePrivacyAuditResult) -> Bool {
+        let plannedPaths = plannedFixPaths(for: result)
+        let alert = NSAlert()
+        alert.messageText = OffsendStrings.directoryCheckConfirmTitle
+        alert.informativeText = OffsendStrings.directoryCheckConfirmBody(
+            result.directoryURL.lastPathComponent,
+            plannedPaths.isEmpty ? "—" : plannedPaths.joined(separator: "\n")
+        )
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: OffsendStrings.directoryCheckConfirmApply)
+        alert.addButton(withTitle: OffsendStrings.directoryCheckConfirmCancel)
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private func plannedFixPaths(for result: AIWorkspacePrivacyAuditResult) -> [String] {
+        var paths = Set<String>()
+        let rules = auditConfiguration.rules
+        for finding in result.ruleFindings where !finding.isSatisfied && finding.rule.severity != .informational {
+            if let fix = rules.first(where: { $0.id == finding.rule.id })?.fix {
+                paths.insert(fix.relativePath)
+            } else if let fix = finding.rule.fix {
+                paths.insert(fix.relativePath)
+            }
+        }
+        if !result.missingSensitivePatterns.isEmpty {
+            for finding in result.ruleFindings where finding.rule.scansForSensitivePatterns {
+                paths.formUnion(finding.matchedRelativePaths)
+            }
+            for rule in rules where rule.scansForSensitivePatterns {
+                if let fix = rule.fix {
+                    paths.insert(fix.relativePath)
+                }
+            }
+        }
+        return paths.sorted()
     }
 
     private func canFix(_ result: AIWorkspacePrivacyAuditResult) -> Bool {
@@ -568,14 +666,60 @@ struct DirectoryCheckView: View {
         }
     }
 
-    private func severityColor(_ severity: AIWorkspacePrivacyRuleSeverity) -> Color {
+    private func severityTag(_ severity: AIWorkspacePrivacyRuleSeverity) -> FindingTag {
         switch severity {
         case .required:
-            return .ofRed
+            return .fail
         case .recommended:
-            return .ofAmber
+            return .warn
         case .informational:
-            return .ofBlue
+            return .info
+        }
+    }
+}
+
+private enum FindingTag {
+    case pass
+    case fail
+    case warn
+    case info
+
+    var title: String {
+        switch self {
+        case .pass:
+            return OffsendStrings.directoryCheckStatusPass
+        case .fail:
+            return OffsendStrings.directoryCheckStatusFail
+        case .warn:
+            return OffsendStrings.directoryCheckTagWarn
+        case .info:
+            return OffsendStrings.directoryCheckTagInfo
+        }
+    }
+
+    var textColor: Color {
+        switch self {
+        case .pass:
+            return .ofGreenText
+        case .fail:
+            return .ofRedText
+        case .warn:
+            return .ofAmberText
+        case .info:
+            return .ofBlueText
+        }
+    }
+
+    var backgroundColor: Color {
+        switch self {
+        case .pass:
+            return .ofGreenDim
+        case .fail:
+            return .ofRedDim
+        case .warn:
+            return .ofAmberDim
+        case .info:
+            return .ofBlueDim
         }
     }
 }

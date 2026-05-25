@@ -4,6 +4,7 @@ enum SettingsSidebarTab: String, CaseIterable, Identifiable {
     case detection
     case masking
     case privacy
+    case directoryCheck
     case license
     #if DEBUG
     case developer
@@ -23,6 +24,8 @@ enum SettingsSidebarTab: String, CaseIterable, Identifiable {
             return OffsendStrings.settingsTabMasking
         case .privacy:
             return OffsendStrings.settingsTabPrivacy
+        case .directoryCheck:
+            return OffsendStrings.settingsTabDirectoryCheck
         case .license:
             return OffsendStrings.settingsTabLicense
         #if DEBUG
@@ -44,6 +47,8 @@ enum SettingsSidebarTab: String, CaseIterable, Identifiable {
             return OffsendStrings.settingsSubtitleMasking
         case .privacy:
             return OffsendStrings.settingsSubtitlePrivacy
+        case .directoryCheck:
+            return OffsendStrings.settingsSubtitleDirectoryCheck
         case .license:
             return OffsendStrings.settingsSubtitleLicense
         #if DEBUG
@@ -65,6 +70,8 @@ enum SettingsSidebarTab: String, CaseIterable, Identifiable {
             return "theatermasks"
         case .privacy:
             return "lock.shield"
+        case .directoryCheck:
+            return "folder.badge.gearshape"
         case .license:
             return "crown"
         #if DEBUG

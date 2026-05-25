@@ -35,7 +35,20 @@ final class AIWorkspacePrivacyAuditorTests: XCTestCase {
         Never send secrets, credentials, or environment files to AI tools.
         """)
 
-        for path in [".aiexclude", ".continueignore", ".codeiumignore", ".claudeignore", ".geminiignore", ".llmignore"] {
+        let recommendedIgnoreFiles = [
+            ".aiexclude",
+            ".continueignore",
+            ".codeiumignore",
+            ".claudeignore",
+            ".geminiignore",
+            ".llmignore",
+            ".aiderignore",
+            ".clineignore",
+            ".rooignore",
+            ".zedignore",
+            ".codyignore"
+        ]
+        for path in recommendedIgnoreFiles {
             try writeFile(path, in: directoryURL, contents: "# Tool-specific AI ignore file\n")
         }
 
@@ -60,29 +73,72 @@ final class AIWorkspacePrivacyAuditorTests: XCTestCase {
         XCTAssertTrue(result.missingRecommendedRules.contains { $0.rule.id == "cursor-project-rules" })
     }
 
-    func testFreeTierConfigurationIgnoresRecommendedRules() throws {
-        let directoryURL = try makeTemporaryDirectory()
-        try writeIgnoreFile(at: ".cursorignore", in: directoryURL)
+    func testFreeTierCoversPopularToolsAndCriticalPatternsOnly() throws {
+        let freeRuleIDs = Set(AIWorkspacePrivacyAuditConfiguration.freeTier.rules.map(\.id))
+        let freePatternIDs = Set(AIWorkspacePrivacyAuditConfiguration.freeTier.sensitivePatterns.map(\.id))
 
-        let result = auditor.audit(directoryURL: directoryURL, configuration: .freeTier)
+        let expectedFreeRules: Set<String> = [
+            "cursor-ignore",
+            "cursor-indexing-ignore",
+            "cursor-project-rules",
+            "copilot-exclude",
+            "claude-ignore",
+            "claude-md",
+            "agents-md",
+            "git-ignore"
+        ]
+        XCTAssertEqual(freeRuleIDs, expectedFreeRules)
 
-        XCTAssertEqual(result.status, .pass)
-        XCTAssertEqual(result.ruleFindings.count, 1)
-        XCTAssertEqual(result.ruleFindings.first?.rule.id, "cursor-ignore")
-        XCTAssertTrue(result.missingRecommendedRules.isEmpty)
-        XCTAssertFalse(result.sensitivePatternFindings.contains { $0.pattern.id == "ssh-files" })
+        let proOnlyRuleSamples: Set<String> = [
+            "continue-ignore",
+            "codeium-ignore",
+            "gemini-ignore",
+            "llm-ignore",
+            "aider-ignore",
+            "cline-ignore",
+            "roo-ignore",
+            "zed-ignore",
+            "cody-ignore"
+        ]
+        XCTAssertTrue(freeRuleIDs.isDisjoint(with: proOnlyRuleSamples))
+
+        let requiredPatternIDs = Set(
+            AIWorkspaceSensitivePattern.defaultPatterns
+                .filter { $0.severity == .required }
+                .map(\.id)
+        )
+        XCTAssertTrue(
+            requiredPatternIDs.isSubset(of: freePatternIDs),
+            "All required patterns must be covered by Free; missing: \(requiredPatternIDs.subtracting(freePatternIDs))"
+        )
+
+        let proOnlyPatternSamples: Set<String> = [
+            "gcp-credentials",
+            "azure-credentials",
+            "terraform-state",
+            "terraform-vars",
+            "pkcs12-p12",
+            "pkcs12-pfx",
+            "pgp-keys",
+            "netrc-files",
+            "htpasswd-files",
+            "docker-config",
+            "db-dumps"
+        ]
+        XCTAssertTrue(freePatternIDs.isDisjoint(with: proOnlyPatternSamples))
     }
 
-    func testFreeTierEmptyDirectoryReportsOnlyRequiredChecks() throws {
+    func testFreeTierEmptyDirectoryReportsRequiredChecks() throws {
         let directoryURL = try makeTemporaryDirectory()
 
         let result = auditor.audit(directoryURL: directoryURL, configuration: .freeTier)
 
         XCTAssertEqual(result.status, .fail)
         XCTAssertEqual(result.missingRequiredRules.map(\.rule.id), ["cursor-ignore"])
-        XCTAssertTrue(result.missingRecommendedRules.isEmpty)
         XCTAssertTrue(result.missingSensitivePatterns.contains { $0.pattern.id == "env-files" })
-        XCTAssertFalse(result.missingSensitivePatterns.contains { $0.pattern.id == "ssh-files" })
+        XCTAssertTrue(result.missingSensitivePatterns.contains { $0.pattern.id == "ssh-files" })
+        XCTAssertFalse(result.missingSensitivePatterns.contains { $0.pattern.id == "gcp-credentials" })
+        XCTAssertFalse(result.missingSensitivePatterns.contains { $0.pattern.id == "terraform-state" })
     }
 
     func testCustomConfigurationCanRequireProjectSpecificRule() throws {
@@ -107,6 +163,37 @@ final class AIWorkspacePrivacyAuditorTests: XCTestCase {
 
         XCTAssertEqual(result.status, .pass)
         XCTAssertEqual(result.foundRelativePaths, [".offsend-aiignore"])
+    }
+
+    func testAuditorSkipsAdditionalDirectoryNamesFromConfiguration() throws {
+        let directoryURL = try makeTemporaryDirectory().standardizedFileURL
+        try writeFile("vendor/nested.mdc", in: directoryURL, contents: "rule\n")
+
+        let recursiveRule = AIWorkspacePrivacyRule(
+            id: "recursive-mdc",
+            toolName: "Test",
+            title: "recursive .mdc lookup",
+            relativePathPatterns: ["**/*.mdc"],
+            severity: .recommended,
+            scansForSensitivePatterns: false,
+            remediation: ""
+        )
+        let baselineConfig = AIWorkspacePrivacyAuditConfiguration(
+            rules: [recursiveRule],
+            sensitivePatterns: []
+        )
+        let baseline = auditor.audit(directoryURL: directoryURL, configuration: baselineConfig)
+        let baselineFound = baseline.foundRelativePaths.contains { $0.hasSuffix("vendor/nested.mdc") }
+        XCTAssertTrue(baselineFound, "Baseline glob walk should descend into 'vendor/' — got \(baseline.foundRelativePaths)")
+
+        let skippedConfig = AIWorkspacePrivacyAuditConfiguration(
+            rules: [recursiveRule],
+            sensitivePatterns: [],
+            additionalSkippedDirectoryNames: ["vendor"]
+        )
+        let withSkip = auditor.audit(directoryURL: directoryURL, configuration: skippedConfig)
+        let skippedFound = withSkip.foundRelativePaths.contains { $0.hasSuffix("vendor/nested.mdc") }
+        XCTAssertFalse(skippedFound, "Skipping 'vendor' should hide its contents — got \(withSkip.foundRelativePaths)")
     }
 
     func testInvalidPathReturnsReadableError() throws {
@@ -180,6 +267,35 @@ final class AIWorkspacePrivacyAuditorTests: XCTestCase {
         XCTAssertTrue(copilotContents.contains("*.pem"))
     }
 
+    func testConcurrentAppendDoesNotLoseUserLines() throws {
+        let directoryURL = try makeTemporaryDirectory()
+        try writeFile(".cursorignore", in: directoryURL, contents: "# user rule\n.custom/**\n")
+
+        let group = DispatchGroup()
+        let queue = DispatchQueue(label: "AIWorkspacePrivacyFixerRaceTests", attributes: .concurrent)
+        var errors: [AIWorkspacePrivacyFixResult] = []
+
+        for _ in 0..<20 {
+            group.enter()
+            queue.async {
+                defer { group.leave() }
+                let result = self.auditor.audit(directoryURL: directoryURL)
+                let fixResult = self.fixer.fix(result: result)
+                if !fixResult.errors.isEmpty {
+                    errors.append(fixResult)
+                }
+            }
+        }
+        group.wait()
+
+        let contents = try readFile(".cursorignore", in: directoryURL)
+
+        XCTAssertTrue(errors.isEmpty, "\(errors.flatMap(\.errors))")
+        XCTAssertTrue(contents.contains("# user rule"))
+        XCTAssertTrue(contents.contains(".custom/**"))
+        XCTAssertTrue(contents.contains("*.pem"))
+    }
+
     private func makeTemporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("AIWorkspacePrivacyAuditorTests-\(UUID().uuidString)", isDirectory: true)
@@ -189,15 +305,7 @@ final class AIWorkspacePrivacyAuditorTests: XCTestCase {
     }
 
     private func writeIgnoreFile(at relativePath: String, in rootURL: URL) throws {
-        try writeFile(relativePath, in: rootURL, contents: """
-        .env*
-        *.pem
-        *.key
-        .ssh/
-        .aws/
-        credentials.json
-        secrets.json
-        """)
+        try writeFile(relativePath, in: rootURL, contents: AIWorkspacePrivacyIgnoreTemplate.contents)
     }
 
     private func writeFile(_ relativePath: String, in rootURL: URL, contents: String) throws {
