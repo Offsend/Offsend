@@ -277,7 +277,10 @@ let testTargets: [Target] = [
         bundleId: "\(bundlePrefix).analyticscore.tests",
         deploymentTargets: macOSDeploymentTarget,
         sources: ["Services/AnalyticsCore/Tests/**"],
-        dependencies: [.target(name: "AnalyticsCore")]
+        dependencies: [
+            .target(name: "AnalyticsCore"),
+            .target(name: "MaskingCore")
+        ]
     ),
     .target(
         name: "StorageCoreTests",
