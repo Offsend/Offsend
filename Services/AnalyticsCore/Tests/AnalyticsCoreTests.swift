@@ -1,5 +1,6 @@
 import DetectionCore
 @testable import AnalyticsCore
+import MaskingCore
 import StorageCore
 import XCTest
 
