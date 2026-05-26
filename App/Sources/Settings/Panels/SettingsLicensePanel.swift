@@ -51,6 +51,18 @@ struct SettingsLicensePanel: View {
         coordinator.licensePostCheckoutFlowEmail != nil && plan == .free && !showExpiredTokenRecovery
     }
 
+    private var trimmedActivationEmail: String {
+        activationEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canSendActivationCode: Bool {
+        trimmedActivationEmail.contains("@")
+    }
+
+    private var canVerifyActivationCode: Bool {
+        canSendActivationCode && activationCode.filter(\.isNumber).count == 6
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if plan == .pro {
@@ -261,6 +273,7 @@ struct SettingsLicensePanel: View {
                             }
                         }
                     }
+                    .disabled(!canSendActivationCode)
                 } else {
                     OFCompactButton(title: OffsendStrings.settingsLicenseVerifyCode, variant: .primary) {
                         Task {
@@ -271,9 +284,11 @@ struct SettingsLicensePanel: View {
                             }
                         }
                     }
+                    .disabled(!canVerifyActivationCode)
                     OFCompactButton(title: OffsendStrings.settingsLicenseResendCode, variant: .ghost) {
                         Task { _ = await coordinator.requestLicenseActivationCode(email: activationEmail) }
                     }
+                    .disabled(!canSendActivationCode)
                     OFCompactButton(title: OffsendStrings.settingsLicenseNoCodeBuyWithEmail, variant: .ghost) {
                         Task { await coordinator.openProCheckout(prefillEmail: activationEmail) }
                     }

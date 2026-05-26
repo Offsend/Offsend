@@ -17,6 +17,7 @@ public struct OFSelectMenu<V: Hashable>: View {
     private let options: [OFSelectOption<V>]
     private let width: CGFloat?
     @Environment(\.ofPalette) private var palette
+    @Environment(\.isEnabled) private var isEnabled
 
     public init(selection: Binding<V>, options: [OFSelectOption<V>], width: CGFloat? = nil) {
         self._selection = selection
@@ -50,19 +51,19 @@ public struct OFSelectMenu<V: Hashable>: View {
             HStack(spacing: 8) {
                 Text(options.first { $0.value == selection }?.label ?? "")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(palette.text)
+                    .foregroundColor(isEnabled ? palette.text : palette.textMuted)
                 Spacer(minLength: 8)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundColor(palette.textSub)
+                    .foregroundColor(isEnabled ? palette.textSub : palette.textMuted)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .frame(width: width)
             .background(
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(palette.bg2)
-                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(palette.border2, lineWidth: 1))
+                    .fill(isEnabled ? palette.bg2 : palette.bg1)
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(isEnabled ? palette.border2 : palette.border, lineWidth: 1))
             )
         }
         .menuStyle(.borderlessButton)

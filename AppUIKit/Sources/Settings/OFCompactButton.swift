@@ -16,6 +16,7 @@ public struct OFCompactButton: View {
     private let action: () -> Void
     @State private var hovered = false
     @Environment(\.ofPalette) private var palette
+    @Environment(\.isEnabled) private var isEnabled
 
     public init(
         title: String,
@@ -32,6 +33,16 @@ public struct OFCompactButton: View {
     }
 
     private var background: Color {
+        if !isEnabled {
+            switch variant {
+            case .primary, .primaryDanger:
+                return palette.bg3
+            case .outline:
+                return palette.bg1
+            case .ghost, .dangerGhost:
+                return .clear
+            }
+        }
         switch variant {
         case .primary:
             return hovered ? palette.blueHover : palette.blue
@@ -47,6 +58,9 @@ public struct OFCompactButton: View {
     }
 
     private var foreground: Color {
+        if !isEnabled {
+            return palette.textMuted
+        }
         switch variant {
         case .primary, .primaryDanger:
             return .white
@@ -60,6 +74,14 @@ public struct OFCompactButton: View {
     }
 
     private var stroke: Color {
+        if !isEnabled {
+            switch variant {
+            case .outline, .dangerGhost:
+                return palette.border
+            default:
+                return .clear
+            }
+        }
         switch variant {
         case .outline:
             return palette.border2
@@ -90,6 +112,6 @@ public struct OFCompactButton: View {
             )
         }
         .buttonStyle(.plain)
-        .onHover { hovered = $0 }
+        .onHover { hovered = isEnabled && $0 }
     }
 }
