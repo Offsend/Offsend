@@ -351,6 +351,7 @@ struct SettingsDetectionPanel: View {
                     OFCompactButton(title: OffsendStrings.settingsAdd, icon: "plus", variant: .outline) {
                         addDictionaryItem()
                     }
+                    .disabled(newDictionaryValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
                 OFFlexibleWrap(spacing: 6) {
                     ForEach(coordinator.customDictionaries) { item in

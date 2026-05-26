@@ -20,6 +20,18 @@ struct SettingsDirectoryCheckPanel: View {
         coordinator.tariffFeatures.workspaceAuditFull
     }
 
+    private var trimmedNewSkippedDirectory: String {
+        newSkippedDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canAddSkippedDirectory: Bool {
+        !trimmedNewSkippedDirectory.isEmpty
+    }
+
+    private var canResetTemplate: Bool {
+        canEditTemplate && coordinator.settings.directoryCheckCustomIgnoreTemplate != nil
+    }
+
     var body: some View {
         let binder = SettingsCoordinatorBinder(coordinator: coordinator)
         VStack(alignment: .leading, spacing: 0) {
@@ -80,7 +92,7 @@ struct SettingsDirectoryCheckPanel: View {
                 }
             }
 
-            HStack(spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
                 statTile(
                     label: OffsendStrings.settingsDirectoryCheckStatRules,
                     value: "\(stats.rules)",
@@ -97,6 +109,7 @@ struct SettingsDirectoryCheckPanel: View {
                     proExtra: 0
                 )
             }
+            .fixedSize(horizontal: false, vertical: true)
         }
         .padding(18)
         .background(
@@ -126,10 +139,11 @@ struct SettingsDirectoryCheckPanel: View {
                     .font(.system(size: 10.5, weight: .medium))
                     .foregroundColor(palette.textMuted)
             }
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 8)
                 .fill(palette.bg0)
@@ -232,6 +246,7 @@ struct SettingsDirectoryCheckPanel: View {
                     ) {
                         addSkippedDirectory()
                     }
+                    .disabled(!canAddSkippedDirectory)
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
@@ -447,9 +462,9 @@ struct SettingsDirectoryCheckPanel: View {
             VStack(alignment: .leading, spacing: 0) {
                 TextEditor(text: $templateDraft)
                     .font(.system(size: 12, design: .monospaced))
-                    .foregroundColor(palette.text)
+                    .foregroundColor(canEditTemplate ? palette.text : palette.textMuted)
                     .scrollContentBackground(.hidden)
-                    .background(palette.bg0)
+                    .background(canEditTemplate ? palette.bg0 : palette.bg1)
                     .frame(minHeight: 180, maxHeight: 320)
                     .disabled(!canEditTemplate)
                     .onChange(of: templateDraft) { newValue in
@@ -471,6 +486,7 @@ struct SettingsDirectoryCheckPanel: View {
                     ) {
                         resetTemplate()
                     }
+                    .disabled(!canResetTemplate)
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)

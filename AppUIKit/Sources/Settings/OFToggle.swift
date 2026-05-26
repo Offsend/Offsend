@@ -4,6 +4,7 @@ public struct OFToggle: View {
     @Binding private var isOn: Bool
     private let size: CGFloat
     @Environment(\.ofPalette) private var palette
+    @Environment(\.isEnabled) private var isEnabled
 
     public init(isOn: Binding<Bool>, size: CGFloat = 20) {
         self._isOn = isOn
@@ -28,5 +29,6 @@ public struct OFToggle: View {
             }
         }
         .buttonStyle(.plain)
+        .opacity(isEnabled ? 1.0 : 0.4)
     }
 }
