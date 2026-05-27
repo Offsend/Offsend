@@ -197,7 +197,7 @@
 "settings.license.price.free" = "$0";
 "settings.license.forever" = "Forever, on this Mac";
 "settings.license.freeBanner.title" = "%@ Free";
-"settings.license.freeBanner.subtitle" = "Protect sensitive data before it reaches AI. Upgrade for unlimited masking.";
+"settings.license.freeBanner.subtitle" = "Protect sensitive data before it reaches AI. Upgrade for advanced detection and Pro features.";
 "settings.license.proPurchaseFootnote" = "Magic-code activation, no accounts";
 "settings.license.perMonth" = "/ month";
 "settings.license.yearlyHint" = "Or bundle pricing on the website.";
@@ -205,7 +205,7 @@
 "settings.license.emailHint" = "The address you used to purchase.";
 "settings.license.tokenHint" = "From your purchase email.";
 "settings.license.restorePurchase" = "Restore purchase";
-"settings.license.feature.free.masks" = "%d masks per month";
+"settings.license.feature.free.safePaste" = "Unlimited Safe Paste";
 "settings.license.feature.free.detectors" = "Core detectors";
 "settings.license.feature.free.customDict" = "Custom dictionaries (limited)";
 "settings.license.feature.free.ttl" = "1 hour mapping TTL";
@@ -214,8 +214,6 @@
 "settings.license.feature.pro.secretDetection" = "Advanced secret detection";
 "settings.license.feature.pro.ttlMax" = "Mapping TTL up to 24 h";
 "settings.license.feature.pro.macActivations" = "Activate up to %d Macs";
-"settings.license.usageTitle" = "This month";
-"settings.license.usageSubtitle" = "Masked paste actions recorded locally.";
 "settings.license.proHeadline" = "Offsend Pro";
 "settings.license.proTagline" = "Protect sensitive data before it reaches AI.";
 "settings.license.buyPro" = "Buy Pro — $49/year";
@@ -294,7 +292,7 @@
 "settings.currentPlan" = "Current plan: %@";
 "settings.plan.free" = "Free";
 "settings.plan.pro" = "Pro";
-"settings.licenseDescription" = "Free: limited masks per month and basic detectors. Pro: unlimited masking and billing via Offsend (magic-code activation, no accounts).";
+"settings.licenseDescription" = "Free: core detectors and local protection. Pro: advanced secret detection, longer mapping TTL, full Check Directory, and billing via Offsend (magic-code activation, no accounts).";
 "settings.email" = "Email";
 "settings.licenseToken" = "License token";
 "settings.activateLicense" = "Activate License";

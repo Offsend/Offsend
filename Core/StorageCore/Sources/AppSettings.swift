@@ -167,9 +167,6 @@ public struct LicenseState: Codable, Equatable {
     }
 
     public var plan: Plan
-    public var maskedThisMonth: Int
-    /// `yyyy-MM` in the user’s calendar / time zone; when it changes, `maskedThisMonth` resets for the free-tier quota.
-    public var freeMaskedUsageMonthKey: String?
     public var activatedAt: Date?
 
     public var subscriptionExpiresAt: Date?
@@ -180,8 +177,6 @@ public struct LicenseState: Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case plan
-        case maskedThisMonth
-        case freeMaskedUsageMonthKey
         case activatedAt
         case subscriptionExpiresAt
         case graceUntil
@@ -192,8 +187,6 @@ public struct LicenseState: Codable, Equatable {
 
     public init(
         plan: Plan = .free,
-        maskedThisMonth: Int = 0,
-        freeMaskedUsageMonthKey: String? = nil,
         activatedAt: Date? = nil,
         subscriptionExpiresAt: Date? = nil,
         graceUntil: Date? = nil,
@@ -202,8 +195,6 @@ public struct LicenseState: Codable, Equatable {
         lastLicenseValidationAt: Date? = nil
     ) {
         self.plan = plan
-        self.maskedThisMonth = maskedThisMonth
-        self.freeMaskedUsageMonthKey = freeMaskedUsageMonthKey
         self.activatedAt = activatedAt
         self.subscriptionExpiresAt = subscriptionExpiresAt
         self.graceUntil = graceUntil
@@ -215,8 +206,6 @@ public struct LicenseState: Codable, Equatable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.plan = try container.decode(Plan.self, forKey: .plan)
-        self.maskedThisMonth = try container.decodeIfPresent(Int.self, forKey: .maskedThisMonth) ?? 0
-        self.freeMaskedUsageMonthKey = try container.decodeIfPresent(String.self, forKey: .freeMaskedUsageMonthKey)
         self.activatedAt = try container.decodeIfPresent(Date.self, forKey: .activatedAt)
         self.subscriptionExpiresAt = try container.decodeIfPresent(Date.self, forKey: .subscriptionExpiresAt)
         self.graceUntil = try container.decodeIfPresent(Date.self, forKey: .graceUntil)
@@ -228,8 +217,6 @@ public struct LicenseState: Codable, Equatable {
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(plan, forKey: .plan)
-        try container.encode(maskedThisMonth, forKey: .maskedThisMonth)
-        try container.encodeIfPresent(freeMaskedUsageMonthKey, forKey: .freeMaskedUsageMonthKey)
         try container.encodeIfPresent(activatedAt, forKey: .activatedAt)
         try container.encodeIfPresent(subscriptionExpiresAt, forKey: .subscriptionExpiresAt)
         try container.encodeIfPresent(graceUntil, forKey: .graceUntil)
@@ -238,28 +225,6 @@ public struct LicenseState: Codable, Equatable {
         try container.encodeIfPresent(lastLicenseValidationAt, forKey: .lastLicenseValidationAt)
     }
 
-    /// Gregorian `yyyy-MM` in the user’s current calendar / time zone.
-    public static func freeMaskedUsageMonthKey(for date: Date = Date(), calendar: Calendar = .current) -> String {
-        let y = calendar.component(.year, from: date)
-        let m = calendar.component(.month, from: date)
-        return String(format: "%04d-%02d", y, m)
-    }
-
-    /// Keeps `maskedThisMonth` aligned with the current calendar month (free-tier masked paste quota).
-    public mutating func reconcileFreeTierMaskedUsageCountForCurrentMonth(
-        now: Date = Date(),
-        calendar: Calendar = .current
-    ) {
-        let key = Self.freeMaskedUsageMonthKey(for: now, calendar: calendar)
-        if freeMaskedUsageMonthKey == nil {
-            freeMaskedUsageMonthKey = key
-            return
-        }
-        if freeMaskedUsageMonthKey != key {
-            freeMaskedUsageMonthKey = key
-            maskedThisMonth = 0
-        }
-    }
 }
 
 public struct LocalEvent: Codable, Identifiable, Equatable {
