@@ -31,9 +31,11 @@ struct OnboardingView: View {
     @EnvironmentObject private var coordinator: AppCoordinator
     @Environment(\.dismiss) private var dismiss
     @State private var currentStep: OnboardingStep = .welcome
+    @State private var isStepTransitionForward = true
     @AppStorage(OFSettingsChromeAppearance.appStorageKey) private var chromeAppearanceRaw: String =
         OFSettingsChromeAppearance.auto.rawValue
     @State private var systemAppearanceRevision = 0
+    @State private var accessibilityStatusRevision = 0
 
     private let sampleText = OffsendStrings.onboardingSampleText
 
@@ -46,6 +48,11 @@ struct OnboardingView: View {
         return chromeAppearance.resolvedPalette()
     }
 
+    private var isAccessibilityGranted: Bool {
+        _ = accessibilityStatusRevision
+        return coordinator.permissionsService.isAccessibilityTrusted
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             progressBar
@@ -56,16 +63,14 @@ struct OnboardingView: View {
             OFDivider()
 
             stepContent
+                .id(currentStep)
                 .frame(
                     maxWidth: .infinity,
                     minHeight: Self.stepContentHeight,
                     maxHeight: Self.stepContentHeight,
                     alignment: .topLeading
                 )
-                .transition(.asymmetric(
-                    insertion: .move(edge: .trailing).combined(with: .opacity),
-                    removal: .move(edge: .leading).combined(with: .opacity)
-                ))
+                .transition(stepTransition)
                 .animation(.easeInOut(duration: 0.25), value: currentStep)
 
             OFDivider()
@@ -244,25 +249,40 @@ struct OnboardingView: View {
                 iconTile(systemName: "accessibility", tint: .ofBlue, background: .ofBlueDim, size: 40)
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(OffsendStrings.onboardingPermissionsCardTitle)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.ofText)
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(OffsendStrings.onboardingPermissionsCardTitle)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.ofText)
+
+                        Spacer(minLength: 8)
+
+                        accessibilityStatusBadge
+                    }
 
                     Text(OffsendStrings.onboardingPermissionsCardSubtitle)
                         .font(.system(size: 12))
                         .foregroundColor(.ofTextSub)
                         .fixedSize(horizontal: false, vertical: true)
 
+                    if isAccessibilityGranted {
+                        Text(OffsendStrings.onboardingPermissionsContinueHint)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.ofGreenText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
                     HStack(spacing: 8) {
                         OFButton(title: OffsendStrings.onboardingPermissionsOpenSystemSettings, variant: .outline, icon: "arrow.up.right", small: true) {
                             coordinator.permissionsService.openAccessibilitySettings()
                         }
 
-                        OFButton(title: OffsendStrings.onboardingPermissionsLater, variant: .ghost, small: true) {}
+                        OFButton(title: OffsendStrings.onboardingPermissionsLater, variant: .ghost, small: true) {
+                            moveForward()
+                        }
                     }
                 }
 
-                Spacer()
+                Spacer(minLength: 0)
             }
             .padding(OFSpacing.md)
             .background(Color.ofBg2)
@@ -272,6 +292,34 @@ struct OnboardingView: View {
                     .stroke(Color.ofBorder, lineWidth: 1)
             )
         }
+        .onAppear {
+            accessibilityStatusRevision += 1
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            accessibilityStatusRevision += 1
+        }
+        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
+            accessibilityStatusRevision += 1
+        }
+    }
+
+    private var accessibilityStatusBadge: some View {
+        HStack(spacing: 5) {
+            Image(systemName: isAccessibilityGranted ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .font(.system(size: 11, weight: .semibold))
+
+            Text(
+                isAccessibilityGranted
+                    ? OffsendStrings.onboardingPermissionsGranted
+                    : OffsendStrings.onboardingPermissionsNotGranted
+            )
+            .font(.system(size: 12, weight: .bold))
+        }
+        .foregroundColor(isAccessibilityGranted ? .ofGreenText : .ofRedText)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(isAccessibilityGranted ? Color.ofGreenDim : Color.ofRedDim)
+        .cornerRadius(999)
     }
 
     private var sampleScenario: some View {
@@ -386,6 +434,20 @@ struct OnboardingView: View {
         }
     }
 
+    private var stepTransition: AnyTransition {
+        if isStepTransitionForward {
+            .asymmetric(
+                insertion: .move(edge: .trailing).combined(with: .opacity),
+                removal: .move(edge: .leading).combined(with: .opacity)
+            )
+        } else {
+            .asymmetric(
+                insertion: .move(edge: .leading).combined(with: .opacity),
+                removal: .move(edge: .trailing).combined(with: .opacity)
+            )
+        }
+    }
+
     private func stepCircleColor(_ step: OnboardingStep) -> Color {
         if step.rawValue < currentStep.rawValue {
             return .ofGreen
@@ -400,7 +462,10 @@ struct OnboardingView: View {
         guard let previousStep = OnboardingStep(rawValue: currentStep.rawValue - 1) else {
             return
         }
-        withAnimation { currentStep = previousStep }
+        isStepTransitionForward = false
+        withAnimation(.easeInOut(duration: 0.25)) {
+            currentStep = previousStep
+        }
     }
 
     private func moveForward() {
@@ -413,7 +478,10 @@ struct OnboardingView: View {
         guard let nextStep = OnboardingStep(rawValue: currentStep.rawValue + 1) else {
             return
         }
-        withAnimation { currentStep = nextStep }
+        isStepTransitionForward = true
+        withAnimation(.easeInOut(duration: 0.25)) {
+            currentStep = nextStep
+        }
     }
 }
 

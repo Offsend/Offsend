@@ -98,6 +98,9 @@
 "onboarding.permissions.cardSubtitle" = "macOS will ask you to grant access in System Settings.";
 "onboarding.permissions.openSystemSettings" = "Open System Settings";
 "onboarding.permissions.later" = "I'll do this later";
+"onboarding.permissions.granted" = "Granted";
+"onboarding.permissions.notGranted" = "Not granted";
+"onboarding.permissions.continueHint" = "You can continue to the next step.";
 "onboarding.sample.title" = "Try it with fake data";
 "onboarding.sample.subtitle" = "Copy this sample, switch to any text field, then press Safe Paste.";
 "onboarding.sample.description" = "The sample includes a fake contract, email, company name, and API key so you can see masking without using real data.";
@@ -248,6 +251,7 @@
 "settings.license.pricingFallback.headline" = "Offsend Pro";
 "settings.license.pricingFallback.subheadline" = "Unlock unlimited protection and advanced checks.";
 "settings.license.pricingFallback.buy" = "Buy Pro";
+"settings.tariffUpsell.message" = "Previewing Pro settings — upgrade to enable them.";
 "settings.license.pricing.deviceLimit" = "Up to %d devices";
 "settings.launchAtLogin" = "Launch at login";
 "settings.enableSafePasteProtection" = "Enable Safe Paste protection";
