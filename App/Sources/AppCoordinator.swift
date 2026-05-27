@@ -309,7 +309,6 @@ final class AppCoordinator: ObservableObject {
             lastStatusMessage = OffsendStrings.statusAccessibilityMissingSafeVersionCopied
             syncClipboardAssessmentStatus(for: result.maskedText)
         }
-        recordFreeTierMaskedPasteForUsageQuota()
     }
 
     func pasteOriginal(originalText: String, assessment: RiskAssessment) {
@@ -331,7 +330,6 @@ final class AppCoordinator: ObservableObject {
         lastStatusMessage = OffsendStrings.statusSafeVersionCopied
 
         syncClipboardAssessmentStatus(for: result.maskedText)
-        recordFreeTierMaskedPasteForUsageQuota()
     }
 
     func completeOnboarding() {
@@ -415,7 +413,6 @@ final class AppCoordinator: ObservableObject {
     }
 
     func licenseSettingsScreenDidAppear() async {
-        persistFreeTierMaskedUsageMonthReconciliationIfNeeded()
         await refreshLicensePricingCatalog()
         await refreshLicenseFromServerIfStale(trigger: .settingsLicenseScreen)
     }
@@ -600,27 +597,7 @@ final class AppCoordinator: ObservableObject {
         return name
     }
 
-    private func persistFreeTierMaskedUsageMonthReconciliationIfNeeded() {
-        guard licenseState.plan == .free else { return }
-        var state = licenseState
-        let before = state
-        state.reconcileFreeTierMaskedUsageCountForCurrentMonth()
-        guard state != before else { return }
-        licenseState = state
-        try? store.saveLicenseState(state)
-    }
-
-    private func recordFreeTierMaskedPasteForUsageQuota() {
-        guard licenseState.plan == .free else { return }
-        var state = licenseState
-        state.reconcileFreeTierMaskedUsageCountForCurrentMonth()
-        state.maskedThisMonth += 1
-        licenseState = state
-        try? store.saveLicenseState(state)
-    }
-
     private func performStartupLicenseTasks() async {
-        persistFreeTierMaskedUsageMonthReconciliationIfNeeded()
         reconcileLicensePlanWithOfflineEntitlement()
         async let pricing: Void = refreshLicensePricingCatalog()
         async let validate: Void = refreshLicenseFromServerIfStale(trigger: .appLaunch)

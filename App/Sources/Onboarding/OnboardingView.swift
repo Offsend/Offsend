@@ -1,3 +1,4 @@
+import AppKit
 import AppUIKit
 import SwiftUI
 
@@ -25,6 +26,8 @@ private enum OnboardingStep: Int, CaseIterable {
 }
 
 struct OnboardingView: View {
+    private static let stepContentHeight: CGFloat = 320
+
     @EnvironmentObject private var coordinator: AppCoordinator
     @Environment(\.dismiss) private var dismiss
     @State private var currentStep: OnboardingStep = .welcome
@@ -53,7 +56,12 @@ struct OnboardingView: View {
             OFDivider()
 
             stepContent
-                .frame(maxWidth: .infinity, minHeight: 290, alignment: .topLeading)
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: Self.stepContentHeight,
+                    maxHeight: Self.stepContentHeight,
+                    alignment: .topLeading
+                )
                 .transition(.asymmetric(
                     insertion: .move(edge: .trailing).combined(with: .opacity),
                     removal: .move(edge: .leading).combined(with: .opacity)
@@ -73,6 +81,7 @@ struct OnboardingView: View {
         .onChange(of: chromeAppearanceRaw) { _ in
             systemAppearanceRevision += 1
         }
+        .background(HiddenTitleBarWindowConfigurator(revision: currentStep.rawValue))
     }
 
     private var progressBar: some View {
@@ -405,5 +414,31 @@ struct OnboardingView: View {
             return
         }
         withAnimation { currentStep = nextStep }
+    }
+}
+
+private struct HiddenTitleBarWindowConfigurator: NSViewRepresentable {
+    let revision: Int
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        DispatchQueue.main.async {
+            configure(view.window)
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            configure(nsView.window)
+        }
+    }
+
+    private func configure(_ window: NSWindow?) {
+        guard let window else { return }
+
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.styleMask.insert(.fullSizeContentView)
     }
 }

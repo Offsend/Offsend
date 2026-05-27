@@ -5,7 +5,6 @@ import StorageCore
 import SwiftUI
 
 enum SettingsLicenseLayout {
-    static let freeMonthlyLimit = 50
     /// Shown when pricing has no `deviceLimit` (marketing copy only).
     static let proMarketingMacLimitFallback = 3
     static let planCardsMinHeight: CGFloat = 248
@@ -83,11 +82,6 @@ struct SettingsLicensePanel: View {
             } else {
                 planCardsRow
                     .padding(.bottom, 22)
-
-                if plan == .free, !showExpiredTokenRecovery {
-                    usageCard
-                        .padding(.bottom, 22)
-                }
 
                 Text(OffsendStrings.settingsLicenseDescription)
                     .font(.system(size: 11))
@@ -346,7 +340,7 @@ struct SettingsLicensePanel: View {
                 .font(.system(size: 11))
                 .foregroundColor(palette.textSub)
             VStack(alignment: .leading, spacing: 6) {
-                bullet(OffsendStrings.settingsLicenseFeatureFreeMasks(SettingsLicenseLayout.freeMonthlyLimit), color: accent)
+                bullet(OffsendStrings.settingsLicenseFeatureFreeSafePaste, color: accent)
                 bullet(OffsendStrings.settingsLicenseFeatureFreeDetectors, color: accent)
                 bullet(OffsendStrings.settingsLicenseFeatureFreeCustomDict, color: accent)
                 bullet(OffsendStrings.settingsLicenseFeatureFreeTtl, color: accent)
@@ -482,46 +476,5 @@ struct SettingsLicensePanel: View {
                 .font(.system(size: 11.5))
                 .foregroundColor(palette.textSub)
         }
-    }
-
-    private var usageCard: some View {
-        let used = coordinator.licenseState.maskedThisMonth
-        let limit = SettingsLicenseLayout.freeMonthlyLimit
-        let pct = min(Double(used) / Double(max(limit, 1)), 1)
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(OffsendStrings.settingsLicenseUsageTitle)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(palette.text)
-                Spacer()
-                HStack(spacing: 4) {
-                    Text("\(used)")
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundColor(palette.text)
-                    Text("/ \(limit)")
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundColor(palette.textSub)
-                }
-            }
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(palette.bg3)
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(pct > 0.85 ? palette.amber : palette.green)
-                        .frame(width: geo.size.width * pct)
-                }
-            }
-            .frame(height: 6)
-            Text(OffsendStrings.settingsLicenseUsageSubtitle)
-                .font(.system(size: 11))
-                .foregroundColor(palette.textMuted)
-        }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(palette.card)
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(palette.border, lineWidth: 1))
-        )
     }
 }
