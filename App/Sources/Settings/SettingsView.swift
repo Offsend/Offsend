@@ -144,6 +144,18 @@ struct SettingsView: View {
 
     // MARK: Main pane
 
+    private var showsTariffUpsellBanner: Bool {
+        switch tab {
+        case .detection:
+            let tf = coordinator.tariffFeatures
+            return !tf.advancedDetectors && !tf.customDictionaries
+        case .masking:
+            return !coordinator.tariffFeatures.safePasteUnlimited
+        default:
+            return false
+        }
+    }
+
     private var mainPane: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
@@ -180,6 +192,12 @@ struct SettingsView: View {
                 alignment: .bottom
             )
 
+            if showsTariffUpsellBanner {
+                SettingsTariffUpsellBanner()
+                    .padding(.horizontal, 24)
+                    .padding(.top, 16)
+            }
+
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     switch tab {
@@ -188,23 +206,20 @@ struct SettingsView: View {
                     case .hotkeys:
                         SettingsHotkeysPanel()
                     case .detection:
-                        Group {
-                            let tf = coordinator.tariffFeatures
-                            if !tf.advancedDetectors && !tf.customDictionaries {
-                                SettingsTariffUpsellOverlay {
-                                    SettingsDetectionPanel(showsTeaserDespiteTariff: true)
-                                }
-                            } else {
-                                SettingsDetectionPanel()
+                        if showsTariffUpsellBanner {
+                            SettingsTariffUpsellPreview {
+                                SettingsDetectionPanel(showsTeaserDespiteTariff: true)
                             }
+                        } else {
+                            SettingsDetectionPanel()
                         }
                     case .masking:
-                        if coordinator.tariffFeatures.safePasteUnlimited {
-                            SettingsMaskingPanel()
-                        } else {
-                            SettingsTariffUpsellOverlay {
+                        if showsTariffUpsellBanner {
+                            SettingsTariffUpsellPreview {
                                 SettingsMaskingPanel()
                             }
+                        } else {
+                            SettingsMaskingPanel()
                         }
                     case .privacy:
                         VStack(alignment: .leading, spacing: 0) {
@@ -224,42 +239,25 @@ struct SettingsView: View {
                 }
                 .environmentObject(coordinator)
                 .padding(.horizontal, 24)
-                .padding(.top, 22)
+                .padding(.top, showsTariffUpsellBanner ? 16 : 22)
                 .padding(.bottom, 24)
             }
         }
     }
 }
 
-/// Stacks real settings UI under a light scrim and purchase banner (interaction blocked except CTA).
-private struct SettingsTariffUpsellOverlay<Content: View>: View {
-    @Environment(\.colorScheme) private var colorScheme
+/// Dims settings UI below the upsell banner (preview only; interaction blocked).
+private struct SettingsTariffUpsellPreview<Content: View>: View {
     private let content: Content
 
     init(@ViewBuilder content: () -> Content) {
         self.content = content()
     }
 
-    /// Light enough to read content underneath; avoids Material obscuring the preview.
-    private var scrimOpacity: Double {
-        colorScheme == .dark ? 0.28 : 0.18
-    }
-
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            content
-                .allowsHitTesting(false)
-                .opacity(scrimOpacity)
-
-            // Color.black.opacity(scrimOpacity)
-            //     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            //     .allowsHitTesting(true)
-
-            SettingsTariffUpsellBanner()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 4)
-                .allowsHitTesting(true)
-        }
+        content
+            .allowsHitTesting(false)
+            .opacity(0.5)
     }
 }
 
@@ -268,67 +266,31 @@ private struct SettingsTariffUpsellBanner: View {
     @Environment(\.ofPalette) private var palette
 
     var body: some View {
-        let pricing = coordinator.licensePricing
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "crown.fill")
-                    .font(.system(size: 15))
-                    .foregroundColor(palette.blue)
-                    .padding(.top, 2)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(pricing.headline)
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(palette.text)
-                    if !pricing.subheadline.isEmpty {
-                        Text(pricing.subheadline)
-                            .font(.system(size: 12))
-                            .foregroundColor(palette.textSub)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 20)
-
-            OFSettingsGroupDivider()
-
-            VStack(alignment: .leading, spacing: 8) {
-               VStack(alignment: .leading, spacing: 8) {
-                if pricing.featureBulletLabels.isEmpty {
-                    tariffBullet(OffsendStrings.settingsLicenseFeatureProUnlimited)
-                    tariffBullet(OffsendStrings.settingsLicenseFeatureProAdvanced)
-                } else {
-                    ForEach(pricing.featureBulletLabels, id: \.self) { line in
-                        tariffBullet(line)
-                    }
-                }
-                }
-
-                OFCompactButton(title: pricing.buyButtonTitle, variant: .primary) {
-                    Task { await coordinator.openProCheckout(prefillEmail: nil) }
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 20)
-        }
-        .frame(maxWidth: 460, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(palette.card)
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(palette.border2, lineWidth: 1))
-        )
-        .shadow(color: Color.black.opacity(0.18), radius: 18, x: 0, y: 10)
-    }
-
-    private func tariffBullet(_ text: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 11))
+        HStack(spacing: 12) {
+            Image(systemName: "crown.fill")
+                .font(.system(size: 14))
                 .foregroundColor(palette.blue)
-            Text(text)
-                .font(.system(size: 11.5))
-                .foregroundColor(palette.textSub)
+
+            Text(OffsendStrings.settingsTariffUpsellMessage)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(palette.text)
                 .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 12)
+
+            OFCompactButton(title: coordinator.licensePricing.buyButtonTitle, variant: .primary) {
+                Task { await coordinator.openProCheckout(prefillEmail: nil) }
+            }
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(palette.card)
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(palette.border2, lineWidth: 1))
+                .allowsHitTesting(false)
+        )
     }
 }

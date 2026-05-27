@@ -114,7 +114,7 @@ enum SettingsDetectionCatalog {
 
 struct SettingsDetectionPanel: View {
     /// When `true`, renders search, all detector groups, and custom dictionaries as if Pro features were enabled.
-    /// Used under the tariff upsell overlay so users see the real UI behind the scrim (interaction remains blocked by the overlay).
+    /// Used under the tariff upsell overlay so users can preview the full Pro UI (interaction remains blocked by the overlay).
     var showsTeaserDespiteTariff: Bool = false
 
     @EnvironmentObject private var coordinator: AppCoordinator

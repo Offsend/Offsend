@@ -17,7 +17,7 @@ struct OffsendApp: App {
     var body: some Scene {
         let _ = configureMenuBarStatusItem()
 
-        WindowGroup(OffsendStrings.windowOnboarding, id: "onboarding") {
+        Window(OffsendStrings.windowOnboarding, id: "onboarding") {
             OnboardingView()
                 .environmentObject(coordinator)
                 .tracksDockIconWindow(using: coordinator.dockIconVisibilityService)
@@ -49,9 +49,10 @@ struct OffsendApp: App {
     }
 
     private func showInitialOnboardingIfNeeded() {
-        guard !didRequestInitialOnboarding, !coordinator.settings.hasCompletedOnboarding else {
-            return
-        }
+        guard !didRequestInitialOnboarding else { return }
+        #if !DEBUG
+        guard !coordinator.settings.hasCompletedOnboarding else { return }
+        #endif
 
         didRequestInitialOnboarding = true
         openWindow(id: "onboarding")
