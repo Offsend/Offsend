@@ -89,7 +89,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         launchAtLogin: Bool = false,
         defaultNoRiskAction: DefaultNoRiskAction = .pasteOriginal,
         enabledDetectors: Set<SensitiveEntityType> = Set(SensitiveEntityType.allCases),
-        mappingTTL: MappingTTL = .sixHours,
+        mappingTTL: MappingTTL = .oneHour,
         restoreBehavior: RestoreBehavior = .copyToClipboard,
         preserveOriginalClipboard: Bool = true,
         analyticsOptIn: Bool = false,

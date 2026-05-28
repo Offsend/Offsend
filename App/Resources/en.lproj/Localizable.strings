@@ -182,6 +182,12 @@
 "settings.general.statusOffTitle" = "Protection is off";
 "settings.general.statusOnSubtitle" = "Safe Paste and clipboard monitoring use your rules below.";
 "settings.general.statusOffSubtitle" = "Clipboard is not being monitored. Sensitive data may be exposed.";
+"settings.general.section.permissions" = "Permissions";
+"settings.general.accessibilityLabel" = "Accessibility";
+"settings.general.accessibilityGranted" = "Granted";
+"settings.general.accessibilityMissing" = "Not granted";
+"settings.general.accessibilityGrantedHint" = "Offsend can paste masked text into the active app.";
+"settings.general.accessibilityMissingHint" = "Safe Paste will mask and copy, but won't paste into other apps automatically.";
 "settings.general.section.startup" = "Startup";
 "settings.general.section.behavior" = "Behavior";
 "settings.general.section.appearance" = "Appearance";

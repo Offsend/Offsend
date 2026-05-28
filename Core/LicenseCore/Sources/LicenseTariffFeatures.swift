@@ -52,12 +52,23 @@ public struct LicenseTariffFeatures: Equatable, Sendable {
         self.safePasteUnlimited = Self.bool(for: .safePasteUnlimited, in: features)
         self.advancedDetectors = Self.bool(for: .advancedDetectors, in: features)
         self.customDictionaries = Self.bool(for: .customDictionaries, in: features)
-        self.workspaceAuditFull = Self.bool(for: .workspaceAuditFull, in: features)
-        self.workspaceAuditAutofix = Self.bool(for: .workspaceAuditAutofix, in: features)
+        self.workspaceAuditFull = Self.workspaceAuditFullEnabled(in: features)
+        self.workspaceAuditAutofix = Self.workspaceAuditAutofixEnabled(in: features)
     }
 
     private static func bool(for key: LicenseTariffFeatureKey, in features: [String: Bool]) -> Bool {
         features[key.rawValue] == true
+    }
+
+    /// `/pricing` may expose legacy keys (e.g. `folder_scan`) instead of in-app feature ids.
+    private static func workspaceAuditFullEnabled(in features: [String: Bool]) -> Bool {
+        bool(for: .workspaceAuditFull, in: features) || features["folder_scan"] == true
+    }
+
+    private static func workspaceAuditAutofixEnabled(in features: [String: Bool]) -> Bool {
+        if bool(for: .workspaceAuditAutofix, in: features) { return true }
+        if features[LicenseTariffFeatureKey.workspaceAuditAutofix.rawValue] == false { return false }
+        return features["folder_scan"] == true
     }
 }
 

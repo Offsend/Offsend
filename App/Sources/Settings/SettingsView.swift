@@ -149,7 +149,7 @@ struct SettingsView: View {
         case .detection:
             return !coordinator.tariffFeatures.customDictionaries
         case .masking:
-            return !coordinator.tariffFeatures.safePasteUnlimited
+            return !coordinator.allowsExtendedMappingTTL
         default:
             return false
         }
