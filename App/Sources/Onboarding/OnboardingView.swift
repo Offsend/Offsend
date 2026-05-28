@@ -1,5 +1,6 @@
 import AppKit
 import AppUIKit
+import HotkeyService
 import SwiftUI
 
 private enum OnboardingStep: Int, CaseIterable {
@@ -36,6 +37,8 @@ struct OnboardingView: View {
         OFSettingsChromeAppearance.auto.rawValue
     @State private var systemAppearanceRevision = 0
     @State private var accessibilityStatusRevision = 0
+    @State private var safePasteHotkey = HotkeyDisplay.safePaste
+    @State private var restoreHotkey = HotkeyDisplay.restorePlaceholders
 
     private let sampleText = OffsendStrings.onboardingSampleText
 
@@ -85,6 +88,14 @@ struct OnboardingView: View {
         .ofRefreshOnSystemAppearanceChange($systemAppearanceRevision)
         .onChange(of: chromeAppearanceRaw) { _ in
             systemAppearanceRevision += 1
+        }
+        .onAppear {
+            safePasteHotkey = HotkeyDisplay.safePaste
+            restoreHotkey = HotkeyDisplay.restorePlaceholders
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .keyboardShortcutDidChange)) { _ in
+            safePasteHotkey = HotkeyDisplay.safePaste
+            restoreHotkey = HotkeyDisplay.restorePlaceholders
         }
         .background(HiddenTitleBarWindowConfigurator(revision: currentStep.rawValue))
     }
@@ -230,8 +241,8 @@ struct OnboardingView: View {
             )
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                hotkeyCard(key: "⌘⇧V", label: OffsendStrings.onboardingHotkeysSafePaste)
-                hotkeyCard(key: "⌘⇧R", label: OffsendStrings.onboardingHotkeysRestore)
+                hotkeyCard(key: safePasteHotkey, label: OffsendStrings.onboardingHotkeysSafePaste)
+                hotkeyCard(key: restoreHotkey, label: OffsendStrings.onboardingHotkeysRestore)
                 hotkeyCard(key: OffsendStrings.windowSettings, label: OffsendStrings.onboardingHotkeysSettings)
                 hotkeyCard(key: OffsendStrings.onboardingHotkeysMenuBarKey, label: OffsendStrings.onboardingHotkeysMenuBar)
             }
@@ -249,35 +260,26 @@ struct OnboardingView: View {
                 iconTile(systemName: "accessibility", tint: .ofBlue, background: .ofBlueDim, size: 40)
 
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(OffsendStrings.onboardingPermissionsCardTitle)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(.ofText)
-
-                        Spacer(minLength: 8)
-
-                        accessibilityStatusBadge
-                    }
+                    Text(OffsendStrings.onboardingPermissionsCardTitle)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.ofText)
 
                     Text(OffsendStrings.onboardingPermissionsCardSubtitle)
                         .font(.system(size: 12))
                         .foregroundColor(.ofTextSub)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    if isAccessibilityGranted {
-                        Text(OffsendStrings.onboardingPermissionsContinueHint)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.ofGreenText)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                    accessibilityStatusMessage
 
-                    HStack(spacing: 8) {
-                        OFButton(title: OffsendStrings.onboardingPermissionsOpenSystemSettings, variant: .outline, icon: "arrow.up.right", small: true) {
-                            coordinator.permissionsService.openAccessibilitySettings()
-                        }
+                    if !isAccessibilityGranted {
+                        HStack(spacing: 8) {
+                            OFButton(title: OffsendStrings.onboardingPermissionsOpenSystemSettings, variant: .outline, icon: "arrow.up.right", small: true) {
+                                coordinator.permissionsService.openAccessibilitySettings()
+                            }
 
-                        OFButton(title: OffsendStrings.onboardingPermissionsLater, variant: .ghost, small: true) {
-                            moveForward()
+                            OFButton(title: OffsendStrings.onboardingPermissionsLater, variant: .ghost, small: true) {
+                                moveForward()
+                            }
                         }
                     }
                 }
@@ -303,23 +305,21 @@ struct OnboardingView: View {
         }
     }
 
-    private var accessibilityStatusBadge: some View {
-        HStack(spacing: 5) {
-            Image(systemName: isAccessibilityGranted ? "checkmark.circle.fill" : "xmark.circle.fill")
+    private var accessibilityStatusMessage: some View {
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: isAccessibilityGranted ? "checkmark.circle.fill" : "info.circle.fill")
                 .font(.system(size: 11, weight: .semibold))
+                .padding(.top, 2)
 
             Text(
                 isAccessibilityGranted
                     ? OffsendStrings.onboardingPermissionsGranted
-                    : OffsendStrings.onboardingPermissionsNotGranted
+                    : OffsendStrings.onboardingPermissionsLimitedHint
             )
-            .font(.system(size: 12, weight: .bold))
+            .font(.system(size: 12, weight: .medium))
+            .fixedSize(horizontal: false, vertical: true)
         }
-        .foregroundColor(isAccessibilityGranted ? .ofGreenText : .ofRedText)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(isAccessibilityGranted ? Color.ofGreenDim : Color.ofRedDim)
-        .cornerRadius(999)
+        .foregroundColor(isAccessibilityGranted ? .ofGreenText : .ofTextSub)
     }
 
     private var sampleScenario: some View {

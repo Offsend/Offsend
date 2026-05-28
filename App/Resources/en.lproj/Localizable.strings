@@ -56,6 +56,7 @@
 "status.safePasteCancelled" = "Safe Paste canceled";
 "status.sampleCopied" = "Sample copied. Press Command + Shift + V in any text field.";
 "status.sparkleReleaseBuilds" = "Sparkle update feed is configured for release builds.";
+"status.settingsFlagsReset" = "Settings flags reset";
 
 "clipboardStatus.safe.title" = "Clipboard looks safe";
 "clipboardStatus.safe.message" = "No sensitive data was found in the current clipboard text.";
@@ -98,8 +99,9 @@
 "onboarding.permissions.cardSubtitle" = "macOS will ask you to grant access in System Settings.";
 "onboarding.permissions.openSystemSettings" = "Open System Settings";
 "onboarding.permissions.later" = "I'll do this later";
-"onboarding.permissions.granted" = "Granted";
+"onboarding.permissions.granted" = "All set. Offsend can now paste masked text for you, so you get the full Safe Paste experience.";
 "onboarding.permissions.notGranted" = "Not granted";
+"onboarding.permissions.limitedHint" = "You can keep using Offsend without this permission. Safe Paste will still mask and copy your text, but it won't paste into other apps automatically.";
 "onboarding.permissions.continueHint" = "You can continue to the next step.";
 "onboarding.sample.title" = "Try it with fake data";
 "onboarding.sample.subtitle" = "Copy this sample, switch to any text field, then press Safe Paste.";
@@ -148,6 +150,8 @@
 "settings.developer.licenseServer.develop" = "Develop";
 "settings.developer.tariffFeatures" = "Tariff features";
 "settings.developer.tariffFeaturesHint" = "Toggle overrides apply on top of the catalog resolution from cached /pricing (`features`). Free tier is always OFF; Pro with an empty feature map defaults to ON.";
+"settings.developer.resetSettingsFlags" = "Reset settings flags";
+"settings.developer.resetSettingsFlagsHint" = "Returns settings to first-launch defaults for clean behavior testing. Local mappings, history, and license state are not deleted.";
 "settings.developer.feature.safePasteUnlimited" = "Safe Paste unlimited";
 "settings.developer.feature.advancedDetectors" = "Advanced detectors";
 "settings.developer.feature.customDictionaries" = "Custom dictionaries";
@@ -162,7 +166,11 @@
 "settings.detection.group.personal" = "Personal identifiers";
 "settings.detection.group.business" = "Business & finance";
 "settings.detection.group.secrets" = "Secrets & credentials";
-"settings.detection.group.custom" = "Custom dictionaries";
+"settings.detection.group.custom" = "Custom dictionary matches";
+"settings.detection.customDictionaries.proHint" = "Add client names, projects, and internal terms to scan for.";
+"settings.detection.customDictionaries.proTitle" = "Custom dictionaries";
+"settings.detection.customDictionaries.proBody" = "Teach Offsend your company names, codenames, and internal domains. Saved entries stay on this Mac and apply during Safe Paste.";
+"settings.detection.customDictionaries.savedCount" = "%d saved — upgrade to Pro to use them again";
 "settings.detection.severity.medium" = "Medium";
 "settings.detection.severity.critical" = "Critical";
 "settings.hotkeys.popupSection" = "Inside the popup";
@@ -200,7 +208,7 @@
 "settings.license.price.free" = "$0";
 "settings.license.forever" = "Forever, on this Mac";
 "settings.license.freeBanner.title" = "%@ Free";
-"settings.license.freeBanner.subtitle" = "Protect sensitive data before it reaches AI. Upgrade for advanced detection and Pro features.";
+"settings.license.freeBanner.subtitle" = "Protect sensitive data before it reaches AI. Upgrade for custom dictionaries, Check Directory, and more.";
 "settings.license.proPurchaseFootnote" = "Magic-code activation, no accounts";
 "settings.license.perMonth" = "/ month";
 "settings.license.yearlyHint" = "Or bundle pricing on the website.";
@@ -209,12 +217,10 @@
 "settings.license.tokenHint" = "From your purchase email.";
 "settings.license.restorePurchase" = "Restore purchase";
 "settings.license.feature.free.safePaste" = "Unlimited Safe Paste";
-"settings.license.feature.free.detectors" = "Core detectors";
-"settings.license.feature.free.customDict" = "Custom dictionaries (limited)";
+"settings.license.feature.free.detectors" = "All built-in detectors";
 "settings.license.feature.free.ttl" = "1 hour mapping TTL";
-"settings.license.feature.pro.unlimited" = "Unlimited masks";
-"settings.license.feature.pro.advanced" = "Advanced secret detection & TTL";
-"settings.license.feature.pro.secretDetection" = "Advanced secret detection";
+"settings.license.feature.pro.customDict" = "Custom dictionaries";
+"settings.license.feature.pro.directoryCheck" = "Full Check Directory & Fix it";
 "settings.license.feature.pro.ttlMax" = "Mapping TTL up to 24 h";
 "settings.license.feature.pro.macActivations" = "Activate up to %d Macs";
 "settings.license.proHeadline" = "Offsend Pro";
@@ -252,6 +258,8 @@
 "settings.license.pricingFallback.subheadline" = "Unlock unlimited protection and advanced checks.";
 "settings.license.pricingFallback.buy" = "Buy Pro";
 "settings.tariffUpsell.message" = "Previewing Pro settings — upgrade to enable them.";
+"settings.tariffUpsell.detectionMessage" = "Custom dictionaries are a Pro feature — add client names, projects, and internal terms.";
+"settings.tariffUpsell.maskingMessage" = "Longer mapping TTL is a Pro feature — keep placeholders restorable for up to 24 hours.";
 "settings.license.pricing.deviceLimit" = "Up to %d devices";
 "settings.launchAtLogin" = "Launch at login";
 "settings.enableSafePasteProtection" = "Enable Safe Paste protection";
@@ -296,7 +304,7 @@
 "settings.currentPlan" = "Current plan: %@";
 "settings.plan.free" = "Free";
 "settings.plan.pro" = "Pro";
-"settings.licenseDescription" = "Free: core detectors and local protection. Pro: advanced secret detection, longer mapping TTL, full Check Directory, and billing via Offsend (magic-code activation, no accounts).";
+"settings.licenseDescription" = "Free: all built-in detectors and unlimited Safe Paste. Pro: custom dictionaries, longer mapping TTL, full Check Directory with Fix it, and billing via Offsend (magic-code activation, no accounts).";
 "settings.email" = "Email";
 "settings.licenseToken" = "License token";
 "settings.activateLicense" = "Activate License";

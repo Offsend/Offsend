@@ -71,6 +71,7 @@ final class AppCoordinator: ObservableObject {
             refreshMenuBarStatusItem()
         }
     }
+    @Published var isOnboardingPresentationRequested = false
 
     let clipboardService = ClipboardService()
     let pasteService = PasteService()
@@ -335,7 +336,12 @@ final class AppCoordinator: ObservableObject {
     func completeOnboarding() {
         settings.hasCompletedOnboarding = true
         saveSettings()
+        isOnboardingPresentationRequested = false
         analytics.track(.onboardingCompleted)
+    }
+
+    func requestOnboardingPresentation() {
+        isOnboardingPresentationRequested = true
     }
 
     func copyOnboardingSampleToClipboard(_ text: String) {
@@ -366,6 +372,7 @@ final class AppCoordinator: ObservableObject {
     }
 
     func saveCustomDictionaries() {
+        guard tariffFeatures.customDictionaries else { return }
         do {
             try store.saveCustomDictionaries(customDictionaries)
             lastStatusMessage = OffsendStrings.statusCustomDictionariesSaved
@@ -776,10 +783,14 @@ final class AppCoordinator: ObservableObject {
         }
     }
 
+    private var activeCustomDictionaries: [CustomDictionaryItem] {
+        tariffFeatures.customDictionaries ? customDictionaries : []
+    }
+
     private func assessClipboardText(_ text: String) -> (DetectionResult, RiskAssessment) {
         let detectionOptions = DetectionOptions(
             enabledTypes: settings.enabledDetectors,
-            customDictionaries: customDictionaries
+            customDictionaries: activeCustomDictionaries
         )
         let detection = detectionEngine.scan(DetectionRequest(text: text, options: detectionOptions))
         return (detection, riskEngine.assess(detection.entities))
@@ -996,6 +1007,20 @@ extension AppCoordinator {
             await refreshLicensePricingCatalog()
             await refreshLicenseFromServerIfStale(trigger: .settingsLicenseScreen)
         }
+    }
+
+    func debugResetSettingsFlags() {
+        settings = .default
+        isOnboardingPresentationRequested = false
+
+        UserDefaults.standard.removeObject(forKey: OFSettingsChromeAppearance.appStorageKey)
+        UserDefaults.standard.removeObject(forKey: DebugLicenseAPIEnvironment.userDefaultsKey)
+        debugTariffFeatureOverrides = [:]
+        DebugTariffFeatureOverrides.save([:])
+        licenseService = LicenseService(configuration: DebugLicenseAPIEnvironment.loadFromUserDefaults().licenseConfiguration)
+
+        saveSettings()
+        lastStatusMessage = OffsendStrings.statusSettingsFlagsReset
     }
 
     /// JWT-shaped string with `{}` payload; not valid for `/license/validate`, but satisfies local token presence for Pro gating.

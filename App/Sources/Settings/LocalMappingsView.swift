@@ -1,9 +1,11 @@
 import AppUIKit
+import HotkeyService
 import StorageCore
 import SwiftUI
 
 struct LocalMappingsView: View {
     @EnvironmentObject private var coordinator: AppCoordinator
+    @State private var restoreHotkey = HotkeyDisplay.restorePlaceholders
 
     var body: some View {
         VStack(spacing: 0) {
@@ -22,7 +24,7 @@ struct LocalMappingsView: View {
                         .lineSpacing(3)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    OFMappingInfoRow()
+                    OFMappingInfoRow(restoreHotkey: restoreHotkey)
 
                     if coordinator.mappingSummaries.isEmpty {
                         emptyState
@@ -47,7 +49,11 @@ struct LocalMappingsView: View {
         .frame(minWidth: 520, minHeight: 380)
         .background(Color.ofBg1)
         .onAppear {
+            restoreHotkey = HotkeyDisplay.restorePlaceholders
             try? coordinator.refreshMappingSummaries()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .keyboardShortcutDidChange)) { _ in
+            restoreHotkey = HotkeyDisplay.restorePlaceholders
         }
     }
 

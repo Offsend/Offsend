@@ -1,10 +1,13 @@
 import AppKit
+import HotkeyService
 import StorageCore
 import SwiftUI
 
 struct MenuBarContent: View {
     @EnvironmentObject private var coordinator: AppCoordinator
     @Environment(\.openWindow) private var openWindow
+    @State private var safePasteShortcut: KeyboardShortcut?
+    @State private var restoreShortcut: KeyboardShortcut?
 
     var body: some View {
         VStack(alignment: .leading) {
@@ -13,6 +16,7 @@ struct MenuBarContent: View {
 
             if shouldShowOnboardingMenuItem {
                 Button(OffsendStrings.menuStartOnboarding) {
+                    coordinator.requestOnboardingPresentation()
                     openWindow(id: "onboarding")
                 }
                 Divider()
@@ -21,12 +25,12 @@ struct MenuBarContent: View {
             Button(OffsendStrings.menuSafePaste) {
                 coordinator.performSafePaste()
             }
-            .keyboardShortcut("v", modifiers: [.command, .shift])
+            .optionalKeyboardShortcut(safePasteShortcut)
 
             Button(OffsendStrings.menuRestorePlaceholders) {
                 coordinator.restorePlaceholders()
             }
-            .keyboardShortcut("r", modifiers: [.command, .shift])
+            .optionalKeyboardShortcut(restoreShortcut)
 
             Divider()
 
@@ -52,6 +56,15 @@ struct MenuBarContent: View {
             }
         }
         .padding(.vertical, 4)
+        .onAppear(perform: refreshShortcuts)
+        .onReceive(NotificationCenter.default.publisher(for: .keyboardShortcutDidChange)) { _ in
+            refreshShortcuts()
+        }
+    }
+
+    private func refreshShortcuts() {
+        safePasteShortcut = HotkeyDisplay.swiftUIKeyboardShortcut(for: .safePaste)
+        restoreShortcut = HotkeyDisplay.swiftUIKeyboardShortcut(for: .restorePlaceholders)
     }
 
     private var shouldShowOnboardingMenuItem: Bool {
@@ -70,5 +83,16 @@ struct MenuBarContent: View {
                 coordinator.saveSettings()
             }
         )
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func optionalKeyboardShortcut(_ shortcut: KeyboardShortcut?) -> some View {
+        if let shortcut {
+            self.keyboardShortcut(shortcut)
+        } else {
+            self
+        }
     }
 }

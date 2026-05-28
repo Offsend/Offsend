@@ -1,7 +1,11 @@
 import SwiftUI
 
 public struct OFMappingInfoRow: View {
-    public init() {}
+    private let restoreHotkey: String
+
+    public init(restoreHotkey: String) {
+        self.restoreHotkey = restoreHotkey
+    }
 
     public var body: some View {
         HStack(spacing: 8) {
@@ -20,7 +24,7 @@ public struct OFMappingInfoRow: View {
                     .font(.system(size: 11))
                     .foregroundColor(.ofTextSub)
 
-                KbdBadge(text: "⌘⇧R")
+                KbdBadge(text: restoreHotkey)
             }
         }
         .padding(.horizontal, 14)

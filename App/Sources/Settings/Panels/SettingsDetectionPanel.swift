@@ -113,10 +113,6 @@ enum SettingsDetectionCatalog {
 }
 
 struct SettingsDetectionPanel: View {
-    /// When `true`, renders search, all detector groups, and custom dictionaries as if Pro features were enabled.
-    /// Used under the tariff upsell overlay so users can preview the full Pro UI (interaction remains blocked by the overlay).
-    var showsTeaserDespiteTariff: Bool = false
-
     @EnvironmentObject private var coordinator: AppCoordinator
     @Environment(\.ofPalette) private var palette
 
@@ -126,50 +122,46 @@ struct SettingsDetectionPanel: View {
 
     var body: some View {
         let binder = SettingsCoordinatorBinder(coordinator: coordinator)
-        let tf = coordinator.tariffFeatures
-        let advancedOn = showsTeaserDespiteTariff || tf.advancedDetectors
-        let customOn = showsTeaserDespiteTariff || tf.customDictionaries
-        let groups = visibleDetectorGroups(advancedDetectors: advancedOn, customDictionaries: customOn)
+        let customDictionariesEnabled = coordinator.tariffFeatures.customDictionaries
+        let groups = visibleDetectorGroups(customDictionaries: customDictionariesEnabled)
         VStack(alignment: .leading, spacing: 0) {
-            if advancedOn {
-                HStack(spacing: 12) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 11))
-                            .foregroundColor(palette.textMuted)
-                        TextField(OffsendStrings.settingsDetectionSearchPlaceholder, text: $search)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 12))
-                            .foregroundColor(palette.text)
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(palette.bg2)
-                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(palette.border, lineWidth: 1))
-                    )
-
-                    let enabledCount = coordinator.settings.enabledDetectors.count
-                    let total = SensitiveEntityType.allCases.count
-                    HStack(spacing: 6) {
-                        Text("\(enabledCount)")
-                            .font(.system(size: 11.5, weight: .semibold))
-                            .foregroundColor(palette.text)
-                        Text(OffsendStrings.settingsDetectionActiveSummary(total))
-                            .font(.system(size: 11.5))
-                            .foregroundColor(palette.textSub)
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(palette.bg2)
-                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(palette.border, lineWidth: 1))
-                    )
+            HStack(spacing: 12) {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 11))
+                        .foregroundColor(palette.textMuted)
+                    TextField(OffsendStrings.settingsDetectionSearchPlaceholder, text: $search)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 12))
+                        .foregroundColor(palette.text)
                 }
-                .padding(.bottom, 18)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(palette.bg2)
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(palette.border, lineWidth: 1))
+                )
+
+                let enabledCount = coordinator.settings.enabledDetectors.count
+                let total = SensitiveEntityType.allCases.count
+                HStack(spacing: 6) {
+                    Text("\(enabledCount)")
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundColor(palette.text)
+                    Text(OffsendStrings.settingsDetectionActiveSummary(total))
+                        .font(.system(size: 11.5))
+                        .foregroundColor(palette.textSub)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(palette.bg2)
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(palette.border, lineWidth: 1))
+                )
             }
+            .padding(.bottom, 18)
 
             ForEach(groups, id: \.kind) { group in
                 let filteredTypes = group.types.filter { type in
@@ -186,8 +178,10 @@ struct SettingsDetectionPanel: View {
                 }
             }
 
-            if customOn {
+            if customDictionariesEnabled {
                 customDictionariesSection(binder: binder)
+            } else {
+                customDictionariesProLockedSection
             }
         }
         .onAppear {
@@ -198,9 +192,8 @@ struct SettingsDetectionPanel: View {
         }
     }
 
-    private func visibleDetectorGroups(advancedDetectors: Bool, customDictionaries: Bool) -> [DetectorGroupModel] {
-        guard advancedDetectors else { return [] }
-        return SettingsDetectionCatalog.groups.filter { group in
+    private func visibleDetectorGroups(customDictionaries: Bool) -> [DetectorGroupModel] {
+        SettingsDetectionCatalog.groups.filter { group in
             if group.kind == .custom {
                 return customDictionaries
             }
@@ -325,6 +318,42 @@ struct SettingsDetectionPanel: View {
         }
     }
 
+    private var customDictionariesProLockedSection: some View {
+        OFSettingsGroup(
+            title: OffsendStrings.settingsCustomDictionaries,
+            hint: OffsendStrings.settingsDetectionCustomDictionariesProHint
+        ) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    Text(OffsendStrings.settingsDetectionCustomDictionariesProTitle)
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundColor(palette.text)
+                    Text(OffsendStrings.settingsDirectoryCheckScopePro)
+                        .font(.system(size: 9.5, weight: .bold))
+                        .kerning(0.5)
+                        .foregroundColor(palette.amberText)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(palette.amberDim))
+                }
+                Text(OffsendStrings.settingsDetectionCustomDictionariesProBody)
+                    .font(.system(size: 11.5))
+                    .foregroundColor(palette.textSub)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !coordinator.customDictionaries.isEmpty {
+                    Text(
+                        OffsendStrings.settingsDetectionCustomDictionariesSavedCount(
+                            coordinator.customDictionaries.count
+                        )
+                    )
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundColor(palette.amberText)
+                }
+            }
+            .padding(.vertical, 14)
+        }
+    }
+
     private func customDictionariesSection(binder _: SettingsCoordinatorBinder) -> some View {
         OFSettingsGroup(title: OffsendStrings.settingsCustomDictionaries, hint: OffsendStrings.settingsDictionaryPlaceholder) {
             VStack(alignment: .leading, spacing: 10) {
@@ -389,6 +418,7 @@ struct SettingsDetectionPanel: View {
     }
 
     private func addDictionaryItem() {
+        guard coordinator.tariffFeatures.customDictionaries else { return }
         let trimmed = newDictionaryValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         coordinator.customDictionaries.append(CustomDictionaryItem(kind: newDictionaryKind, value: trimmed))

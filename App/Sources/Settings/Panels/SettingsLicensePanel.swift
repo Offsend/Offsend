@@ -342,7 +342,6 @@ struct SettingsLicensePanel: View {
             VStack(alignment: .leading, spacing: 6) {
                 bullet(OffsendStrings.settingsLicenseFeatureFreeSafePaste, color: accent)
                 bullet(OffsendStrings.settingsLicenseFeatureFreeDetectors, color: accent)
-                bullet(OffsendStrings.settingsLicenseFeatureFreeCustomDict, color: accent)
                 bullet(OffsendStrings.settingsLicenseFeatureFreeTtl, color: accent)
             }
             .padding(.top, 4)
@@ -365,8 +364,42 @@ struct SettingsLicensePanel: View {
         plan != .pro && !showExpiredTokenRecovery
     }
 
+    private func checkoutPlan(from pricing: LicensePricingPresentation) -> LicensePricingPlan? {
+        if let match = pricing.plans.first(where: { $0.planId == pricing.defaultCheckoutPlanId }) {
+            return match
+        }
+        if let match = pricing.plans.first(where: { $0.isDefault == true }) {
+            return match
+        }
+        return pricing.plans.first
+    }
+
+    @ViewBuilder
+    private func planPriceRow(priceLine: String?, oldPriceLine: String?) -> some View {
+        let price = priceLine.flatMap { $0.isEmpty ? nil : $0 }
+        let oldPrice = oldPriceLine.flatMap { $0.isEmpty ? nil : $0 }
+        if price != nil || oldPrice != nil {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if let oldPrice {
+                    Text(oldPrice)
+                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                        .foregroundColor(palette.textMuted)
+                        .strikethrough(true, color: palette.textMuted)
+                }
+                if let price {
+                    Text(price)
+                        .font(.system(size: 22, weight: .bold, design: .monospaced))
+                        .foregroundColor(palette.text)
+                }
+            }
+        }
+    }
+
     private var planCardPro: some View {
         let pricing = coordinator.licensePricing
+        let checkoutPlan = checkoutPlan(from: pricing)
+        let priceLine = checkoutPlan?.priceDisplay ?? pricing.primaryPriceDisplay
+        let oldPriceLine = checkoutPlan?.oldPriceDisplay ?? pricing.primaryOldPriceDisplay
         let accent = palette.blue
         let macCap = pricing.defaultPlanDeviceLimit ?? SettingsLicenseLayout.proMarketingMacLimitFallback
         return VStack(alignment: .leading, spacing: 8) {
@@ -392,10 +425,8 @@ struct SettingsLicensePanel: View {
                 }
             }
             Group {
-                if pricing.showsPrice, let line = pricing.primaryPriceDisplay, !line.isEmpty {
-                    Text(line)
-                        .font(.system(size: 22, weight: .bold, design: .monospaced))
-                        .foregroundColor(palette.text)
+                if pricing.showsPrice, priceLine != nil || oldPriceLine != nil {
+                    planPriceRow(priceLine: priceLine, oldPriceLine: oldPriceLine)
                     Text(OffsendStrings.settingsLicenseProPurchaseFootnote)
                         .font(.system(size: 11))
                         .foregroundColor(palette.textSub)
@@ -423,9 +454,9 @@ struct SettingsLicensePanel: View {
             }
             VStack(alignment: .leading, spacing: 6) {
                 if pricing.featureBulletLabels.isEmpty {
-                    bullet(OffsendStrings.settingsLicenseFeatureProUnlimited, color: accent)
-                    bullet(OffsendStrings.settingsLicenseFeatureProSecretDetection, color: accent)
+                    bullet(OffsendStrings.settingsLicenseFeatureProCustomDict, color: accent)
                     bullet(OffsendStrings.settingsLicenseFeatureProTtlMax, color: accent)
+                    bullet(OffsendStrings.settingsLicenseFeatureProDirectoryCheck, color: accent)
                     bullet(OffsendStrings.settingsLicenseFeatureProMacActivations(macCap), color: accent)
                 } else {
                     ForEach(pricing.featureBulletLabels, id: \.self) { line in
