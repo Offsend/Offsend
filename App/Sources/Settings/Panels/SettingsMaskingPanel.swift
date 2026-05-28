@@ -9,6 +9,8 @@ struct SettingsMaskingPanel: View {
 
     var body: some View {
         let binder = SettingsCoordinatorBinder(coordinator: coordinator)
+        let extendedMappingTTLAllowed = coordinator.allowsExtendedMappingTTL
+        let mappingTTLOptions = MappingTTL.allowedOptions(extendedTTLAllowed: extendedMappingTTLAllowed)
         VStack(alignment: .leading, spacing: 0) {
             maskingPreviewBlock
                 .padding(.bottom, 22)
@@ -17,7 +19,7 @@ struct SettingsMaskingPanel: View {
                 OFSettingsRow(label: OffsendStrings.settingsMappingTTL, hint: nil) {
                     OFSelectMenu(
                         selection: binder.setting(\.mappingTTL),
-                        options: MappingTTL.allCases.map {
+                        options: mappingTTLOptions.map {
                             OFSelectOption(value: $0, label: AppLocalization.mappingTTLName($0))
                         }
                     )
@@ -46,6 +48,12 @@ struct SettingsMaskingPanel: View {
                     OFToggle(isOn: binder.setting(\.allowPasteOriginalForCriticalSecrets))
                 }
             }
+        }
+        .onAppear {
+            coordinator.syncMappingTTLToTariff()
+        }
+        .onChange(of: coordinator.licenseState) { _ in
+            coordinator.syncMappingTTLToTariff()
         }
     }
 

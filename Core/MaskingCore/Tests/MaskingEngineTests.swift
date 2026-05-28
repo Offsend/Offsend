@@ -46,6 +46,16 @@ final class MaskingEngineTests: XCTestCase {
         XCTAssertNil(result.expiresAt)
     }
 
+    func testMappingTTLOptionsRespectTariff() {
+        XCTAssertEqual(MappingTTL.allowedOptions(extendedTTLAllowed: false), [.oneHour])
+        XCTAssertEqual(MappingTTL.allowedOptions(extendedTTLAllowed: true), MappingTTL.allCases)
+    }
+
+    func testMappingTTLEffectiveClampsFreeTierSelection() {
+        XCTAssertEqual(MappingTTL.effective(.twentyFourHours, extendedTTLAllowed: false), .oneHour)
+        XCTAssertEqual(MappingTTL.effective(.twentyFourHours, extendedTTLAllowed: true), .twentyFourHours)
+    }
+
     private func entity(_ type: SensitiveEntityType, _ value: String, in text: String) -> SensitiveEntity {
         guard let range = text.range(of: value) else {
             XCTFail("Missing test value \(value)")

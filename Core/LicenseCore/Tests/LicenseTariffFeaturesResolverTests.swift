@@ -120,4 +120,51 @@ final class LicenseTariffFeaturesResolverTests: XCTestCase {
         let f = LicenseTariffFeaturesResolver.resolve(isPro: true, pricing: pricing)
         XCTAssertEqual(f, .proWithoutFeatureMap)
     }
+
+    func testProResolvesFolderScanCatalogAlias() {
+        let plan = LicensePricingPlan(
+            planId: "pro_annual",
+            name: "Pro",
+            description: nil,
+            billingInterval: nil,
+            priceMinor: nil,
+            priceDisplay: nil,
+            trialDays: nil,
+            deviceLimit: nil,
+            isDefault: true,
+            ctaLabel: nil,
+            features: [
+                "folder_scan": true,
+                LicenseTariffFeatureKey.customDictionaries.rawValue: true,
+            ]
+        )
+        let pricing = presentation(plans: [plan])
+        let f = LicenseTariffFeaturesResolver.resolve(isPro: true, pricing: pricing)
+        XCTAssertTrue(f.workspaceAuditFull)
+        XCTAssertTrue(f.workspaceAuditAutofix)
+        XCTAssertTrue(f.customDictionaries)
+    }
+
+    func testFolderScanDoesNotOverrideExplicitAutofixDeny() {
+        let plan = LicensePricingPlan(
+            planId: "pro_annual",
+            name: "Pro",
+            description: nil,
+            billingInterval: nil,
+            priceMinor: nil,
+            priceDisplay: nil,
+            trialDays: nil,
+            deviceLimit: nil,
+            isDefault: true,
+            ctaLabel: nil,
+            features: [
+                "folder_scan": true,
+                LicenseTariffFeatureKey.workspaceAuditAutofix.rawValue: false,
+            ]
+        )
+        let pricing = presentation(plans: [plan])
+        let f = LicenseTariffFeaturesResolver.resolve(isPro: true, pricing: pricing)
+        XCTAssertTrue(f.workspaceAuditFull)
+        XCTAssertFalse(f.workspaceAuditAutofix)
+    }
 }

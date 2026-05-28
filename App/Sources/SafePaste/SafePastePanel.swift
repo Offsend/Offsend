@@ -1,6 +1,7 @@
 import AppUIKit
 import AppKit
 import DetectionCore
+import HotkeyService
 import RiskScoringCore
 import SwiftUI
 
@@ -72,6 +73,8 @@ private struct SafePastePopupView: View {
     let wasTruncated: Bool
     let close: (SafePastePopupAction) -> Void
 
+    @State private var safePasteHotkey = HotkeyDisplay.safePaste
+
     private var counts: [(SensitiveEntityType, Int)] {
         Dictionary(grouping: entities, by: \.type)
             .map { ($0.key, $0.value.count) }
@@ -86,9 +89,15 @@ private struct SafePastePopupView: View {
                 bodySection
                 actionsSection
                 OFDivider()
-                OFPrivacyFooter(hotkey: "⌘⇧V")
+                OFPrivacyFooter(hotkey: safePasteHotkey)
             }
             .frame(maxWidth: .infinity)
+        }
+        .onAppear {
+            safePasteHotkey = HotkeyDisplay.safePaste
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .keyboardShortcutDidChange)) { _ in
+            safePasteHotkey = HotkeyDisplay.safePaste
         }
         .animation(.easeInOut(duration: 0.2), value: assessment.score)
     }
@@ -240,7 +249,7 @@ private struct SafePastePopupView: View {
         VStack(spacing: 8) {
             OFButton(
                 title: assessment.hasCriticalSecret ? OffsendStrings.safePasteActionCopySafeVersion : OffsendStrings.safePasteActionMaskAndPaste,
-                variant: assessment.hasCriticalSecret ? .danger : .primary,
+                variant: .primary,
                 icon: assessment.hasCriticalSecret ? "shield.fill" : "shield.lefthalf.filled",
                 fillsWidth: true
             ) {

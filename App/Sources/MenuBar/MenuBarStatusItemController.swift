@@ -1,4 +1,5 @@
 import AppKit
+import HotkeyService
 import StorageCore
 
 @MainActor
@@ -188,16 +189,6 @@ final class MenuBarStatusItemController: NSObject {
 
         addDisabledItem(OffsendStrings.appName)
 
-        #if DEBUG
-        addActionItem(OffsendStrings.menuStartOnboarding, action: #selector(openOnboardingItem))
-        menu.addItem(.separator())
-        #else
-        if !settings.hasCompletedOnboarding {
-            addActionItem(OffsendStrings.menuStartOnboarding, action: #selector(openOnboardingItem))
-            menu.addItem(.separator())
-        }
-        #endif
-
         addActionItem(
             clipboardStatusTitle,
             action: #selector(showClipboardStatusItem),
@@ -205,8 +196,21 @@ final class MenuBarStatusItemController: NSObject {
         )
         menu.addItem(.separator())
 
-        addActionItem(OffsendStrings.menuSafePaste, action: #selector(safePasteItem), keyEquivalent: "V", modifiers: [.command, .shift])
-        addActionItem(OffsendStrings.menuRestorePlaceholders, action: #selector(restoreItem), keyEquivalent: "R", modifiers: [.command, .shift])
+        let safePasteKey = menuKeyEquivalent(for: .safePaste)
+        addActionItem(
+            OffsendStrings.menuSafePaste,
+            action: #selector(safePasteItem),
+            keyEquivalent: safePasteKey.key,
+            modifiers: safePasteKey.modifiers
+        )
+
+        let restoreKey = menuKeyEquivalent(for: .restorePlaceholders)
+        addActionItem(
+            OffsendStrings.menuRestorePlaceholders,
+            action: #selector(restoreItem),
+            keyEquivalent: restoreKey.key,
+            modifiers: restoreKey.modifiers
+        )
         menu.addItem(.separator())
 
         addActionItem(OffsendStrings.menuCheckDirectory, action: #selector(openDirectoryCheckItem))
@@ -225,6 +229,13 @@ final class MenuBarStatusItemController: NSObject {
 
         addDisabledItem(OffsendStrings.menuLastAction(lastStatusMessage))
         addActionItem(OffsendStrings.menuQuit, action: #selector(quitItem))
+    }
+
+    private func menuKeyEquivalent(for kind: HotkeyKind) -> (key: String, modifiers: NSEvent.ModifierFlags) {
+        if let equivalent = HotkeyDisplay.menuKeyEquivalent(for: kind) {
+            return (equivalent.key, equivalent.modifiers)
+        }
+        return ("", [])
     }
 
     private func addDisabledItem(_ title: String) {

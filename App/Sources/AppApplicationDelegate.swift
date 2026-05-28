@@ -5,6 +5,10 @@ import Foundation
 final class OffsendApplicationDelegate: NSObject, NSApplicationDelegate {
     static weak var coordinator: AppCoordinator?
 
+    func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
+        false
+    }
+
     func application(_ application: NSApplication, open urls: [URL]) {
         Task { @MainActor in
             guard let coordinator = Self.coordinator else { return }

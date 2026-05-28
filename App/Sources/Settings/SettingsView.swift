@@ -147,12 +147,22 @@ struct SettingsView: View {
     private var showsTariffUpsellBanner: Bool {
         switch tab {
         case .detection:
-            let tf = coordinator.tariffFeatures
-            return !tf.advancedDetectors && !tf.customDictionaries
+            return !coordinator.tariffFeatures.customDictionaries
         case .masking:
-            return !coordinator.tariffFeatures.safePasteUnlimited
+            return !coordinator.allowsExtendedMappingTTL
         default:
             return false
+        }
+    }
+
+    private var tariffUpsellMessage: String {
+        switch tab {
+        case .detection:
+            return OffsendStrings.settingsTariffUpsellDetectionMessage
+        case .masking:
+            return OffsendStrings.settingsTariffUpsellMaskingMessage
+        default:
+            return OffsendStrings.settingsTariffUpsellMessage
         }
     }
 
@@ -193,7 +203,7 @@ struct SettingsView: View {
             )
 
             if showsTariffUpsellBanner {
-                SettingsTariffUpsellBanner()
+                SettingsTariffUpsellBanner(message: tariffUpsellMessage)
                     .padding(.horizontal, 24)
                     .padding(.top, 16)
             }
@@ -206,13 +216,7 @@ struct SettingsView: View {
                     case .hotkeys:
                         SettingsHotkeysPanel()
                     case .detection:
-                        if showsTariffUpsellBanner {
-                            SettingsTariffUpsellPreview {
-                                SettingsDetectionPanel(showsTeaserDespiteTariff: true)
-                            }
-                        } else {
-                            SettingsDetectionPanel()
-                        }
+                        SettingsDetectionPanel()
                     case .masking:
                         if showsTariffUpsellBanner {
                             SettingsTariffUpsellPreview {
@@ -265,13 +269,15 @@ private struct SettingsTariffUpsellBanner: View {
     @EnvironmentObject private var coordinator: AppCoordinator
     @Environment(\.ofPalette) private var palette
 
+    let message: String
+
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "crown.fill")
                 .font(.system(size: 14))
                 .foregroundColor(palette.blue)
 
-            Text(OffsendStrings.settingsTariffUpsellMessage)
+            Text(message)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundColor(palette.text)
                 .fixedSize(horizontal: false, vertical: true)

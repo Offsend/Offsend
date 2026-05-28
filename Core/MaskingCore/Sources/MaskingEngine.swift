@@ -56,6 +56,17 @@ public enum MappingTTL: String, Codable, CaseIterable, Identifiable, Sendable {
             return MaskingCoreStrings.mappingTTLNeverStore
         }
     }
+
+    public static let freeTierOptions: [MappingTTL] = [.oneHour]
+
+    public static func allowedOptions(extendedTTLAllowed: Bool) -> [MappingTTL] {
+        extendedTTLAllowed ? Array(allCases) : freeTierOptions
+    }
+
+    public static func effective(_ selected: MappingTTL, extendedTTLAllowed: Bool) -> MappingTTL {
+        guard extendedTTLAllowed else { return .oneHour }
+        return selected
+    }
 }
 
 public protocol TextMasking {

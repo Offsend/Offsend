@@ -7,12 +7,21 @@ import UniformTypeIdentifiers
 struct SettingsGeneralPanel: View {
     @EnvironmentObject private var coordinator: AppCoordinator
     @Environment(\.ofPalette) private var palette
+    @State private var accessibilityStatusRevision = 0
+
+    private var isAccessibilityGranted: Bool {
+        _ = accessibilityStatusRevision
+        return coordinator.permissionsService.isAccessibilityTrusted
+    }
 
     var body: some View {
         let binder = SettingsCoordinatorBinder(coordinator: coordinator)
         VStack(alignment: .leading, spacing: 0) {
             statusCard(binder: binder)
                 .padding(.bottom, 22)
+
+            permissionsSection
+                .padding(.bottom, 24)
 
             OFSettingsGroup(title: OffsendStrings.settingsGeneralSectionStartup) {
                 OFSettingsRow(label: OffsendStrings.settingsLaunchAtLogin, hint: nil) {
@@ -63,6 +72,55 @@ struct SettingsGeneralPanel: View {
             }
         }
         .animation(.easeInOut(duration: 0.22), value: coordinator.settings.clipboardMonitoringEnabled)
+        .onAppear {
+            accessibilityStatusRevision += 1
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            accessibilityStatusRevision += 1
+        }
+        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
+            accessibilityStatusRevision += 1
+        }
+    }
+
+    private var permissionsSection: some View {
+        OFSettingsGroup(title: OffsendStrings.settingsGeneralSectionPermissions) {
+            OFSettingsRow(
+                label: OffsendStrings.settingsGeneralAccessibilityLabel,
+                hint: isAccessibilityGranted
+                    ? OffsendStrings.settingsGeneralAccessibilityGrantedHint
+                    : OffsendStrings.settingsGeneralAccessibilityMissingHint,
+                alignTop: true
+            ) {
+                VStack(alignment: .trailing, spacing: 8) {
+                    accessibilityStatusBadge
+
+                    if !isAccessibilityGranted {
+                        OFCompactButton(
+                            title: OffsendStrings.onboardingPermissionsOpenSystemSettings,
+                            icon: "arrow.up.right",
+                            variant: .outline
+                        ) {
+                            coordinator.permissionsService.openAccessibilitySettings()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var accessibilityStatusBadge: some View {
+        HStack(spacing: 5) {
+            Image(systemName: isAccessibilityGranted ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                .font(.system(size: 11, weight: .semibold))
+            Text(
+                isAccessibilityGranted
+                    ? OffsendStrings.settingsGeneralAccessibilityGranted
+                    : OffsendStrings.settingsGeneralAccessibilityMissing
+            )
+            .font(.system(size: 11, weight: .medium))
+        }
+        .foregroundColor(isAccessibilityGranted ? palette.greenText : palette.amberText)
     }
 
     private func statusCard(binder: SettingsCoordinatorBinder) -> some View {

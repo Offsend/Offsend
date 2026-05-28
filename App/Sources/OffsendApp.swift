@@ -18,9 +18,7 @@ struct OffsendApp: App {
         let _ = configureMenuBarStatusItem()
 
         Window(OffsendStrings.windowOnboarding, id: "onboarding") {
-            OnboardingView()
-                .environmentObject(coordinator)
-                .tracksDockIconWindow(using: coordinator.dockIconVisibilityService)
+            OnboardingWindowRoot(coordinator: coordinator)
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
@@ -50,22 +48,59 @@ struct OffsendApp: App {
 
     private func showInitialOnboardingIfNeeded() {
         guard !didRequestInitialOnboarding else { return }
-        #if !DEBUG
         guard !coordinator.settings.hasCompletedOnboarding else { return }
-        #endif
 
         didRequestInitialOnboarding = true
+        coordinator.requestOnboardingPresentation()
         openWindow(id: "onboarding")
     }
 
     private func configureMenuBarStatusItem() {
         coordinator.configureMenuBarStatusItem(
-            openOnboarding: { openWindow(id: "onboarding") },
+            openOnboarding: { openOnboardingWindow() },
             openSettings: { openWindow(id: "settings") },
             openDirectoryCheck: { openWindow(id: "directory-check") }
         )
         Task { @MainActor in
             showInitialOnboardingIfNeeded()
         }
+    }
+
+    private func openOnboardingWindow() {
+        coordinator.requestOnboardingPresentation()
+        openWindow(id: "onboarding")
+    }
+}
+
+private struct OnboardingWindowRoot: View {
+    @ObservedObject var coordinator: AppCoordinator
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        Group {
+            if shouldShowOnboardingContent {
+                OnboardingView()
+                    .environmentObject(coordinator)
+                    .tracksDockIconWindow(using: coordinator.dockIconVisibilityService)
+                    .onChange(of: coordinator.settings.hasCompletedOnboarding) { _ in
+                        closeIfAlreadyCompleted()
+                    }
+            } else {
+                Color.clear
+                    .frame(width: 1, height: 1)
+                    .onAppear {
+                        dismiss()
+                    }
+            }
+        }
+    }
+
+    private var shouldShowOnboardingContent: Bool {
+        coordinator.isOnboardingPresentationRequested && !coordinator.settings.hasCompletedOnboarding
+    }
+
+    private func closeIfAlreadyCompleted() {
+        guard coordinator.settings.hasCompletedOnboarding else { return }
+        dismiss()
     }
 }

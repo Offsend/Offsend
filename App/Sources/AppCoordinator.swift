@@ -71,6 +71,7 @@ final class AppCoordinator: ObservableObject {
             refreshMenuBarStatusItem()
         }
     }
+    @Published var isOnboardingPresentationRequested = false
 
     let clipboardService = ClipboardService()
     let pasteService = PasteService()
@@ -188,9 +189,43 @@ final class AppCoordinator: ObservableObject {
             restore: { [weak self] in self?.restorePlaceholders() }
         )
         applyClipboardMonitoringPreference()
+        clampMappingTTLIfNeeded()
         refreshMenuBarStatusItem()
 
         Task { await performStartupLicenseTasks() }
+    }
+
+    var allowsExtendedMappingTTL: Bool {
+        extendedMappingTTLAllowed
+    }
+
+    private var isProEntitlementActive: Bool {
+        guard licenseState.plan == .pro else { return false }
+        return LicenseOfflineEntitlement.isProUnlocked(
+            expiresAt: licenseState.subscriptionExpiresAt,
+            graceUntil: licenseState.graceUntil
+        )
+    }
+
+    private var extendedMappingTTLAllowed: Bool {
+        guard isProEntitlementActive else { return false }
+        return tariffFeatures.safePasteUnlimited
+    }
+
+    private var effectiveMappingTTL: MappingTTL {
+        MappingTTL.effective(settings.mappingTTL, extendedTTLAllowed: extendedMappingTTLAllowed)
+    }
+
+    /// Forces mapping TTL to the Free-tier cap when extended TTL is not entitled.
+    func syncMappingTTLToTariff() {
+        guard !extendedMappingTTLAllowed else { return }
+        guard settings.mappingTTL != .oneHour else { return }
+        settings.mappingTTL = .oneHour
+        try? store.saveSettings(settings)
+    }
+
+    private func clampMappingTTLIfNeeded() {
+        syncMappingTTLToTariff()
     }
 
     func checkForSparkleUpdates(sender: Any?) {
@@ -284,7 +319,7 @@ final class AppCoordinator: ObservableObject {
     }
 
     func maskAndPaste(originalText: String, entities: [SensitiveEntity]) {
-        let result = maskingEngine.mask(text: originalText, entities: entities, ttl: settings.mappingTTL)
+        let result = maskingEngine.mask(text: originalText, entities: entities, ttl: effectiveMappingTTL)
         do {
             try store.saveMapping(result)
             try refreshMappingSummaries()
@@ -322,7 +357,7 @@ final class AppCoordinator: ObservableObject {
     }
 
     func copySafeVersion(originalText: String, entities: [SensitiveEntity]) {
-        let result = maskingEngine.mask(text: originalText, entities: entities, ttl: settings.mappingTTL)
+        let result = maskingEngine.mask(text: originalText, entities: entities, ttl: effectiveMappingTTL)
         try? store.saveMapping(result)
         try? refreshMappingSummaries()
         clipboardService.writeString(result.maskedText)
@@ -335,7 +370,12 @@ final class AppCoordinator: ObservableObject {
     func completeOnboarding() {
         settings.hasCompletedOnboarding = true
         saveSettings()
+        isOnboardingPresentationRequested = false
         analytics.track(.onboardingCompleted)
+    }
+
+    func requestOnboardingPresentation() {
+        isOnboardingPresentationRequested = true
     }
 
     func copyOnboardingSampleToClipboard(_ text: String) {
@@ -350,6 +390,7 @@ final class AppCoordinator: ObservableObject {
     }
 
     func saveSettings() {
+        clampMappingTTLIfNeeded()
         analytics.setProductAnalyticsEnabled(settings.analyticsOptIn)
         do {
             try store.saveSettings(settings)
@@ -366,6 +407,7 @@ final class AppCoordinator: ObservableObject {
     }
 
     func saveCustomDictionaries() {
+        guard tariffFeatures.customDictionaries else { return }
         do {
             try store.saveCustomDictionaries(customDictionaries)
             lastStatusMessage = OffsendStrings.statusCustomDictionariesSaved
@@ -515,6 +557,7 @@ final class AppCoordinator: ObservableObject {
         licenseState = state
         licenseActivationDeviceLimit = []
         try? store.saveLicenseState(state)
+        syncMappingTTLToTariff()
         lastStatusMessage = OffsendStrings.statusLicenseUseFree
     }
 
@@ -602,6 +645,7 @@ final class AppCoordinator: ObservableObject {
         async let pricing: Void = refreshLicensePricingCatalog()
         async let validate: Void = refreshLicenseFromServerIfStale(trigger: .appLaunch)
         _ = await (pricing, validate)
+        syncMappingTTLToTariff()
     }
 
     private func refreshLicensePricingCatalog() async {
@@ -626,6 +670,7 @@ final class AppCoordinator: ObservableObject {
                 state.plan = .free
                 licenseState = state
                 try? store.saveLicenseState(state)
+                syncMappingTTLToTariff()
             }
             return
         }
@@ -639,6 +684,7 @@ final class AppCoordinator: ObservableObject {
             licenseState = state
             try? store.saveLicenseState(state)
         }
+        syncMappingTTLToTariff()
     }
 
     private func applyLicenseValidationResult(_ result: LicenseValidateResult) {
@@ -656,6 +702,7 @@ final class AppCoordinator: ObservableObject {
         state.plan = unlocked ? .pro : .free
         licenseState = state
         try? store.saveLicenseState(state)
+        syncMappingTTLToTariff()
     }
 
     private func applySuccessfulVerification(_ success: LicenseVerifySuccess) {
@@ -776,10 +823,14 @@ final class AppCoordinator: ObservableObject {
         }
     }
 
+    private var activeCustomDictionaries: [CustomDictionaryItem] {
+        tariffFeatures.customDictionaries ? customDictionaries : []
+    }
+
     private func assessClipboardText(_ text: String) -> (DetectionResult, RiskAssessment) {
         let detectionOptions = DetectionOptions(
             enabledTypes: settings.enabledDetectors,
-            customDictionaries: customDictionaries
+            customDictionaries: activeCustomDictionaries
         )
         let detection = detectionEngine.scan(DetectionRequest(text: text, options: detectionOptions))
         return (detection, riskEngine.assess(detection.entities))
@@ -996,6 +1047,20 @@ extension AppCoordinator {
             await refreshLicensePricingCatalog()
             await refreshLicenseFromServerIfStale(trigger: .settingsLicenseScreen)
         }
+    }
+
+    func debugResetSettingsFlags() {
+        settings = .default
+        isOnboardingPresentationRequested = false
+
+        UserDefaults.standard.removeObject(forKey: OFSettingsChromeAppearance.appStorageKey)
+        UserDefaults.standard.removeObject(forKey: DebugLicenseAPIEnvironment.userDefaultsKey)
+        debugTariffFeatureOverrides = [:]
+        DebugTariffFeatureOverrides.save([:])
+        licenseService = LicenseService(configuration: DebugLicenseAPIEnvironment.loadFromUserDefaults().licenseConfiguration)
+
+        saveSettings()
+        lastStatusMessage = OffsendStrings.statusSettingsFlagsReset
     }
 
     /// JWT-shaped string with `{}` payload; not valid for `/license/validate`, but satisfies local token presence for Pro gating.

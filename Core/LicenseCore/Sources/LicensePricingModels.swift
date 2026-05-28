@@ -9,6 +9,7 @@ public struct LicensePricingPlan: Codable, Equatable, Sendable, Identifiable {
     public var billingInterval: String?
     public var priceMinor: Int?
     public var priceDisplay: String?
+    public var oldPriceDisplay: String?
     public var trialDays: Int?
     public var deviceLimit: Int?
     public var isDefault: Bool?
@@ -24,6 +25,7 @@ public struct LicensePricingPlan: Codable, Equatable, Sendable, Identifiable {
         billingInterval: String?,
         priceMinor: Int?,
         priceDisplay: String?,
+        oldPriceDisplay: String? = nil,
         trialDays: Int?,
         deviceLimit: Int?,
         isDefault: Bool?,
@@ -36,6 +38,7 @@ public struct LicensePricingPlan: Codable, Equatable, Sendable, Identifiable {
         self.billingInterval = billingInterval
         self.priceMinor = priceMinor
         self.priceDisplay = priceDisplay
+        self.oldPriceDisplay = oldPriceDisplay
         self.trialDays = trialDays
         self.deviceLimit = deviceLimit
         self.isDefault = isDefault
@@ -50,6 +53,7 @@ public struct LicensePricingPlan: Codable, Equatable, Sendable, Identifiable {
         case billingInterval = "billing_interval"
         case priceMinor = "price_minor"
         case priceDisplay = "price_display"
+        case oldPriceDisplay = "old_price_display"
         case trialDays = "trial_days"
         case deviceLimit = "device_limit"
         case isDefault = "is_default"
@@ -128,6 +132,7 @@ public struct LicensePricingPresentation: Equatable, Sendable {
     public var buyButtonTitle: String
     public var defaultCheckoutPlanId: String
     public var primaryPriceDisplay: String?
+    public var primaryOldPriceDisplay: String?
     /// Plan card title (e.g. "Offsend Pro").
     public var productDisplayName: String
     public var plans: [LicensePricingPlan]
@@ -144,6 +149,7 @@ public struct LicensePricingPresentation: Equatable, Sendable {
         buyButtonTitle: String,
         defaultCheckoutPlanId: String,
         primaryPriceDisplay: String?,
+        primaryOldPriceDisplay: String? = nil,
         productDisplayName: String,
         plans: [LicensePricingPlan],
         restoreGroupTitle: String?,
@@ -158,6 +164,7 @@ public struct LicensePricingPresentation: Equatable, Sendable {
         self.buyButtonTitle = buyButtonTitle
         self.defaultCheckoutPlanId = defaultCheckoutPlanId
         self.primaryPriceDisplay = primaryPriceDisplay
+        self.primaryOldPriceDisplay = primaryOldPriceDisplay
         self.productDisplayName = productDisplayName
         self.plans = plans
         self.restoreGroupTitle = restoreGroupTitle
@@ -175,6 +182,7 @@ public struct LicensePricingPresentation: Equatable, Sendable {
             buyButtonTitle: strings.buyButtonTitle,
             defaultCheckoutPlanId: defaultPlanId,
             primaryPriceDisplay: nil,
+            primaryOldPriceDisplay: nil,
             productDisplayName: strings.headline,
             plans: [],
             restoreGroupTitle: nil,
@@ -186,14 +194,19 @@ public struct LicensePricingPresentation: Equatable, Sendable {
     }
 
     public static func fromCatalog(_ catalog: LicensePricingCatalog, defaultPlanIdFallback: String) -> LicensePricingPresentation {
-        let defaultPlan = catalog.plans.first(where: { $0.isDefault == true }) ?? catalog.plans.first
-        let planId = defaultPlan?.planId ?? defaultPlanIdFallback
-        let buyTitle = defaultPlan?.ctaLabel ?? "Buy Pro"
-        let headline = catalog.ui?.headline ?? defaultPlan?.name ?? "Offsend Pro"
-        let sub = catalog.ui?.subheadline ?? defaultPlan?.description ?? ""
-        let priceLine = defaultPlan?.priceDisplay
-        let bullets = Self.featureBullets(from: defaultPlan?.features)
-        let productName = defaultPlan?.name ?? headline
+        let planId = catalog.plans.first(where: { $0.isDefault == true })?.planId
+            ?? catalog.plans.first?.planId
+            ?? defaultPlanIdFallback
+        let checkoutPlan = catalog.plans.first(where: { $0.planId == planId })
+            ?? catalog.plans.first(where: { $0.isDefault == true })
+            ?? catalog.plans.first
+        let buyTitle = checkoutPlan?.ctaLabel ?? "Buy Pro"
+        let headline = catalog.ui?.headline ?? checkoutPlan?.name ?? "Offsend Pro"
+        let sub = catalog.ui?.subheadline ?? checkoutPlan?.description ?? ""
+        let priceLine = checkoutPlan?.priceDisplay
+        let oldPriceLine = checkoutPlan?.oldPriceDisplay
+        let bullets = Self.featureBullets(from: checkoutPlan?.features)
+        let productName = checkoutPlan?.name ?? headline
 
         return LicensePricingPresentation(
             showsPrice: true,
@@ -202,12 +215,13 @@ public struct LicensePricingPresentation: Equatable, Sendable {
             buyButtonTitle: buyTitle,
             defaultCheckoutPlanId: planId,
             primaryPriceDisplay: priceLine,
+            primaryOldPriceDisplay: oldPriceLine,
             productDisplayName: productName,
             plans: catalog.plans,
             restoreGroupTitle: catalog.ui?.restoreLabel,
             restoreGroupSubtitle: nil,
-            defaultPlanDescription: defaultPlan?.description,
-            defaultPlanDeviceLimit: defaultPlan?.deviceLimit,
+            defaultPlanDescription: checkoutPlan?.description,
+            defaultPlanDeviceLimit: checkoutPlan?.deviceLimit,
             featureBulletLabels: bullets
         )
     }
