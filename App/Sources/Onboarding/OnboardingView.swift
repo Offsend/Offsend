@@ -8,6 +8,7 @@ private enum OnboardingStep: Int, CaseIterable {
     case privacy
     case hotkeys
     case permissions
+    case directoryWatch
     case sample
 
     var label: String {
@@ -20,6 +21,8 @@ private enum OnboardingStep: Int, CaseIterable {
             return OffsendStrings.onboardingStepHotkeys
         case .permissions:
             return OffsendStrings.onboardingStepPermissions
+        case .directoryWatch:
+            return OffsendStrings.onboardingStepDirectoryWatch
         case .sample:
             return OffsendStrings.onboardingStepSample
         }
@@ -39,6 +42,7 @@ struct OnboardingView: View {
     @State private var accessibilityStatusRevision = 0
     @State private var safePasteHotkey = HotkeyDisplay.safePaste
     @State private var restoreHotkey = HotkeyDisplay.restorePlaceholders
+    @State private var addedWatchFolderName: String?
 
     private let sampleText = OffsendStrings.onboardingSampleText
 
@@ -152,6 +156,8 @@ struct OnboardingView: View {
                 hotkeys
             case .permissions:
                 permissions
+            case .directoryWatch:
+                directoryWatch
             case .sample:
                 sampleScenario
             }
@@ -320,6 +326,66 @@ struct OnboardingView: View {
             .fixedSize(horizontal: false, vertical: true)
         }
         .foregroundColor(isAccessibilityGranted ? .ofGreenText : .ofTextSub)
+    }
+
+    private var directoryWatch: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            stepHeader(
+                title: OffsendStrings.onboardingDirectoryWatchTitle,
+                subtitle: OffsendStrings.onboardingDirectoryWatchSubtitle
+            )
+
+            Text(OffsendStrings.onboardingDirectoryWatchDescription)
+                .font(.system(size: 14))
+                .foregroundColor(.ofTextSub)
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let addedWatchFolderName {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.ofGreenText)
+                        .padding(.top, 1)
+
+                    Text(OffsendStrings.onboardingDirectoryWatchAdded(addedWatchFolderName))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.ofGreenText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(OFSpacing.md)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.ofGreenDim)
+                .cornerRadius(OFRadius.md)
+            } else {
+                OFButton(
+                    title: OffsendStrings.onboardingDirectoryWatchAddFolder,
+                    variant: .outline,
+                    icon: "folder.badge.plus",
+                    small: true
+                ) {
+                    chooseMonitoredDirectory()
+                }
+            }
+
+            Text(OffsendStrings.onboardingDirectoryWatchSkipHint)
+                .font(.system(size: 12))
+                .foregroundColor(.ofTextMuted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func chooseMonitoredDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = OffsendStrings.onboardingDirectoryWatchAddFolder
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        if coordinator.addWatchedDirectory(url: url, source: "onboarding") {
+            addedWatchFolderName = url.standardizedFileURL.lastPathComponent
+        }
     }
 
     private var sampleScenario: some View {

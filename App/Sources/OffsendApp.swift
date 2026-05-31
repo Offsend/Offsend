@@ -37,8 +37,8 @@ struct OffsendApp: App {
         }
         .defaultSize(width: 560, height: 420)
 
-        WindowGroup(OffsendStrings.windowDirectoryCheck, id: "directory-check") {
-            DirectoryCheckView()
+        WindowGroup(id: "directory-check", for: String.self) { $directoryPath in
+            DirectoryCheckView(directoryWindowPath: directoryPath)
                 .environmentObject(coordinator)
                 .tracksDockIconWindow(using: coordinator.dockIconVisibilityService)
         }
@@ -56,10 +56,23 @@ struct OffsendApp: App {
     }
 
     private func configureMenuBarStatusItem() {
+        coordinator.openDirectoryCheckWindowAction = { url in
+            if let url {
+                openWindow(id: "directory-check", value: url.path)
+            } else {
+                openWindow(id: "directory-check")
+            }
+        }
         coordinator.configureMenuBarStatusItem(
             openOnboarding: { openOnboardingWindow() },
             openSettings: { openWindow(id: "settings") },
-            openDirectoryCheck: { openWindow(id: "directory-check") }
+            openDirectoryCheck: {
+                coordinator.recordDirectoryCheckOpened(source: "menu_bar")
+                coordinator.openDirectoryCheckWindowAction?(nil)
+            },
+            openWatchedDirectoryCheck: { watchID in
+                coordinator.openDirectoryCheckForWatch(watchID: watchID, source: "menu_bar")
+            }
         )
         Task { @MainActor in
             showInitialOnboardingIfNeeded()

@@ -1,6 +1,13 @@
 import AppKit
 import HotkeyService
 import StorageCore
+import WorkspacePolicyCore
+
+struct WorkspaceStatusMenuEntryModel: Equatable {
+    let watchID: UUID
+    let title: String
+    let status: AIWorkspacePrivacyAuditStatus
+}
 
 @MainActor
 final class MenuBarStatusItemController: NSObject {
@@ -16,6 +23,7 @@ final class MenuBarStatusItemController: NSObject {
     private var openOnboarding: (() -> Void)?
     private var openSettings: (() -> Void)?
     private var openDirectoryCheck: (() -> Void)?
+    private var openWatchedDirectoryCheck: ((UUID) -> Void)?
     private var checkForUpdates: ((Any?) -> Void)?
 
     override init() {
@@ -48,11 +56,13 @@ final class MenuBarStatusItemController: NSObject {
     func configureWindowActions(
         openOnboarding: @escaping () -> Void,
         openSettings: @escaping () -> Void,
-        openDirectoryCheck: @escaping () -> Void
+        openDirectoryCheck: @escaping () -> Void,
+        openWatchedDirectoryCheck: @escaping (UUID) -> Void
     ) {
         self.openOnboarding = openOnboarding
         self.openSettings = openSettings
         self.openDirectoryCheck = openDirectoryCheck
+        self.openWatchedDirectoryCheck = openWatchedDirectoryCheck
     }
 
     func update(
@@ -61,6 +71,8 @@ final class MenuBarStatusItemController: NSObject {
         settings: AppSettings,
         clipboardStatusTitle: String,
         isClipboardStatusActionEnabled: Bool,
+        workspaceStatusTitle: String?,
+        workspaceStatusEntries: [WorkspaceStatusMenuEntryModel],
         lastStatusMessage: String
     ) {
         if let button = statusItem.button {
@@ -75,6 +87,8 @@ final class MenuBarStatusItemController: NSObject {
             settings: settings,
             clipboardStatusTitle: clipboardStatusTitle,
             isClipboardStatusActionEnabled: isClipboardStatusActionEnabled,
+            workspaceStatusTitle: workspaceStatusTitle,
+            workspaceStatusEntries: workspaceStatusEntries,
             lastStatusMessage: lastStatusMessage
         )
     }
@@ -183,6 +197,8 @@ final class MenuBarStatusItemController: NSObject {
         settings: AppSettings,
         clipboardStatusTitle: String,
         isClipboardStatusActionEnabled: Bool,
+        workspaceStatusTitle: String?,
+        workspaceStatusEntries: [WorkspaceStatusMenuEntryModel],
         lastStatusMessage: String
     ) {
         menu.removeAllItems()
@@ -194,6 +210,22 @@ final class MenuBarStatusItemController: NSObject {
             action: #selector(showClipboardStatusItem),
             isEnabled: isClipboardStatusActionEnabled
         )
+        if let workspaceStatusTitle, !workspaceStatusEntries.isEmpty {
+            let workspaceItem = NSMenuItem(title: workspaceStatusTitle, action: nil, keyEquivalent: "")
+            let workspaceSubmenu = NSMenu()
+            for entry in workspaceStatusEntries {
+                let item = NSMenuItem(
+                    title: workspaceMenuEntryTitle(for: entry),
+                    action: #selector(openWatchedDirectoryCheckItem(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = self
+                item.representedObject = entry.watchID
+                workspaceSubmenu.addItem(item)
+            }
+            workspaceItem.submenu = workspaceSubmenu
+            menu.addItem(workspaceItem)
+        }
         menu.addItem(.separator())
 
         let safePasteKey = menuKeyEquivalent(for: .safePaste)
@@ -286,6 +318,21 @@ final class MenuBarStatusItemController: NSObject {
 
     @objc private func openSettingsItem() {
         openSettings?()
+    }
+
+    private func workspaceMenuEntryTitle(for entry: WorkspaceStatusMenuEntryModel) -> String {
+        let statusLabel: String
+        switch entry.status {
+        case .pass: statusLabel = OffsendStrings.directoryCheckStatusPass
+        case .warning: statusLabel = OffsendStrings.directoryCheckStatusWarning
+        case .fail: statusLabel = OffsendStrings.directoryCheckStatusFail
+        }
+        return OffsendStrings.menuWorkspaceStatusEntry(entry.title, statusLabel)
+    }
+
+    @objc private func openWatchedDirectoryCheckItem(_ sender: NSMenuItem) {
+        guard let watchID = sender.representedObject as? UUID else { return }
+        openWatchedDirectoryCheck?(watchID)
     }
 
     @objc private func openDirectoryCheckItem() {

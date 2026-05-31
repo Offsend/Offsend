@@ -135,6 +135,16 @@ let serviceTargets: [Target] = [
         settings: developerIDReleaseSigning
     ),
     .target(
+        name: "WorkspaceWatchService",
+        destinations: .macOS,
+        product: .framework,
+        bundleId: "\(bundlePrefix).workspacewatchservice",
+        deploymentTargets: macOSDeploymentTarget,
+        sources: ["Services/WorkspaceWatchService/Sources/**"],
+        dependencies: [.target(name: "WorkspacePolicyCore")],
+        settings: developerIDReleaseSigning
+    ),
+    .target(
         name: "AnalyticsCore",
         destinations: .macOS,
         product: .framework,
@@ -186,6 +196,7 @@ let appTarget = Target.target(
         .target(name: "WorkspacePolicyCore"),
         .target(name: "StorageCore"),
         .target(name: "ClipboardService"),
+        .target(name: "WorkspaceWatchService"),
         .target(name: "PasteService"),
         .target(name: "HotkeyService"),
         .target(name: "PermissionsService"),
@@ -290,6 +301,15 @@ let testTargets: [Target] = [
         deploymentTargets: macOSDeploymentTarget,
         sources: ["Core/StorageCore/Tests/**"],
         dependencies: [.target(name: "StorageCore")]
+    ),
+    .target(
+        name: "WorkspaceWatchServiceTests",
+        destinations: .macOS,
+        product: .unitTests,
+        bundleId: "\(bundlePrefix).workspacewatchservice.tests",
+        deploymentTargets: macOSDeploymentTarget,
+        sources: ["Services/WorkspaceWatchService/Tests/**"],
+        dependencies: [.target(name: "WorkspaceWatchService")]
     )
 ]
 

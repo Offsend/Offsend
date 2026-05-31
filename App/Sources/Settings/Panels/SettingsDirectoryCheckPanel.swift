@@ -1,4 +1,5 @@
 import AppUIKit
+import AppKit
 import StorageCore
 import SwiftUI
 import WorkspacePolicyCore
@@ -38,7 +39,17 @@ struct SettingsDirectoryCheckPanel: View {
             summaryCard
                 .padding(.bottom, 22)
 
+            monitoredDirectoriesSection
+
             OFSettingsGroup(title: OffsendStrings.settingsDirectoryCheckSectionBehavior) {
+                OFSettingsRow(
+                    label: OffsendStrings.settingsDirectoryCheckNotifyOnDegrade,
+                    hint: OffsendStrings.settingsDirectoryCheckNotifyOnDegradeHint,
+                    alignTop: true
+                ) {
+                    OFToggle(isOn: binder.setting(\.directoryWatchNotifyOnDegrade))
+                }
+
                 OFSettingsRow(
                     label: OffsendStrings.settingsDirectoryCheckConfirmFix,
                     hint: OffsendStrings.settingsDirectoryCheckConfirmFixHint,
@@ -88,25 +99,35 @@ struct SettingsDirectoryCheckPanel: View {
                     icon: "folder",
                     variant: .primary
                 ) {
+                    coordinator.recordDirectoryCheckOpened(source: "settings")
                     openWindow(id: "directory-check")
                 }
             }
 
             HStack(alignment: .top, spacing: 10) {
-                statTile(
+                OFStatTile(
+                    icon: "line.3.horizontal.decrease",
                     label: OffsendStrings.settingsDirectoryCheckStatRules,
                     value: "\(stats.rules)",
-                    proExtra: stats.rulesProExtra
+                    accessory: proExtraAccessory(stats.rulesProExtra)
                 )
-                statTile(
+                OFStatTile(
+                    icon: "gauge.medium",
                     label: OffsendStrings.settingsDirectoryCheckStatPatterns,
                     value: "\(stats.patterns)",
-                    proExtra: stats.patternsProExtra
+                    accessory: proExtraAccessory(stats.patternsProExtra)
                 )
-                statTile(
+                OFStatTile(
+                    icon: "folder",
                     label: OffsendStrings.settingsDirectoryCheckStatSkipped,
                     value: "\(stats.skipped)",
-                    proExtra: 0
+                    accessory: skippedAccessory(stats.skipped)
+                )
+                OFStatTile(
+                    icon: "eye",
+                    label: OffsendStrings.settingsDirectoryCheckMonitoredStatLabel,
+                    value: "\(coordinator.settings.watchedDirectories.count)",
+                    accessory: monitoredAccessory
                 )
             }
             .fixedSize(horizontal: false, vertical: true)
@@ -125,30 +146,21 @@ struct SettingsDirectoryCheckPanel: View {
         )
     }
 
-    private func statTile(label: String, value: String, proExtra: Int) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label.uppercased())
-                .font(.system(size: 10.5, weight: .bold))
-                .kerning(0.6)
-                .foregroundColor(palette.textMuted)
-            Text(value)
-                .font(.system(size: 18, weight: .semibold, design: .monospaced))
-                .foregroundColor(palette.text)
-            if proExtra > 0 {
-                Text(OffsendStrings.settingsDirectoryCheckStatProExtra(proExtra))
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundColor(palette.textMuted)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(palette.bg0)
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(palette.border, lineWidth: 1))
-        )
+    private func proExtraAccessory(_ proExtra: Int) -> OFStatTileAccessory {
+        proExtra > 0 ? .proUpsell(OffsendStrings.settingsDirectoryCheckStatProExtra(proExtra)) : .none
+    }
+
+    private func skippedAccessory(_ skipped: Int) -> OFStatTileAccessory {
+        skipped > 0
+            ? .caption(OffsendStrings.settingsDirectoryCheckStatSkippedCount(skipped))
+            : .caption(OffsendStrings.settingsDirectoryCheckStatSkippedNone)
+    }
+
+    private var monitoredAccessory: OFStatTileAccessory {
+        let count = coordinator.settings.watchedDirectories.count
+        return coordinator.tariffFeatures.workspaceAuditFull
+            ? .caption(OffsendStrings.settingsDirectoryCheckStatMonitoredPro(count))
+            : .caption(OffsendStrings.settingsDirectoryCheckStatMonitoredFree(count, DirectoryWatchLimits.freeMaxRoots))
     }
 
     private func directoryCheckStats() -> (
@@ -173,6 +185,263 @@ struct SettingsDirectoryCheckPanel: View {
             rulesProExtra,
             patternsProExtra
         )
+    }
+
+    // MARK: Monitored directories
+
+    private var monitoredToggleBinding: Binding<Bool> {
+        Binding(
+            get: { coordinator.settings.directoryWatchEnabled },
+            set: { newValue in
+                coordinator.setDirectoryWatchEnabled(newValue)
+            }
+        )
+    }
+
+    private var monitoredDirectoriesSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(OffsendStrings.settingsDirectoryCheckSectionMonitored.uppercased())
+                .font(.system(size: 10.5, weight: .bold))
+                .kerning(0.8)
+                .foregroundColor(palette.textMuted)
+                .padding(.leading, 2)
+
+            Text(OffsendStrings.settingsDirectoryCheckMonitoredSectionHint)
+                .font(.system(size: 12))
+                .foregroundColor(palette.textSub)
+                .padding(.leading, 2)
+                .frame(maxWidth: 520, alignment: .leading)
+
+            OFSettingsRow(
+                label: OffsendStrings.settingsDirectoryCheckMonitoredToggle,
+                hint: OffsendStrings.settingsDirectoryCheckMonitoredHint,
+                alignTop: true
+            ) {
+                OFToggle(isOn: monitoredToggleBinding)
+            }
+            .padding(.bottom, 4)
+
+            VStack(spacing: 0) {
+                let entries = coordinator.settings.watchedDirectories
+                if entries.isEmpty {
+                    Text(OffsendStrings.settingsDirectoryCheckMonitoredEmpty)
+                        .font(.system(size: 12))
+                        .foregroundColor(palette.textSub)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 18)
+                } else {
+                    ForEach(entries) { entry in
+                        monitoredDirectoryRow(entry)
+                        if entry.id != entries.last?.id {
+                            OFSettingsGroupDivider()
+                        }
+                    }
+                }
+
+                Rectangle()
+                    .fill(palette.border)
+                    .frame(height: entries.isEmpty ? 0 : 1)
+
+                HStack(spacing: 8) {
+                    Spacer()
+                    OFCompactButton(
+                        title: OffsendStrings.settingsDirectoryCheckMonitoredAdd,
+                        icon: "plus",
+                        variant: .outline
+                    ) {
+                        addMonitoredDirectory()
+                    }
+                    .disabled(!coordinator.canAddMoreWatchedDirectories)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+            }
+            .opacity(coordinator.settings.directoryWatchEnabled ? 1 : 0.55)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(palette.card)
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(palette.border, lineWidth: 1))
+            )
+
+            if !coordinator.tariffFeatures.workspaceAuditFull {
+                Text(OffsendStrings.settingsDirectoryCheckMonitoredLimitFree)
+                    .font(.system(size: 11))
+                    .foregroundColor(palette.textMuted)
+                    .padding(.leading, 2)
+            }
+
+            if !coordinator.canAddMoreWatchedDirectories {
+                HStack(spacing: 8) {
+                    Text(OffsendStrings.settingsDirectoryCheckMonitoredLimitReached)
+                        .font(.system(size: 11))
+                        .foregroundColor(palette.amberText)
+                    Spacer()
+                    OFCompactButton(
+                        title: OffsendStrings.directoryCheckProUpsellCta,
+                        icon: "crown.fill",
+                        variant: .outline
+                    ) {
+                        Task { await coordinator.upgradeFromWatchLimit(source: "settings_banner") }
+                    }
+                }
+                .padding(.leading, 2)
+            }
+        }
+        .padding(.bottom, 24)
+    }
+
+    private func monitoredDirectoryRow(_ entry: WatchedDirectory) -> some View {
+        let isUnavailable = coordinator.directoryWatchRuntime.unavailableWatchIDs.contains(entry.id)
+        let isPaused = coordinator.isDirectoryWatchPaused(entry)
+        let status = coordinator.directoryWatchRuntime.statusByWatchID[entry.id]
+            ?? entry.lastStatus.flatMap(AIWorkspacePrivacyAuditStatus.init(rawValue:))
+        let exposedPaths = coordinator.directoryWatchRuntime.lastResultByWatchID[entry.id]?
+            .allExposedRelativePaths ?? []
+
+        return HStack(spacing: 12) {
+            Image(systemName: "folder.fill")
+                .font(.system(size: 12))
+                .foregroundColor(palette.textMuted)
+                .frame(width: 16)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(entry.resolvedPath ?? entry.displayName ?? OffsendStrings.settingsDirectoryCheckMonitoredUnavailable)
+                    .font(.system(size: 12.5, design: .monospaced))
+                    .foregroundColor(isUnavailable || isPaused ? palette.textMuted : palette.text)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                if isUnavailable {
+                    Text(OffsendStrings.settingsDirectoryCheckMonitoredUnavailable)
+                        .font(.system(size: 11))
+                        .foregroundColor(palette.amberText)
+                } else if isPaused {
+                    Text(OffsendStrings.settingsDirectoryCheckMonitoredPaused)
+                        .font(.system(size: 11))
+                        .foregroundColor(palette.amberText)
+                } else if let lastAuditAt = entry.lastAuditAt {
+                    Text(relativeDate(lastAuditAt))
+                        .font(.system(size: 11))
+                        .foregroundColor(palette.textMuted)
+                }
+
+                if !isUnavailable,
+                   !isPaused,
+                   !exposedPaths.isEmpty,
+                   let status,
+                   watchStatusCountsAsAttention(status) {
+                    Text(monitoredExposedSummary(exposedPaths))
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(palette.amberText)
+                        .lineLimit(2)
+                }
+            }
+
+            Spacer()
+
+            if isUnavailable {
+                OFCompactButton(
+                    title: OffsendStrings.settingsDirectoryCheckMonitoredRePick,
+                    icon: "arrow.triangle.2.circlepath",
+                    variant: .outline
+                ) {
+                    rePickMonitoredDirectory(id: entry.id)
+                }
+            } else if let status, watchStatusCountsAsAttention(status) {
+                watchStatusBadge(status)
+            }
+
+            Button {
+                coordinator.removeWatchedDirectory(id: entry.id)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(palette.textMuted)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+    }
+
+    private func rePickMonitoredDirectory(id: UUID) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = OffsendStrings.settingsDirectoryCheckMonitoredRePick
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        _ = coordinator.replaceWatchedDirectoryBookmark(id: id, url: url)
+    }
+
+    private func watchStatusCountsAsAttention(_ status: AIWorkspacePrivacyAuditStatus) -> Bool {
+        WorkspaceWatchStatusDegrade.countsAsAttention(status)
+    }
+
+    private func watchStatusBadge(_ status: AIWorkspacePrivacyAuditStatus) -> some View {
+        let title: String
+        let textColor: Color
+        let bgColor: Color
+        switch status {
+        case .pass:
+            title = OffsendStrings.directoryCheckStatusPass
+            textColor = palette.greenText
+            bgColor = palette.greenDim
+        case .warning:
+            title = OffsendStrings.directoryCheckStatusWarning
+            textColor = palette.amberText
+            bgColor = palette.amberDim
+        case .fail:
+            title = OffsendStrings.directoryCheckStatusFail
+            textColor = palette.redText
+            bgColor = palette.redDim
+        }
+        return Text(title)
+            .font(.system(size: 9, weight: .bold, design: .monospaced))
+            .tracking(0.5)
+            .foregroundColor(textColor)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(bgColor)
+            .cornerRadius(4)
+    }
+
+    private func relativeDate(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
+    }
+
+    private func monitoredExposedSummary(_ paths: [String]) -> String {
+        let limit = 2
+        if paths.count <= limit {
+            return OffsendStrings.settingsDirectoryCheckMonitoredExposedFiles(paths.joined(separator: ", "))
+        }
+        let prefix = paths.prefix(limit).joined(separator: ", ")
+        return OffsendStrings.settingsDirectoryCheckMonitoredExposedFiles(
+            "\(prefix) +\(paths.count - limit) more"
+        )
+    }
+
+    private func addMonitoredDirectory() {
+        guard coordinator.canAddMoreWatchedDirectories else {
+            Task { await coordinator.upgradeFromWatchLimit(source: "settings_add") }
+            return
+        }
+
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = OffsendStrings.settingsDirectoryCheckMonitoredAdd
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        if !coordinator.addWatchedDirectory(url: url) {
+            Task { await coordinator.upgradeFromWatchLimit(source: "settings_add_failed") }
+        }
     }
 
     // MARK: Skipped directories
