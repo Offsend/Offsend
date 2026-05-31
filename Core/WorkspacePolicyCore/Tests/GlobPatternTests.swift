@@ -16,6 +16,22 @@ final class GlobPatternTests: XCTestCase {
         XCTAssertTrue(glob.matches("deep/nested/id.pem"))
     }
 
+    func testLeadingDoubleStarMatchesZeroSegments() {
+        let glob = GlobPattern("**/*.mdc")
+
+        XCTAssertTrue(glob.matches("notes.mdc"), "`**/` must also match a root-level file (zero leading segments).")
+        XCTAssertTrue(glob.matches("vendor/notes.mdc"))
+    }
+
+    func testMiddleDoubleStarMatchesZeroSegments() {
+        let glob = GlobPattern("a/**/b")
+
+        XCTAssertTrue(glob.matches("a/b"), "`a/**/b` must match with zero intermediate segments.")
+        XCTAssertTrue(glob.matches("a/x/b"))
+        XCTAssertTrue(glob.matches("a/x/y/b"))
+        XCTAssertFalse(glob.matches("a/b/c"))
+    }
+
     func testQuestionMarkMatchesSingleCharacter() {
         let glob = GlobPattern(".env?")
 

@@ -12,6 +12,8 @@ import PermissionsService
 import RiskScoringCore
 import ServiceManagement
 import StorageCore
+import WorkspacePolicyCore
+import WorkspaceWatchService
 
 #if DEBUG
 enum DebugLicenseAPIEnvironment: String, CaseIterable, Identifiable {
@@ -72,8 +74,10 @@ final class AppCoordinator: ObservableObject {
         }
     }
     @Published var isOnboardingPresentationRequested = false
+    @Published var directoryWatchRuntime = WorkspaceWatchRuntimeState()
 
     let clipboardService = ClipboardService()
+    let workspaceWatchService: WorkspaceWatchService
     let pasteService = PasteService()
     let permissionsService = PermissionsService()
     let hotkeyService = HotkeyService()
@@ -120,30 +124,35 @@ final class AppCoordinator: ObservableObject {
 
     private let sparkleUpdater = OffsendSparkleUpdater()
 
-    private var openSettingsWindowAction: (() -> Void)?
+    var openSettingsWindowAction: (() -> Void)?
+    var openDirectoryCheckWindowAction: ((URL?) -> Void)?
 
     private var safePastePanel: SafePastePanelController?
     private var clipboardStatusPanel: ClipboardStatusPanelController?
     private var clipboardAssessmentSnapshot: ClipboardAssessmentSnapshot?
     private var lastAppliedLaunchAtLoginPreference: Bool?
+    private var lastAppliedDirectoryWatchSnapshot: DirectoryWatchSettingsSnapshot
 
     init() {
         var store: LocalStoring
         var initialSettings: AppSettings
+        var initialLicenseState: LicenseState
         do {
             store = try SecureLocalStore()
             initialSettings = try store.loadSettings()
+            initialLicenseState = try store.loadLicenseState()
             self.settings = initialSettings
             self.customDictionaries = try store.loadCustomDictionaries()
-            self.licenseState = try store.loadLicenseState()
+            self.licenseState = initialLicenseState
             try store.cleanupExpiredMappings()
             self.mappingSummaries = try store.mappingSummaries()
         } catch {
             store = InMemoryLocalStore()
             initialSettings = .default
+            initialLicenseState = LicenseState()
             self.settings = initialSettings
             self.customDictionaries = []
-            self.licenseState = LicenseState()
+            self.licenseState = initialLicenseState
             self.lastStatusMessage = OffsendStrings.statusStorageUnavailable(error.localizedDescription)
         }
 
@@ -158,7 +167,18 @@ final class AppCoordinator: ObservableObject {
             local: LocalAnalytics(store: store),
             product: TelemetryDeckAnalytics(isEnabled: initialSettings.analyticsOptIn)
         )
-        self.lastAppliedLaunchAtLoginPreference = settings.launchAtLogin
+        self.lastAppliedLaunchAtLoginPreference = initialSettings.launchAtLogin
+        self.workspaceWatchService = WorkspaceWatchService(
+            configuration: WorkspaceWatchService.Configuration(
+                debounceInterval: DirectoryWatchAuditThrottle.debounceInterval,
+                minAuditInterval: DirectoryWatchAuditThrottle.minAuditInterval,
+                fsEventsLatency: DirectoryWatchAuditThrottle.fsEventsLatency
+            )
+        )
+        self.lastAppliedDirectoryWatchSnapshot = DirectoryWatchSettingsSnapshot(
+            settings: initialSettings,
+            workspaceAuditFull: false
+        )
 
         menuBarStatusItemController.configureActions(
             safePaste: { [weak self] in self?.performSafePaste() },
@@ -189,10 +209,18 @@ final class AppCoordinator: ObservableObject {
             restore: { [weak self] in self?.restorePlaceholders() }
         )
         applyClipboardMonitoringPreference()
+        bootstrapDirectoryWatch()
         clampMappingTTLIfNeeded()
         refreshMenuBarStatusItem()
 
         Task { await performStartupLicenseTasks() }
+    }
+
+    func markDirectoryWatchSnapshotApplied() {
+        lastAppliedDirectoryWatchSnapshot = DirectoryWatchSettingsSnapshot(
+            settings: settings,
+            workspaceAuditFull: tariffFeatures.workspaceAuditFull
+        )
     }
 
     var allowsExtendedMappingTTL: Bool {
@@ -222,6 +250,11 @@ final class AppCoordinator: ObservableObject {
         guard settings.mappingTTL != .oneHour else { return }
         settings.mappingTTL = .oneHour
         try? store.saveSettings(settings)
+    }
+
+    func syncDirectoryWatchToTariff() {
+        reloadDirectoryWatch(runInitialAudits: false)
+        reauditActiveWatchedDirectories(force: true)
     }
 
     private func clampMappingTTLIfNeeded() {
@@ -390,6 +423,7 @@ final class AppCoordinator: ObservableObject {
     }
 
     func saveSettings() {
+        let watchSnapshotBefore = lastAppliedDirectoryWatchSnapshot
         clampMappingTTLIfNeeded()
         analytics.setProductAnalyticsEnabled(settings.analyticsOptIn)
         do {
@@ -399,6 +433,7 @@ final class AppCoordinator: ObservableObject {
                 lastAppliedLaunchAtLoginPreference = settings.launchAtLogin
             }
             applyClipboardMonitoringPreference()
+            applyDirectoryWatchChanges(previous: watchSnapshotBefore)
             lastStatusMessage = OffsendStrings.statusSettingsSaved
             refreshMenuBarStatusItem()
         } catch {
@@ -511,7 +546,7 @@ final class AppCoordinator: ObservableObject {
         }
     }
 
-    func openProCheckout(prefillEmail: String?) async {
+    func openProCheckout(prefillEmail: String?, source: String = "unknown") async {
         let trimmed = prefillEmail?.trimmingCharacters(in: .whitespacesAndNewlines)
         let email: String? = {
             guard let trimmed, trimmed.contains("@") else { return nil }
@@ -519,6 +554,7 @@ final class AppCoordinator: ObservableObject {
         }()
         do {
             let url = try await licenseService.createCheckout(email: email, planId: licensePricing.defaultCheckoutPlanId)
+            analytics.track(.checkoutStarted(source: source))
             NSWorkspace.shared.open(url)
             lastStatusMessage = OffsendStrings.statusLicenseCheckoutOpened
         } catch {
@@ -558,6 +594,7 @@ final class AppCoordinator: ObservableObject {
         licenseActivationDeviceLimit = []
         try? store.saveLicenseState(state)
         syncMappingTTLToTariff()
+        syncDirectoryWatchToTariff()
         lastStatusMessage = OffsendStrings.statusLicenseUseFree
     }
 
@@ -574,6 +611,9 @@ final class AppCoordinator: ObservableObject {
     }
 
     private func menuBarStatusDotColor() -> NSColor {
+        if let watchColor = workspaceWatchMenuBarDotColor() {
+            return watchColor
+        }
         switch clipboardAssessmentStatus {
         case .idle:
             return .labelColor
@@ -583,6 +623,23 @@ final class AppCoordinator: ObservableObject {
             return .systemOrange
         case .risk:
             return .systemRed
+        }
+    }
+
+    private func workspaceWatchMenuBarDotColor() -> NSColor? {
+        guard settings.directoryWatchEnabled else { return nil }
+        let activeIDs = Set(activeWatchedDirectoryEntries().map(\.id))
+        let statuses = directoryWatchRuntime.statusByWatchID
+            .filter { activeIDs.contains($0.key) }
+            .map(\.value)
+        guard !statuses.isEmpty else { return nil }
+
+        switch clipboardAssessmentStatus {
+        case .warning, .risk:
+            return nil
+        case .idle, .safe:
+            if statuses.contains(.fail) { return .systemRed }
+            return nil
         }
     }
 
@@ -602,15 +659,18 @@ final class AppCoordinator: ObservableObject {
     func configureMenuBarStatusItem(
         openOnboarding: @escaping () -> Void,
         openSettings: @escaping () -> Void,
-        openDirectoryCheck: @escaping () -> Void
+        openDirectoryCheck: @escaping () -> Void,
+        openWatchedDirectoryCheck: @escaping (UUID) -> Void
     ) {
         OffsendApplicationDelegate.coordinator = self
         openSettingsWindowAction = openSettings
         menuBarStatusItemController.configureWindowActions(
             openOnboarding: openOnboarding,
             openSettings: openSettings,
-            openDirectoryCheck: openDirectoryCheck
+            openDirectoryCheck: openDirectoryCheck,
+            openWatchedDirectoryCheck: openWatchedDirectoryCheck
         )
+        registerWorkspaceWatchNotificationCategories()
         refreshMenuBarStatusItem()
     }
 
@@ -646,6 +706,7 @@ final class AppCoordinator: ObservableObject {
         async let validate: Void = refreshLicenseFromServerIfStale(trigger: .appLaunch)
         _ = await (pricing, validate)
         syncMappingTTLToTariff()
+        syncDirectoryWatchToTariff()
     }
 
     private func refreshLicensePricingCatalog() async {
@@ -671,6 +732,7 @@ final class AppCoordinator: ObservableObject {
                 licenseState = state
                 try? store.saveLicenseState(state)
                 syncMappingTTLToTariff()
+                syncDirectoryWatchToTariff()
             }
             return
         }
@@ -685,6 +747,7 @@ final class AppCoordinator: ObservableObject {
             try? store.saveLicenseState(state)
         }
         syncMappingTTLToTariff()
+        syncDirectoryWatchToTariff()
     }
 
     private func applyLicenseValidationResult(_ result: LicenseValidateResult) {
@@ -703,6 +766,7 @@ final class AppCoordinator: ObservableObject {
         licenseState = state
         try? store.saveLicenseState(state)
         syncMappingTTLToTariff()
+        syncDirectoryWatchToTariff()
     }
 
     private func applySuccessfulVerification(_ success: LicenseVerifySuccess) {
@@ -716,6 +780,7 @@ final class AppCoordinator: ObservableObject {
         state.lastLicenseValidationAt = Date()
         licenseState = state
         try? store.saveLicenseState(state)
+        syncDirectoryWatchToTariff()
     }
 
     private func refreshLicenseFromServerIfStale(trigger: LicenseRemoteRefreshTrigger) async {
@@ -964,7 +1029,7 @@ final class AppCoordinator: ObservableObject {
         }
     }
 
-    private func refreshMenuBarStatusItem() {
+    func refreshMenuBarStatusItem() {
         let clipboardText = clipboardService.readString()
         menuBarStatusItemController.update(
             icon: menuBarIcon(),
@@ -972,6 +1037,14 @@ final class AppCoordinator: ObservableObject {
             settings: settings,
             clipboardStatusTitle: clipboardStatusMenuTitle(clipboardText: clipboardText),
             isClipboardStatusActionEnabled: !(clipboardText?.isEmpty ?? true),
+            workspaceStatusTitle: workspaceStatusMenuTitle(),
+            workspaceStatusEntries: workspaceStatusMenuEntries().map {
+                WorkspaceStatusMenuEntryModel(
+                    watchID: $0.watchID,
+                    title: $0.displayName,
+                    status: $0.status
+                )
+            },
             lastStatusMessage: lastStatusMessage
         )
     }

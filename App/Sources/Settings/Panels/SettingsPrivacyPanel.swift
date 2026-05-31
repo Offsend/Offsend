@@ -76,7 +76,12 @@ struct SettingsPrivacyPanel: View {
 
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 8) {
-                    statTile(label: OffsendStrings.settingsPrivacyStatMappings, value: "\(coordinator.mappingSummaries.count)", sub: "")
+                    OFStatTile(
+                        icon: "arrow.left.arrow.right",
+                        label: OffsendStrings.settingsPrivacyStatMappings,
+                        value: "\(coordinator.mappingSummaries.count)"
+                    )
+                    
                     OFCompactButton(
                         title: OffsendStrings.menuViewLocalMappings,
                         icon: "list.bullet.rectangle",
@@ -85,9 +90,12 @@ struct SettingsPrivacyPanel: View {
                         openWindow(id: "mappings")
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                statTile(label: OffsendStrings.settingsPrivacyStatHistory, value: "\(localEventsCount)", sub: "")
-                // statTile(label: OffsendStrings.settingsPrivacyStatCloud, value: "0", sub: OffsendStrings.settingsPrivacyStatAlways)
+                
+                OFStatTile(
+                    icon: "clock.arrow.circlepath",
+                    label: OffsendStrings.settingsPrivacyStatHistory,
+                    value: "\(localEventsCount)"
+                )
             }
         }
         .padding(18)
@@ -104,28 +112,4 @@ struct SettingsPrivacyPanel: View {
         )
     }
 
-    private func statTile(label: String, value: String, sub: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label.uppercased())
-                .font(.system(size: 10.5, weight: .bold))
-                .kerning(0.6)
-                .foregroundColor(palette.textMuted)
-            Text(value)
-                .font(.system(size: 18, weight: .semibold, design: .monospaced))
-                .foregroundColor(palette.text)
-            if !sub.isEmpty {
-                Text(sub)
-                    .font(.system(size: 10.5))
-                    .foregroundColor(palette.textSub)
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(palette.bg0)
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(palette.border, lineWidth: 1))
-        )
-    }
 }

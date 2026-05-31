@@ -9,7 +9,8 @@ public final class AIWorkspacePrivacyFixer {
 
     public func fix(
         result: AIWorkspacePrivacyAuditResult,
-        configuration: AIWorkspacePrivacyAuditConfiguration = .default
+        configuration: AIWorkspacePrivacyAuditConfiguration = .default,
+        selection: AIWorkspacePrivacyFixSelection? = nil
     ) -> AIWorkspacePrivacyFixResult {
         let rootURL = result.directoryURL.standardizedFileURL
         guard isWritableDirectory(rootURL) else {
@@ -30,7 +31,12 @@ public final class AIWorkspacePrivacyFixer {
         var errors: [AIWorkspacePrivacyAuditError] = []
 
         for finding in result.ruleFindings where !finding.isSatisfied && finding.rule.severity != .informational {
-            guard let fix = finding.rule.fix else { continue }
+            if let selection, !selection.ruleIDs.contains(finding.rule.id) {
+                continue
+            }
+            guard let fix = configuration.rules.first(where: { $0.id == finding.rule.id })?.fix ?? finding.rule.fix else {
+                continue
+            }
             switch applyFix(fix, in: rootURL) {
             case .created(let relativePath):
                 createdRelativePaths.insert(relativePath)
@@ -43,24 +49,37 @@ public final class AIWorkspacePrivacyFixer {
             }
         }
 
-        let missingPatterns = result.missingSensitivePatterns
+        let missingPatterns = result.missingSensitivePatterns.filter { finding in
+            guard let selection else { return true }
+            return selection.patternIDs.contains(finding.pattern.id)
+        }
         if !missingPatterns.isEmpty {
             let lines = missingPatterns.map(\.pattern.canonicalIgnoreLine)
-            let targetPaths = sensitivePatternTargetPaths(
-                result: result,
+            let targetPaths = AIWorkspacePrivacyFixPlanner.patternTargetRelativePaths(
+                for: result,
                 configuration: configuration,
+                selection: selection,
                 createdRelativePaths: createdRelativePaths
             )
-            for relativePath in targetPaths {
-                switch appendMissingLines(lines, to: relativePath, in: rootURL) {
-                case .created(let path):
-                    createdRelativePaths.insert(path)
-                case .updated(let path):
-                    updatedRelativePaths.insert(path)
-                case .unchanged:
-                    break
-                case .failed(let error):
-                    errors.append(error)
+            if targetPaths.isEmpty {
+                errors.append(
+                    AIWorkspacePrivacyAuditError(
+                        id: "no-pattern-target-files",
+                        message: "Select at least one policy ignore file (for example .cursorignore) to apply the chosen sensitive patterns."
+                    )
+                )
+            } else {
+                for relativePath in targetPaths {
+                    switch appendMissingLines(lines, to: relativePath, in: rootURL) {
+                    case .created(let path):
+                        createdRelativePaths.insert(path)
+                    case .updated(let path):
+                        updatedRelativePaths.insert(path)
+                    case .unchanged:
+                        break
+                    case .failed(let error):
+                        errors.append(error)
+                    }
                 }
             }
         }
@@ -70,37 +89,6 @@ public final class AIWorkspacePrivacyFixer {
             updatedRelativePaths: updatedRelativePaths.sorted(),
             errors: errors
         )
-    }
-
-    private func sensitivePatternTargetPaths(
-        result: AIWorkspacePrivacyAuditResult,
-        configuration: AIWorkspacePrivacyAuditConfiguration,
-        createdRelativePaths: Set<String>
-    ) -> [String] {
-        var paths = Set<String>()
-
-        for finding in result.ruleFindings where finding.rule.scansForSensitivePatterns {
-            paths.formUnion(finding.matchedRelativePaths)
-            if let fixPath = finding.rule.fix?.relativePath {
-                paths.insert(fixPath)
-            }
-        }
-
-        for rule in configuration.rules where rule.scansForSensitivePatterns {
-            if let fixPath = rule.fix?.relativePath {
-                paths.insert(fixPath)
-            }
-        }
-
-        paths.formUnion(
-            createdRelativePaths.filter { path in
-                configuration.rules.contains { rule in
-                    rule.scansForSensitivePatterns && rule.fix?.relativePath == path
-                }
-            }
-        )
-
-        return paths.sorted()
     }
 
     private func applyFix(_ fix: AIWorkspacePrivacyFileFix, in rootURL: URL) -> FileWriteOutcome {
@@ -263,7 +251,14 @@ public final class AIWorkspacePrivacyFixer {
         if let coordinationError {
             throw coordinationError
         }
-        return try capturedResult!.get()
+        guard let capturedResult else {
+            throw NSError(
+                domain: "AIWorkspacePrivacyFixer",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "File coordination did not complete."]
+            )
+        }
+        return try capturedResult.get()
     }
 
     private func isWritableDirectory(_ url: URL) -> Bool {
@@ -278,10 +273,31 @@ public final class AIWorkspacePrivacyFixer {
         guard !relativePath.hasPrefix("/") else { return nil }
         let rootPath = rootURL.standardizedFileURL.path
         let url = rootURL.appendingPathComponent(relativePath).standardizedFileURL
+        // Lexical containment rejects `..` escapes.
         guard url.path == rootPath || url.path.hasPrefix(rootPath + "/") else {
             return nil
         }
+        // Symlink containment: resolve the nearest existing ancestor and ensure it
+        // still lives under the resolved root, so a symlinked parent directory cannot
+        // redirect writes outside the selected directory.
+        let resolvedRootPath = rootURL.standardizedFileURL.resolvingSymlinksInPath().path
+        let resolvedAncestorPath = nearestExistingAncestor(of: url).resolvingSymlinksInPath().path
+        guard resolvedAncestorPath == resolvedRootPath
+            || resolvedAncestorPath.hasPrefix(resolvedRootPath + "/")
+        else {
+            return nil
+        }
         return url
+    }
+
+    private func nearestExistingAncestor(of url: URL) -> URL {
+        var current = url.standardizedFileURL
+        while !fileManager.fileExists(atPath: current.path) {
+            let parent = current.deletingLastPathComponent()
+            guard parent.path != current.path else { break }
+            current = parent
+        }
+        return current
     }
 
     private func normalizedContents(_ contents: String) -> String {

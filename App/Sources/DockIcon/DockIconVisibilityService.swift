@@ -6,15 +6,21 @@ final class DockIconVisibilityService: NSObject, ObservableObject {
     private let trackedWindows = NSHashTable<NSWindow>.weakObjects()
 
     func track(_ window: NSWindow) {
-        guard !trackedWindows.contains(window) else { return }
-
-        trackedWindows.add(window)
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(windowWillClose(_:)),
-            name: NSWindow.willCloseNotification,
-            object: window
-        )
+        if !trackedWindows.contains(window) {
+            trackedWindows.add(window)
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(windowWillClose(_:)),
+                name: NSWindow.willCloseNotification,
+                object: window
+            )
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(windowDidBecomeKey(_:)),
+                name: NSWindow.didBecomeKeyNotification,
+                object: window
+            )
+        }
 
         showDockIcon()
     }
@@ -31,8 +37,22 @@ final class DockIconVisibilityService: NSObject, ObservableObject {
             name: NSWindow.willCloseNotification,
             object: window
         )
+        NotificationCenter.default.removeObserver(
+            self,
+            name: NSWindow.didBecomeKeyNotification,
+            object: window
+        )
         trackedWindows.remove(window)
         updateDockIconVisibility()
+    }
+
+    @objc private func windowDidBecomeKey(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow,
+              trackedWindows.contains(window) else {
+            return
+        }
+
+        showDockIcon()
     }
 
     private func updateDockIconVisibility() {
@@ -72,15 +92,39 @@ private struct DockIconWindowReader: NSViewRepresentable {
 
 private final class DockIconTrackingView: NSView {
     weak var service: DockIconVisibilityService?
+    private var keyObserver: NSObjectProtocol?
+
+    deinit {
+        if let keyObserver {
+            NotificationCenter.default.removeObserver(keyObserver)
+        }
+    }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+
+        if let observer = keyObserver {
+            NotificationCenter.default.removeObserver(observer)
+            keyObserver = nil
+        }
+
+        if let window {
+            keyObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.didBecomeKeyNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                self?.trackCurrentWindow()
+            }
+        }
+
         trackCurrentWindow()
     }
 
     func trackCurrentWindow() {
-        guard let window else { return }
-
-        service?.track(window)
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let window = self.window else { return }
+            self.service?.track(window)
+        }
     }
 }

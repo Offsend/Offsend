@@ -23,7 +23,7 @@ struct SettingsView: View {
             sidebar
             mainPane
         }
-        .frame(minWidth: 760, minHeight: 600)
+        .frame(minWidth: 820, minHeight: 600)
         .background(palette.bg0)
         .environment(\.ofPalette, palette)
         .preferredColorScheme(chromeAppearance.preferredColorScheme)

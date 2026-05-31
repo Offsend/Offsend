@@ -63,6 +63,12 @@ public struct AppSettings: Codable, Equatable, Sendable {
     /// Extra directory names skipped while walking the workspace (merged with the built-in list).
     public var directoryCheckExtraSkippedDirectories: [String]
 
+    // MARK: Directory Watch
+
+    public var directoryWatchEnabled: Bool
+    public var watchedDirectories: [WatchedDirectory]
+    public var directoryWatchNotifyOnDegrade: Bool
+
     private enum CodingKeys: String, CodingKey {
         case hasCompletedOnboarding
         case protectionEnabled
@@ -80,6 +86,9 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case directoryCheckConfirmFix
         case directoryCheckCustomIgnoreTemplate
         case directoryCheckExtraSkippedDirectories
+        case directoryWatchEnabled
+        case watchedDirectories
+        case directoryWatchNotifyOnDegrade
     }
 
     public init(
@@ -100,7 +109,10 @@ public struct AppSettings: Codable, Equatable, Sendable {
         directoryCheckDisabledRuleIDs: Set<String> = [],
         directoryCheckConfirmFix: Bool = true,
         directoryCheckCustomIgnoreTemplate: String? = nil,
-        directoryCheckExtraSkippedDirectories: [String] = []
+        directoryCheckExtraSkippedDirectories: [String] = [],
+        directoryWatchEnabled: Bool = false,
+        watchedDirectories: [WatchedDirectory] = [],
+        directoryWatchNotifyOnDegrade: Bool = true
     ) {
         self.hasCompletedOnboarding = hasCompletedOnboarding
         self.protectionEnabled = protectionEnabled
@@ -118,6 +130,9 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.directoryCheckConfirmFix = directoryCheckConfirmFix
         self.directoryCheckCustomIgnoreTemplate = directoryCheckCustomIgnoreTemplate
         self.directoryCheckExtraSkippedDirectories = directoryCheckExtraSkippedDirectories
+        self.directoryWatchEnabled = directoryWatchEnabled
+        self.watchedDirectories = watchedDirectories
+        self.directoryWatchNotifyOnDegrade = directoryWatchNotifyOnDegrade
     }
 
     public init(from decoder: Decoder) throws {
@@ -153,7 +168,10 @@ public struct AppSettings: Codable, Equatable, Sendable {
             directoryCheckExtraSkippedDirectories: try container.decodeIfPresent(
                 [String].self,
                 forKey: .directoryCheckExtraSkippedDirectories
-            ) ?? []
+            ) ?? [],
+            directoryWatchEnabled: try container.decodeIfPresent(Bool.self, forKey: .directoryWatchEnabled) ?? false,
+            watchedDirectories: try container.decodeIfPresent([WatchedDirectory].self, forKey: .watchedDirectories) ?? [],
+            directoryWatchNotifyOnDegrade: try container.decodeIfPresent(Bool.self, forKey: .directoryWatchNotifyOnDegrade) ?? true
         )
     }
 

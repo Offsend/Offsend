@@ -53,7 +53,7 @@ public final class SecureLocalStore: LocalStoring {
     }
 
     public func saveMapping(_ result: MaskingResult) throws {
-        guard result.expiresAt != nil else { return }
+        guard result.shouldPersist else { return }
         var mappings = try loadStoredMappings()
         let payload = try encoder.encode(result.mapping)
         let encrypted = try encrypt(payload)

@@ -6,15 +6,18 @@ public struct AIWorkspacePrivacyAuditConfiguration: Equatable {
     /// Additional directory names whose descendants are skipped during the workspace walk
     /// (merged with the auditor's built-in defaults like `.git`, `node_modules`, `.build`, `DerivedData`).
     public let additionalSkippedDirectoryNames: Set<String>
+    public let exposureScanLimits: SensitivePathExposureScanLimits
 
     public init(
         rules: [AIWorkspacePrivacyRule],
         sensitivePatterns: [AIWorkspaceSensitivePattern] = AIWorkspaceSensitivePattern.defaultPatterns,
-        additionalSkippedDirectoryNames: Set<String> = []
+        additionalSkippedDirectoryNames: Set<String> = [],
+        exposureScanLimits: SensitivePathExposureScanLimits = .default
     ) {
         self.rules = rules
         self.sensitivePatterns = sensitivePatterns
         self.additionalSkippedDirectoryNames = additionalSkippedDirectoryNames
+        self.exposureScanLimits = exposureScanLimits
     }
 
     public static let `default` = AIWorkspacePrivacyAuditConfiguration(
@@ -57,6 +60,13 @@ public struct AIWorkspacePrivacyAuditConfiguration: Equatable {
         rules: AIWorkspacePrivacyRule.defaultRules.filter { freeTierRuleIDs.contains($0.id) },
         sensitivePatterns: AIWorkspaceSensitivePattern.defaultPatterns.filter { freeTierPatternIDs.contains($0.id) }
     )
+
+    /// Rule IDs whose one-click autofix is available on the Free tier (the two most
+    /// common AI ignore files). Pro unlocks autofix for every detected tool.
+    public static let freeFixableRuleIDs: Set<String> = [
+        "cursor-ignore",
+        "claude-ignore"
+    ]
 }
 
 public struct AIWorkspacePrivacyRule: Equatable, Identifiable {
@@ -110,6 +120,10 @@ public struct AIWorkspaceSensitivePattern: Equatable, Identifiable {
         severity: AIWorkspacePrivacyRuleSeverity = .recommended,
         remediation: String
     ) {
+        precondition(
+            !acceptedPatterns.isEmpty,
+            "AIWorkspaceSensitivePattern.acceptedPatterns must not be empty (id: \(id))."
+        )
         self.id = id
         self.title = title
         self.acceptedPatterns = acceptedPatterns
@@ -133,6 +147,27 @@ public struct AIWorkspacePrivacyAuditResult: Equatable {
     public let ruleFindings: [AIWorkspacePrivacyRuleFinding]
     public let sensitivePatternFindings: [AIWorkspaceSensitivePatternFinding]
     public let errors: [AIWorkspacePrivacyAuditError]
+    /// Paths matching sensitive patterns from the last complete or partial exposure scan.
+    public let exposureIndex: SensitivePathExposureIndex?
+    public let exposureScanCompletion: SensitivePathExposureScanCompletion
+
+    public init(
+        directoryURL: URL,
+        status: AIWorkspacePrivacyAuditStatus,
+        ruleFindings: [AIWorkspacePrivacyRuleFinding],
+        sensitivePatternFindings: [AIWorkspaceSensitivePatternFinding],
+        errors: [AIWorkspacePrivacyAuditError],
+        exposureIndex: SensitivePathExposureIndex? = nil,
+        exposureScanCompletion: SensitivePathExposureScanCompletion = .complete
+    ) {
+        self.directoryURL = directoryURL
+        self.status = status
+        self.ruleFindings = ruleFindings
+        self.sensitivePatternFindings = sensitivePatternFindings
+        self.errors = errors
+        self.exposureIndex = exposureIndex
+        self.exposureScanCompletion = exposureScanCompletion
+    }
 
     public var missingRequiredRules: [AIWorkspacePrivacyRuleFinding] {
         ruleFindings.filter { !$0.isSatisfied && $0.rule.severity == .required }
@@ -149,6 +184,16 @@ public struct AIWorkspacePrivacyAuditResult: Equatable {
     public var foundRelativePaths: [String] {
         ruleFindings.flatMap(\.matchedRelativePaths).sorted()
     }
+
+    /// Union of per-tool and pattern-level exposed paths from the latest audit.
+    public var allExposedRelativePaths: [String] {
+        Array(
+            Set(
+                ruleFindings.flatMap(\.exposedRelativePaths)
+                    + sensitivePatternFindings.flatMap(\.exposedRelativePaths)
+            )
+        ).sorted()
+    }
 }
 
 public enum AIWorkspacePrivacyAuditStatus: String, Equatable {
@@ -161,19 +206,44 @@ public struct AIWorkspacePrivacyRuleFinding: Equatable, Identifiable {
     public var id: String { rule.id }
     public let rule: AIWorkspacePrivacyRule
     public let matchedRelativePaths: [String]
+    /// Sensitive paths on disk not covered by this tool's ignore file alone.
+    public let exposedRelativePaths: [String]
 
     public var isSatisfied: Bool {
         !matchedRelativePaths.isEmpty
+    }
+
+    public init(
+        rule: AIWorkspacePrivacyRule,
+        matchedRelativePaths: [String],
+        exposedRelativePaths: [String] = []
+    ) {
+        self.rule = rule
+        self.matchedRelativePaths = matchedRelativePaths
+        self.exposedRelativePaths = exposedRelativePaths
     }
 }
 
 public struct AIWorkspaceSensitivePatternFinding: Equatable, Identifiable {
     public var id: String { pattern.id }
     public let pattern: AIWorkspaceSensitivePattern
+    /// Ignore files that declare coverage for this pattern type (informational).
     public let matchedIgnoreFilePaths: [String]
+    /// On-disk files matching this pattern that are not covered by effective ignore rules.
+    public let exposedRelativePaths: [String]
 
     public var isSatisfied: Bool {
-        !matchedIgnoreFilePaths.isEmpty
+        exposedRelativePaths.isEmpty
+    }
+
+    public init(
+        pattern: AIWorkspaceSensitivePattern,
+        matchedIgnoreFilePaths: [String],
+        exposedRelativePaths: [String] = []
+    ) {
+        self.pattern = pattern
+        self.matchedIgnoreFilePaths = matchedIgnoreFilePaths
+        self.exposedRelativePaths = exposedRelativePaths
     }
 }
 

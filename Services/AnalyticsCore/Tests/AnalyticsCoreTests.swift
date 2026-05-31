@@ -19,14 +19,6 @@ final class AnalyticsCoreTests: XCTestCase {
         XCTAssertEqual(events.map(\.type), ["mask_applied", "onboarding_completed"])
     }
 
-    func testTelemetryDeckAnalyticsRespectsOptIn() {
-        let product = TelemetryDeckAnalytics(isEnabled: false)
-        product.track(.onboardingCompleted)
-        product.isEnabled = true
-        product.track(.restoreUsed)
-        // Disabled path is a no-op; enabled path calls TelemetryDeck (not asserted here).
-    }
-
     func testAnalyticsEventTelemetryParameters() {
         XCTAssertEqual(
             AnalyticsEvent.safePasteUsed(riskLevel: .high, entityCount: 2, usedCachedScan: false).telemetryParameters,
@@ -40,6 +32,21 @@ final class AnalyticsCoreTests: XCTestCase {
             AnalyticsEvent.pasteOriginalChosen(riskLevel: nil).telemetryParameters,
             ["risk_level": "none"]
         )
+        XCTAssertEqual(
+            AnalyticsEvent.watchDirectoryAdded(source: "onboarding").telemetryParameters,
+            ["source": "onboarding"]
+        )
+        XCTAssertEqual(
+            AnalyticsEvent.watchStatusDegraded(fromStatus: "pass", toStatus: "fail").telemetryParameters,
+            ["from_status": "pass", "to_status": "fail"]
+        )
+    }
+
+    func testWatchAnalyticsEventNames() {
+        XCTAssertEqual(AnalyticsEvent.watchEnabled.name, "watch_enabled")
+        XCTAssertEqual(AnalyticsEvent.watchDirectoryRemoved.name, "watch_directory_removed")
+        XCTAssertEqual(AnalyticsEvent.directoryCheckOpened(source: "menu_bar").name, "directory_check_opened")
+        XCTAssertEqual(AnalyticsEvent.checkoutStarted(source: "watch_limit_settings").name, "checkout_started")
     }
 }
 
