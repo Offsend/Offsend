@@ -2,106 +2,67 @@
 
 # ```*}• Offsend```
 
-**Paste into ChatGPT, Slack, and internal tools — without leaking secrets.**
+**Paste into ChatGPT, Slack, and internal tools without leaking secrets.**  
+**Keep an eye on `.cursorignore` and friends in the repos you work in.**
 
-A native **macOS** menu bar app that sits between your clipboard and the target app: it detects sensitive data, scores risk, masks values with placeholders, and lets you **locally** restore originals when it is safe to do so.
+macOS menu bar app. Masks sensitive clipboard text before paste, audits project folders for AI ignore rules, and can watch folders in the background and ping you when something looks off.
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-000000?logo=apple&logoColor=white)](https://www.apple.com/macos/)
-[![Swift](https://img.shields.io/badge/Swift-5.9+-F05138?logo=swift&logoColor=white)](https://swift.org/)
-[![Tuist](https://img.shields.io/badge/project-Tuist-6236FF?logo=tuist&logoColor=white)](https://tuist.io/)
-
-[Features](#features) · [Check Directory](#check-directory) · [Quick start](#quick-start) · [Privacy](#privacy) · [Development](#development) · [Security](#security)
 
 </div>
 
----
-
-## Why Offsend
-
-You copy a log, ticket, or code snippet that contains tokens, emails, or internal IDs — then paste into an AI assistant or a workplace app. **Offsend** masks that content before it lands there. Detection, risk scoring, masking, and encrypted **placeholder ↔ original** mappings run **on your Mac**; nothing is sent to the cloud for those steps.
-
-| For users | For developers |
-|-----------|----------------|
-| Global shortcuts, menu bar entry, tunable detectors | Modular core: detection, risk, masking, storage |
-| Clear, local-first privacy model | Tuist, Swift strict concurrency, unit-tested core |
-| Optional clipboard monitoring with the same local pipeline | CI, release automation, Sparkle for updates |
+<p align="center">
+  <img src="assets/demo.gif" alt="Check Directory: drop a folder, review status, turn on background watch" width="720">
+</p>
 
 ---
 
-## Features
+## What it does
 
-- **Safe Paste** — scan the clipboard, show a risk sheet when needed, mask, then paste or copy a safe version.
-- **Restore** — bring back originals from **locally encrypted** mappings (Keychain-backed key).
-- **Check Directory** — audit a project folder for AI workspace privacy files (ignore lists, tool rules) before sensitive paths end up in an AI context.
-- **Settings** — detectors, custom dictionaries, mapping TTL, hotkeys, login item, optional clipboard watch, licensing.
-- **Native stack** — Swift, shared UI in `AppUIKit`, no heavyweight runtime around the clipboard.
+**Safe Paste** (`⌘⇧V`) — checks the clipboard, masks tokens, emails, keys, and similar, then pastes or copies the safe text. **Restore** (`⌘⇧R`) puts the originals back when you need them. Mappings stay encrypted on disk; the key is in Keychain.
 
-### Check Directory
+**Check Directory** — pick a project folder (drop, Choose Folder, or paste a path). You get PASS / WARNING / FAIL, a list of missing ignore files, and sensitive paths that exist on disk but are not ignored. File contents are not read and nothing is uploaded.
 
-Before you let Cursor, Copilot, Claude Code, or other AI tools read your repo, it helps to know whether the usual guardrails are in place — `.cursorignore`, `.aiexclude`, and similar files that keep secrets and env files out of context.
+**Directory monitoring** — add folders in Settings (or turn on *Watch in background* from the check window). Offsend re-audits when ignore files or relevant paths change. Optional notification if status gets worse. Free: one watched folder; Pro: no limit.
 
-**Check Directory** is a small, friendly audit built into Offsend:
-
-1. Open it from the menu bar (**Check Directory**).
-2. Drop a project folder, choose one with **Choose Folder**, or paste a folder path — if your clipboard already holds a directory, Offsend picks it up automatically.
-3. Read a clear PASS / WARNING / FAIL summary: what is missing, which sensitive patterns should be in ignore files, and what is already set up well.
-
-Everything runs **on your Mac**. Offsend inspects file names and ignore rules on disk; it does **not** upload your project or file contents anywhere.
-
-| Plan | What you get |
-|------|----------------|
-| **Free** | Required Cursor privacy files and sensitive ignore patterns (e.g. `.env*`, keys, credentials). |
-| **Pro** | Full coverage across more AI tools, recommended rules, and **Fix it** — one click to create or update the right ignore files for you. |
-
-Think of it as a quick pre-flight check for AI-assisted work: same local-first mindset as Safe Paste, but for how your **folder** is configured instead of what is on the clipboard right now.
-
-### Default shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| `⌘⇧V` | Safe Paste: assess → mask → paste or safe copy |
-| `⌘⇧R` | Restore placeholders from local mappings |
-
-You can remap these in Settings.
+Hotkeys are remappable in Settings.
 
 ---
 
-## Quick start
+## When it’s useful
 
-**From source** (for contributors and power users):
+- Pasting logs or stack traces into ChatGPT, Claude, or Copilot without shipping API keys.
+- Slack or email: share a snippet without raw customer IDs or internal hostnames.
+- New repo in Cursor: quick check that `.cursorignore` (and the rest) exist before you rely on the agent.
+- Someone committed `secrets.env` but did not update ignores — background watch catches it.
+- A few repos on one machine — status in the menu bar instead of opening each project by hand.
 
-1. Install the [development requirements](#requirements).
-2. Run `tuist generate` and open `Offsend.xcworkspace` in Xcode.
-3. Build the **Offsend** scheme (`⌘B`) and run (`⌘R`).
+---
 
-Grant macOS permissions as prompted (**Accessibility** is used to simulate paste into the front app; without it, the app falls back to mask-and-copy).
+## Check Directory (detail)
 
-When prebuilt releases are published, install the `.app` or DMG from the repository **Releases** page.
+Works with Cursor, Copilot, Claude Code, Windsurf, and the usual ignore filenames (`.cursorignore`, `.copilotignore`, `.aiexclude`, …).
+
+**Free** — Cursor-required files + common sensitive patterns (`.env*`, keys, certs, …).
+
+**Pro** — more tools in the audit, recommended rules, **Fix it** to create or patch ignore files in one go.
+
+A pattern like `.env*` only shows up as a problem if that kind of file actually exists and is not covered by your ignores. Empty trees are not nagged for rules you do not need yet.
 
 ---
 
 ## Privacy
 
-- Clipboard text is read **only after an explicit user action** (Safe Paste / Restore), unless optional monitoring is enabled in Settings.
-- Detection, risk scoring, masking, and restore are **local**.
-- Placeholder mappings are encrypted on disk with a **Keychain**-backed key.
-- Local counters do **not** include prompt text, clipboard contents, detected values, app names, or window titles.
-- Optional clipboard monitoring uses the same **local** pipeline; nothing is sent to remote services for masking or restore.
+Masking, restore, and directory checks run on the Mac only. Clipboard is touched on Safe Paste / Restore unless you enable optional clipboard monitoring in Settings. Counters in the app do not store prompt text, clipboard payload, or detected values. Directory audit uses paths and ignore rules, not file bodies.
 
-For vulnerability reporting and secret-handling notes, see [`SECURITY.md`](SECURITY.md).
+Report security issues via [`SECURITY.md`](SECURITY.md).
 
 ---
 
-## Development
+## Install
 
-### Requirements
-
-- **macOS 13** Ventura or later  
-- **Xcode 16** (or compatible Command Line Tools)  
-- **[Tuist](https://tuist.io/)**
-
-### Generate and open in Xcode
+Download from [Releases](https://github.com/Offsend/Offsend/releases), or build from source:
 
 ```bash
 brew install tuist
@@ -109,55 +70,16 @@ brew install tuist
 open Offsend.xcworkspace
 ```
 
-Equivalent manual steps: `tuist install && tuist generate`.
-
-### Common commands
-
-```bash
-tuist test
-tuist build
-./Scripts/lint.sh
-```
-
-### DMG from a signed `.app`
-
-Set `APP_PATH` and optionally `DMG_PATH`, then:
-
-```bash
-./Scripts/build_dmg.sh
-```
-
-Developer ID signing, notarization, Sparkle appcast, and GitHub Actions are orchestrated in [`.github/workflows/release.yml`](.github/workflows/release.yml). Configure secrets and signing identities in your CI environment.
-
-### Repository layout
-
-| Path | Purpose |
-|------|---------|
-| `App/` | App entry, coordinators, settings, onboarding |
-| `AppUIKit/` | Shared UI components and theming |
-| `Core/` | `DetectionCore`, `MaskingCore`, `RiskScoringCore`, `StorageCore`, `LicenseCore`, `WorkspacePolicyCore` |
-| `Services/` | Clipboard, paste simulation, hotkeys, permissions, local analytics |
-| `Tuist/` | Tuist project helpers |
-| `Scripts/` | Bootstrap, lint, DMG helper scripts |
-
-Third-party dependencies: [KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts), [SQLite.swift](https://github.com/stephencelis/SQLite.swift), [Sparkle](https://github.com/sparkle-project/Sparkle).
-
-The `docs/` directory is intentionally **gitignored** for local or internal notes and is not part of the published tree.
+Needs macOS 13+, Xcode 16, Tuist. macOS will ask for Accessibility (paste into the front app) and folder access for audits and watch.
 
 ---
 
-## Security
+## Built with
 
-Please follow responsible disclosure in [`SECURITY.md`](SECURITY.md).
-
----
-
-## App updates
-
-**Sparkle** is integrated; `SUFeedURL` lives in `App/Resources/Info.plist`. Shipping auto-updates requires release signing, a hosted appcast, and notarization credentials in your release environment.
+Swift macOS app. Most of the work happened in [Cursor](https://cursor.com/) — **Composer 2.5** for day-to-day UI and wiring, **Claude Opus 4.7–4.8** for bigger chunks and tests. Signing, permissions, and what ships are reviewed by hand.
 
 ---
 
 ## License
 
-Apache License 2.0 — see [`LICENSE`](LICENSE).
+Apache 2.0 — see [`LICENSE`](LICENSE).
