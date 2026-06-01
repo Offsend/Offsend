@@ -1,5 +1,11 @@
 # Security
 
+Offsend does not send your clipboard or project files anywhere for detection, masking, or directory audits.
+
+No cloud account. No server-side scanning. No "trust us".
+
+What follows is the technical version of that promise.
+
 ## Local Processing
 
 Detection, masking, restore, and risk scoring run locally in the macOS app. No prompt content or clipboard content is sent to remote services for those features.

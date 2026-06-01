@@ -51,21 +51,22 @@ struct OffsendApp: App {
         guard !coordinator.settings.hasCompletedOnboarding else { return }
 
         didRequestInitialOnboarding = true
-        coordinator.requestOnboardingPresentation()
-        openWindow(id: "onboarding")
+        openPresentedWindow(id: "onboarding") {
+            coordinator.requestOnboardingPresentation()
+        }
     }
 
     private func configureMenuBarStatusItem() {
         coordinator.openDirectoryCheckWindowAction = { url in
             if let url {
-                openWindow(id: "directory-check", value: url.path)
+                openPresentedWindow(id: "directory-check", value: url.path)
             } else {
-                openWindow(id: "directory-check")
+                openPresentedWindow(id: "directory-check")
             }
         }
         coordinator.configureMenuBarStatusItem(
             openOnboarding: { openOnboardingWindow() },
-            openSettings: { openWindow(id: "settings") },
+            openSettings: { openPresentedWindow(id: "settings") },
             openDirectoryCheck: {
                 coordinator.recordDirectoryCheckOpened(source: "menu_bar")
                 coordinator.openDirectoryCheckWindowAction?(nil)
@@ -80,8 +81,19 @@ struct OffsendApp: App {
     }
 
     private func openOnboardingWindow() {
-        coordinator.requestOnboardingPresentation()
-        openWindow(id: "onboarding")
+        openPresentedWindow(id: "onboarding") {
+            coordinator.requestOnboardingPresentation()
+        }
+    }
+
+    private func openPresentedWindow(id: String, value: String? = nil, prepare: (() -> Void)? = nil) {
+        coordinator.dockIconVisibilityService.prepareForWindowPresentation()
+        prepare?()
+        if let value {
+            openWindow(id: id, value: value)
+        } else {
+            openWindow(id: id)
+        }
     }
 }
 
@@ -94,7 +106,6 @@ private struct OnboardingWindowRoot: View {
             if shouldShowOnboardingContent {
                 OnboardingView()
                     .environmentObject(coordinator)
-                    .tracksDockIconWindow(using: coordinator.dockIconVisibilityService)
                     .onChange(of: coordinator.settings.hasCompletedOnboarding) { _ in
                         closeIfAlreadyCompleted()
                     }
@@ -106,6 +117,8 @@ private struct OnboardingWindowRoot: View {
                     }
             }
         }
+        .dismissOnWindowCloseButton()
+        .tracksDockIconWindow(using: coordinator.dockIconVisibilityService)
     }
 
     private var shouldShowOnboardingContent: Bool {
