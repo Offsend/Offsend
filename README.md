@@ -1,19 +1,31 @@
 <h1 align="center"><code>*}• Offsend</code></h1>
 
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-000000?logo=apple&logoColor=white)](https://www.apple.com/macos/)
+<p align="center">
+  Monitor project folders before AI tools see them.<br>
+  Clean sensitive clipboard text before you paste it somewhere you cannot take it back.
+</p>
 
-Monitor project folders before AI tools see them.
-Clean sensitive clipboard text before you paste it somewhere you cannot take it back.
+<p align="center">
+  <a href="https://github.com/Offsend/Offsend/actions/workflows/ci.yml"><img src="https://github.com/Offsend/Offsend/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/Offsend/Offsend/releases"><img src="https://img.shields.io/github/v/release/Offsend/Offsend?label=release" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License"></a>
+  <a href="https://www.apple.com/macos/"><img src="https://img.shields.io/badge/platform-macOS%2013%2B-000000?logo=apple&logoColor=white" alt="Platform"></a>
+  <img src="https://img.shields.io/badge/Swift-5.9-F05138?logo=swift&logoColor=white" alt="Swift 5.9">
+  <img src="https://img.shields.io/badge/local--first-yes-2ea44f" alt="Local-first">
+</p>
+
+
+<p align="center">
+  <img src="assets/demo.gif" alt="Check Directory: drop a folder, review status, turn on background watch">
+</p>
+
+---
 
 Offsend is a local-first macOS menu bar app for people who work with projects, documents, internal data, support logs, customer conversations, invoices, contracts, codebases, AI tools, Slack, email, and all the tiny pieces of text that should not accidentally leave your machine.
 
 The main idea is simple: keep an eye on the folders you care about, warn you when ignore rules are missing or sensitive paths are exposed, and give you a safer way to paste clipboard content when needed.
 
-No cloud account. No server-side scanning. No “trust us”.
-Offsend runs on your Mac.
-
-![Check Directory: drop a folder, review status, turn on background watch](assets/demo.gif)
+> No cloud account. No server-side scanning. No “trust us”.
 
 ---
 
@@ -66,8 +78,8 @@ Useful when:
 - a folder that was safe yesterday is no longer safe today;
 - you work across multiple projects and do not want to inspect each one manually.
 
-Free plan: one watched folder.
-Pro: unlimited watched folders.
+> **Free plan**: one watched folder.
+> **Pro**: unlimited watched folders.
 
 ---
 
@@ -92,7 +104,7 @@ Offsend works with common AI coding tools and ignore files such as:
 - `.aiexclude`
 - and similar project-level ignore rules
 
-Important detail: Offsend checks paths and ignore rules. It does not need to read your file contents for directory audits, and it does not upload anything.
+> **Important detail**: Offsend checks paths and ignore rules. It does not need to read your file contents for directory audits, and it does not upload anything.
 
 ---
 
@@ -104,9 +116,8 @@ With `⌘⇧V`, Offsend checks the clipboard, masks detected values, then pastes
 
 With `⌘⇧R`, you can restore masked values when you actually need the original text back.
 
-Mappings are encrypted on disk, with the key stored in Keychain.
-
-Hotkeys are remappable in Settings.
+> Mappings are encrypted on disk, with the key stored in Keychain.
+> Hotkeys are remappable in Settings.
 
 ---
 
@@ -125,7 +136,7 @@ Safe Paste scans clipboard text before you paste somewhere you cannot take it ba
 
 Offsend is not only about developers and source code. It is also useful for customer data, support logs, finance, contracts, and any text that should stay clean before AI tools touch it.
 
-Turn individual detectors on or off in **Settings → Detection**.
+> Turn individual detectors on or off in **Settings → Detection**.
 
 ---
 
