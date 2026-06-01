@@ -2,6 +2,7 @@ import AnalyticsCore
 import AppUIKit
 import AppKit
 import ClipboardService
+import Combine
 import DetectionCore
 import Foundation
 import HotkeyService
@@ -84,7 +85,7 @@ final class AppCoordinator: ObservableObject {
     let detectionEngine = DetectionEngine()
     let riskEngine = RiskScoringEngine()
     let maskingEngine = MaskingEngine()
-    let dockIconVisibilityService = DockIconVisibilityService()
+    let dockActivationController = DockActivationController()
     let menuBarStatusItemController = MenuBarStatusItemController()
     let store: LocalStoring
     let analytics: AppAnalytics
@@ -126,9 +127,12 @@ final class AppCoordinator: ObservableObject {
 
     var openSettingsWindowAction: (() -> Void)?
     var openDirectoryCheckWindowAction: ((URL?) -> Void)?
+    var presentWindowAction: ((String, String?) -> Void)?
 
     private var safePastePanel: SafePastePanelController?
     private var clipboardStatusPanel: ClipboardStatusPanelController?
+    var watchAuditTasks: [UUID: Task<Void, Never>] = [:]
+    private var permissionsChangeSubscription: AnyCancellable?
     private var clipboardAssessmentSnapshot: ClipboardAssessmentSnapshot?
     private var lastAppliedLaunchAtLoginPreference: Bool?
     private var lastAppliedDirectoryWatchSnapshot: DirectoryWatchSettingsSnapshot
@@ -211,6 +215,10 @@ final class AppCoordinator: ObservableObject {
         applyClipboardMonitoringPreference()
         bootstrapDirectoryWatch()
         clampMappingTTLIfNeeded()
+        permissionsChangeSubscription = permissionsService.objectWillChange
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
         refreshMenuBarStatusItem()
 
         Task { await performStartupLicenseTasks() }
@@ -656,6 +664,12 @@ final class AppCoordinator: ObservableObject {
 //        }
 //    }
 
+    func openPresentedWindow(id: String, value: String? = nil, prepare: (() -> Void)? = nil) {
+        dockActivationController.prepareForWindowPresentation()
+        prepare?()
+        presentWindowAction?(id, value)
+    }
+
     func configureMenuBarStatusItem(
         openOnboarding: @escaping () -> Void,
         openSettings: @escaping () -> Void,
@@ -663,6 +677,7 @@ final class AppCoordinator: ObservableObject {
         openWatchedDirectoryCheck: @escaping (UUID) -> Void
     ) {
         OffsendApplicationDelegate.coordinator = self
+        dockActivationController.startObserving()
         openSettingsWindowAction = openSettings
         menuBarStatusItemController.configureWindowActions(
             openOnboarding: openOnboarding,
@@ -995,7 +1010,8 @@ final class AppCoordinator: ObservableObject {
             onMaskAndPaste: { [weak self] in self?.maskAndPaste(originalText: originalText, entities: entities) },
             onCopySafeVersion: { [weak self] in self?.copySafeVersion(originalText: originalText, entities: entities) },
             onPasteOriginal: { [weak self] in self?.pasteOriginal(originalText: originalText, assessment: assessment) },
-            onCancel: { [weak self] in self?.lastStatusMessage = OffsendStrings.statusSafePasteCancelled }
+            onCancel: { [weak self] in self?.lastStatusMessage = OffsendStrings.statusSafePasteCancelled },
+            onClose: { [weak self] in self?.safePastePanel = nil }
         )
         safePastePanel?.show(from: menuBarStatusItemController.statusItem)
         refreshMenuBarStatusItem()

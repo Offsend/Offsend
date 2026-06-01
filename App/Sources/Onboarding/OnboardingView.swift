@@ -39,7 +39,6 @@ struct OnboardingView: View {
     @AppStorage(OFSettingsChromeAppearance.appStorageKey) private var chromeAppearanceRaw: String =
         OFSettingsChromeAppearance.auto.rawValue
     @State private var systemAppearanceRevision = 0
-    @State private var accessibilityStatusRevision = 0
     @State private var safePasteHotkey = HotkeyDisplay.safePaste
     @State private var restoreHotkey = HotkeyDisplay.restorePlaceholders
     @State private var addedWatchFolderName: String?
@@ -56,8 +55,7 @@ struct OnboardingView: View {
     }
 
     private var isAccessibilityGranted: Bool {
-        _ = accessibilityStatusRevision
-        return coordinator.permissionsService.isAccessibilityTrusted
+        coordinator.permissionsService.isAccessibilityTrusted
     }
 
     var body: some View {
@@ -300,15 +298,8 @@ struct OnboardingView: View {
                     .stroke(Color.ofBorder, lineWidth: 1)
             )
         }
-        .onAppear {
-            accessibilityStatusRevision += 1
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            accessibilityStatusRevision += 1
-        }
-        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
-            accessibilityStatusRevision += 1
-        }
+        .onAppear { coordinator.permissionsService.startMonitoring() }
+        .onDisappear { coordinator.permissionsService.stopMonitoring() }
     }
 
     private var accessibilityStatusMessage: some View {

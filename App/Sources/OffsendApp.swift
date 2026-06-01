@@ -26,21 +26,18 @@ struct OffsendApp: App {
         Window(OffsendStrings.windowSettings, id: "settings") {
             SettingsView()
                 .environmentObject(coordinator)
-                .tracksDockIconWindow(using: coordinator.dockIconVisibilityService)
         }
         .defaultSize(width: 760, height: 560)
 
         WindowGroup(OffsendStrings.windowLocalMappings, id: "mappings") {
             LocalMappingsView()
                 .environmentObject(coordinator)
-                .tracksDockIconWindow(using: coordinator.dockIconVisibilityService)
         }
         .defaultSize(width: 560, height: 420)
 
         WindowGroup(id: "directory-check", for: String.self) { $directoryPath in
             DirectoryCheckView(directoryWindowPath: directoryPath)
                 .environmentObject(coordinator)
-                .tracksDockIconWindow(using: coordinator.dockIconVisibilityService)
         }
         .defaultSize(width: 640, height: 560)
         .windowResizability(.contentSize)
@@ -51,48 +48,46 @@ struct OffsendApp: App {
         guard !coordinator.settings.hasCompletedOnboarding else { return }
 
         didRequestInitialOnboarding = true
-        openPresentedWindow(id: "onboarding") {
-            coordinator.requestOnboardingPresentation()
+        coordinator.openPresentedWindow(id: "onboarding") { [weak coordinator] in
+            coordinator?.requestOnboardingPresentation()
         }
     }
 
     private func configureMenuBarStatusItem() {
-        coordinator.openDirectoryCheckWindowAction = { url in
-            if let url {
-                openPresentedWindow(id: "directory-check", value: url.path)
+        coordinator.presentWindowAction = { id, value in
+            if let value {
+                openWindow(id: id, value: value)
             } else {
-                openPresentedWindow(id: "directory-check")
+                openWindow(id: id)
+            }
+        }
+
+        coordinator.openDirectoryCheckWindowAction = { [weak coordinator] url in
+            if let url {
+                coordinator?.openPresentedWindow(id: "directory-check", value: url.path)
+            } else {
+                coordinator?.openPresentedWindow(id: "directory-check")
             }
         }
         coordinator.configureMenuBarStatusItem(
-            openOnboarding: { openOnboardingWindow() },
-            openSettings: { openPresentedWindow(id: "settings") },
-            openDirectoryCheck: {
-                coordinator.recordDirectoryCheckOpened(source: "menu_bar")
-                coordinator.openDirectoryCheckWindowAction?(nil)
+            openOnboarding: { [weak coordinator] in
+                coordinator?.openPresentedWindow(id: "onboarding") {
+                    coordinator?.requestOnboardingPresentation()
+                }
             },
-            openWatchedDirectoryCheck: { watchID in
-                coordinator.openDirectoryCheckForWatch(watchID: watchID, source: "menu_bar")
+            openSettings: { [weak coordinator] in
+                coordinator?.openPresentedWindow(id: "settings")
+            },
+            openDirectoryCheck: { [weak coordinator] in
+                coordinator?.recordDirectoryCheckOpened(source: "menu_bar")
+                coordinator?.openDirectoryCheckWindowAction?(nil)
+            },
+            openWatchedDirectoryCheck: { [weak coordinator] watchID in
+                coordinator?.openDirectoryCheckForWatch(watchID: watchID, source: "menu_bar")
             }
         )
         Task { @MainActor in
             showInitialOnboardingIfNeeded()
-        }
-    }
-
-    private func openOnboardingWindow() {
-        openPresentedWindow(id: "onboarding") {
-            coordinator.requestOnboardingPresentation()
-        }
-    }
-
-    private func openPresentedWindow(id: String, value: String? = nil, prepare: (() -> Void)? = nil) {
-        coordinator.dockIconVisibilityService.prepareForWindowPresentation()
-        prepare?()
-        if let value {
-            openWindow(id: id, value: value)
-        } else {
-            openWindow(id: id)
         }
     }
 }
@@ -118,7 +113,6 @@ private struct OnboardingWindowRoot: View {
             }
         }
         .dismissOnWindowCloseButton()
-        .tracksDockIconWindow(using: coordinator.dockIconVisibilityService)
     }
 
     private var shouldShowOnboardingContent: Bool {

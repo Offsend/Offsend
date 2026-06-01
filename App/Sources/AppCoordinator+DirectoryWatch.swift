@@ -161,10 +161,10 @@ extension AppCoordinator {
     }
 
     func removeWatchedDirectory(id: UUID) {
+        cancelWatchAudit(watchID: id)
         settings.watchedDirectories.removeAll { $0.id == id }
         directoryWatchRuntime.statusByWatchID.removeValue(forKey: id)
         directoryWatchRuntime.lastResultByWatchID.removeValue(forKey: id)
-        directoryWatchRuntime.isAuditing.remove(id)
         directoryWatchRuntime.unavailableWatchIDs.remove(id)
         analytics.track(.watchDirectoryRemoved)
         saveSettings()
@@ -247,6 +247,7 @@ extension AppCoordinator {
         defer { markDirectoryWatchSnapshotApplied() }
 
         guard settings.directoryWatchEnabled, !settings.watchedDirectories.isEmpty else {
+            cancelAllWatchAudits()
             workspaceWatchService.stopWatching()
             if !settings.directoryWatchEnabled {
                 directoryWatchRuntime = WorkspaceWatchRuntimeState()
@@ -333,7 +334,13 @@ extension AppCoordinator {
     ) {
         guard settings.directoryWatchEnabled else { return }
         guard activeWatchedDirectoryEntries().contains(where: { $0.id == watchID }) else { return }
-        guard !directoryWatchRuntime.isAuditing.contains(watchID) else { return }
+
+        if directoryWatchRuntime.isAuditing.contains(watchID) {
+            if watchAuditTasks[watchID] != nil {
+                return
+            }
+            directoryWatchRuntime.isAuditing.remove(watchID)
+        }
 
         let lastAuditAt = settings.watchedDirectories.first(where: { $0.id == watchID })?.lastAuditAt
         guard DirectoryWatchAuditThrottle.shouldRunAudit(lastAuditAt: lastAuditAt, force: force) else {
@@ -348,8 +355,13 @@ extension AppCoordinator {
             .flatMap(AIWorkspacePrivacyAuditStatus.init(rawValue:))
         let previousResult = directoryWatchRuntime.lastResultByWatchID[watchID]
 
-        Task {
-            let result = await Task.detached {
+        watchAuditTasks[watchID] = Task { @MainActor in
+            defer {
+                directoryWatchRuntime.isAuditing.remove(watchID)
+                watchAuditTasks.removeValue(forKey: watchID)
+            }
+
+            let result = await Task.detached(priority: .utility) {
                 let auditor = AIWorkspacePrivacyAuditor()
                 if let changedRelativePaths,
                    !changedRelativePaths.isEmpty,
@@ -365,16 +377,30 @@ extension AppCoordinator {
                 return auditor.audit(directoryURL: rootURL, configuration: configuration)
             }.value
 
-            await MainActor.run {
-                directoryWatchRuntime.isAuditing.remove(watchID)
-                handleWatchAuditResult(
-                    watchID: watchID,
-                    result: result,
-                    previousStatus: previousStatus,
-                    auditStartedAt: auditStartedAt
-                )
-            }
+            guard !Task.isCancelled else { return }
+            guard activeWatchedDirectoryEntries().contains(where: { $0.id == watchID }) else { return }
+
+            handleWatchAuditResult(
+                watchID: watchID,
+                result: result,
+                previousStatus: previousStatus,
+                auditStartedAt: auditStartedAt
+            )
         }
+    }
+
+    private func cancelWatchAudit(watchID: UUID) {
+        watchAuditTasks[watchID]?.cancel()
+        watchAuditTasks.removeValue(forKey: watchID)
+        directoryWatchRuntime.isAuditing.remove(watchID)
+    }
+
+    private func cancelAllWatchAudits() {
+        for task in watchAuditTasks.values {
+            task.cancel()
+        }
+        watchAuditTasks.removeAll()
+        directoryWatchRuntime.isAuditing.removeAll()
     }
 
     func workspaceStatusNeedsAttentionCount() -> Int {

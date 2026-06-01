@@ -55,6 +55,7 @@ struct LocalMappingsView: View {
         .onReceive(NotificationCenter.default.publisher(for: .keyboardShortcutDidChange)) { _ in
             restoreHotkey = HotkeyDisplay.restorePlaceholders
         }
+        .dismissOnWindowCloseButton()
     }
 
     private var header: some View {
