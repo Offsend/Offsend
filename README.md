@@ -25,8 +25,7 @@ Offsend is a local-first macOS menu bar app for people who work with projects, d
 
 The main idea is simple: keep an eye on the folders you care about, warn you when ignore rules are missing or sensitive paths are exposed, and give you a safer way to paste clipboard content when needed.
 
-No cloud account. No server-side scanning. No “trust us”.
-Offsend runs on your Mac.
+> No cloud account. No server-side scanning. No “trust us”.
 
 ---
 
