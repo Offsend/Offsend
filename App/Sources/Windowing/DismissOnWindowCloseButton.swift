@@ -24,16 +24,34 @@ private struct WindowCloseDismissConfigurator: NSViewRepresentable {
         context.coordinator.attach(to: nsView)
     }
 
-    @MainActor
     final class Coordinator: NSObject, NSWindowDelegate {
         private weak var attachedWindow: NSWindow?
 
-        nonisolated deinit {
-            MainActor.assumeIsolated {
+        deinit {
+            let window = attachedWindow
+            guard let window else { return }
+
+            let coordinator = self
+            let cleanup = {
+                if window.delegate === coordinator {
+                    window.delegate = nil
+                }
+
+                if let closeButton = window.standardWindowButton(.closeButton),
+                   closeButton.target === coordinator {
+                    closeButton.target = nil
+                    closeButton.action = nil
+                }
+            }
+
+            if Thread.isMainThread {
                 cleanup()
+            } else {
+                DispatchQueue.main.sync(execute: cleanup)
             }
         }
 
+        @MainActor
         func attach(to view: NSView) {
             guard let window = view.window else { return }
 
@@ -51,26 +69,14 @@ private struct WindowCloseDismissConfigurator: NSViewRepresentable {
             }
         }
 
+        @MainActor
         @objc private func closeWindow(_ sender: Any?) {
             attachedWindow?.close()
         }
 
+        @MainActor
         @objc func windowShouldClose(_ sender: NSWindow) -> Bool {
             true
-        }
-
-        private func cleanup() {
-            guard let window = attachedWindow else { return }
-
-            if window.delegate === self {
-                window.delegate = nil
-            }
-
-            if let closeButton = window.standardWindowButton(.closeButton),
-               closeButton.target === self {
-                closeButton.target = nil
-                closeButton.action = nil
-            }
         }
     }
 }
