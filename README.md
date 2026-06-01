@@ -1,17 +1,17 @@
 <h1 align="center"><code>*}• Offsend</code></h1>
 
 <p align="center">
+  Monitor project folders before AI tools see them.<br>
+  Clean sensitive clipboard text before you paste it somewhere you cannot take it back.
+</p>
+
+<p align="center">
   <a href="https://github.com/Offsend/Offsend/actions/workflows/ci.yml"><img src="https://github.com/Offsend/Offsend/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/Offsend/Offsend/releases"><img src="https://img.shields.io/github/v/release/Offsend/Offsend?label=release" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License"></a>
   <a href="https://www.apple.com/macos/"><img src="https://img.shields.io/badge/platform-macOS%2013%2B-000000?logo=apple&logoColor=white" alt="Platform"></a>
   <img src="https://img.shields.io/badge/Swift-5.9-F05138?logo=swift&logoColor=white" alt="Swift 5.9">
   <img src="https://img.shields.io/badge/local--first-yes-2ea44f" alt="Local-first">
-</p>
-
-<p align="center">
-  Monitor project folders before AI tools see them.<br>
-  Clean sensitive clipboard text before you paste it somewhere you cannot take it back.
 </p>
 
 ---
