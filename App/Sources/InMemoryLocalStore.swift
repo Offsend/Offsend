@@ -4,6 +4,8 @@ import MaskingCore
 import StorageCore
 
 final class InMemoryLocalStore: LocalStoring {
+    private static let maxStoredEvents = 2_000
+
     private var settings = AppSettings.default
     private var dictionaries: [CustomDictionaryItem] = []
     private var mappings: [MaskingResult] = []
@@ -15,7 +17,11 @@ final class InMemoryLocalStore: LocalStoring {
     func saveSettings(_ settings: AppSettings) throws { self.settings = settings }
     func loadCustomDictionaries() throws -> [CustomDictionaryItem] { dictionaries }
     func saveCustomDictionaries(_ items: [CustomDictionaryItem]) throws { dictionaries = items }
-    func saveMapping(_ result: MaskingResult) throws { mappings.append(result) }
+    func saveMapping(_ result: MaskingResult) throws {
+        guard result.shouldPersist else { return }
+        mappings.removeAll { $0.id == result.id }
+        mappings.append(result)
+    }
 
     func restore(text: String) throws -> String? {
         cleanupExpired()
@@ -31,7 +37,12 @@ final class InMemoryLocalStore: LocalStoring {
     func deleteMapping(id: UUID) throws { mappings.removeAll { $0.id == id } }
     func clearMappings() throws { mappings.removeAll() }
     func cleanupExpiredMappings() throws { cleanupExpired() }
-    func appendEvent(_ event: LocalEvent) throws { events.append(event) }
+    func appendEvent(_ event: LocalEvent) throws {
+        events.append(event)
+        if events.count > Self.maxStoredEvents {
+            events = Array(events.suffix(Self.maxStoredEvents))
+        }
+    }
     func loadEvents() throws -> [LocalEvent] { events }
     func clearEvents() throws { events.removeAll() }
     func loadLicenseState() throws -> LicenseState { license }

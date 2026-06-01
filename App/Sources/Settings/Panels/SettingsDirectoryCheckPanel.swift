@@ -7,7 +7,6 @@ import WorkspacePolicyCore
 struct SettingsDirectoryCheckPanel: View {
     @EnvironmentObject private var coordinator: AppCoordinator
     @Environment(\.ofPalette) private var palette
-    @Environment(\.openWindow) private var openWindow
 
     @State private var newSkippedDirectory: String = ""
     @State private var templateDraft: String = ""
@@ -100,7 +99,7 @@ struct SettingsDirectoryCheckPanel: View {
                     variant: .primary
                 ) {
                     coordinator.recordDirectoryCheckOpened(source: "settings")
-                    openWindow(id: "directory-check")
+                    coordinator.openPresentedWindow(id: "directory-check")
                 }
             }
 

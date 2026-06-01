@@ -7,11 +7,9 @@ import UniformTypeIdentifiers
 struct SettingsGeneralPanel: View {
     @EnvironmentObject private var coordinator: AppCoordinator
     @Environment(\.ofPalette) private var palette
-    @State private var accessibilityStatusRevision = 0
 
     private var isAccessibilityGranted: Bool {
-        _ = accessibilityStatusRevision
-        return coordinator.permissionsService.isAccessibilityTrusted
+        coordinator.permissionsService.isAccessibilityTrusted
     }
 
     var body: some View {
@@ -72,15 +70,8 @@ struct SettingsGeneralPanel: View {
             }
         }
         .animation(.easeInOut(duration: 0.22), value: coordinator.settings.clipboardMonitoringEnabled)
-        .onAppear {
-            accessibilityStatusRevision += 1
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            accessibilityStatusRevision += 1
-        }
-        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
-            accessibilityStatusRevision += 1
-        }
+        .onAppear { coordinator.permissionsService.startMonitoring() }
+        .onDisappear { coordinator.permissionsService.stopMonitoring() }
     }
 
     private var permissionsSection: some View {

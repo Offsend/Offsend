@@ -8,6 +8,18 @@ final class OffsendApplicationDelegate: NSObject, NSApplicationDelegate, UNUserN
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = self
+        NSApp.setActivationPolicy(.accessory)
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        Task { @MainActor in
+            guard let coordinator = Self.coordinator else { return }
+            coordinator.dockActivationController.handleApplicationReopen(hasVisibleWindows: flag)
+            if !flag {
+                coordinator.openSettingsWindowAction?()
+            }
+        }
+        return false
     }
 
     func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {

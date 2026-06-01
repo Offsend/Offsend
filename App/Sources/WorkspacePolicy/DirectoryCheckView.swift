@@ -158,6 +158,7 @@ struct DirectoryCheckView: View {
             guard let selectedDirectory else { return }
             audit(directoryURL: selectedDirectory)
         }
+        .dismissOnWindowCloseButton()
     }
 
     private var workingOverlay: some View {

@@ -5,7 +5,6 @@ import SwiftUI
 struct SettingsPrivacyPanel: View {
     @EnvironmentObject private var coordinator: AppCoordinator
     @Environment(\.ofPalette) private var palette
-    @Environment(\.openWindow) private var openWindow
 
     private var localEventsCount: Int {
         (try? coordinator.store.loadEvents())?.count ?? 0
@@ -87,7 +86,7 @@ struct SettingsPrivacyPanel: View {
                         icon: "list.bullet.rectangle",
                         variant: .outline
                     ) {
-                        openWindow(id: "mappings")
+                        coordinator.openPresentedWindow(id: "mappings")
                     }
                 }
                 

@@ -28,26 +28,35 @@ private struct WindowCloseDismissConfigurator: NSViewRepresentable {
         private weak var attachedWindow: NSWindow?
 
         deinit {
-            let window = attachedWindow
-            guard let window else { return }
+            guard let window = attachedWindow else { return }
 
-            let coordinator = self
-            let cleanup = {
-                if window.delegate === coordinator {
-                    window.delegate = nil
-                }
-
-                if let closeButton = window.standardWindowButton(.closeButton),
-                   closeButton.target === coordinator {
-                    closeButton.target = nil
-                    closeButton.action = nil
-                }
-            }
+            let coordinatorID = ObjectIdentifier(self)
 
             if Thread.isMainThread {
-                cleanup()
+                MainActor.assumeIsolated {
+                    Self.cleanup(window: window, coordinatorID: coordinatorID)
+                }
             } else {
-                DispatchQueue.main.sync(execute: cleanup)
+                DispatchQueue.main.sync {
+                    MainActor.assumeIsolated {
+                        Self.cleanup(window: window, coordinatorID: coordinatorID)
+                    }
+                }
+            }
+        }
+
+        @MainActor
+        private static func cleanup(window: NSWindow, coordinatorID: ObjectIdentifier) {
+            if let delegate = window.delegate,
+               ObjectIdentifier(delegate as AnyObject) == coordinatorID {
+                window.delegate = nil
+            }
+
+            if let closeButton = window.standardWindowButton(.closeButton),
+               let target = closeButton.target,
+               ObjectIdentifier(target as AnyObject) == coordinatorID {
+                closeButton.target = nil
+                closeButton.action = nil
             }
         }
 

@@ -7,7 +7,6 @@ import SwiftUI
 struct SettingsDeveloperPanel: View {
     @EnvironmentObject private var coordinator: AppCoordinator
     @Environment(\.ofPalette) private var palette
-    @Environment(\.openWindow) private var openWindow
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -37,8 +36,9 @@ struct SettingsDeveloperPanel: View {
             OFSettingsGroup(title: OffsendStrings.windowOnboarding) {
                 OFSettingsRow(label: OffsendStrings.menuStartOnboarding, hint: nil) {
                     OFCompactButton(title: OffsendStrings.menuStartOnboarding, icon: "sparkles", variant: .outline) {
-                        coordinator.requestOnboardingPresentation()
-                        openWindow(id: "onboarding")
+                        coordinator.openPresentedWindow(id: "onboarding") {
+                            coordinator.requestOnboardingPresentation()
+                        }
                     }
                 }
                 OFSettingsGroupDivider()

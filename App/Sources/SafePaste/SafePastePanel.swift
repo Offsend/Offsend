@@ -6,8 +6,9 @@ import RiskScoringCore
 import SwiftUI
 
 @MainActor
-final class SafePastePanelController {
+final class SafePastePanelController: NSObject, NSPopoverDelegate {
     private let popover = NSPopover()
+    private var onClose: (() -> Void)?
 
     init(
         originalText: String,
@@ -17,8 +18,11 @@ final class SafePastePanelController {
         onMaskAndPaste: @escaping () -> Void,
         onCopySafeVersion: @escaping () -> Void,
         onPasteOriginal: @escaping () -> Void,
-        onCancel: @escaping () -> Void
+        onCancel: @escaping () -> Void,
+        onClose: @escaping () -> Void
     ) {
+        self.onClose = onClose
+        super.init()
         let rootView = SafePastePopupView(
             originalText: originalText,
             entities: entities,
@@ -42,6 +46,12 @@ final class SafePastePanelController {
         popover.behavior = .transient
         popover.contentSize = NSSize(width: 380, height: 500)
         popover.contentViewController = NSHostingController(rootView: rootView)
+        popover.delegate = self
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        onClose?()
+        onClose = nil
     }
 
     func show(from statusItem: NSStatusItem) {

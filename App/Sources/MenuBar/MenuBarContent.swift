@@ -5,7 +5,6 @@ import SwiftUI
 
 struct MenuBarContent: View {
     @EnvironmentObject private var coordinator: AppCoordinator
-    @Environment(\.openWindow) private var openWindow
     @State private var safePasteShortcut: KeyboardShortcut?
     @State private var restoreShortcut: KeyboardShortcut?
 
@@ -16,8 +15,9 @@ struct MenuBarContent: View {
 
             if shouldShowOnboardingMenuItem {
                 Button(OffsendStrings.menuStartOnboarding) {
-                    coordinator.requestOnboardingPresentation()
-                    openWindow(id: "onboarding")
+                    coordinator.openPresentedWindow(id: "onboarding") {
+                        coordinator.requestOnboardingPresentation()
+                    }
                 }
                 Divider()
             }
@@ -39,8 +39,12 @@ struct MenuBarContent: View {
 
             Divider()
 
-            Button(OffsendStrings.menuCheckDirectory) { openWindow(id: "directory-check") }
-            Button(OffsendStrings.menuOpenSettings) { openWindow(id: "settings") }
+            Button(OffsendStrings.menuCheckDirectory) {
+                coordinator.openPresentedWindow(id: "directory-check")
+            }
+            Button(OffsendStrings.menuOpenSettings) {
+                coordinator.openPresentedWindow(id: "settings")
+            }
             Button(OffsendStrings.menuCheckForUpdates) {
                 coordinator.checkForSparkleUpdates(sender: nil)
             }
