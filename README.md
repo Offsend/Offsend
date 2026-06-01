@@ -41,6 +41,13 @@ It watches the boring-but-important stuff:
 Offsend is not trying to be a giant security platform.
 It is a small Mac utility that helps catch obvious leaks before they become expensive ones.
 
+That covers a lot of everyday work:
+
+- you open a project in an AI coding tool and want to know sensitive files are ignored first;
+- you manage several folders and want background monitoring instead of checking each one by hand;
+- you paste logs, tickets, invoices, contracts, or customer messages into ChatGPT, Claude, Slack, or email — and want tokens, keys, and identifiers masked before they leave your clipboard;
+- you want a local safety layer that catches leaks without sending the data to another service.
+
 ---
 
 ## What it does
@@ -105,66 +112,20 @@ Hotkeys are remappable in Settings.
 
 ## What Offsend can detect in clipboard text
 
-Offsend can look for common personal, business, infrastructure, and secret-like patterns, including:
+Safe Paste scans clipboard text before you paste somewhere you cannot take it back. Built-in detectors cover four groups:
 
-### Personal and contact data
+| Group | What it catches |
+| --- | --- |
+| **Personal** | emails, phone numbers |
+| **Business & finance** | contract, invoice, and order IDs; amounts; card-like numbers; IBANs |
+| **Links & network** | URLs, IP addresses, internal domains |
+| **Secrets & credentials** | OpenAI, AWS, GitHub, Slack, and Stripe keys; JWTs; private keys; database URLs with passwords; bearer tokens; high-entropy strings |
 
-- `email`
-- `phone`
+**Pro:** custom dictionaries for client names, company names, project codenames, internal domains, and other terms you define.
 
-### Money, links, and network data
+Offsend is not only about developers and source code. It is also useful for customer data, support logs, finance, contracts, and any text that should stay clean before AI tools touch it.
 
-- `money`
-- `url`
-- `ipAddress`
-- `internalDomain`
-
-### Business identifiers
-
-- `contractId`
-- `invoiceId`
-- `orderId`
-
-### Finance-like data
-
-- `creditCardLike`
-- `iban`
-
-### API keys, tokens, and credentials
-
-- `openAIAPIKey`
-- `awsAccessKeyId`
-- `githubToken`
-- `slackToken`
-- `stripeKey`
-- `jwt`
-- `privateKey`
-- `sshPrivateKey`
-- `databaseURLWithPassword`
-- `bearerToken`
-- `apiKeyGeneric`
-- `highEntropyString`
-
-### Custom sensitive terms
-
-- `customClient`
-- `customCompany`
-- `customProject`
-- `customSensitiveTerm`
-- `customInternalDomain`
-
-So Offsend is not only about developers and source code.
-It is also useful for people who work with customer data, internal operations, sales, finance, support, documents, logs, contracts, invoices, and project folders that should stay clean before AI tools touch them.
-
----
-
-## When it is useful
-
-- You want to open a project in an AI coding tool, but first need to know whether sensitive files are ignored.
-- You manage several project folders and want background monitoring instead of manual checks.
-- You paste logs, tickets, snippets, invoices, contracts, or customer messages into ChatGPT, Claude, Slack, email, or internal tools.
-- You want emails, phones, URLs, internal domains, IDs, tokens, and keys masked before text leaves your clipboard.
-- You need a local safety layer that helps you catch leaks without sending the data to another service.
+Turn individual detectors on or off in **Settings → Detection**.
 
 ---
 

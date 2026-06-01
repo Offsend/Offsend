@@ -37,6 +37,7 @@ struct SettingsView: View {
                 tab = .license
             }
         }
+        .dismissOnWindowCloseButton()
     }
 
     // MARK: Sidebar
@@ -118,7 +119,7 @@ struct SettingsView: View {
                     .fill(palette.green)
                     .frame(width: 6, height: 6)
                     .overlay(Circle().fill(palette.green.opacity(0.25)).frame(width: 12, height: 12))
-                Text("\(OffsendStrings.settingsFooterLocalOnly) · \(OffsendStrings.appName)")
+                Text(OffsendStrings.settingsFooterLocalOnly)
                     .font(.system(size: 10.5))
                     .foregroundColor(palette.textSub)
                 Spacer()

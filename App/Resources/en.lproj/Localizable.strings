@@ -73,20 +73,21 @@
 "onboarding.button.back" = "Back";
 "onboarding.button.finish" = "Finish";
 "onboarding.button.continue" = "Continue";
-"onboarding.footer.privacy" = "Your text never leaves your Mac · no cloud, no tracking";
+"onboarding.footer.privacy" = "Your text never leaves your Mac · no cloud · nothing uploaded";
 "onboarding.sampleText" = "Please summarize contract CN-4812 for Acme Corp. Contact ivan@acme.com. API key: sk-abcdefghijklmnopqrstuvwxyzABCDEF123456";
-"onboarding.welcome.title" = "Work with AI without leaking secrets";
-"onboarding.welcome.subtitle" = "Offsend masks sensitive text before you paste, and checks project folders before AI tools read them.";
-"onboarding.welcome.feature.clipboard" = "Masks secrets before you paste into AI and chat apps";
-"onboarding.welcome.feature.directoryCheck" = "Checks project folders for missing AI privacy rules";
-"onboarding.welcome.feature.local" = "Everything stays on your Mac";
-"onboarding.welcome.feature.fast" = "Fast, runs entirely on your Mac";
+"onboarding.welcome.title" = "Monitor projects. Mask pastes.";
+"onboarding.welcome.subtitle" = "Monitor project folders before AI tools see them. Clean sensitive clipboard text before you paste it somewhere you cannot take it back.";
+"onboarding.welcome.feature.directoryCheck" = "Check Directory audits AI ignore files and exposed sensitive paths";
+"onboarding.welcome.feature.clipboard" = "Safe Paste masks keys, tokens, and customer data before you send text anywhere";
+"onboarding.welcome.feature.monitoring" = "Background watch alerts you when privacy rules slip or risky files appear";
+"onboarding.welcome.feature.local" = "Directory checks, monitoring, and clipboard scans stay on your Mac";
 "onboarding.privacy.title" = "Privacy-first by default";
-"onboarding.privacy.subtitle" = "The app is built around local processing and explicit user intent.";
-"onboarding.privacy.feature.clipboard" = "Clipboard monitoring scans new text locally.";
+"onboarding.privacy.subtitle" = "Directory audits and clipboard scans run locally. You decide when Offsend reads the clipboard.";
+"onboarding.privacy.feature.directoryCheck" = "Directory Check uses paths and ignore rules — not file contents — and never uploads anything.";
+"onboarding.privacy.feature.clipboard" = "Clipboard is read only when you use Safe Paste, Restore, or optional monitoring.";
 "onboarding.privacy.feature.prompt" = "Prompt content never leaves your Mac.";
 "onboarding.privacy.feature.mappings" = "Placeholder mappings stay local and encrypted.";
-"onboarding.privacy.feature.monitoring" = "Clipboard monitoring can be turned off anytime.";
+
 "onboarding.hotkeys.title" = "Use two shortcuts";
 "onboarding.hotkeys.subtitle" = "Safe Paste and restore work from any app after setup.";
 "onboarding.hotkeys.safePaste" = "Safe Paste";
@@ -167,7 +168,7 @@
 "settings.theme.light" = "Light";
 "settings.theme.dark" = "Dark";
 "settings.theme.auto" = "Auto";
-"settings.footer.localOnly" = "Local-only";
+"settings.footer.localOnly" = "Local-only · no cloud";
 "settings.detection.searchPlaceholder" = "Search detectors…";
 "settings.detection.activeSummary" = "of %d active";
 "settings.detection.group.personal" = "Personal identifiers";
@@ -188,7 +189,7 @@
 "settings.general.statusOnTitle" = "Offsend is protecting your clipboard";
 "settings.general.statusOffTitle" = "Protection is off";
 "settings.general.statusOnSubtitle" = "Safe Paste and clipboard monitoring use your rules below.";
-"settings.general.statusOffSubtitle" = "Clipboard is not being monitored. Sensitive data may be exposed.";
+"settings.general.statusOffSubtitle" = "Clipboard is not monitored. The next paste is on you.";
 "settings.general.section.permissions" = "Permissions";
 "settings.general.accessibilityLabel" = "Accessibility";
 "settings.general.accessibilityGranted" = "Granted";
@@ -207,7 +208,7 @@
 "settings.masking.section.mapping" = "Mapping & restore";
 "settings.masking.section.risky" = "Risky behavior";
 "settings.privacy.summaryTitle" = "Everything stays on your Mac";
-"settings.privacy.summarySubtitle" = "No clipboard content, mappings, or window titles leave this device.";
+"settings.privacy.summarySubtitle" = "No cloud scanning. Clipboard content, mappings, and detected values never leave this device.";
 "settings.privacy.stat.mappings" = "Local mappings";
 "settings.privacy.stat.history" = "Local events";
 "settings.privacy.stat.cloud" = "Sent to cloud";
@@ -237,7 +238,7 @@
 "settings.license.feature.pro.ttlMax" = "Mapping TTL up to 24 h";
 "settings.license.feature.pro.macActivations" = "Activate up to %d Macs";
 "settings.license.proHeadline" = "Offsend Pro";
-"settings.license.proTagline" = "Protect sensitive data before it reaches AI.";
+"settings.license.proTagline" = "Catch obvious leaks before they get expensive.";
 "settings.license.buyPro" = "Buy Pro — $49/year";
 "settings.license.alreadyPurchasedTitle" = "Already purchased?";
 "settings.license.alreadyPurchasedSubtitle" = "Activate this Mac with your purchase email.";
@@ -326,7 +327,7 @@
 "privacy.title" = "Privacy";
 "privacy.item.localProcessing" = "Text is processed locally on your Mac.";
 "privacy.item.clipboard" = "Clipboard is read only when you use Offsend or Restore.";
-"privacy.item.neverUploaded" = "Prompt content, masked text, and entity values are never uploaded.";
+"privacy.item.neverUploaded" = "Prompt content, clipboard text, and detected values are never uploaded.";
 "privacy.item.encryptedMappings" = "Placeholder mappings stay local and encrypted with a Keychain-backed key.";
 "privacy.item.analytics" = "Optional anonymous usage analytics to improve the app; local counters never leave your Mac.";
 "privacy.item.monitoringOff" = "Clipboard monitoring is off by default and disabled in this release.";
@@ -342,7 +343,7 @@
 "localMappings.empty" = "No saved mappings yet.";
 
 "directoryCheck.title" = "Check Directory";
-"directoryCheck.subtitle" = "Audit a workspace for AI privacy files — nothing leaves your Mac.";
+"directoryCheck.subtitle" = "Check project folders before AI tools see them. Nothing leaves your Mac.";
 "directoryCheck.chooseFolder" = "Choose Folder";
 "directoryCheck.dropTitle" = "Drop a project folder here";
 "directoryCheck.dropHint" = "or click to choose one — clipboard folders are picked up automatically.";
@@ -385,7 +386,7 @@
 "directoryCheck.proUpsellCta" = "Upgrade to Pro";
 
 "settings.directoryCheck.summaryTitle" = "Directory Check";
-"settings.directoryCheck.summarySubtitle" = "Audit project folders for missing AI privacy files and unignored sensitive paths. Everything runs locally.";
+"settings.directoryCheck.summarySubtitle" = "Find missing AI ignore files and exposed sensitive paths — all on your Mac.";
 "settings.directoryCheck.openWindow" = "Open Directory Check…";
 "settings.directoryCheck.statRules" = "Tool rules";
 "settings.directoryCheck.statPatterns" = "Sensitive patterns";

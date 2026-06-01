@@ -5,24 +5,24 @@ import SwiftUI
 
 private enum OnboardingStep: Int, CaseIterable {
     case welcome
+    case directoryWatch
     case privacy
     case hotkeys
     case permissions
-    case directoryWatch
     case sample
 
     var label: String {
         switch self {
         case .welcome:
             return OffsendStrings.onboardingStepWelcome
+        case .directoryWatch:
+            return OffsendStrings.onboardingStepDirectoryWatch
         case .privacy:
             return OffsendStrings.onboardingStepPrivacy
         case .hotkeys:
             return OffsendStrings.onboardingStepHotkeys
         case .permissions:
             return OffsendStrings.onboardingStepPermissions
-        case .directoryWatch:
-            return OffsendStrings.onboardingStepDirectoryWatch
         case .sample:
             return OffsendStrings.onboardingStepSample
         }
@@ -150,14 +150,14 @@ struct OnboardingView: View {
             switch currentStep {
             case .welcome:
                 welcome
+            case .directoryWatch:
+                directoryWatch
             case .privacy:
                 privacy
             case .hotkeys:
                 hotkeys
             case .permissions:
                 permissions
-            case .directoryWatch:
-                directoryWatch
             case .sample:
                 sampleScenario
             }
@@ -214,10 +214,10 @@ struct OnboardingView: View {
             }
 
             VStack(alignment: .leading, spacing: 10) {
-                featureRow(icon: "lock.fill", text: OffsendStrings.onboardingWelcomeFeatureClipboard)
                 featureRow(icon: "folder.fill", text: OffsendStrings.onboardingWelcomeFeatureDirectoryCheck)
+                featureRow(icon: "lock.fill", text: OffsendStrings.onboardingWelcomeFeatureClipboard)
+                featureRow(icon: "bell.badge.fill", text: OffsendStrings.onboardingWelcomeFeatureMonitoring)
                 featureRow(icon: "desktopcomputer", text: OffsendStrings.onboardingWelcomeFeatureLocal)
-                featureRow(icon: "bolt.fill", text: OffsendStrings.onboardingWelcomeFeatureFast)
             }
             .padding(.top, OFSpacing.sm)
         }
@@ -231,10 +231,10 @@ struct OnboardingView: View {
             )
 
             VStack(alignment: .leading, spacing: 10) {
+                featureRow(icon: "folder.fill", text: OffsendStrings.onboardingPrivacyFeatureDirectoryCheck)
                 featureRow(icon: "clipboard", text: OffsendStrings.onboardingPrivacyFeatureClipboard)
                 featureRow(icon: "lock.shield", text: OffsendStrings.onboardingPrivacyFeaturePrompt)
                 featureRow(icon: "key", text: OffsendStrings.onboardingPrivacyFeatureMappings)
-                featureRow(icon: "eye.slash", text: OffsendStrings.onboardingPrivacyFeatureMonitoring)
             }
         }
     }
