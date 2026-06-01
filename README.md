@@ -78,8 +78,8 @@ Useful when:
 - a folder that was safe yesterday is no longer safe today;
 - you work across multiple projects and do not want to inspect each one manually.
 
-Free plan: one watched folder.
-Pro: unlimited watched folders.
+> **Free plan**: one watched folder.
+> **Pro**: unlimited watched folders.
 
 ---
 
@@ -104,7 +104,7 @@ Offsend works with common AI coding tools and ignore files such as:
 - `.aiexclude`
 - and similar project-level ignore rules
 
-Important detail: Offsend checks paths and ignore rules. It does not need to read your file contents for directory audits, and it does not upload anything.
+> **Important detail**: Offsend checks paths and ignore rules. It does not need to read your file contents for directory audits, and it does not upload anything.
 
 ---
 
@@ -116,9 +116,8 @@ With `⌘⇧V`, Offsend checks the clipboard, masks detected values, then pastes
 
 With `⌘⇧R`, you can restore masked values when you actually need the original text back.
 
-Mappings are encrypted on disk, with the key stored in Keychain.
-
-Hotkeys are remappable in Settings.
+> Mappings are encrypted on disk, with the key stored in Keychain.
+> Hotkeys are remappable in Settings.
 
 ---
 
@@ -137,7 +136,7 @@ Safe Paste scans clipboard text before you paste somewhere you cannot take it ba
 
 Offsend is not only about developers and source code. It is also useful for customer data, support logs, finance, contracts, and any text that should stay clean before AI tools touch it.
 
-Turn individual detectors on or off in **Settings → Detection**.
+> Turn individual detectors on or off in **Settings → Detection**.
 
 ---
 
