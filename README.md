@@ -14,6 +14,11 @@
   <img src="https://img.shields.io/badge/local--first-yes-2ea44f" alt="Local-first">
 </p>
 
+
+<p align="center">
+  <img src="assets/demo.gif" alt="Check Directory: drop a folder, review status, turn on background watch">
+</p>
+
 ---
 
 Offsend is a local-first macOS menu bar app for people who work with projects, documents, internal data, support logs, customer conversations, invoices, contracts, codebases, AI tools, Slack, email, and all the tiny pieces of text that should not accidentally leave your machine.
@@ -22,8 +27,6 @@ The main idea is simple: keep an eye on the folders you care about, warn you whe
 
 No cloud account. No server-side scanning. No “trust us”.
 Offsend runs on your Mac.
-
-![Check Directory: drop a folder, review status, turn on background watch](assets/demo.gif)
 
 ---
 
