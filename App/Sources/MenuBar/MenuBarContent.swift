@@ -42,6 +42,9 @@ struct MenuBarContent: View {
             Button(OffsendStrings.menuCheckDirectory) {
                 coordinator.openPresentedWindow(id: "directory-check")
             }
+            Button(OffsendStrings.menuSanitizeDocument) {
+                coordinator.openPresentedWindow(id: "document-sanitize")
+            }
             Button(OffsendStrings.menuOpenSettings) {
                 coordinator.openPresentedWindow(id: "settings")
             }

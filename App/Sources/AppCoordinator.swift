@@ -4,6 +4,7 @@ import AppKit
 import ClipboardService
 import Combine
 import DetectionCore
+import DocumentCore
 import Foundation
 import HotkeyService
 import LicenseCore
@@ -127,6 +128,7 @@ final class AppCoordinator: ObservableObject {
 
     var openSettingsWindowAction: (() -> Void)?
     var openDirectoryCheckWindowAction: ((URL?) -> Void)?
+    var openDocumentSanitizeWindowAction: ((URL?) -> Void)?
     var presentWindowAction: ((String, String?) -> Void)?
 
     private var safePastePanel: SafePastePanelController?
@@ -235,7 +237,11 @@ final class AppCoordinator: ObservableObject {
         extendedMappingTTLAllowed
     }
 
-    private var isProEntitlementActive: Bool {
+    var documentMaximumFileByteCount: Int {
+        DocumentProcessingLimits.maximumFileByteCount(isPro: isProEntitlementActive)
+    }
+
+    var isProEntitlementActive: Bool {
         guard licenseState.plan == .pro else { return false }
         return LicenseOfflineEntitlement.isProUnlocked(
             expiresAt: licenseState.subscriptionExpiresAt,
@@ -674,6 +680,7 @@ final class AppCoordinator: ObservableObject {
         openOnboarding: @escaping () -> Void,
         openSettings: @escaping () -> Void,
         openDirectoryCheck: @escaping () -> Void,
+        openDocumentSanitize: @escaping () -> Void,
         openWatchedDirectoryCheck: @escaping (UUID) -> Void
     ) {
         OffsendApplicationDelegate.coordinator = self
@@ -683,6 +690,7 @@ final class AppCoordinator: ObservableObject {
             openOnboarding: openOnboarding,
             openSettings: openSettings,
             openDirectoryCheck: openDirectoryCheck,
+            openDocumentSanitize: openDocumentSanitize,
             openWatchedDirectoryCheck: openWatchedDirectoryCheck
         )
         registerWorkspaceWatchNotificationCategories()

@@ -93,6 +93,21 @@ let coreTargets: [Target] = [
             .package(product: "SQLite")
         ],
         settings: developerIDReleaseSigning
+    ),
+    .target(
+        name: "DocumentCore",
+        destinations: .macOS,
+        product: .framework,
+        bundleId: "\(bundlePrefix).documentcore",
+        deploymentTargets: macOSDeploymentTarget,
+        sources: ["Core/DocumentCore/Sources/**"],
+        dependencies: [
+            .target(name: "DetectionCore"),
+            .target(name: "MaskingCore"),
+            .target(name: "RiskScoringCore"),
+            .sdk(name: "PDFKit", type: .framework, status: .required)
+        ],
+        settings: developerIDReleaseSigning
     )
 ]
 
@@ -191,6 +206,7 @@ let appTarget = Target.target(
     dependencies: [
         .target(name: "LicenseCore"),
         .target(name: "DetectionCore"),
+        .target(name: "DocumentCore"),
         .target(name: "MaskingCore"),
         .target(name: "RiskScoringCore"),
         .target(name: "WorkspacePolicyCore"),
@@ -310,6 +326,20 @@ let testTargets: [Target] = [
         deploymentTargets: macOSDeploymentTarget,
         sources: ["Services/WorkspaceWatchService/Tests/**"],
         dependencies: [.target(name: "WorkspaceWatchService")]
+    ),
+    .target(
+        name: "DocumentCoreTests",
+        destinations: .macOS,
+        product: .unitTests,
+        bundleId: "\(bundlePrefix).documentcore.tests",
+        deploymentTargets: macOSDeploymentTarget,
+        sources: ["Core/DocumentCore/Tests/**"],
+        dependencies: [
+            .target(name: "DocumentCore"),
+            .target(name: "DetectionCore"),
+            .target(name: "MaskingCore"),
+            .target(name: "RiskScoringCore")
+        ]
     )
 ]
 

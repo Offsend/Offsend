@@ -149,8 +149,6 @@ struct SettingsView: View {
         switch tab {
         case .detection:
             return !coordinator.tariffFeatures.customDictionaries
-        case .masking:
-            return !coordinator.allowsExtendedMappingTTL
         default:
             return false
         }
@@ -160,8 +158,6 @@ struct SettingsView: View {
         switch tab {
         case .detection:
             return OffsendStrings.settingsTariffUpsellDetectionMessage
-        case .masking:
-            return OffsendStrings.settingsTariffUpsellMaskingMessage
         default:
             return OffsendStrings.settingsTariffUpsellMessage
         }
@@ -219,13 +215,7 @@ struct SettingsView: View {
                     case .detection:
                         SettingsDetectionPanel()
                     case .masking:
-                        if showsTariffUpsellBanner {
-                            SettingsTariffUpsellPreview {
-                                SettingsMaskingPanel()
-                            }
-                        } else {
-                            SettingsMaskingPanel()
-                        }
+                        SettingsMaskingPanel()
                     case .privacy:
                         VStack(alignment: .leading, spacing: 0) {
                             PrivacyView()
@@ -248,21 +238,6 @@ struct SettingsView: View {
                 .padding(.bottom, 24)
             }
         }
-    }
-}
-
-/// Dims settings UI below the upsell banner (preview only; interaction blocked).
-private struct SettingsTariffUpsellPreview<Content: View>: View {
-    private let content: Content
-
-    init(@ViewBuilder content: () -> Content) {
-        self.content = content()
-    }
-
-    var body: some View {
-        content
-            .allowsHitTesting(false)
-            .opacity(0.5)
     }
 }
 

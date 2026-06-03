@@ -41,6 +41,13 @@ struct OffsendApp: App {
         }
         .defaultSize(width: 640, height: 560)
         .windowResizability(.contentSize)
+
+        WindowGroup(OffsendStrings.windowDocumentSanitize, id: "document-sanitize", for: String.self) { $documentPath in
+            DocumentSanitizeView(documentWindowPath: documentPath)
+                .environmentObject(coordinator)
+        }
+        .defaultSize(width: 640, height: 392)
+        .windowResizability(.contentSize)
     }
 
     private func showInitialOnboardingIfNeeded() {
@@ -69,6 +76,13 @@ struct OffsendApp: App {
                 coordinator?.openPresentedWindow(id: "directory-check")
             }
         }
+        coordinator.openDocumentSanitizeWindowAction = { [weak coordinator] url in
+            if let url {
+                coordinator?.openPresentedWindow(id: "document-sanitize", value: url.path)
+            } else {
+                coordinator?.openPresentedWindow(id: "document-sanitize")
+            }
+        }
         coordinator.configureMenuBarStatusItem(
             openOnboarding: { [weak coordinator] in
                 coordinator?.openPresentedWindow(id: "onboarding") {
@@ -81,6 +95,10 @@ struct OffsendApp: App {
             openDirectoryCheck: { [weak coordinator] in
                 coordinator?.recordDirectoryCheckOpened(source: "menu_bar")
                 coordinator?.openDirectoryCheckWindowAction?(nil)
+            },
+            openDocumentSanitize: { [weak coordinator] in
+                coordinator?.recordDocumentSanitizeOpened(source: "menu_bar")
+                coordinator?.openDocumentSanitizeWindowAction?(nil)
             },
             openWatchedDirectoryCheck: { [weak coordinator] watchID in
                 coordinator?.openDirectoryCheckForWatch(watchID: watchID, source: "menu_bar")

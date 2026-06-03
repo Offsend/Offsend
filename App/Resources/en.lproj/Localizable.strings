@@ -4,6 +4,7 @@
 "window.localMappings" = "Local Mappings";
 "window.privacy" = "Privacy";
 "window.directoryCheck" = "Check Directory";
+"window.documentSanitize" = "Sanitize Document";
 
 "common.on.lowercase" = "on";
 "common.off.lowercase" = "off";
@@ -25,6 +26,8 @@
 "status.criticalSecretBlocked" = "Critical secret blocked";
 "status.originalTextPasted" = "Original text pasted";
 "status.safeVersionCopied" = "Safe version copied";
+"status.documentSafeTextCopied" = "Safe document text copied to clipboard";
+"status.documentSafeTextSaved" = "Safe document saved as %@";
 "status.settingsSaved" = "Settings saved";
 "status.settingsSaveFailed" = "Settings save failed: %@";
 "status.customDictionariesSaved" = "Custom dictionaries saved";
@@ -130,6 +133,7 @@
 "menu.viewLocalMappings" = "View Local Mappings";
 "menu.privacy" = "Privacy";
 "menu.checkDirectory" = "Check Directory";
+"menu.sanitizeDocument" = "Sanitize Document";
 "menu.checkForUpdates" = "Check for Updates";
 "menu.lastAction" = "Last action: %@";
 "menu.quit" = "Quit";
@@ -207,6 +211,10 @@
 "settings.masking.previewTitle" = "MASKING PREVIEW";
 "settings.masking.section.mapping" = "Mapping & restore";
 "settings.masking.section.risky" = "Risky behavior";
+"settings.masking.mappingTTLProHint" = "6 h, 24 h, and never store mapping are available in Pro.";
+"settings.documentSanitize.summaryTitle" = "Sanitize documents before AI";
+"settings.documentSanitize.summarySubtitle" = "Pick a text file, review detected sensitive data, and copy or save a masked version locally.";
+"settings.documentSanitize.openWindow" = "Open Sanitize Document";
 "settings.privacy.summaryTitle" = "Everything stays on your Mac";
 "settings.privacy.summarySubtitle" = "No cloud scanning. Clipboard content, mappings, and detected values never leave this device.";
 "settings.privacy.stat.mappings" = "Local mappings";
@@ -475,6 +483,45 @@
 "directoryCheck.fixSelection.noneSelected" = "Select at least one item to apply.";
 "directoryCheck.fixSelection.section.files" = "Policy files";
 "directoryCheck.fixSelection.section.patterns" = "Sensitive patterns";
+
+"documentSanitize.title" = "Sanitize Document";
+"documentSanitize.subtitle" = "Mask sensitive data before you paste or upload text to AI tools.";
+"documentSanitize.chooseFile" = "Choose File";
+"documentSanitize.dropTitle" = "Drop a text document here";
+"documentSanitize.dropHint" = "or click to choose one — txt, md, csv, json, pdf, log, yaml and similar formats.";
+"documentSanitize.dropHintWithFileSizeLimit" = "or click to choose one — txt, md, csv, json, pdf, log, yaml and similar formats.\nUp to %@ on Free · %@ on Pro.";
+"documentSanitize.privacyNote" = "Detection, masking, and restore run locally on your Mac. Nothing is uploaded for scanning.";
+"documentSanitize.fileTooLargeProNote" = "Upgrade to Pro to process larger files";
+"documentSanitize.analyzing" = "Analyzing document…";
+"documentSanitize.sanitizing" = "Preparing safe version…";
+"documentSanitize.safeTitle" = "No sensitive data found";
+"documentSanitize.safeSubtitle" = "This document looks safe to share as-is, based on your current detectors.";
+"documentSanitize.summary.characters" = "Characters scanned";
+"documentSanitize.summary.entities" = "Sensitive items found";
+"documentSanitize.summary.truncated" = "Truncated";
+"documentSanitize.detectedEntities" = "Detected entities";
+"documentSanitize.selectAll" = "Select all";
+"documentSanitize.deselectAll" = "Deselect all";
+"documentSanitize.entityGroupSummary" = "%d match(es) in this document";
+"documentSanitize.noEntitiesSelected" = "Select at least one entity type to mask.";
+"documentSanitize.riskScore" = "Risk score";
+"documentSanitize.refreshAnalysis" = "Refresh";
+"documentSanitize.maskedPreview" = "Masked preview";
+"documentSanitize.entitiesSelected" = "%d entity groups selected · processed locally";
+"documentSanitize.copySafeText" = "Copy Safe Text";
+"documentSanitize.saveAs" = "Save As…";
+"documentSanitize.copiedSafeText" = "Safe text copied to clipboard. Mapping saved locally if enabled.";
+"documentSanitize.savedSafeText" = "Saved safe version as %@.";
+"documentSanitize.statusTitle" = "Done";
+"documentSanitize.errorTitle" = "Could not process document";
+"documentSanitize.error.unsupportedFormat" = "Unsupported file type: .%@";
+"documentSanitize.error.fileTooLarge" = "File is too large (%1$@). Maximum is %2$@ on the Free plan. Upgrade to Pro for up to 50 MB.";
+"documentSanitize.error.fileTooLargePro" = "File is too large (%1$@). Maximum is %2$@.";
+"documentSanitize.error.emptyDocument" = "The document is empty.";
+"documentSanitize.error.invalidPDF" = "This file has a .pdf extension but is not a valid PDF. Choose another file or rename it to match its actual format.";
+"documentSanitize.error.unreadableFile" = "Could not read file: %@";
+"documentSanitize.error.extractionFailed" = "Could not extract text: %@";
+"documentSanitize.safeSuffix" = "-safe";
 
 "safePaste.warning.truncated" = "Only the first 50,000 characters were scanned.";
 "safePaste.section.maskedPreview" = "MASKED PREVIEW";

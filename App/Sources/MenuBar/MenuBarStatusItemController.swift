@@ -23,6 +23,7 @@ final class MenuBarStatusItemController: NSObject {
     private var openOnboarding: (() -> Void)?
     private var openSettings: (() -> Void)?
     private var openDirectoryCheck: (() -> Void)?
+    private var openDocumentSanitize: (() -> Void)?
     private var openWatchedDirectoryCheck: ((UUID) -> Void)?
     private var checkForUpdates: ((Any?) -> Void)?
 
@@ -57,11 +58,13 @@ final class MenuBarStatusItemController: NSObject {
         openOnboarding: @escaping () -> Void,
         openSettings: @escaping () -> Void,
         openDirectoryCheck: @escaping () -> Void,
+        openDocumentSanitize: @escaping () -> Void,
         openWatchedDirectoryCheck: @escaping (UUID) -> Void
     ) {
         self.openOnboarding = openOnboarding
         self.openSettings = openSettings
         self.openDirectoryCheck = openDirectoryCheck
+        self.openDocumentSanitize = openDocumentSanitize
         self.openWatchedDirectoryCheck = openWatchedDirectoryCheck
     }
 
@@ -246,6 +249,7 @@ final class MenuBarStatusItemController: NSObject {
         menu.addItem(.separator())
 
         addActionItem(OffsendStrings.menuCheckDirectory, action: #selector(openDirectoryCheckItem))
+        addActionItem(OffsendStrings.menuSanitizeDocument, action: #selector(openDocumentSanitizeItem))
         menu.addItem(.separator())
 
         let protectionTitle = OffsendStrings.menuProtection(settings.protectionEnabled ? OffsendStrings.commonOn : OffsendStrings.commonOff)
@@ -337,6 +341,10 @@ final class MenuBarStatusItemController: NSObject {
 
     @objc private func openDirectoryCheckItem() {
         openDirectoryCheck?()
+    }
+
+    @objc private func openDocumentSanitizeItem() {
+        openDocumentSanitize?()
     }
 
     @objc private func checkForUpdatesItem(_ sender: Any?) {

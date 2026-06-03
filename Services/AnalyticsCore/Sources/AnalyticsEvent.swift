@@ -15,6 +15,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
     case watchNotificationOpened(action: String)
     case watchUpgradeFromLimit(source: String)
     case directoryCheckOpened(source: String)
+    case documentSanitizeOpened(source: String)
     case checkoutStarted(source: String)
 
     public var name: String {
@@ -31,6 +32,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case .watchNotificationOpened: "watch_notification_opened"
         case .watchUpgradeFromLimit: "watch_upgrade_from_limit"
         case .directoryCheckOpened: "directory_check_opened"
+        case .documentSanitizeOpened: "document_sanitize_opened"
         case .checkoutStarted: "checkout_started"
         }
     }
@@ -59,6 +61,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
             ["action": action]
         case let .watchUpgradeFromLimit(source),
              let .directoryCheckOpened(source),
+             let .documentSanitizeOpened(source),
              let .checkoutStarted(source):
             ["source": source]
         default:
