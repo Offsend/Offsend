@@ -2,7 +2,7 @@ import Foundation
 
 public struct PlainTextDocumentExtractor: DocumentTextExtracting {
     public static let supportedExtensions: Set<String> = [
-        "txt", "md", "markdown", "csv", "json", "log", "xml", "yaml", "yml", "rtf"
+        "txt", "md", "markdown", "csv", "json", "log", "xml", "yaml", "yml"
     ]
 
     public let id = "plain-text"
@@ -25,9 +25,7 @@ public struct PlainTextDocumentExtractor: DocumentTextExtracting {
         if let utf8 = String(data: data, encoding: .utf8) {
             return utf8
         }
-        if let latin1 = String(data: data, encoding: .isoLatin1) {
-            return latin1
-        }
-        return String(decoding: data, as: UTF8.self)
+        // ISO Latin-1 maps every byte value, so this never fails for non-empty data.
+        return String(data: data, encoding: .isoLatin1) ?? ""
     }
 }

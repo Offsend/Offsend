@@ -3,15 +3,86 @@ import SwiftUI
 
 extension View {
     /// Makes the red close button close the window instead of hiding it.
-    func dismissOnWindowCloseButton() -> some View {
-        background(WindowCloseDismissConfigurator())
+    func dismissOnWindowCloseButton(
+        onWillClose: (@MainActor () -> Void)? = nil
+    ) -> some View {
+        background(WindowCloseDismissConfigurator(onWillClose: onWillClose))
+    }
+
+    /// Invokes `action` when the hosting `NSWindow` is about to close.
+    func onWindowWillClose(perform action: @escaping @MainActor () -> Void) -> some View {
+        background(WindowWillCloseObserver(action: action))
+    }
+}
+
+@MainActor
+private struct WindowWillCloseObserver: NSViewRepresentable {
+    let action: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(action: action)
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        context.coordinator.attach(to: view)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.attach(to: nsView)
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.detach()
+    }
+
+    final class Coordinator {
+        private let action: () -> Void
+        private weak var observedWindow: NSWindow?
+        private var observer: NSObjectProtocol?
+
+        init(action: @escaping @MainActor () -> Void) {
+            self.action = action
+        }
+
+        func attach(to view: NSView) {
+            guard let window = view.window else { return }
+            guard window !== observedWindow else { return }
+            detach()
+
+            observedWindow = window
+            observer = NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                self?.action()
+            }
+        }
+
+        func detach() {
+            if let observer {
+                NotificationCenter.default.removeObserver(observer)
+            }
+            observer = nil
+            observedWindow = nil
+        }
+
+        deinit {
+            if let observer {
+                NotificationCenter.default.removeObserver(observer)
+            }
+        }
     }
 }
 
 @MainActor
 private struct WindowCloseDismissConfigurator: NSViewRepresentable {
+    let onWillClose: (@MainActor () -> Void)?
+
     func makeCoordinator() -> Coordinator {
-        Coordinator()
+        Coordinator(onWillClose: onWillClose)
     }
 
     func makeNSView(context: Context) -> NSView {
@@ -25,7 +96,12 @@ private struct WindowCloseDismissConfigurator: NSViewRepresentable {
     }
 
     final class Coordinator: NSObject, NSWindowDelegate {
+        private let onWillClose: (@MainActor () -> Void)?
         private weak var attachedWindow: NSWindow?
+
+        init(onWillClose: (@MainActor () -> Void)?) {
+            self.onWillClose = onWillClose
+        }
 
         deinit {
             guard let window = attachedWindow else { return }
@@ -84,8 +160,14 @@ private struct WindowCloseDismissConfigurator: NSViewRepresentable {
         }
 
         @MainActor
+        @objc func windowWillClose(_ notification: Notification) {
+            onWillClose?()
+        }
+
+        @MainActor
         @objc func windowShouldClose(_ sender: NSWindow) -> Bool {
-            true
+            onWillClose?()
+            return true
         }
     }
 }

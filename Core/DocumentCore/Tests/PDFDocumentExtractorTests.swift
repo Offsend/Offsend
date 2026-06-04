@@ -37,16 +37,16 @@ final class PDFDocumentExtractorTests: XCTestCase {
         }
     }
 
-    func testRejectsPDFWithoutExtractableText() {
+    func testReturnsEmptyTextForPDFWithoutExtractableText() throws {
         let request = DocumentTextExtractionRequest(
             data: PDFTestFixtures.makeEmptyPDF(),
             source: DocumentSource(fileName: "blank.pdf"),
             maximumExtractedCharacterCount: 10_000
         )
 
-        XCTAssertThrowsError(try extractor.extract(request)) { error in
-            XCTAssertEqual(error as? DocumentProcessingError, .emptyDocument)
-        }
+        let result = try extractor.extract(request)
+        XCTAssertEqual(result.format, DocumentFormat.pdf)
+        XCTAssertTrue(result.plainText.isEmpty)
     }
 
     func testExtractsMultiplePagesSeparatedByBlankLine() throws {

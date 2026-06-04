@@ -37,10 +37,6 @@ public struct PDFDocumentExtractor: DocumentTextExtracting {
         }
 
         let plainText = pageTexts.joined(separator: "\n\n")
-        guard !plainText.isEmpty else {
-            throw DocumentProcessingError.emptyDocument
-        }
-
         return DocumentTextExtractionResult(format: .pdf, plainText: plainText)
     }
 }

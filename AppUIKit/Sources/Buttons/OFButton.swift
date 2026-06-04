@@ -64,8 +64,10 @@ public struct OFButton: View {
                     .font(.system(size: small ? 11 : 12, weight: .medium))
             }
 
-            Text(title)
-                .font(.system(size: small ? 12 : 13, weight: .medium))
+            if title.isEmpty == false {
+                Text(title)
+                    .font(.system(size: small ? 12 : 13, weight: .medium))
+            }
 
             if fillsWidth {
                 Spacer(minLength: 0)

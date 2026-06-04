@@ -99,7 +99,7 @@ struct SettingsDirectoryCheckPanel: View {
                     variant: .primary
                 ) {
                     coordinator.recordDirectoryCheckOpened(source: "settings")
-                    coordinator.openPresentedWindow(id: "directory-check")
+                    coordinator.openPrepareWindow(source: "settings_directory_check")
                 }
             }
 

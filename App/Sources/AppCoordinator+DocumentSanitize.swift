@@ -90,8 +90,7 @@ extension AppCoordinator {
     }
 
     func openDocumentSanitize(for url: URL, source: String) {
-        recordDocumentSanitizeOpened(source: source)
-        openDocumentSanitizeWindowAction?(url.standardizedFileURL)
+        openPrepare(for: url, source: source)
     }
 
     func recordDocumentSanitizeOpened(source: String) {

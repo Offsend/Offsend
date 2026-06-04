@@ -127,8 +127,7 @@ final class AppCoordinator: ObservableObject {
     private let sparkleUpdater = OffsendSparkleUpdater()
 
     var openSettingsWindowAction: (() -> Void)?
-    var openDirectoryCheckWindowAction: ((URL?) -> Void)?
-    var openDocumentSanitizeWindowAction: ((URL?) -> Void)?
+    var openPrepareWindowAction: ((URL?) -> Void)?
     var presentWindowAction: ((String, String?) -> Void)?
 
     private var safePastePanel: SafePastePanelController?

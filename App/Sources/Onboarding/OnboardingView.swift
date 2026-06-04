@@ -36,60 +36,44 @@ struct OnboardingView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var currentStep: OnboardingStep = .welcome
     @State private var isStepTransitionForward = true
-    @AppStorage(OFSettingsChromeAppearance.appStorageKey) private var chromeAppearanceRaw: String =
-        OFSettingsChromeAppearance.auto.rawValue
-    @State private var systemAppearanceRevision = 0
+    @Environment(\.ofPalette) private var palette
     @State private var safePasteHotkey = HotkeyDisplay.safePaste
     @State private var restoreHotkey = HotkeyDisplay.restorePlaceholders
     @State private var addedWatchFolderName: String?
 
     private let sampleText = OffsendStrings.onboardingSampleText
 
-    private var chromeAppearance: OFSettingsChromeAppearance {
-        OFSettingsChromeAppearance(rawValue: chromeAppearanceRaw) ?? .auto
-    }
-
-    private var palette: OFPalette {
-        _ = systemAppearanceRevision
-        return chromeAppearance.resolvedPalette()
-    }
-
     private var isAccessibilityGranted: Bool {
         coordinator.permissionsService.isAccessibilityTrusted
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            progressBar
-                .padding(.horizontal, OFSpacing.xxl)
-                .padding(.top, OFSpacing.xl)
-                .padding(.bottom, OFSpacing.md)
+        OFChromeShell { palette in
+            VStack(spacing: 0) {
+                progressBar
+                    .padding(.horizontal, OFSpacing.xxl)
+                    .padding(.top, OFSpacing.xl)
+                    .padding(.bottom, OFSpacing.md)
 
-            OFDivider()
+                OFDivider()
 
-            stepContent
-                .id(currentStep)
-                .frame(
-                    maxWidth: .infinity,
-                    minHeight: Self.stepContentHeight,
-                    maxHeight: Self.stepContentHeight,
-                    alignment: .topLeading
-                )
-                .transition(stepTransition)
-                .animation(.easeInOut(duration: 0.25), value: currentStep)
+                stepContent
+                    .id(currentStep)
+                    .frame(
+                        maxWidth: .infinity,
+                        minHeight: Self.stepContentHeight,
+                        maxHeight: Self.stepContentHeight,
+                        alignment: .topLeading
+                    )
+                    .transition(stepTransition)
+                    .animation(.easeInOut(duration: 0.25), value: currentStep)
 
-            OFDivider()
+                OFDivider()
 
-            footer
-        }
-        .frame(width: 620)
-        .background(palette.bg1)
-        .environment(\.ofPalette, palette)
-        .preferredColorScheme(chromeAppearance.preferredColorScheme)
-        .tint(palette.blue)
-        .ofRefreshOnSystemAppearanceChange($systemAppearanceRevision)
-        .onChange(of: chromeAppearanceRaw) { _ in
-            systemAppearanceRevision += 1
+                footer
+            }
+            .frame(width: 620)
+            .background(palette.bg1)
         }
         .onAppear {
             safePasteHotkey = HotkeyDisplay.safePaste

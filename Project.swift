@@ -184,6 +184,9 @@ let uiTargets: [Target] = [
         deploymentTargets: macOSDeploymentTarget,
         sources: ["AppUIKit/Sources/**"],
         resources: ["AppUIKit/Resources/**"],
+        dependencies: [
+            .sdk(name: "PDFKit", type: .framework, status: .required)
+        ],
         settings: developerIDReleaseSigning
     )
 ]

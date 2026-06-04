@@ -6,15 +6,15 @@ import RiskScoringCore
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct DocumentSanitizeView: View {
-    let documentWindowPath: String?
+struct DocumentSanitizeContentView: View {
+    let fileURL: URL
+    let onReplaceSelection: (URL) -> Void
 
     @EnvironmentObject private var coordinator: AppCoordinator
-    @State private var selectedFile: URL?
+    @State private var selectedFile: URL
     @State private var analysisResult: DocumentAnalysisResult?
     @State private var sanitizeResult: DocumentSanitizationResult?
     @State private var selectedEntityIDs: Set<UUID> = []
-    @State private var isDropTargeted = false
     @State private var statusMessage: String?
     @State private var errorMessage: String?
     @State private var showsFileTooLargeBuyPro = false
@@ -22,67 +22,77 @@ struct DocumentSanitizeView: View {
     @State private var isSanitizing = false
     @State private var analysisToken = UUID()
     @State private var activeWork: Task<Void, Never>?
+    @State private var redactionPlan: PDFRedactionPlan?
+    @State private var manualRegions: [PDFRedactionRegion] = []
+    @State private var manualRegionsUndoStack: [[PDFRedactionRegion]] = []
+    @State private var manualRegionsRedoStack: [[PDFRedactionRegion]] = []
+    @State private var isRefreshingPdfPreview = false
+    @State private var previewInFlight = false
+    @State private var previewToken = UUID()
+    @State private var previewWork: Task<Void, Never>?
+    @State private var pdfSessionID = UUID()
+    @State private var windowResetToken = UUID()
 
-    private var isBusy: Bool { isAnalyzing || isSanitizing }
-
-    private var isBootstrapPending: Bool {
-        documentWindowPath != nil && analysisResult == nil && selectedFile == nil
-    }
+    private var isBusy: Bool { isAnalyzing || isSanitizing || isRefreshingPdfPreview }
 
     private var showsWorkingOverlay: Bool {
-        isBusy || isBootstrapPending
+        isBusy
+    }
+
+    init(fileURL: URL, onReplaceSelection: @escaping (URL) -> Void) {
+        let standardized = fileURL.standardizedFileURL
+        self.fileURL = standardized
+        self.onReplaceSelection = onReplaceSelection
+        _selectedFile = State(initialValue: standardized)
     }
 
     private enum Layout {
-        static let windowWidth: CGFloat = 640
-        static let headerHeight: CGFloat = 96
+        static let findingsContentWidth: CGFloat = 320
+        static let documentPreviewMinWidth: CGFloat = 390
+        static let interColumnSpacing: CGFloat = OFSpacing.lg
+        static let horizontalInset: CGFloat = OFSpacing.xxl * 2
+        static let windowWidth: CGFloat = findingsContentWidth + documentPreviewMinWidth + interColumnSpacing + horizontalInset
         static let footerHeight: CGFloat = 57
-        static let bannerExtraHeight: CGFloat = 72
-        static let emptyStateHeight: CGFloat = 392
-        static let awaitingResultHeight: CGFloat = 372
-        static let safeResultHeight: CGFloat = 448
-        static let findingsResultHeight: CGFloat = 780
+        static let emptyStateHeight: CGFloat = 320
+        static let awaitingResultHeight: CGFloat = 280
+        static let safeResultHeight: CGFloat = 320
+        static let findingsResultHeight: CGFloat = 520
+        static let pdfPreviewMinHeight: CGFloat = 420
     }
 
     private enum WindowContentPhase {
-        case empty
         case awaitingResult
         case safeResult
         case findingsResult
     }
 
     private var windowContentPhase: WindowContentPhase {
-        guard selectedFile != nil else { return .empty }
         guard let analysisResult else { return .awaitingResult }
-        return analysisResult.detection.entities.isEmpty ? .safeResult : .findingsResult
+        return showsFindingsLayout(for: analysisResult) ? .findingsResult : .safeResult
     }
 
-    private var usesScrollableContent: Bool {
-        windowContentPhase == .findingsResult
+    private func showsFindingsLayout(for result: DocumentAnalysisResult) -> Bool {
+        !result.detection.entities.isEmpty || result.extracted.format == .pdf
     }
 
     var body: some View {
-        let windowHeight = preferredWindowHeight()
-        let windowSize = NSSize(width: Layout.windowWidth, height: windowHeight)
+        documentSanitizeRoot
+    }
+
+    @ViewBuilder
+    private var documentSanitizeRoot: some View {
+        let bodyHeight = preferredWindowHeight()
+        let minimumSize = NSSize(
+            width: PrepareWindowChrome.windowWidth(contentWidth: Layout.windowWidth),
+            height: PrepareWindowChrome.windowHeight(bodyHeight: bodyHeight)
+        )
         let showsFindingsFooter = analysisResult.map { shouldShowPinnedFooter(for: $0) } ?? false
-        let showsFileTooLargeFooter = showsFileTooLargeBuyPro && selectedFile != nil
+        let showsFileTooLargeFooter = showsFileTooLargeBuyPro
 
         VStack(spacing: 0) {
-            header
-                .padding(.horizontal, OFSpacing.xxl)
-                .padding(.top, OFSpacing.xl)
-                .padding(.bottom, OFSpacing.lg)
-
-            Group {
-                if usesScrollableContent {
-                    ScrollView {
-                        documentBodyContent
-                    }
-                } else {
-                    documentBodyContent
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                }
-            }
+            documentBodyContent
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .disabled(showsWorkingOverlay)
 
             if showsFileTooLargeFooter {
                 fileTooLargeProFooter
@@ -90,109 +100,96 @@ struct DocumentSanitizeView: View {
                 pinnedFooter(for: analysisResult)
             }
         }
-        .frame(width: Layout.windowWidth, height: windowHeight, alignment: .top)
-        .background(Color.ofBg1)
-        .background(DocumentSanitizeWindowSizer(size: windowSize))
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .frame(minWidth: Layout.windowWidth, minHeight: bodyHeight)
+        .background(
+            DocumentSanitizeWindowConfigurator(
+                minimumSize: minimumSize,
+                preferredSize: minimumSize,
+                resetToken: windowResetToken
+            )
+        )
         .overlay {
             if showsWorkingOverlay {
                 workingOverlay
             }
         }
-        .disabled(showsWorkingOverlay)
         .onAppear {
-            prefillFileFromPasteboard()
-            bootstrapFromWindowPathIfNeeded()
+            windowResetToken = UUID()
+            if analysisResult == nil, !isAnalyzing, !showsFileTooLargeBuyPro {
+                selectFile(selectedFile)
+            }
         }
-        .onChange(of: documentWindowPath) { _ in
-            bootstrapFromWindowPathIfNeeded()
-        }
-        .onDisappear {
-            activeWork?.cancel()
-            activeWork = nil
-        }
-        .dismissOnWindowCloseButton()
+        .onDisappear(perform: releaseDocumentSession)
+    }
+
+    private func releaseDocumentSession() {
+        activeWork?.cancel()
+        activeWork = nil
+        previewWork?.cancel()
+        previewWork = nil
+        previewToken = UUID()
+        pdfSessionID = UUID()
+        resetPdfRedactionState()
+        analysisResult = nil
+        sanitizeResult = nil
+        selectedEntityIDs = []
+        isAnalyzing = false
+        isSanitizing = false
     }
 
     private var documentBodyContent: some View {
         VStack(alignment: .leading, spacing: OFSpacing.lg) {
-            privacyNote
-
-            if selectedFile == nil {
-                emptyDropZone
-            } else if let analysisResult {
-                fileSummaryCard(analysisResult)
-
-                if let errorMessage {
-                    errorBanner(errorMessage)
-                }
-
-                if let statusMessage {
-                    statusBanner(statusMessage)
-                }
-
-                if analysisResult.detection.entities.isEmpty {
-                    safeDocumentBanner
+            if let analysisResult {
+                if showsFindingsLayout(for: analysisResult) {
+                    findingsAndPreviewLayout(for: analysisResult)
                 } else {
-                    findingsSection(analysisResult)
-                    maskedPreviewSection
+                    safeDocumentContent
                 }
-            } else if let selectedFile {
-                selectedFileSummaryCard(selectedFile)
-
-                if let errorMessage {
-                    errorBanner(errorMessage)
-                }
-
-                if !isBusy {
-                    OFButton(
-                        title: OffsendStrings.documentSanitizeRefreshAnalysis,
-                        variant: .outline,
-                        icon: "arrow.clockwise",
-                        small: true
-                    ) {
-                        analyze(fileURL: selectedFile)
-                    }
+            } else if !isBusy {
+                OFButton(
+                    title: "",
+                    variant: .outline,
+                    icon: "arrow.clockwise",
+                    small: true
+                ) {
+                    analyze(fileURL: selectedFile)
                 }
             }
         }
-        .padding(.horizontal, OFSpacing.xxl)
-        .padding(.bottom, OFSpacing.lg)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, OFSpacing.md)
+        .padding(.bottom, OFSpacing.md)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private var header: some View {
-        HStack(alignment: .center, spacing: 14) {
-            OFIconTile(
-                systemName: "doc.text.magnifyingglass",
-                tint: .ofBlue,
-                size: 44,
-                iconSize: 18,
-                glow: true
-            )
+    private var safeDocumentContent: some View {
+        VStack(spacing: OFSpacing.md) {
+            Spacer(minLength: 0)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(OffsendStrings.documentSanitizeTitle)
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundColor(.ofText)
+            Image(systemName: "checkmark.shield.fill")
+                .font(.system(size: 40, weight: .semibold))
+                .foregroundColor(.ofGreen)
 
-                Text(OffsendStrings.documentSanitizeSubtitle)
-                    .font(.system(size: 12))
-                    .foregroundColor(.ofTextMuted)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Text(OffsendStrings.documentSanitizeSafeTitle)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundColor(.ofText)
+                .multilineTextAlignment(.center)
 
-            Spacer()
+            Text(OffsendStrings.documentSanitizeSafeSubtitle)
+                .font(.system(size: 13))
+                .foregroundColor(.ofGreenText)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 420)
 
-            OFButton(
-                title: OffsendStrings.documentSanitizeChooseFile,
-                variant: .outline,
-                icon: "doc",
-                small: true
-            ) {
-                chooseFile()
-            }
-            .disabled(isBusy)
+            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.ofGreenDim.opacity(0.55))
+        .cornerRadius(OFRadius.lg)
+        .overlay(
+            RoundedRectangle(cornerRadius: OFRadius.lg)
+                .stroke(Color.ofGreen.opacity(0.45), lineWidth: 1)
+        )
     }
 
     private var fileTooLargeProFooter: some View {
@@ -203,52 +200,6 @@ struct DocumentSanitizeView: View {
             buttonDisabled: isBusy
         ) {
             Task { await coordinator.openProCheckout(prefillEmail: nil, source: "document_sanitize_file_size") }
-        }
-    }
-
-    private var dropZoneHint: String {
-        guard !coordinator.isProEntitlementActive else {
-            return OffsendStrings.documentSanitizeDropHint
-        }
-        let freeLimit = Self.formattedMegabytes(DocumentProcessingLimits.freeMaximumFileByteCount)
-        let proLimit = Self.formattedMegabytes(DocumentProcessingLimits.proMaximumFileByteCount)
-        return OffsendStrings.documentSanitizeDropHintWithFileSizeLimit(freeLimit, proLimit)
-    }
-
-    private var privacyNote: some View {
-        HStack(alignment: .top, spacing: OFSpacing.sm) {
-            Image(systemName: "lock.shield.fill")
-                .font(.system(size: 13))
-                .foregroundColor(.ofBlue)
-                .padding(.top, 1)
-
-            Text(OffsendStrings.documentSanitizePrivacyNote)
-                .font(.system(size: 12))
-                .foregroundColor(.ofTextSub)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(OFSpacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.ofBlueDim)
-        .cornerRadius(OFRadius.md)
-        .overlay(
-            RoundedRectangle(cornerRadius: OFRadius.md)
-                .stroke(Color.ofBlue.opacity(0.25), lineWidth: 1)
-        )
-    }
-
-    private var emptyDropZone: some View {
-        OFDropZone(
-            title: OffsendStrings.documentSanitizeDropTitle,
-            hint: dropZoneHint,
-            isTargeted: isDropTargeted
-        ) {
-            guard !isBusy else { return }
-            chooseFile()
-        }
-        .onDrop(of: [UTType.fileURL.identifier], isTargeted: $isDropTargeted) { providers in
-            guard !isBusy else { return false }
-            return handleDrop(providers)
         }
     }
 
@@ -272,100 +223,39 @@ struct DocumentSanitizeView: View {
         }
     }
 
-    private var safeDocumentBanner: some View {
-        OFSemanticBanner(
-            style: .success,
-            icon: "checkmark.shield",
-            title: OffsendStrings.documentSanitizeSafeTitle,
-            subtitle: OffsendStrings.documentSanitizeSafeSubtitle
-        )
+    private func findingsAndPreviewLayout(for result: DocumentAnalysisResult) -> some View {
+        HStack(alignment: .top, spacing: Layout.interColumnSpacing) {
+            ScrollView {
+                findingsSection(result)
+            }
+            .frame(width: Layout.findingsContentWidth, alignment: .leading)
+
+            documentPreviewPanel
+                .frame(
+                    minWidth: Layout.documentPreviewMinWidth,
+                    maxWidth: .infinity,
+                    minHeight: Layout.pdfPreviewMinHeight,
+                    maxHeight: .infinity,
+                    alignment: .top
+                )
+                .layoutPriority(1)
+        }
+        .frame(minHeight: Layout.findingsResultHeight, maxHeight: .infinity, alignment: .top)
     }
 
-    private func selectedFileSummaryCard(_ fileURL: URL) -> some View {
-        OFCardGroup {
-            HStack(alignment: .center, spacing: OFSpacing.md) {
-                OFIconTile(systemName: "doc.fill", tint: .ofTextMuted, size: 32, iconSize: 14)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(fileURL.lastPathComponent)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.ofText)
-                        .lineLimit(1)
-
-                    Text(displayPath(for: fileURL))
-                        .font(.system(size: 11.5, design: .monospaced))
-                        .foregroundColor(.ofTextSub)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, OFSpacing.md)
-            .padding(.vertical, 12)
+    @ViewBuilder
+    private var documentPreviewPanel: some View {
+        if let result = analysisResult {
+            previewSection(for: result)
         }
     }
 
-    private func fileSummaryCard(_ result: DocumentAnalysisResult) -> some View {
-        OFCardGroup {
-            HStack(alignment: .center, spacing: OFSpacing.md) {
-                OFIconTile(systemName: "doc.fill", tint: .ofTextMuted, size: 32, iconSize: 14)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(result.extracted.source.fileName)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.ofText)
-                        .lineLimit(1)
-
-                    Text(displayPath(for: result.extracted.source.sourceURL ?? selectedFile))
-                        .font(.system(size: 11.5, design: .monospaced))
-                        .foregroundColor(.ofTextSub)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-
-                Spacer(minLength: 0)
-
-                OFStatusCapsule(
-                    style: riskBadgeStyle(for: result.assessment.level),
-                    title: AppLocalization.riskLevelName(result.assessment.level).uppercased()
-                )
-            }
-            .padding(.horizontal, OFSpacing.md)
-            .padding(.vertical, 12)
-
-            OFCardGroupDivider()
-
-            VStack(alignment: .leading, spacing: 8) {
-                summaryRow(
-                    title: OffsendStrings.documentSanitizeSummaryCharacters,
-                    value: "\(result.extracted.characterCount)"
-                )
-                summaryRow(
-                    title: OffsendStrings.documentSanitizeSummaryEntities,
-                    value: "\(result.detection.entities.count)"
-                )
-                if result.extracted.wasTruncated {
-                    summaryRow(
-                        title: OffsendStrings.documentSanitizeSummaryTruncated,
-                        value: OffsendStrings.commonOn
-                    )
-                }
-            }
-            .padding(.horizontal, OFSpacing.md)
-            .padding(.vertical, 12)
-        }
-    }
-
-    private func summaryRow(title: String, value: String) -> some View {
-        HStack {
-            Text(title)
-                .font(.system(size: 12))
-                .foregroundColor(.ofTextSub)
-            Spacer()
-            Text(value)
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
-                .foregroundColor(.ofText)
+    @ViewBuilder
+    private func previewSection(for result: DocumentAnalysisResult) -> some View {
+        if result.extracted.format == .pdf {
+            pdfRedactionPreviewSection(for: result)
+        } else {
+            maskedPreviewSection
         }
     }
 
@@ -379,58 +269,67 @@ struct DocumentSanitizeView: View {
 
                 Spacer()
 
-                Button {
-                    if allEntitiesSelected(for: result) {
-                        selectedEntityIDs.removeAll()
-                    } else {
-                        selectedEntityIDs = Set(result.detection.entities.map(\.id))
+                if !result.detection.entities.isEmpty {
+                    Button {
+                        if allEntitiesSelected(for: result) {
+                            selectedEntityIDs.removeAll()
+                        } else {
+                            selectedEntityIDs = Set(result.detection.entities.map(\.id))
+                        }
+                        refreshPreview(for: result)
+                    } label: {
+                        Text(
+                            allEntitiesSelected(for: result)
+                                ? OffsendStrings.documentSanitizeDeselectAll
+                                : OffsendStrings.documentSanitizeSelectAll
+                        )
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.ofBlue)
                     }
-                    refreshSanitizePreview(for: result)
-                } label: {
-                    Text(
-                        allEntitiesSelected(for: result)
-                            ? OffsendStrings.documentSanitizeDeselectAll
-                            : OffsendStrings.documentSanitizeSelectAll
-                    )
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.ofBlue)
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
             .padding(.horizontal, 2)
 
-            OFCardGroup {
-                ForEach(Array(groupedEntities(for: result).enumerated()), id: \.element.type) { index, group in
-                    if index > 0 { OFCardGroupDivider() }
-                    entityGroupRow(group, result: result)
+            if result.detection.entities.isEmpty {
+                noDetectedEntitiesCard(for: result)
+            } else {
+                OFCardGroup {
+                    ForEach(Array(groupedEntities(for: result).enumerated()), id: \.element.type) { index, group in
+                        if index > 0 { OFCardGroupDivider() }
+                        entityGroupRow(group, result: result)
+                    }
                 }
             }
 
-            if selectedEntityIDs.isEmpty {
+            if !result.detection.entities.isEmpty, selectedEntityIDs.isEmpty {
                 Text(OffsendStrings.documentSanitizeNoEntitiesSelected)
                     .font(.system(size: 11))
                     .foregroundColor(.ofAmberText)
             }
 
             HStack(spacing: OFSpacing.sm) {
-                Text(OffsendStrings.documentSanitizeRiskScore)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.ofText)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(OffsendStrings.documentSanitizeRiskScore)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.ofText)
 
-                OFRiskMeterBar(
-                    risk: uiRisk(for: result.assessment),
-                    score: min(result.assessment.score, 100)
-                )
+                    OFRiskMeterBar(
+                        risk: uiRisk(for: result.assessment),
+                        score: min(result.assessment.score, 100)
+                    )
+
+                }
 
                 Spacer(minLength: 0)
 
                 OFButton(
-                    title: OffsendStrings.documentSanitizeRefreshAnalysis,
+                    title: "",
                     variant: .outline,
                     icon: "arrow.clockwise",
                     small: true
                 ) {
-                    analyze(fileURL: result.extracted.source.sourceURL ?? selectedFile!)
+                    analyze(fileURL: result.extracted.source.sourceURL ?? selectedFile)
                 }
                 .disabled(isBusy)
             }
@@ -454,7 +353,7 @@ struct DocumentSanitizeView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(10)
             }
-            .frame(maxWidth: .infinity, minHeight: 120, maxHeight: 220, alignment: .topLeading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Color.ofBg2)
             .cornerRadius(OFRadius.md)
             .overlay(
@@ -462,6 +361,7 @@ struct DocumentSanitizeView: View {
                     .stroke(Color.ofBorder, lineWidth: 1)
             )
         }
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 
     private var previewText: String {
@@ -477,33 +377,34 @@ struct DocumentSanitizeView: View {
             OFDivider()
 
             HStack(spacing: OFSpacing.md) {
-                OFButton(
-                    title: OffsendStrings.documentSanitizeSaveAs,
-                    variant: .outline,
-                    icon: "square.and.arrow.down",
-                    small: true
-                ) {
-                    saveSafeText(for: result)
-                }
-                .disabled(isBusy || selectedEntityIDs.isEmpty)
-
-                Spacer(minLength: 0)
-
                 Text(OffsendStrings.documentSanitizeEntitiesSelected(selectedGroupCount))
                     .font(.system(size: 11))
                     .foregroundColor(.ofTextMuted)
                     .lineLimit(1)
 
+                Spacer(minLength: 0)
+
                 OFButton(
                     title: OffsendStrings.documentSanitizeCopySafeText,
-                    variant: .primary,
+                    variant: .outline,
                     icon: "doc.on.doc",
+                    small: true,
                     disabled: isBusy || selectedEntityIDs.isEmpty
                 ) {
                     copySafeText(for: result)
                 }
+
+                OFButton(
+                    title: OffsendStrings.documentSanitizeSaveAs,
+                    variant: .primary,
+                    icon: "square.and.arrow.down",
+                    small: true,
+                    disabled: isBusy || (isPdfDocument ? !canExportPdfRedaction : selectedEntityIDs.isEmpty)
+                ) {
+                    saveDocument(for: result)
+                }
             }
-            .padding(.horizontal, OFSpacing.xxl)
+            .padding(.horizontal, OFSpacing.md)
             .padding(.vertical, OFSpacing.md)
             .background(Color.ofBg0)
         }
@@ -524,33 +425,13 @@ struct DocumentSanitizeView: View {
             } else {
                 selectedEntityIDs.formUnion(ids)
             }
-            refreshSanitizePreview(for: result)
+            refreshPreview(for: result)
         }
-    }
-
-    private func errorBanner(_ message: String) -> some View {
-        OFSemanticBanner(
-            style: .warning,
-            icon: "exclamationmark.triangle.fill",
-            title: OffsendStrings.documentSanitizeErrorTitle,
-            subtitle: message
-        )
-    }
-
-    private func statusBanner(_ message: String) -> some View {
-        OFSemanticBanner(
-            style: .info,
-            icon: "info.circle.fill",
-            title: OffsendStrings.documentSanitizeStatusTitle,
-            subtitle: message
-        )
     }
 
     private func preferredWindowHeight() -> CGFloat {
         var height: CGFloat
         switch windowContentPhase {
-        case .empty:
-            height = Layout.emptyStateHeight
         case .awaitingResult:
             height = Layout.awaitingResultHeight
         case .safeResult:
@@ -559,24 +440,40 @@ struct DocumentSanitizeView: View {
             height = Layout.findingsResultHeight + Layout.footerHeight
         }
 
-        if showsFileTooLargeBuyPro, selectedFile != nil {
+        if showsFileTooLargeBuyPro {
             height += Layout.footerHeight
-        }
-
-        if windowContentPhase == .safeResult {
-            if errorMessage != nil {
-                height += Layout.bannerExtraHeight
-            }
-            if statusMessage != nil {
-                height += Layout.bannerExtraHeight
-            }
         }
 
         return height
     }
 
     private func shouldShowPinnedFooter(for result: DocumentAnalysisResult) -> Bool {
-        !result.detection.entities.isEmpty
+        showsFindingsLayout(for: result)
+    }
+
+    private func noDetectedEntitiesCard(for result: DocumentAnalysisResult) -> some View {
+        VStack(alignment: .leading, spacing: OFSpacing.sm) {
+            Text(OffsendStrings.documentSanitizeSafeTitle)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.ofText)
+
+            Text(
+                result.extracted.format == .pdf
+                    ? OffsendStrings.documentSanitizeEditRedactionsHint
+                    : OffsendStrings.documentSanitizeSafeSubtitle
+            )
+            .font(.system(size: 11))
+            .foregroundColor(.ofTextSub)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(OFSpacing.md)
+        .background(Color.ofBg2)
+        .cornerRadius(OFRadius.md)
+        .overlay(
+            RoundedRectangle(cornerRadius: OFRadius.md)
+                .stroke(Color.ofBorder, lineWidth: 1)
+        )
     }
 
     private func groupedEntities(for result: DocumentAnalysisResult) -> [EntityGroup] {
@@ -589,60 +486,13 @@ struct DocumentSanitizeView: View {
         selectedEntityIDs.count == result.detection.entities.count
     }
 
-    private func displayPath(for url: URL?) -> String {
-        guard let url else { return "—" }
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let path = url.path
-        if path.hasPrefix(home) {
-            return "~" + path.dropFirst(home.count)
-        }
-        return path
-    }
-
-    private func chooseFile() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = false
-        panel.canChooseFiles = true
-        panel.allowsMultipleSelection = false
-        panel.prompt = OffsendStrings.documentSanitizeChooseFile
-        panel.allowedContentTypes = Self.supportedContentTypes
-
-        if panel.runModal() == .OK, let url = panel.url {
-            if selectedFile != nil {
-                coordinator.openDocumentSanitize(for: url, source: "document_sanitize_choose_another")
-            } else {
-                selectFile(url)
-            }
-        }
-    }
-
-    private func bootstrapFromWindowPathIfNeeded() {
-        guard let documentWindowPath,
-              let url = fileURL(fromWindowPath: documentWindowPath) else {
-            return
-        }
-        let standardizedURL = url.standardizedFileURL
-        guard selectedFile?.standardizedFileURL != standardizedURL else { return }
-        selectFile(standardizedURL)
-    }
-
-    private func fileURL(fromWindowPath path: String) -> URL? {
-        let url = URL(fileURLWithPath: path)
-        guard isSupportedFile(url) else { return nil }
-        return url
-    }
-
-    private func prefillFileFromPasteboard() {
-        guard selectedFile == nil, let fileURL = fileURLFromPasteboard() else { return }
-        selectFile(fileURL)
-    }
-
     private func selectFile(_ fileURL: URL) {
         let standardizedURL = fileURL.standardizedFileURL
         selectedFile = standardizedURL
         analysisResult = nil
         sanitizeResult = nil
         selectedEntityIDs = []
+        resetPdfRedactionState()
         statusMessage = nil
 
         if let fileSize = fileByteCount(at: standardizedURL),
@@ -658,25 +508,6 @@ struct DocumentSanitizeView: View {
         analyze(fileURL: standardizedURL)
     }
 
-    private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
-        guard let provider = providers.first(where: { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }) else {
-            return false
-        }
-
-        provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-            guard let url = fileURL(from: item), isSupportedFile(url) else { return }
-
-            DispatchQueue.main.async {
-                if self.selectedFile != nil {
-                    self.coordinator.openDocumentSanitize(for: url, source: "document_sanitize_drop")
-                } else {
-                    self.selectFile(url)
-                }
-            }
-        }
-        return true
-    }
-
     private func analyze(fileURL: URL) {
         let standardizedURL = fileURL.standardizedFileURL
         let token = UUID()
@@ -685,6 +516,7 @@ struct DocumentSanitizeView: View {
         analysisResult = nil
         sanitizeResult = nil
         selectedEntityIDs = []
+        resetPdfRedactionState()
         clearProcessingError()
         statusMessage = nil
         analysisToken = token
@@ -701,7 +533,7 @@ struct DocumentSanitizeView: View {
                     isAnalyzing = false
                     analysisResult = result
                     selectedEntityIDs = Set(result.detection.entities.map(\.id))
-                    refreshSanitizePreview(for: result)
+                    refreshPreview(for: result)
                 }
             } catch {
                 guard !Task.isCancelled else { return }
@@ -714,16 +546,6 @@ struct DocumentSanitizeView: View {
         }
     }
 
-    private func refreshSanitizePreview(for result: DocumentAnalysisResult) {
-        guard !selectedEntityIDs.isEmpty else {
-            sanitizeResult = nil
-            return
-        }
-
-        let entities = result.detection.entities.filter { selectedEntityIDs.contains($0.id) }
-        sanitizeResult = coordinator.previewSanitizedDocument(from: result, entities: entities)
-    }
-
     private func copySafeText(for result: DocumentAnalysisResult) {
         guard !isBusy else { return }
         let entities = selectedEntities(from: result)
@@ -734,7 +556,7 @@ struct DocumentSanitizeView: View {
         activeWork = Task {
             do {
                 let sanitized = try await coordinator.sanitizeDocument(
-                    at: result.extracted.source.sourceURL ?? selectedFile!,
+                    at: result.extracted.source.sourceURL ?? selectedFile,
                     entities: entities
                 )
                 guard !Task.isCancelled else { return }
@@ -772,7 +594,7 @@ struct DocumentSanitizeView: View {
         activeWork = Task {
             do {
                 let sanitized = try await coordinator.sanitizeDocument(
-                    at: result.extracted.source.sourceURL ?? selectedFile!,
+                    at: result.extracted.source.sourceURL ?? selectedFile,
                     entities: entities
                 )
                 try coordinator.exportSanitizedDocument(sanitized, to: destinationURL)
@@ -808,6 +630,9 @@ struct DocumentSanitizeView: View {
     }
 
     private func documentErrorMessage(_ error: Error) -> String {
+        if let error = error as? PDFRedactionError {
+            return pdfRedactionErrorMessage(error)
+        }
         if let error = error as? DocumentProcessingError {
             switch error {
             case let .unsupportedFormat(fileExtension):
@@ -888,17 +713,6 @@ struct DocumentSanitizeView: View {
         }
     }
 
-    private func riskBadgeStyle(for level: RiskLevel) -> OFStatusBadgeStyle {
-        switch level {
-        case .low:
-            return .pass
-        case .medium:
-            return .warn
-        case .high, .critical:
-            return .fail
-        }
-    }
-
     private func severityBadgeStyle(for type: SensitiveEntityType) -> OFStatusBadgeStyle {
         if type.countsAsCriticalSecret { return .fail }
         if type.isSecret { return .warn }
@@ -922,32 +736,326 @@ struct DocumentSanitizeView: View {
         return nil
     }
 
-    nonisolated private func isSupportedFile(_ url: URL) -> Bool {
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
-              !isDirectory.boolValue else {
-            return false
-        }
-        return DocumentTextExtractorRegistry.supportedFileExtensions.contains(url.pathExtension.lowercased())
+}
+
+// MARK: - PDF Redaction
+
+extension DocumentSanitizeContentView {
+    var isPdfDocument: Bool {
+        analysisResult?.extracted.format == .pdf
     }
 
-    private func fileURLFromPasteboard() -> URL? {
-        let pasteboard = NSPasteboard.general
-        if let urls = pasteboard.readObjects(
-            forClasses: [NSURL.self],
-            options: [.urlReadingFileURLsOnly: true]
-        ) as? [NSURL] {
-            return urls.map { $0 as URL }.first(where: { isSupportedFile($0) })
+    private var hasPdfRedactionSelection: Bool {
+        !selectedEntityIDs.isEmpty || !manualRegions.isEmpty
+    }
+
+    var canExportPdfRedaction: Bool {
+        guard hasPdfRedactionSelection, let plan = redactionPlan else { return false }
+        return !plan.isEmpty && plan.unresolvedValues.isEmpty
+    }
+
+    func resetPdfRedactionState() {
+        redactionPlan = nil
+        manualRegions = []
+        manualRegionsUndoStack = []
+        manualRegionsRedoStack = []
+        previewInFlight = false
+        isRefreshingPdfPreview = false
+    }
+
+    var canUndoManualRegions: Bool {
+        !manualRegionsUndoStack.isEmpty
+    }
+
+    var canRedoManualRegions: Bool {
+        !manualRegionsRedoStack.isEmpty
+    }
+
+    func pushManualRegionsUndoSnapshot() {
+        manualRegionsUndoStack.append(manualRegions)
+        if manualRegionsUndoStack.count > 50 {
+            manualRegionsUndoStack.removeFirst()
+        }
+        manualRegionsRedoStack.removeAll()
+    }
+
+    func undoManualRegions(for result: DocumentAnalysisResult) {
+        guard let previous = manualRegionsUndoStack.popLast() else { return }
+        manualRegionsRedoStack.append(manualRegions)
+        manualRegions = previous
+        refreshPreview(for: result)
+    }
+
+    func redoManualRegions(for result: DocumentAnalysisResult) {
+        guard let next = manualRegionsRedoStack.popLast() else { return }
+        manualRegionsUndoStack.append(manualRegions)
+        manualRegions = next
+        refreshPreview(for: result)
+    }
+
+    func addManualRegion(
+        pageIndex: Int,
+        bounds: CGRect,
+        for result: DocumentAnalysisResult
+    ) {
+        pushManualRegionsUndoSnapshot()
+        manualRegions.append(
+            PDFRedactionRegion(
+                pageIndex: pageIndex,
+                bounds: bounds,
+                source: .manual
+            )
+        )
+        refreshPreview(for: result)
+    }
+
+    @ViewBuilder
+    func pdfRedactionPreviewSection(for result: DocumentAnalysisResult) -> some View {
+        VStack(alignment: .leading, spacing: OFSpacing.sm) {
+            Text(OffsendStrings.documentSanitizeRedactedPreview.uppercased())
+                .font(.system(size: 10.5, weight: .bold))
+                .kerning(0.8)
+                .foregroundColor(.ofTextMuted)
+                .padding(.horizontal, 2)
+
+            if let plan = redactionPlan, !plan.unresolvedValues.isEmpty {
+                Text(OffsendStrings.documentSanitizeUnresolvedRedactions(plan.unresolvedValues.count))
+                    .font(.system(size: 11))
+                    .foregroundColor(.ofAmberText)
+                    .padding(.horizontal, 2)
+            }
+
+            ZStack {
+                if result.extracted.format == .pdf {
+                    PDFRedactionEditorView(
+                        document: pdfEditorDocument,
+                        regions: pdfOverlayBoxes,
+                        canUndo: canUndoManualRegions,
+                        canRedo: canRedoManualRegions,
+                        isToolbarDisabled: isBusy,
+                        undoAccessibilityLabel: OffsendStrings.documentSanitizeUndo,
+                        redoAccessibilityLabel: OffsendStrings.documentSanitizeRedo,
+                        onUndo: { undoManualRegions(for: result) },
+                        onRedo: { redoManualRegions(for: result) },
+                        onManualRegionAdded: { pageIndex, bounds in
+                            addManualRegion(pageIndex: pageIndex, bounds: bounds, for: result)
+                        }
+                    )
+                    .id(pdfSessionID)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(minHeight: Layout.pdfPreviewMinHeight)
+                } else {
+                    RoundedRectangle(cornerRadius: OFRadius.md)
+                        .fill(Color.ofBg2)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .frame(minHeight: Layout.pdfPreviewMinHeight)
+                }
+
+                if isRefreshingPdfPreview {
+                    ZStack {
+                        Color.black.opacity(0.08)
+                        VStack(spacing: OFSpacing.sm) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text(OffsendStrings.documentSanitizeRefreshingPreview)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(.ofTextSub)
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: OFRadius.md))
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    private var pdfEditorDocument: PDFRedactionDocumentSource {
+        .file(selectedFile)
+    }
+
+    /// Redaction boxes drawn as a live overlay over the original PDF. Manual
+    /// regions come straight from local state for instant feedback; resolved
+    /// detected regions come from the (asynchronously rebuilt) plan.
+    private var pdfOverlayBoxes: [PDFRedactionOverlayBox] {
+        var boxes = manualRegions.map {
+            PDFRedactionOverlayBox(pageIndex: $0.pageIndex, bounds: $0.bounds)
+        }
+        if let regions = redactionPlan?.regions {
+            boxes += regions.compactMap { region in
+                guard case .detected = region.source else { return nil }
+                return PDFRedactionOverlayBox(pageIndex: region.pageIndex, bounds: region.bounds)
+            }
+        }
+        return boxes
+    }
+
+    private func readPdfData(from fileURL: URL) async -> Data? {
+        guard fileURL.pathExtension.lowercased() == "pdf" else { return nil }
+
+        let accessed = fileURL.startAccessingSecurityScopedResource()
+        defer {
+            if accessed {
+                fileURL.stopAccessingSecurityScopedResource()
+            }
         }
 
-        if let fileURLString = pasteboard.string(forType: .fileURL),
-           let url = URL(string: fileURLString),
-           url.isFileURL,
-           isSupportedFile(url) {
-            return url
+        return try? Data(contentsOf: fileURL)
+    }
+
+    func refreshPreview(for result: DocumentAnalysisResult) {
+        refreshTextSanitizePreview(for: result)
+        if result.extracted.format == .pdf {
+            refreshPDFRedactionPreview(for: result)
+        } else {
+            redactionPlan = nil
+        }
+    }
+
+    func refreshTextSanitizePreview(for result: DocumentAnalysisResult) {
+        guard !selectedEntityIDs.isEmpty else {
+            sanitizeResult = nil
+            return
         }
 
-        return nil
+        let entities = result.detection.entities.filter { selectedEntityIDs.contains($0.id) }
+        sanitizeResult = coordinator.previewSanitizedDocument(from: result, entities: entities)
+    }
+
+    func refreshPDFRedactionPreview(for result: DocumentAnalysisResult) {
+        guard hasPdfRedactionSelection else {
+            redactionPlan = nil
+            previewInFlight = false
+            isRefreshingPdfPreview = false
+            return
+        }
+
+        let token = UUID()
+        previewToken = token
+        previewInFlight = true
+        scheduleRefreshingIndicator(for: token)
+
+        let selectedIDs = selectedEntityIDs
+        let manual = manualRegions
+        let analysis = result
+
+        previewWork?.cancel()
+        previewWork = Task {
+            guard let pdfData = await readPdfData(from: selectedFile) else {
+                await MainActor.run {
+                    guard previewToken == token else { return }
+                    previewInFlight = false
+                    isRefreshingPdfPreview = false
+                }
+                return
+            }
+
+            do {
+                let plan = try await coordinator.buildPDFRedactionPlan(
+                    analysis: analysis,
+                    pdfData: pdfData,
+                    selectedEntityIDs: selectedIDs,
+                    manualRegions: manual
+                )
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    guard previewToken == token else { return }
+                    redactionPlan = plan
+                    previewInFlight = false
+                    isRefreshingPdfPreview = false
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    guard previewToken == token else { return }
+                    previewInFlight = false
+                    isRefreshingPdfPreview = false
+                    applyDocumentProcessingError(error)
+                }
+            }
+        }
+    }
+
+    /// Show the dimming "refreshing" overlay only when a rebuild is genuinely
+    /// slow. Fast incremental updates (e.g. adding a manual region, whose box is
+    /// already drawn instantly via the overlay) finish before this fires, so the
+    /// preview pane no longer flashes on every edit.
+    private func scheduleRefreshingIndicator(for token: UUID) {
+        Task {
+            try? await Task.sleep(nanoseconds: 180_000_000)
+            await MainActor.run {
+                guard previewToken == token, previewInFlight else { return }
+                isRefreshingPdfPreview = true
+            }
+        }
+    }
+
+    func saveDocument(for result: DocumentAnalysisResult) {
+        if result.extracted.format == .pdf {
+            saveRedactedPDF(for: result)
+        } else {
+            saveSafeText(for: result)
+        }
+    }
+
+    func saveRedactedPDF(for result: DocumentAnalysisResult) {
+        guard !isBusy, canExportPdfRedaction else { return }
+
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = sanitizedFileName(for: result.extracted.source.fileName)
+        panel.allowedContentTypes = [.pdf]
+
+        guard panel.runModal() == .OK, let destinationURL = panel.url else { return }
+
+        isSanitizing = true
+        activeWork?.cancel()
+        activeWork = Task {
+            guard let pdfData = await readPdfData(from: selectedFile) else { return }
+
+            do {
+                let session = PDFRedactionSession(
+                    sourceData: pdfData,
+                    analysis: result,
+                    selectedEntityIDs: selectedEntityIDs,
+                    manualRegions: manualRegions
+                )
+                _ = try await coordinator.exportRedactedPDF(session: session, to: destinationURL)
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    isSanitizing = false
+                    statusMessage = OffsendStrings.documentSanitizeSavedRedactedPDF(
+                        destinationURL.lastPathComponent
+                    )
+                    clearProcessingError()
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    isSanitizing = false
+                    applyDocumentProcessingError(error)
+                }
+            }
+        }
+    }
+
+    func pdfRedactionErrorMessage(_ error: PDFRedactionError) -> String {
+        switch error {
+        case .invalidPDF:
+            return OffsendStrings.documentSanitizeErrorInvalidPDF
+        case .encryptedPDF:
+            return OffsendStrings.documentSanitizeErrorInvalidPDF
+        case .noTextLayer:
+            return OffsendStrings.documentSanitizeErrorEmptyDocument
+        case .unsupportedFormat:
+            return OffsendStrings.documentSanitizeErrorUnsupportedFormat("pdf")
+        case .emptyPlan:
+            return OffsendStrings.documentSanitizeNoEntitiesSelected
+        case let .unresolvedValues(values):
+            return OffsendStrings.documentSanitizeErrorUnresolvedRedactions(values.count)
+        case let .exportFailed(message):
+            return OffsendStrings.documentSanitizeErrorExtractionFailed(message)
+        }
     }
 }
 
@@ -956,32 +1064,57 @@ private struct EntityGroup {
     let entities: [SensitiveEntity]
 }
 
-private struct DocumentSanitizeWindowSizer: NSViewRepresentable {
-    let size: NSSize
+private struct DocumentSanitizeWindowConfigurator: NSViewRepresentable {
+    let minimumSize: NSSize
+    let preferredSize: NSSize
+    let resetToken: UUID
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView(frame: .zero)
         DispatchQueue.main.async {
-            resizeWindow(for: view, animated: false)
+            configureWindow(for: view, context: context)
         }
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
         DispatchQueue.main.async {
-            resizeWindow(for: nsView, animated: false)
+            configureWindow(for: nsView, context: context)
         }
     }
 
-    private func resizeWindow(for view: NSView, animated: Bool) {
+    private func configureWindow(for view: NSView, context: Context) {
         guard let window = view.window else { return }
 
-        let current = window.contentRect(forFrameRect: window.frame).size
-        guard abs(current.width - size.width) > 1 || abs(current.height - size.height) > 1 else {
+        window.setFrameAutosaveName("")
+        window.minSize = minimumSize
+
+        if context.coordinator.appliedResetToken != resetToken {
+            window.setContentSize(preferredSize, animated: false)
+            context.coordinator.appliedResetToken = resetToken
             return
         }
 
-        window.setContentSize(size, animated: animated)
+        let current = window.contentRect(forFrameRect: window.frame).size
+        guard current.width < minimumSize.width || current.height < minimumSize.height else {
+            return
+        }
+
+        window.setContentSize(
+            NSSize(
+                width: max(current.width, minimumSize.width),
+                height: max(current.height, minimumSize.height)
+            ),
+            animated: false
+        )
+    }
+
+    final class Coordinator {
+        var appliedResetToken: UUID?
     }
 }
 

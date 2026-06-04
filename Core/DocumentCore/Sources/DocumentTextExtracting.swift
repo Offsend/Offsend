@@ -39,6 +39,7 @@ public protocol DocumentTextExtractorSelecting: Sendable {
 public struct DocumentTextExtractorRegistry: DocumentTextExtractorSelecting {
     private static let defaultExtractors: [any DocumentTextExtracting] = [
         PlainTextDocumentExtractor(),
+        RTFDocumentExtractor(),
         PDFDocumentExtractor()
     ]
 
@@ -90,7 +91,7 @@ public struct DocumentTextExtractor: Sendable {
             maximumCharacterCount: request.options.maximumExtractedCharacterCount
         )
 
-        guard !normalized.text.isEmpty else {
+        guard !normalized.text.isEmpty || extraction.format == .pdf else {
             throw DocumentProcessingError.emptyDocument
         }
 
@@ -119,7 +120,10 @@ public struct DocumentTextExtractor: Sendable {
         _ text: String,
         maximumCharacterCount: Int
     ) -> (text: String, wasTruncated: Bool, originalCharacterCount: Int) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Extractors (e.g. PDF) often already return edge-trimmed text; skip the extra
+        // full-string copy unless an edge actually carries whitespace.
+        let needsTrim = (text.first?.isWhitespace ?? false) || (text.last?.isWhitespace ?? false)
+        let trimmed = needsTrim ? text.trimmingCharacters(in: .whitespacesAndNewlines) : text
         guard trimmed.count > maximumCharacterCount else {
             return (trimmed, false, trimmed.count)
         }

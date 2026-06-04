@@ -5,6 +5,14 @@
 "window.privacy" = "Privacy";
 "window.directoryCheck" = "Check Directory";
 "window.documentSanitize" = "Sanitize Document";
+"window.prepare" = "Prepare";
+
+"prepare.title" = "Prepare for AI";
+"prepare.subtitle" = "Check a project folder or sanitize a document before sharing with AI tools.";
+"prepare.choose" = "Choose";
+"prepare.dropTitle" = "Drop a file or folder here";
+"prepare.dropHint" = "or click Choose — nothing leaves your Mac.";
+"prepare.dropHintWithFileSizeLimit" = "or click Choose — folders, or txt, md, csv, json, pdf, and similar formats.\nUp to %@ on Free · %@ on Pro.";
 
 "common.on.lowercase" = "on";
 "common.off.lowercase" = "off";
@@ -203,7 +211,7 @@
 "settings.general.section.startup" = "Startup";
 "settings.general.section.behavior" = "Behavior";
 "settings.general.section.appearance" = "Appearance";
-"settings.general.themeHint" = "Applies to this settings window.";
+"settings.general.themeHint" = "Applies to Offsend windows. Auto follows the system appearance.";
 "settings.general.excludedHeading" = "Excluded apps";
 "settings.general.excludedCount" = "%d apps";
 "settings.general.excludedEmpty" = "No excluded apps — clipboard is monitored everywhere.";
@@ -508,8 +516,8 @@
 "documentSanitize.refreshAnalysis" = "Refresh";
 "documentSanitize.maskedPreview" = "Masked preview";
 "documentSanitize.entitiesSelected" = "%d entity groups selected · processed locally";
-"documentSanitize.copySafeText" = "Copy Safe Text";
-"documentSanitize.saveAs" = "Save As…";
+"documentSanitize.copySafeText" = "Copy as Text";
+"documentSanitize.saveAs" = "Save File…";
 "documentSanitize.copiedSafeText" = "Safe text copied to clipboard. Mapping saved locally if enabled.";
 "documentSanitize.savedSafeText" = "Saved safe version as %@.";
 "documentSanitize.statusTitle" = "Done";
@@ -521,7 +529,18 @@
 "documentSanitize.error.invalidPDF" = "This file has a .pdf extension but is not a valid PDF. Choose another file or rename it to match its actual format.";
 "documentSanitize.error.unreadableFile" = "Could not read file: %@";
 "documentSanitize.error.extractionFailed" = "Could not extract text: %@";
-"documentSanitize.safeSuffix" = "-safe";
+"documentSanitize.error.unresolvedRedactions" = "Cannot export: %d detected item(s) are not covered by redaction regions. Add manual redactions or deselect them.";
+"documentSanitize.safeSuffix" = "-prepared";
+"documentSanitize.redactedPreview" = "Redacted preview";
+"documentSanitize.editRedactions" = "Edit";
+"documentSanitize.doneEditing" = "Done";
+"documentSanitize.editRedactionsHint" = "Drag over the document to add black redaction bars.";
+"documentSanitize.undo" = "Undo";
+"documentSanitize.redo" = "Redo";
+"documentSanitize.clearManualRedactions" = "Clear manual redactions";
+"documentSanitize.unresolvedRedactions" = "%d detected item(s) could not be placed on the PDF layout.";
+"documentSanitize.savedRedactedPDF" = "Saved redacted PDF as %@.";
+"documentSanitize.refreshingPreview" = "Updating preview…";
 
 "safePaste.warning.truncated" = "Only the first 50,000 characters were scanned.";
 "safePaste.section.maskedPreview" = "MASKED PREVIEW";

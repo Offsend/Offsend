@@ -1,5 +1,6 @@
 import AnalyticsCore
 import AppKit
+import AppUIKit
 import SwiftUI
 
 @main
@@ -35,18 +36,15 @@ struct OffsendApp: App {
         }
         .defaultSize(width: 560, height: 420)
 
-        WindowGroup(id: "directory-check", for: String.self) { $directoryPath in
-            DirectoryCheckView(directoryWindowPath: directoryPath)
+        WindowGroup(OffsendStrings.windowPrepare, id: "prepare", for: String.self) { $preparePath in
+            PrepareView(prepareWindowPath: preparePath)
                 .environmentObject(coordinator)
         }
-        .defaultSize(width: 640, height: 560)
-        .windowResizability(.contentSize)
-
-        WindowGroup(OffsendStrings.windowDocumentSanitize, id: "document-sanitize", for: String.self) { $documentPath in
-            DocumentSanitizeView(documentWindowPath: documentPath)
-                .environmentObject(coordinator)
-        }
-        .defaultSize(width: 640, height: 392)
+        .windowStyle(.hiddenTitleBar)
+        .defaultSize(
+            width: PrepareWindowChrome.windowWidth(contentWidth: PrepareWindowChrome.emptyContentWidth),
+            height: PrepareWindowChrome.windowHeight(bodyHeight: 400, extraBottom: OFSpacing.md)
+        )
         .windowResizability(.contentSize)
     }
 
@@ -69,18 +67,11 @@ struct OffsendApp: App {
             }
         }
 
-        coordinator.openDirectoryCheckWindowAction = { [weak coordinator] url in
+        coordinator.openPrepareWindowAction = { [weak coordinator] url in
             if let url {
-                coordinator?.openPresentedWindow(id: "directory-check", value: url.path)
+                coordinator?.openPresentedWindow(id: "prepare", value: url.path)
             } else {
-                coordinator?.openPresentedWindow(id: "directory-check")
-            }
-        }
-        coordinator.openDocumentSanitizeWindowAction = { [weak coordinator] url in
-            if let url {
-                coordinator?.openPresentedWindow(id: "document-sanitize", value: url.path)
-            } else {
-                coordinator?.openPresentedWindow(id: "document-sanitize")
+                coordinator?.openPresentedWindow(id: "prepare")
             }
         }
         coordinator.configureMenuBarStatusItem(
@@ -93,12 +84,10 @@ struct OffsendApp: App {
                 coordinator?.openPresentedWindow(id: "settings")
             },
             openDirectoryCheck: { [weak coordinator] in
-                coordinator?.recordDirectoryCheckOpened(source: "menu_bar")
-                coordinator?.openDirectoryCheckWindowAction?(nil)
+                coordinator?.openPrepareWindow(source: "menu_bar_directory")
             },
             openDocumentSanitize: { [weak coordinator] in
-                coordinator?.recordDocumentSanitizeOpened(source: "menu_bar")
-                coordinator?.openDocumentSanitizeWindowAction?(nil)
+                coordinator?.openPrepareWindow(source: "menu_bar_document")
             },
             openWatchedDirectoryCheck: { [weak coordinator] watchID in
                 coordinator?.openDirectoryCheckForWatch(watchID: watchID, source: "menu_bar")

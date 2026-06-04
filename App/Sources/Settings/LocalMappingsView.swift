@@ -8,6 +8,13 @@ struct LocalMappingsView: View {
     @State private var restoreHotkey = HotkeyDisplay.restorePlaceholders
 
     var body: some View {
+        OFChromeShell { palette in
+            localMappingsRoot(palette: palette)
+        }
+    }
+
+    @ViewBuilder
+    private func localMappingsRoot(palette: OFPalette) -> some View {
         VStack(spacing: 0) {
             header
                 .padding(.horizontal, OFSpacing.xxl)
@@ -47,7 +54,7 @@ struct LocalMappingsView: View {
             }
         }
         .frame(minWidth: 520, minHeight: 380)
-        .background(Color.ofBg1)
+        .background(palette.bg1)
         .onAppear {
             restoreHotkey = HotkeyDisplay.restorePlaceholders
             try? coordinator.refreshMappingSummaries()

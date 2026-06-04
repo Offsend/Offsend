@@ -1,16 +1,16 @@
 import Foundation
 
-public protocol SensitiveDataDetecting {
+public protocol SensitiveDataDetecting: Sendable {
     func scan(_ request: DetectionRequest) -> DetectionResult
 }
 
 public final class DetectionEngine: SensitiveDataDetecting {
-    private let regexRules: [DetectionRule]
-    private let secretRules: [DetectionRule]
+    private let regexRules: [CompiledRule]
+    private let secretRules: [CompiledRule]
 
     public init() {
-        self.regexRules = DetectionRule.regexRules
-        self.secretRules = DetectionRule.secretRules
+        self.regexRules = DetectionRule.regexRules.map(CompiledRule.init)
+        self.secretRules = DetectionRule.secretRules.map(CompiledRule.init)
     }
 
     public func scan(_ request: DetectionRequest) -> DetectionResult {
@@ -57,9 +57,9 @@ public final class DetectionEngine: SensitiveDataDetecting {
         }
     }
 
-    private func scanRules(_ rules: [DetectionRule], in text: String, options: DetectionOptions) -> [SensitiveEntity] {
+    private func scanRules(_ rules: [CompiledRule], in text: String, options: DetectionOptions) -> [SensitiveEntity] {
         rules
-            .filter { options.enabledTypes.contains($0.type) }
+            .filter { options.enabledTypes.contains($0.rule.type) }
             .flatMap { rule in rule.matches(in: text) }
     }
 
@@ -73,9 +73,40 @@ public final class DetectionEngine: SensitiveDataDetecting {
             guard options.enabledTypes.contains(type) else { return [] }
             let escaped = NSRegularExpression.escapedPattern(for: item.value.trimmingCharacters(in: .whitespacesAndNewlines))
             guard !escaped.isEmpty else { return [] }
-            let pattern = item.kind == .internalDomain ? escaped : "\\b\(escaped)\\b"
+            // Domain values must not match as a substring of a larger host (`acme.internal`
+            // inside `notacme.internalx`); other values use word boundaries.
+            let pattern = item.kind == .internalDomain
+                ? "(?<![A-Za-z0-9.-])\(escaped)(?![A-Za-z0-9.-])"
+                : "\\b\(escaped)\\b"
             let rule = DetectionRule(type: type, source: .customDictionary, pattern: pattern, confidence: 0.95)
-            return rule.matches(in: text)
+            return CompiledRule(rule).matches(in: text)
+        }
+    }
+}
+
+/// Caches the compiled `NSRegularExpression` so a pattern is compiled once, not on every scan.
+/// Compilation failures surface in debug instead of being silently swallowed.
+final class CompiledRule {
+    let rule: DetectionRule
+    private let regex: NSRegularExpression?
+
+    init(_ rule: DetectionRule) {
+        self.rule = rule
+        do {
+            self.regex = try NSRegularExpression(pattern: rule.pattern, options: rule.options)
+        } catch {
+            assertionFailure("Invalid detection pattern for \(rule.type): \(error)")
+            self.regex = nil
+        }
+    }
+
+    func matches(in text: String) -> [SensitiveEntity] {
+        guard let regex else { return [] }
+        let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
+        return regex.matches(in: text, range: nsRange).compactMap { match in
+            guard let range = Range(match.range, in: text), !range.isEmpty else { return nil }
+            let value = String(text[range])
+            return SensitiveEntity(type: rule.type, range: range, value: value, confidence: rule.confidence, source: rule.source)
         }
     }
 }
@@ -134,24 +165,40 @@ private enum PhoneMatchSanitizer {
     }
 }
 
-/// `highEntropyString` allows `/`, so multi-segment URL paths (e.g. Figma file URLs) match as one token.
+/// `highEntropyString` allows `/`, so multi-segment URL paths can match as one token. Base64
+/// (e.g. Sparkle `edSignature`) also contains `/`; reject URL-shaped paths, not slash count alone.
 private enum HighEntropyMatchSanitizer {
     static func shouldRejectHighEntropyValue(_ value: String) -> Bool {
-        value.filter { $0 == "/" }.count >= 2
+        if value.contains("://") { return true }
+        let slashCount = value.filter { $0 == "/" }.count
+        return slashCount >= 2 && value.contains(".")
     }
 }
 
 private enum TextNormalizer {
+    /// Only the returned text is scanned. Anything past `maximumLength` is **not** examined, so
+    /// callers must treat `wasTruncated == true` as "input not fully sanitized". We cut on a
+    /// whitespace boundary when one exists so a token (e.g. a secret) is never split into a
+    /// partial, mis-detected fragment at the edge; without a boundary we fall back to a hard cut.
     static func normalize(_ text: String, maximumLength: Int) -> NormalizedText {
         guard text.count > maximumLength else {
             return NormalizedText(text: text, wasTruncated: false)
         }
-        let limited = String(text.prefix(maximumLength))
-        return NormalizedText(text: limited, wasTruncated: text.count > maximumLength)
+        let hardLimit = text.index(text.startIndex, offsetBy: maximumLength)
+        let cut = tokenBoundary(in: text, before: hardLimit) ?? hardLimit
+        return NormalizedText(text: String(text[..<cut]), wasTruncated: true)
+    }
+
+    /// Last whitespace at or before `limit`; `nil` when the only boundary would leave an empty prefix.
+    private static func tokenBoundary(in text: String, before limit: String.Index) -> String.Index? {
+        guard let boundary = text[..<limit].lastIndex(where: \.isWhitespace), boundary > text.startIndex else {
+            return nil
+        }
+        return boundary
     }
 }
 
-public struct DetectionRule: Equatable {
+public struct DetectionRule: Equatable, Sendable {
     public let type: SensitiveEntityType
     public let source: DetectionSource
     public let pattern: String
@@ -186,8 +233,12 @@ public struct DetectionRule: Equatable {
 public extension DetectionRule {
     static let regexRules: [DetectionRule] = [
         .init(type: .email, source: .regex, pattern: #"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b"#, confidence: 0.98),
-        .init(type: .phone, source: .regex, pattern: #"(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{2,4}\)?[\s.-]?)?\d{3}[\s.-]?\d{2,4}[\s.-]?\d{2,4}\b"#, confidence: 0.75),
-        .init(type: .money, source: .regex, pattern: #"(?:[$€£₽]\s?\d{1,3}(?:[,\s]\d{3})*(?:\.\d{2})?|\d{1,3}(?:[,\s]\d{3})*(?:\.\d{2})?\s?(?:USD|EUR|GBP|RUB|руб\.?))\b"#, confidence: 0.85),
+        // Leading `(?<![A-Za-z0-9])` stops a phone from starting mid-token; separators exclude line
+        // breaks (a phone never wraps a line) so a stray match can't bridge entities across newlines.
+        .init(type: .phone, source: .regex, pattern: #"(?<![A-Za-z0-9])(?:\+?\d{1,3}[ \t.\-]?)?(?:\(?\d{2,4}\)?[ \t.\-]?)?\d{3}[ \t.\-]?\d{2,4}[ \t.\-]?\d{2,4}\b"#, confidence: 0.75),
+        // Separators use `[^\S\r\n]` (whitespace except line breaks): an amount never wraps a line,
+        // so a stray match can't bridge entities across newlines after overlap merging.
+        .init(type: .money, source: .regex, pattern: #"(?:[$€£₽][^\S\r\n]?\d{1,3}(?:(?:,|[^\S\r\n])\d{3})*(?:\.\d{2})?|\d{1,3}(?:(?:,|[^\S\r\n])\d{3})*(?:\.\d{2})?[^\S\r\n]?(?:USD|EUR|GBP|RUB|руб\.?))\b"#, confidence: 0.85),
         .init(type: .url, source: .regex, pattern: #"\bhttps?://[^\s<>"']+"#, confidence: 0.85),
         .init(type: .ipAddress, source: .regex, pattern: #"\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b"#, confidence: 0.9),
         .init(type: .internalDomain, source: .regex, pattern: #"\b(?:[a-z0-9-]+\.)+(?:internal|local|corp|lan|intranet)\b"#, confidence: 0.9),
@@ -210,7 +261,9 @@ public extension DetectionRule {
         .init(type: .databaseURLWithPassword, source: .secret, pattern: #"\b(?:postgres|postgresql|mysql|mongodb|redis)://[^:\s/@]+:[^@\s]+@[^\s]+"#, confidence: 0.99),
         .init(type: .bearerToken, source: .secret, pattern: #"\bBearer\s+[A-Za-z0-9._~+/=-]{20,}\b"#, confidence: 0.95),
         .init(type: .apiKeyGeneric, source: .secret, pattern: #"\b(?:api[_-]?key|secret|token|client[_-]?secret)\s*[:=]\s*['"]?[A-Za-z0-9._~+/=-]{20,}['"]?"#, confidence: 0.9),
-        .init(type: .highEntropyString, source: .secret, pattern: #"\b[A-Za-z0-9+/=_-]{40,}\b"#, confidence: 0.65)
+        // Lookarounds instead of `\b`: `+`, `/`, and `=` are non-word, so `\b` truncates base64 padding (`==`).
+        // `=` is already in the class, so trailing padding is consumed by the main quantifier.
+        .init(type: .highEntropyString, source: .secret, pattern: #"(?<![A-Za-z0-9+/=_-])[A-Za-z0-9+/=_-]{40,}(?![A-Za-z0-9+/=_-])"#, confidence: 0.65)
     ]
 }
 
@@ -223,21 +276,31 @@ public enum OverlapResolver {
             return lhs.range.lowerBound < rhs.range.lowerBound
         }
 
+        // Entities are sorted by `lowerBound`, so a new entity can only overlap the most recent
+        // kept one. Overlapping spans are merged into a single covering entity so no flagged
+        // character is left unmasked; metadata follows the higher-priority match.
         return sorted.reduce(into: [SensitiveEntity]()) { result, entity in
-            guard let last = result.last else {
+            guard let last = result.last, last.range.overlaps(entity.range) else {
                 result.append(entity)
                 return
             }
-
-            if last.range.overlaps(entity.range) {
-                if priority(entity) > priority(last) {
-                    result.removeLast()
-                    result.append(entity)
-                }
-            } else {
-                result.append(entity)
-            }
+            result[result.count - 1] = merge(last, entity, in: text)
         }
+    }
+
+    private static func merge(_ lhs: SensitiveEntity, _ rhs: SensitiveEntity, in text: String) -> SensitiveEntity {
+        let winner = priority(rhs) > priority(lhs) ? rhs : lhs
+        let lowerBound = min(lhs.range.lowerBound, rhs.range.lowerBound)
+        let upperBound = max(lhs.range.upperBound, rhs.range.upperBound)
+        let range = lowerBound..<upperBound
+        return SensitiveEntity(
+            id: winner.id,
+            type: winner.type,
+            range: range,
+            value: String(text[range]),
+            confidence: winner.confidence,
+            source: winner.source
+        )
     }
 
     private static func priority(_ entity: SensitiveEntity) -> Int {

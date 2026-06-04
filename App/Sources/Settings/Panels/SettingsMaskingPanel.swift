@@ -140,7 +140,7 @@ struct SettingsMaskingPanel: View {
                     variant: .primary
                 ) {
                     coordinator.recordDocumentSanitizeOpened(source: "settings")
-                    coordinator.openPresentedWindow(id: "document-sanitize")
+                    coordinator.openPrepareWindow(source: "settings_document_sanitize")
                 }
             }
         }

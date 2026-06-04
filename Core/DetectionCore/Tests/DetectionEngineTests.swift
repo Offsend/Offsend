@@ -106,6 +106,19 @@ final class DetectionEngineTests: XCTestCase {
         XCTAssertTrue(result.entities.contains { $0.type == .customInternalDomain })
     }
 
+    func testSparkleEdSignaturesDetectedAsHighEntropySecrets() {
+        let sig1 = "pNFd7KbcQSu+Mq7UYrbQXTPq82luht2ACXm/r2utp1u/Uv/5hWqctdT2jwQgMejW7DRoeV/hVr6J4VdZYdwWDw=="
+        let sig2 = "Ody3D/ybSMH4T+P/oNj3LN4F0SA8RJGLEr1TI4UemrBAiJ9aEcDnYV3u58P75AbcFjI13jPYmHDUHXMSTFQbDw=="
+        let text = """
+        <enclosure sparkle:edSignature="\(sig1)" />
+        <enclosure sparkle:edSignature="\(sig2)" />
+        """
+        let result = engine.scan(DetectionRequest(text: text))
+        let secrets = result.entities.filter { $0.type == .highEntropyString }.map(\.value)
+
+        XCTAssertEqual(secrets, [sig1, sig2])
+    }
+
     func testFigmaFileURLDoesNotFalsePositiveAsSecretOrPhone() {
         // Synthetic Figma-shaped URL (no real file key or client project name).
         let text =
@@ -116,5 +129,102 @@ final class DetectionEngineTests: XCTestCase {
         XCTAssertTrue(types.contains(.url), "Expected URL entity, got: \(types)")
         XCTAssertFalse(types.contains(.highEntropyString), "Path must not match fuzzy high-entropy rule: \(types)")
         XCTAssertFalse(types.contains(.phone), "`node-id=12-345` must not be a phone: \(types)")
+    }
+
+    // MARK: - OverlapResolver coverage (no leaks)
+
+    func testOverlapMergePreservesFullCoverageWhenHigherPriorityIsShorter() {
+        let text = "0123456789"
+        func range(_ lower: Int, _ upper: Int) -> Range<String.Index> {
+            let lo = text.index(text.startIndex, offsetBy: lower)
+            let hi = text.index(text.startIndex, offsetBy: upper)
+            return lo..<hi
+        }
+        // Long fuzzy match fully containing a short, higher-priority secret.
+        let high = SensitiveEntity(
+            type: .highEntropyString, range: range(0, 10), value: String(text[range(0, 10)]),
+            confidence: 0.65, source: .secret
+        )
+        let aws = SensitiveEntity(
+            type: .awsAccessKeyId, range: range(2, 6), value: String(text[range(2, 6)]),
+            confidence: 0.99, source: .secret
+        )
+
+        let merged = OverlapResolver.resolve([high, aws], in: text)
+
+        XCTAssertEqual(merged.count, 1, "Overlapping spans must collapse to one entity")
+        XCTAssertEqual(merged.first?.type, .awsAccessKeyId, "Higher-priority metadata wins")
+        XCTAssertEqual(
+            merged.first.map { String(text[$0.range]) }, text,
+            "Merged range must cover the union so no flagged character is left unmasked"
+        )
+    }
+
+    // MARK: - Truncation
+
+    func testTruncationCutsOnTokenBoundary() {
+        let result = engine.scan(
+            DetectionRequest(text: "alpha bravo charlie", options: DetectionOptions(maximumLength: 15))
+        )
+
+        XCTAssertTrue(result.wasTruncated)
+        XCTAssertEqual(result.scannedText, "alpha bravo", "Trailing partial token must be dropped")
+        XCTAssertEqual(result.scannedCharacterCount, 11)
+    }
+
+    func testTruncationFallsBackToHardCutWithoutWhitespace() {
+        let result = engine.scan(
+            DetectionRequest(text: String(repeating: "a", count: 20), options: DetectionOptions(maximumLength: 10))
+        )
+
+        XCTAssertTrue(result.wasTruncated)
+        XCTAssertEqual(result.scannedCharacterCount, 10)
+    }
+
+    // MARK: - Phone boundary
+
+    func testPhoneEmbeddedInAlphanumericTokenNotDetected() {
+        let result = engine.scan(DetectionRequest(text: "build abc1234567890 done"))
+        XCTAssertFalse(
+            result.entities.contains { $0.type == .phone },
+            "Digits embedded in an alphanumeric token must not start a phone match: \(result.entities.map(\.type))"
+        )
+    }
+
+    func testPhoneSeparatorDoesNotBridgeAcrossNewline() {
+        let text = "555 1212\n333 4444"
+        let result = engine.scan(DetectionRequest(text: text))
+        for entity in result.entities where entity.type == .phone {
+            XCTAssertFalse(entity.value.contains("\n"), "A phone match must not span a newline: \(entity.value)")
+        }
+    }
+
+    func testMoneySeparatorDoesNotBridgeAcrossNewline() {
+        let text = "$80,000\n160 reasons"
+        let result = engine.scan(DetectionRequest(text: text))
+        let money = result.entities.filter { $0.type == .money }.map(\.value)
+        XCTAssertEqual(money, ["$80,000"], "Money must stop at the line break, not absorb the next line")
+    }
+
+    // MARK: - Custom internal domain boundaries
+
+    func testCustomInternalDomainDoesNotMatchSubstringOfLargerHost() {
+        let options = DetectionOptions(customDictionaries: [
+            CustomDictionaryItem(kind: .internalDomain, value: "acme.internal")
+        ])
+
+        let result = engine.scan(DetectionRequest(text: "host notacme.internalx pinged", options: options))
+
+        XCTAssertFalse(result.entities.contains { $0.type == .customInternalDomain })
+    }
+
+    func testCustomInternalDomainMatchesStandaloneHost() {
+        let options = DetectionOptions(customDictionaries: [
+            CustomDictionaryItem(kind: .internalDomain, value: "acme.internal")
+        ])
+
+        let result = engine.scan(DetectionRequest(text: "open https://acme.internal/x", options: options))
+
+        XCTAssertTrue(result.entities.contains { $0.type == .customInternalDomain })
     }
 }

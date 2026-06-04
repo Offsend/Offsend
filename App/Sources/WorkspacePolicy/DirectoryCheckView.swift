@@ -6,13 +6,13 @@ import SwiftUI
 import UniformTypeIdentifiers
 import WorkspacePolicyCore
 
-struct DirectoryCheckView: View {
-    let directoryWindowPath: String?
+struct DirectoryCheckContentView: View {
+    let directoryURL: URL
+    let onReplaceSelection: (URL) -> Void
 
     @EnvironmentObject private var coordinator: AppCoordinator
-    @State private var selectedDirectory: URL?
+    @State private var selectedDirectory: URL
     @State private var auditResult: AIWorkspacePrivacyAuditResult?
-    @State private var isDropTargeted = false
     @State private var fixMessage: String?
     @State private var selectedFixItemIDs: Set<String> = []
     @State private var isAuditing = false
@@ -24,16 +24,15 @@ struct DirectoryCheckView: View {
 
     private var isBusy: Bool { isAuditing || isApplyingFix }
 
-    private var effectiveSelectedDirectory: URL? {
-        selectedDirectory
-    }
-
-    private var isBootstrapPending: Bool {
-        directoryWindowPath != nil && auditResult == nil && selectedDirectory == nil
-    }
-
     private var showsWorkingOverlay: Bool {
-        isBusy || isBootstrapPending
+        isBusy
+    }
+
+    init(directoryURL: URL, onReplaceSelection: @escaping (URL) -> Void) {
+        let standardized = directoryURL.standardizedFileURL
+        self.directoryURL = standardized
+        self.onReplaceSelection = onReplaceSelection
+        _selectedDirectory = State(initialValue: standardized)
     }
 
     private enum Layout {
@@ -68,29 +67,30 @@ struct DirectoryCheckView: View {
     }
 
     var body: some View {
+        directoryCheckRoot
+    }
+
+    @ViewBuilder
+    private var directoryCheckRoot: some View {
         let features = coordinator.tariffFeatures
         let showsFooter = auditResult.map { shouldShowPinnedFooter(for: $0) } ?? false
-        let windowHeight = preferredWindowHeight(
+        let bodyHeight = preferredWindowHeight(
             showsFreeBanner: !features.workspaceAuditFull,
-            hasSelectedDirectory: effectiveSelectedDirectory != nil
+            hasSelectedDirectory: true
         )
-        let windowSize = NSSize(width: Layout.windowWidth, height: windowHeight)
+        let windowSize = NSSize(
+            width: PrepareWindowChrome.windowWidth(contentWidth: Layout.windowWidth),
+            height: PrepareWindowChrome.windowHeight(bodyHeight: bodyHeight)
+        )
 
         VStack(spacing: 0) {
-            header
-                .padding(.horizontal, OFSpacing.xxl)
-                .padding(.top, OFSpacing.xl)
-                .padding(.bottom, OFSpacing.lg)
-
             ScrollView {
                 VStack(alignment: .leading, spacing: OFSpacing.lg) {
                     if !features.workspaceAuditFull {
                         freeScopeNote
                     }
 
-                    if effectiveSelectedDirectory == nil {
-                        emptyDropZone
-                    } else if let auditResult {
+                    if let auditResult {
                         folderAndWatchCard(auditResult)
 
                         if let fixMessage {
@@ -117,48 +117,44 @@ struct DirectoryCheckView: View {
                         }
                     }
                 }
-                .padding(.horizontal, OFSpacing.xxl)
-                .padding(.bottom, OFSpacing.lg)
+                .padding(.horizontal, OFSpacing.md)
+                .padding(.bottom, OFSpacing.md)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .disabled(showsWorkingOverlay)
 
             if showsFooter, let auditResult {
                 pinnedFooter(for: auditResult)
             }
         }
         .frame(
-            width: Layout.windowWidth,
-            height: windowHeight,
+            minWidth: Layout.windowWidth,
+            maxWidth: .infinity,
+            minHeight: bodyHeight,
+            maxHeight: bodyHeight,
             alignment: .top
         )
-        .background(Color.ofBg1)
         .background(DirectoryCheckWindowSizer(size: windowSize))
         .overlay {
             if showsWorkingOverlay {
                 workingOverlay
             }
         }
-        .disabled(showsWorkingOverlay)
         .onAppear {
-            prefillDirectoryFromPasteboard()
-            bootstrapFromWindowPathIfNeeded()
-        }
-        .onChange(of: directoryWindowPath) { _ in
-            bootstrapFromWindowPathIfNeeded()
+            if auditResult == nil, !isAuditing {
+                selectDirectory(selectedDirectory, runAudit: !coordinator.isDirectoryWatched(selectedDirectory))
+            }
         }
         .onDisappear {
             activeWork?.cancel()
             activeWork = nil
         }
         .onChange(of: coordinator.tariffFeatures) { _ in
-            guard let selectedDirectory else { return }
             audit(directoryURL: selectedDirectory)
         }
         .onChange(of: directoryCheckAuditSettings) { _ in
-            guard let selectedDirectory else { return }
             audit(directoryURL: selectedDirectory)
         }
-        .dismissOnWindowCloseButton()
     }
 
     private var workingOverlay: some View {
@@ -171,7 +167,7 @@ struct DirectoryCheckView: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(.ofText)
             }
-            .padding(OFSpacing.xl)
+            .padding(OFSpacing.md)
             .background(Color.ofBg2)
             .cornerRadius(OFRadius.lg)
             .overlay(
@@ -256,8 +252,7 @@ struct DirectoryCheckView: View {
     }
 
     private var isWatchingSelectedDirectory: Bool {
-        guard let selectedDirectory,
-              let entry = watchedEntryForSelection else {
+        guard let entry = watchedEntryForSelection else {
             return false
         }
         return coordinator.settings.directoryWatchEnabled
@@ -272,7 +267,6 @@ struct DirectoryCheckView: View {
     }
 
     private func toggleWatchForSelectedDirectory(enabled: Bool) {
-        guard let selectedDirectory else { return }
         if enabled {
             if coordinator.addWatchedDirectory(url: selectedDirectory, source: "directory_check") {
                 return
@@ -372,51 +366,6 @@ struct DirectoryCheckView: View {
             RoundedRectangle(cornerRadius: OFRadius.md)
                 .stroke(Color.ofBlue.opacity(0.25), lineWidth: 1)
         )
-    }
-
-    private var header: some View {
-        HStack(alignment: .center, spacing: 14) {
-            OFIconTile(
-                systemName: "folder.badge.gearshape",
-                tint: .ofBlue,
-                size: 44,
-                iconSize: 18,
-                glow: true
-            )
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(OffsendStrings.directoryCheckTitle)
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundColor(.ofText)
-
-                Text(OffsendStrings.directoryCheckSubtitle)
-                    .font(.system(size: 12))
-                    .foregroundColor(.ofTextMuted)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer()
-
-            OFButton(title: OffsendStrings.directoryCheckChooseFolder, variant: .outline, icon: "folder", small: true) {
-                chooseDirectory()
-            }
-            .disabled(isBusy)
-        }
-    }
-
-    private var emptyDropZone: some View {
-        OFDropZone(
-            title: OffsendStrings.directoryCheckDropTitle,
-            hint: OffsendStrings.directoryCheckDropHint,
-            isTargeted: isDropTargeted
-        ) {
-            guard !isBusy else { return }
-            chooseDirectory()
-        }
-        .onDrop(of: [UTType.fileURL.identifier], isTargeted: $isDropTargeted) { providers in
-            guard !isBusy else { return false }
-            return handleDrop(providers)
-        }
     }
 
     private func folderAndWatchCard(_ result: AIWorkspacePrivacyAuditResult) -> some View {
@@ -786,8 +735,7 @@ struct DirectoryCheckView: View {
     }
 
     private var watchedEntryForSelection: WatchedDirectory? {
-        guard let selectedDirectory else { return nil }
-        return coordinator.watchedDirectoryEntry(matching: selectedDirectory)
+        coordinator.watchedDirectoryEntry(matching: selectedDirectory)
     }
 
     private func cachedWatchStatusSection(for result: AIWorkspacePrivacyAuditResult) -> some View {
@@ -969,46 +917,6 @@ struct DirectoryCheckView: View {
         )
     }
 
-
-    private func chooseDirectory() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        panel.prompt = OffsendStrings.directoryCheckChooseFolder
-
-        if panel.runModal() == .OK, let url = panel.url {
-            if effectiveSelectedDirectory != nil {
-                coordinator.openDirectoryCheck(for: url, source: "directory_check_choose_another")
-            } else {
-                selectDirectory(url, runAudit: true)
-            }
-        }
-    }
-
-    private func bootstrapFromWindowPathIfNeeded() {
-        guard let directoryWindowPath,
-              let url = directoryURL(fromWindowPath: directoryWindowPath) else {
-            return
-        }
-        let standardizedURL = url.standardizedFileURL
-        guard selectedDirectory?.standardizedFileURL != standardizedURL else { return }
-        selectDirectory(standardizedURL, runAudit: true)
-    }
-
-    private func directoryURL(fromWindowPath path: String) -> URL? {
-        let url = URL(fileURLWithPath: path)
-        guard isDirectory(url) else { return nil }
-        return url
-    }
-
-    private func prefillDirectoryFromPasteboard() {
-        guard selectedDirectory == nil, let directoryURL = directoryURLFromPasteboard() else {
-            return
-        }
-        selectDirectory(directoryURL, runAudit: !coordinator.isDirectoryWatched(directoryURL))
-    }
-
     private func selectDirectory(_ directoryURL: URL, runAudit: Bool) {
         let standardizedURL = directoryURL.standardizedFileURL
         selectedDirectory = standardizedURL
@@ -1029,27 +937,6 @@ struct DirectoryCheckView: View {
 
         auditResult = placeholderAuditResult(for: standardizedURL, status: status)
         isShowingCachedWatchStatus = true
-    }
-
-    private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
-        guard let provider = providers.first(where: { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }) else {
-            return false
-        }
-
-        provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-            guard let url = fileURL(from: item), isDirectory(url) else {
-                return
-            }
-
-            DispatchQueue.main.async {
-                if self.effectiveSelectedDirectory != nil {
-                    self.coordinator.openDirectoryCheck(for: url, source: "directory_check_drop")
-                } else {
-                    self.selectDirectory(url, runAudit: true)
-                }
-            }
-        }
-        return true
     }
 
     private func audit(directoryURL: URL) {
@@ -1222,55 +1109,6 @@ struct DirectoryCheckView: View {
             parts.append(OffsendStrings.directoryCheckFixUpdated(result.updatedRelativePaths.joined(separator: ", ")))
         }
         return parts.joined(separator: "\n")
-    }
-
-    private func directoryURLFromPasteboard() -> URL? {
-        let pasteboard = NSPasteboard.general
-        if let urls = pasteboard.readObjects(
-            forClasses: [NSURL.self],
-            options: [.urlReadingFileURLsOnly: true]
-        ) as? [NSURL],
-           let directoryURL = urls.map({ $0 as URL }).first(where: { isDirectory($0) }) {
-            return directoryURL
-        }
-
-        if let fileURLString = pasteboard.string(forType: .fileURL),
-           let url = URL(string: fileURLString),
-           url.isFileURL,
-           isDirectory(url) {
-            return url
-        }
-
-        if let path = pasteboard.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !path.isEmpty {
-            let url = URL(fileURLWithPath: path)
-            if isDirectory(url) {
-                return url
-            }
-        }
-
-        return nil
-    }
-
-    nonisolated private func fileURL(from item: NSSecureCoding?) -> URL? {
-        if let url = item as? URL {
-            return url
-        }
-
-        if let data = item as? Data {
-            return URL(dataRepresentation: data, relativeTo: nil)
-        }
-
-        if let string = item as? String {
-            return URL(string: string)
-        }
-
-        return nil
-    }
-
-    nonisolated private func isDirectory(_ url: URL) -> Bool {
-        var isDirectory: ObjCBool = false
-        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue
     }
 
     private func statusTitle(for status: AIWorkspacePrivacyAuditStatus) -> String {

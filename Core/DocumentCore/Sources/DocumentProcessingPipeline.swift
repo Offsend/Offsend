@@ -9,24 +9,33 @@ public protocol DocumentProcessing: Sendable {
         _ request: DocumentProcessingRequest,
         entities: [SensitiveEntity]?
     ) throws -> DocumentSanitizationResult
+    func buildPDFRedactionPlan(
+        analysis: DocumentAnalysisResult,
+        pdfData: Data,
+        selectedEntityIDs: Set<UUID>,
+        manualRegions: [PDFRedactionRegion]
+    ) throws -> PDFRedactionPlan
 }
 
-public final class DocumentProcessingPipeline: DocumentProcessing, @unchecked Sendable {
+public final class DocumentProcessingPipeline: DocumentProcessing, Sendable {
     private let textExtractor: DocumentTextExtractor
     private let detector: SensitiveDataDetecting
     private let riskScorer: RiskScoring
     private let maskingEngine: TextMasking
+    private let pdfRedactionPlanBuilder: PDFRedactionPlanBuilding
 
     public init(
         textExtractor: DocumentTextExtractor = DocumentTextExtractor(),
         detector: SensitiveDataDetecting = DetectionEngine(),
         riskScorer: RiskScoring = RiskScoringEngine(),
-        maskingEngine: TextMasking = MaskingEngine()
+        maskingEngine: TextMasking = MaskingEngine(),
+        pdfRedactionPlanBuilder: PDFRedactionPlanBuilding = PDFRedactionPlanBuilder()
     ) {
         self.textExtractor = textExtractor
         self.detector = detector
         self.riskScorer = riskScorer
         self.maskingEngine = maskingEngine
+        self.pdfRedactionPlanBuilder = pdfRedactionPlanBuilder
     }
 
     public func analyze(_ request: DocumentProcessingRequest) throws -> DocumentAnalysisResult {
@@ -58,6 +67,20 @@ public final class DocumentProcessingPipeline: DocumentProcessing, @unchecked Se
             detection: analysis.detection,
             assessment: analysis.assessment,
             masking: masking
+        )
+    }
+
+    public func buildPDFRedactionPlan(
+        analysis: DocumentAnalysisResult,
+        pdfData: Data,
+        selectedEntityIDs: Set<UUID>,
+        manualRegions: [PDFRedactionRegion]
+    ) throws -> PDFRedactionPlan {
+        try pdfRedactionPlanBuilder.buildPlan(
+            analysis: analysis,
+            pdfData: pdfData,
+            selectedEntityIDs: selectedEntityIDs,
+            manualRegions: manualRegions
         )
     }
 

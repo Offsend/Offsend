@@ -83,15 +83,16 @@ final class DocumentTextExtractorTests: XCTestCase {
         }
     }
 
-    func testRejectsEmptyPDFThroughDefaultRegistry() {
+    func testExtractsEmptyPDFThroughDefaultRegistry() throws {
         let request = DocumentProcessingRequest(
             data: PDFTestFixtures.makeEmptyPDF(),
             source: DocumentSource(fileName: "blank.pdf")
         )
 
-        XCTAssertThrowsError(try extractor.extract(request)) { error in
-            XCTAssertEqual(error as? DocumentProcessingError, .emptyDocument)
-        }
+        let extracted = try extractor.extract(request)
+
+        XCTAssertEqual(extracted.format, DocumentFormat.pdf)
+        XCTAssertTrue(extracted.plainText.isEmpty)
     }
 
     func testTruncatesLongExtractedPDFText() throws {

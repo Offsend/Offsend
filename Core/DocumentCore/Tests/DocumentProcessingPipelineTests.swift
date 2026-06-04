@@ -104,16 +104,18 @@ final class DocumentProcessingPipelineTests: XCTestCase {
         }
     }
 
-    func testRejectsEmptyPDF() {
+    func testAnalyzesPDFWithoutExtractableText() throws {
         let pipeline = DocumentProcessingPipeline()
         let request = DocumentProcessingRequest(
             data: PDFTestFixtures.makeEmptyPDF(),
             source: DocumentSource(fileName: "blank.pdf")
         )
 
-        XCTAssertThrowsError(try pipeline.analyze(request)) { error in
-            XCTAssertEqual(error as? DocumentProcessingError, .emptyDocument)
-        }
+        let result = try pipeline.analyze(request)
+
+        XCTAssertEqual(result.extracted.format, DocumentFormat.pdf)
+        XCTAssertTrue(result.extracted.plainText.isEmpty)
+        XCTAssertTrue(result.detection.entities.isEmpty)
     }
 
     func testTruncatesExtractedPDFTextBeforeDetection() throws {

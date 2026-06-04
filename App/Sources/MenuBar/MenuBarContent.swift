@@ -40,10 +40,10 @@ struct MenuBarContent: View {
             Divider()
 
             Button(OffsendStrings.menuCheckDirectory) {
-                coordinator.openPresentedWindow(id: "directory-check")
+                coordinator.openPrepareWindow(source: "menu_directory")
             }
             Button(OffsendStrings.menuSanitizeDocument) {
-                coordinator.openPresentedWindow(id: "document-sanitize")
+                coordinator.openPrepareWindow(source: "menu_document")
             }
             Button(OffsendStrings.menuOpenSettings) {
                 coordinator.openPresentedWindow(id: "settings")

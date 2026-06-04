@@ -25,9 +25,16 @@ final class DocumentTextExtractorRegistryTests: XCTestCase {
 
     func testDefaultRegistrySupportedFileExtensionsMatchesExtractors() {
         let expected = PlainTextDocumentExtractor.supportedExtensions
+            .union(RTFDocumentExtractor.supportedExtensions)
             .union(PDFDocumentExtractor.supportedExtensions)
 
         XCTAssertEqual(DocumentTextExtractorRegistry.supportedFileExtensions, expected)
+    }
+
+    func testDefaultRegistrySelectsRTFExtractor() {
+        let registry = DocumentTextExtractorRegistry.default
+
+        XCTAssertEqual(registry.extractor(for: DocumentSource(fileName: "memo.rtf"))?.id, "rtf")
     }
 
     func testMatchesUppercaseFileExtension() {

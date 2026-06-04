@@ -15,7 +15,7 @@ public struct RiskAssessment: Equatable {
     }
 }
 
-public protocol RiskScoring {
+public protocol RiskScoring: Sendable {
     func assess(_ entities: [SensitiveEntity]) -> RiskAssessment
 }
 

@@ -197,8 +197,6 @@ macOS may ask for Accessibility permission so Offsend can paste into the front a
 
 Offsend is a Swift macOS app.
 
-**DocumentCore** (`Core/DocumentCore`) powers Sanitize Document: it reads files locally, extracts plain text (including PDF), runs detection and risk scoring, and produces masked output through a small pipeline (`DocumentProcessingPipeline`). Extractors are pluggable; the app wires in the same `DetectionCore`, `RiskScoringCore`, and `MaskingCore` engines used for Safe Paste.
-
 Most of the work happened in Cursor, with AI helping on UI, wiring, tests, and repetitive implementation details. The parts that matter — signing, permissions, privacy behavior, and what actually ships — are reviewed by hand.
 
 ---
