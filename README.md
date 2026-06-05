@@ -49,6 +49,7 @@ It watches the boring-but-important stuff:
 - are sensitive project paths ignored?
 - did a risky file appear after the first check?
 - does this clipboard text contain something that should be masked before I paste it?
+- does this invoice, contract, or PDF need a masked copy before I upload it to an AI tool?
 
 Offsend is not trying to be a giant security platform.
 It is a small Mac utility that helps catch obvious leaks before they become expensive ones.
@@ -121,9 +122,24 @@ With `⌘⇧R`, you can restore masked values when you actually need the origina
 
 ---
 
+### Sanitize Document
+
+Open **Sanitize Document** from the menu bar or Settings when you need to clean a whole file before you paste, upload, or share it.
+
+Drop a file or choose one manually. Offsend extracts text locally, scans it with the same detectors as Safe Paste, shows a risk summary, and lets you choose which sensitive items to mask. Then copy the safe text or save a masked copy.
+
+Supported formats include common text files (`.txt`, `.md`, `.csv`, `.json`, `.log`, `.yaml`, and similar) and PDF.
+
+> **Free plan**: documents up to 15 MB.
+> **Pro**: up to 50 MB.
+
+> Detection, masking, and restore run on your Mac. Offsend does not upload files for scanning.
+
+---
+
 ## What Offsend can detect in clipboard text
 
-Safe Paste scans clipboard text before you paste somewhere you cannot take it back. Built-in detectors cover four groups:
+Safe Paste and Sanitize Document use the same built-in detectors. Safe Paste scans clipboard text before you paste somewhere you cannot take it back. Built-in detectors cover four groups:
 
 | Group | What it catches |
 | --- | --- |
@@ -144,11 +160,13 @@ Offsend is not only about developers and source code. It is also useful for cust
 
 Offsend is local-first by design.
 
-Directory checks, monitoring, clipboard detection, masking, and restore run on your Mac.
+Directory checks, monitoring, clipboard detection, document sanitization, masking, and restore run on your Mac.
 
 Clipboard data is touched when you use Safe Paste / Restore, unless you explicitly enable optional clipboard monitoring in Settings.
 
-Offsend does not store prompt text, clipboard payloads, or detected secret values.
+Document sanitization reads file content only when you open Sanitize Document and choose a file. Nothing is uploaded for scanning.
+
+Offsend does not store prompt text, clipboard payloads, document bodies, or detected secret values.
 Directory audits use paths and ignore rules, not file bodies.
 
 Security issues: see [SECURITY.md](SECURITY.md).

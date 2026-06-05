@@ -219,13 +219,15 @@ extension AppCoordinator {
             .first(where: { $0.id == watchID })
             .flatMap(\.resolvedPath)
             .map { URL(fileURLWithPath: $0).standardizedFileURL }
-        recordDirectoryCheckOpened(source: source)
-        openDirectoryCheckWindowAction?(url)
+        guard let url else {
+            openPrepareWindow(source: source)
+            return
+        }
+        openPrepare(for: url, source: source)
     }
 
     func openDirectoryCheck(for url: URL, source: String) {
-        recordDirectoryCheckOpened(source: source)
-        openDirectoryCheckWindowAction?(url.standardizedFileURL)
+        openPrepare(for: url, source: source)
     }
 
     func recordDirectoryCheckOpened(source: String) {

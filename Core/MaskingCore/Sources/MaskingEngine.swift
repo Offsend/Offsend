@@ -88,7 +88,7 @@ public enum MappingTTL: String, Codable, CaseIterable, Identifiable, Sendable {
     }
 }
 
-public protocol TextMasking {
+public protocol TextMasking: Sendable {
     func mask(text: String, entities: [SensitiveEntity], ttl: MappingTTL) -> MaskingResult
     func restore(text: String, mapping: [String: String]) -> String
 }

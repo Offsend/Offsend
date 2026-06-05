@@ -4,11 +4,13 @@ public struct OFSelectOption<V: Hashable>: Hashable {
     public let value: V
     public let label: String
     public let detail: String?
+    public let isEnabled: Bool
 
-    public init(value: V, label: String, detail: String? = nil) {
+    public init(value: V, label: String, detail: String? = nil, isEnabled: Bool = true) {
         self.value = value
         self.label = label
         self.detail = detail
+        self.isEnabled = isEnabled
     }
 }
 
@@ -34,6 +36,7 @@ public struct OFSelectMenu<V: Hashable>: View {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(option.label)
+                                .foregroundColor(option.isEnabled ? .primary : .secondary)
                             if let detail = option.detail {
                                 Text(detail)
                                     .font(.system(size: 11))
@@ -46,6 +49,7 @@ public struct OFSelectMenu<V: Hashable>: View {
                         }
                     }
                 }
+                .disabled(!option.isEnabled)
             }
         } label: {
             HStack(spacing: 8) {

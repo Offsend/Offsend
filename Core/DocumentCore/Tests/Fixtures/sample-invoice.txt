@@ -1,0 +1,8 @@
+Invoice for Acme Corp
+
+Contact: ivan@acme.com
+Phone: +1 415 555 1212
+Contract: CN-4812
+Amount due: $80,000
+
+Please send payment to https://billing.acme.internal/invoices/CN-4812

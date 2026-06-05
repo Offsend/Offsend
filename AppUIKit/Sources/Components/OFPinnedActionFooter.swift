@@ -41,7 +41,7 @@ public struct OFPinnedActionFooter: View {
                     action: action
                 )
             }
-            .padding(.horizontal, OFSpacing.xxl)
+            .padding(.horizontal, OFSpacing.md)
             .padding(.vertical, OFSpacing.md)
             .background(Color.ofBg0)
         }

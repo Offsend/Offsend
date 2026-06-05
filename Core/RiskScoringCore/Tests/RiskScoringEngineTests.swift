@@ -59,7 +59,7 @@ final class RiskScoringEngineTests: XCTestCase {
         XCTAssertEqual(assessment.recommendedAction, .mask)
     }
 
-    func testCriticalNonSecretRiskWhenRawScoreAtLeastNinety() {
+    func testDensePIIWithoutSecretsIsCappedAtSeventyFive() {
         let entities = (
             entity(.contractId),
             entity(.contractId),
@@ -69,9 +69,24 @@ final class RiskScoringEngineTests: XCTestCase {
         let assessment = engine.assess([entities.0, entities.1, entities.2, entities.3])
 
         XCTAssertEqual(RiskScoringEngine.weight(for: .contractId), 25)
-        XCTAssertEqual(assessment.score, 90)
-        XCTAssertEqual(assessment.level, .critical)
-        XCTAssertEqual(assessment.recommendedAction, .block)
+        XCTAssertEqual(assessment.score, RiskScoringEngine.nonSecretScoreCap)
+        XCTAssertEqual(assessment.level, .high)
+        XCTAssertEqual(assessment.recommendedAction, .mask)
+        XCTAssertFalse(assessment.hasCriticalSecret)
+    }
+
+    func testTypicalInvoicePIIScoresSeventyFiveNotCritical() {
+        let assessment = engine.assess([
+            entity(.email),
+            entity(.phone),
+            entity(.contractId),
+            entity(.money),
+            entity(.url),
+        ])
+
+        XCTAssertEqual(assessment.score, 75)
+        XCTAssertEqual(assessment.level, .high)
+        XCTAssertEqual(assessment.recommendedAction, .mask)
         XCTAssertFalse(assessment.hasCriticalSecret)
     }
 

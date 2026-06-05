@@ -15,30 +15,38 @@ public struct RiskAssessment: Equatable {
     }
 }
 
-public protocol RiskScoring {
+public protocol RiskScoring: Sendable {
     func assess(_ entities: [SensitiveEntity]) -> RiskAssessment
 }
 
 public final class RiskScoringEngine: RiskScoring {
+    /// Upper bound for displayed risk when no confirmed secrets (keys, JWT, etc.) are present.
+    public static let nonSecretScoreCap = 75
+
     public init() {}
 
     public func assess(_ entities: [SensitiveEntity]) -> RiskAssessment {
-        let score = entities.reduce(0) { $0 + Self.weight(for: $1.type) }
+        let rawScore = entities.reduce(0) { $0 + Self.weight(for: $1.type) }
         let hasConfirmedSecret = entities.contains { $0.type.countsAsCriticalSecret }
 
         if hasConfirmedSecret {
-            return RiskAssessment(score: max(score, 100), level: .critical, recommendedAction: .block, hasCriticalSecret: true)
+            return RiskAssessment(
+                score: max(rawScore, 100),
+                level: .critical,
+                recommendedAction: .block,
+                hasCriticalSecret: true
+            )
         }
+
+        let score = min(rawScore, Self.nonSecretScoreCap)
 
         switch score {
         case 0...19:
             return RiskAssessment(score: score, level: .low, recommendedAction: .allow, hasCriticalSecret: false)
         case 20...49:
             return RiskAssessment(score: score, level: .medium, recommendedAction: .warn, hasCriticalSecret: false)
-        case 50...89:
-            return RiskAssessment(score: score, level: .high, recommendedAction: .mask, hasCriticalSecret: false)
         default:
-            return RiskAssessment(score: score, level: .critical, recommendedAction: .block, hasCriticalSecret: false)
+            return RiskAssessment(score: score, level: .high, recommendedAction: .mask, hasCriticalSecret: false)
         }
     }
 

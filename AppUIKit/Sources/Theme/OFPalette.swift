@@ -103,6 +103,76 @@ public enum OFSettingsChromeAppearance: String, CaseIterable, Hashable, Codable 
         case .auto: return Self.resolvedSystemColorScheme()
         }
     }
+
+    /// `nil` for **Auto** so the window follows the system appearance.
+    public var resolvedNSAppearance: NSAppearance? {
+        switch self {
+        case .light: return NSAppearance(named: .aqua)
+        case .dark: return NSAppearance(named: .darkAqua)
+        case .auto: return nil
+        }
+    }
+}
+
+/// Applies saved light/dark/auto chrome, palette environment, and `NSWindow.appearance` so `Color.of*` updates.
+public struct OFChromeShell<Content: View>: View {
+    @AppStorage(OFSettingsChromeAppearance.appStorageKey) private var chromeAppearanceRaw: String =
+        OFSettingsChromeAppearance.auto.rawValue
+    @State private var systemAppearanceRevision = 0
+    @ViewBuilder private let content: (OFPalette) -> Content
+
+    public init(@ViewBuilder content: @escaping (OFPalette) -> Content) {
+        self.content = content
+    }
+
+    private var chromeAppearance: OFSettingsChromeAppearance {
+        OFSettingsChromeAppearance(rawValue: chromeAppearanceRaw) ?? .auto
+    }
+
+    private var palette: OFPalette {
+        _ = systemAppearanceRevision
+        return chromeAppearance.resolvedPalette()
+    }
+
+    public var body: some View {
+        content(palette)
+            .environment(\.ofPalette, palette)
+            .preferredColorScheme(chromeAppearance.preferredColorScheme)
+            .tint(palette.blue)
+            .background(OFWindowChromeAppearanceConfigurator(appearance: chromeAppearance))
+            .ofRefreshOnSystemAppearanceChange($systemAppearanceRevision)
+            .onChange(of: chromeAppearanceRaw) { _ in
+                systemAppearanceRevision += 1
+            }
+    }
+}
+
+public struct OFWindowChromeAppearanceConfigurator: NSViewRepresentable {
+    let appearance: OFSettingsChromeAppearance
+
+    public init(appearance: OFSettingsChromeAppearance) {
+        self.appearance = appearance
+    }
+
+    public func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        applyAppearance(to: view)
+        return view
+    }
+
+    public func updateNSView(_ nsView: NSView, context: Context) {
+        applyAppearance(to: nsView)
+    }
+
+    private func applyAppearance(to view: NSView) {
+        DispatchQueue.main.async {
+            guard let window = view.window else { return }
+            let target = appearance.resolvedNSAppearance
+            if window.appearance !== target {
+                window.appearance = target
+            }
+        }
+    }
 }
 
 private struct OFPaletteKey: EnvironmentKey {

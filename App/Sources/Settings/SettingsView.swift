@@ -7,30 +7,19 @@ struct SettingsView: View {
         OFSettingsChromeAppearance.auto.rawValue
 
     @State private var tab: SettingsSidebarTab = .general
-    @State private var systemAppearanceRevision = 0
 
     private var chromeAppearance: OFSettingsChromeAppearance {
         OFSettingsChromeAppearance(rawValue: chromeAppearanceRaw) ?? .auto
     }
 
-    private var palette: OFPalette {
-        _ = systemAppearanceRevision
-        return chromeAppearance.resolvedPalette()
-    }
-
     var body: some View {
-        HStack(spacing: 0) {
-            sidebar
-            mainPane
-        }
-        .frame(minWidth: 820, minHeight: 600)
-        .background(palette.bg0)
-        .environment(\.ofPalette, palette)
-        .preferredColorScheme(chromeAppearance.preferredColorScheme)
-        .tint(palette.blue)
-        .ofRefreshOnSystemAppearanceChange($systemAppearanceRevision)
-        .onChange(of: chromeAppearanceRaw) { _ in
-            systemAppearanceRevision += 1
+        OFChromeShell { palette in
+            HStack(spacing: 0) {
+                sidebar(palette: palette)
+                mainPane(palette: palette)
+            }
+            .frame(minWidth: 820, minHeight: 600)
+            .background(palette.bg0)
         }
         .onChange(of: coordinator.licensePostCheckoutFlowEmail) { newValue in
             if newValue != nil {
@@ -42,7 +31,7 @@ struct SettingsView: View {
 
     // MARK: Sidebar
 
-    private var sidebar: some View {
+    private func sidebar(palette: OFPalette) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 ZStack {
@@ -149,8 +138,6 @@ struct SettingsView: View {
         switch tab {
         case .detection:
             return !coordinator.tariffFeatures.customDictionaries
-        case .masking:
-            return !coordinator.allowsExtendedMappingTTL
         default:
             return false
         }
@@ -160,14 +147,12 @@ struct SettingsView: View {
         switch tab {
         case .detection:
             return OffsendStrings.settingsTariffUpsellDetectionMessage
-        case .masking:
-            return OffsendStrings.settingsTariffUpsellMaskingMessage
         default:
             return OffsendStrings.settingsTariffUpsellMessage
         }
     }
 
-    private var mainPane: some View {
+    private func mainPane(palette: OFPalette) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: tab.sfSymbol)
@@ -219,13 +204,7 @@ struct SettingsView: View {
                     case .detection:
                         SettingsDetectionPanel()
                     case .masking:
-                        if showsTariffUpsellBanner {
-                            SettingsTariffUpsellPreview {
-                                SettingsMaskingPanel()
-                            }
-                        } else {
-                            SettingsMaskingPanel()
-                        }
+                        SettingsMaskingPanel()
                     case .privacy:
                         VStack(alignment: .leading, spacing: 0) {
                             PrivacyView()
@@ -248,21 +227,6 @@ struct SettingsView: View {
                 .padding(.bottom, 24)
             }
         }
-    }
-}
-
-/// Dims settings UI below the upsell banner (preview only; interaction blocked).
-private struct SettingsTariffUpsellPreview<Content: View>: View {
-    private let content: Content
-
-    init(@ViewBuilder content: () -> Content) {
-        self.content = content()
-    }
-
-    var body: some View {
-        content
-            .allowsHitTesting(false)
-            .opacity(0.5)
     }
 }
 

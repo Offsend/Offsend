@@ -29,6 +29,8 @@ public struct DetectionOptions: Equatable {
 }
 
 public struct DetectionResult {
+    /// Entity ranges are valid **only** against `scannedText`, never the original input.
+    /// When `wasTruncated` is true, `scannedText` is shorter than the source and only it was scanned.
     public let entities: [SensitiveEntity]
     public let scannedText: String
     public let wasTruncated: Bool
@@ -45,6 +47,7 @@ public struct DetectionResult {
 public struct SensitiveEntity: Identifiable, Equatable {
     public let id: UUID
     public let type: SensitiveEntityType
+    /// Valid only against `DetectionResult.scannedText`; using it on any other string is undefined.
     public let range: Range<String.Index>
     public let value: String
     public let confidence: Double
@@ -151,7 +154,7 @@ public enum SensitiveEntityType: String, CaseIterable, Codable, Hashable, Sendab
     }
 }
 
-public enum DetectionSource: String, Codable, Equatable {
+public enum DetectionSource: String, Codable, Equatable, Sendable {
     case regex
     case secret
     case customDictionary

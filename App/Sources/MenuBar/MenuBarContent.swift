@@ -39,8 +39,8 @@ struct MenuBarContent: View {
 
             Divider()
 
-            Button(OffsendStrings.menuCheckDirectory) {
-                coordinator.openPresentedWindow(id: "directory-check")
+            Button(OffsendStrings.prepareTitle) {
+                coordinator.openPrepareWindow(source: "menu_prepare")
             }
             Button(OffsendStrings.menuOpenSettings) {
                 coordinator.openPresentedWindow(id: "settings")
