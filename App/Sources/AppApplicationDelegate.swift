@@ -16,7 +16,7 @@ final class OffsendApplicationDelegate: NSObject, NSApplicationDelegate, UNUserN
             guard let coordinator = Self.coordinator else { return }
             coordinator.dockActivationController.handleApplicationReopen(hasVisibleWindows: flag)
             if !flag {
-                coordinator.openSettingsWindowAction?()
+                coordinator.openPrepareWindow(source: "dock")
             }
         }
         return false

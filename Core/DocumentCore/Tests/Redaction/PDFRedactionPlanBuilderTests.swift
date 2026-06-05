@@ -57,6 +57,44 @@ final class PDFRedactionPlanBuilderTests: XCTestCase {
         XCTAssertEqual(plan.regions.first?.bounds, outer.bounds)
     }
 
+    func testComposePlanFiltersResolvedRegionsBySelection() {
+        let entity = RedactionFixtures.entity(
+            type: .email,
+            value: "secret@example.com",
+            in: "secret@example.com"
+        )
+        let autoRegion = PDFRedactionRegion(
+            pageIndex: 0,
+            bounds: CGRect(x: 1, y: 2, width: 3, height: 4),
+            source: .detected(entityID: entity.id, value: "secret@example.com")
+        )
+        let manualRegion = PDFRedactionRegion(
+            pageIndex: 0,
+            bounds: CGRect(x: 10, y: 10, width: 40, height: 12),
+            source: .manual
+        )
+
+        let selectedPlan = PDFRedactionPlanBuilder.composePlan(
+            selectedEntityIDs: [entity.id],
+            manualRegions: [manualRegion],
+            resolvedAutoRegions: [autoRegion],
+            selectedEntities: [entity]
+        )
+
+        XCTAssertEqual(selectedPlan.regions.count, 2)
+        XCTAssertTrue(selectedPlan.unresolvedValues.isEmpty)
+
+        let deselectedPlan = PDFRedactionPlanBuilder.composePlan(
+            selectedEntityIDs: [],
+            manualRegions: [manualRegion],
+            resolvedAutoRegions: [autoRegion],
+            selectedEntities: []
+        )
+
+        XCTAssertEqual(deselectedPlan.regions.count, 1)
+        XCTAssertEqual(deselectedPlan.regions.first?.source, .manual)
+    }
+
     func testBuildPlanRejectsPlainTextDocument() throws {
         let analysis = RedactionFixtures.analysis(
             plainText: "hello",

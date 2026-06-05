@@ -12,7 +12,7 @@ enum PrepareWindowChrome {
 
     /// Matches `DocumentSanitizeContentView.Layout.windowWidth`.
     static let documentContentWidth: CGFloat = 782
-    /// Matches `DirectoryCheckContentView.Layout.windowWidth`.
+    /// Matches `DirectoryCheckLayout.windowWidth`.
     static let directoryContentWidth: CGFloat = 640
     static let emptyContentWidth: CGFloat = documentContentWidth
 
@@ -149,13 +149,13 @@ struct PrepareView: View {
             OFButton(
                 title: OffsendStrings.prepareChoose,
                 variant: .outline,
-                icon: "folder.badge.plus",
+                icon: "plus",
                 small: true
             ) {
                 chooseItem()
             }
         }
-        .padding(.bottom, OFSpacing.md)
+        .padding(.bottom, OFSpacing.xl)
         .padding(.horizontal, OFSpacing.md)
     }
 

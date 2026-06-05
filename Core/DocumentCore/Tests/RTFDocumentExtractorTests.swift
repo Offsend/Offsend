@@ -5,6 +5,12 @@ import XCTest
 final class RTFDocumentExtractorTests: XCTestCase {
     private let extractor = RTFDocumentExtractor()
 
+    private var sampleInvoiceFixtureURL: URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/sample-invoice.rtf")
+    }
+
     func testSupportsRTFExtensionOnly() {
         XCTAssertTrue(extractor.canExtract(source: DocumentSource(fileName: "memo.rtf")))
         XCTAssertFalse(extractor.canExtract(source: DocumentSource(fileName: "notes.txt")))
@@ -33,6 +39,27 @@ final class RTFDocumentExtractorTests: XCTestCase {
         XCTAssertEqual(result.format, .plainText)
         XCTAssertEqual(result.plainText, "Send invoice to ivan@acme.com")
         XCTAssertFalse(result.plainText.contains("\\rtf"))
+    }
+
+    func testExtractsPlainTextFromRealRTFFixture() throws {
+        let data = try Data(contentsOf: sampleInvoiceFixtureURL)
+        XCTAssertFalse(data.isEmpty)
+
+        let result = try extractor.extract(
+            DocumentTextExtractionRequest(
+                data: data,
+                source: DocumentSource(fileName: "sample-invoice.rtf"),
+                maximumExtractedCharacterCount: 10_000
+            )
+        )
+
+        XCTAssertEqual(result.format, .plainText)
+        XCTAssertTrue(result.plainText.contains("Invoice for Acme Corp"))
+        XCTAssertTrue(result.plainText.contains("ivan@acme.com"))
+        XCTAssertTrue(result.plainText.contains("CN-4812"))
+        XCTAssertTrue(result.plainText.contains("billing.acme.internal"))
+        XCTAssertFalse(result.plainText.contains("\\rtf"))
+        XCTAssertFalse(result.plainText.contains("\\par"))
     }
 
     func testRejectsInvalidRTFData() {

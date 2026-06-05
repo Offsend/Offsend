@@ -678,8 +678,7 @@ final class AppCoordinator: ObservableObject {
     func configureMenuBarStatusItem(
         openOnboarding: @escaping () -> Void,
         openSettings: @escaping () -> Void,
-        openDirectoryCheck: @escaping () -> Void,
-        openDocumentSanitize: @escaping () -> Void,
+        openPrepare: @escaping () -> Void,
         openWatchedDirectoryCheck: @escaping (UUID) -> Void
     ) {
         OffsendApplicationDelegate.coordinator = self
@@ -688,8 +687,7 @@ final class AppCoordinator: ObservableObject {
         menuBarStatusItemController.configureWindowActions(
             openOnboarding: openOnboarding,
             openSettings: openSettings,
-            openDirectoryCheck: openDirectoryCheck,
-            openDocumentSanitize: openDocumentSanitize,
+            openPrepare: openPrepare,
             openWatchedDirectoryCheck: openWatchedDirectoryCheck
         )
         registerWorkspaceWatchNotificationCategories()

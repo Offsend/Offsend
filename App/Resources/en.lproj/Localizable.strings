@@ -140,8 +140,6 @@
 "menu.openSettings" = "Open Settings";
 "menu.viewLocalMappings" = "View Local Mappings";
 "menu.privacy" = "Privacy";
-"menu.checkDirectory" = "Check Directory";
-"menu.sanitizeDocument" = "Sanitize Document";
 "menu.checkForUpdates" = "Check for Updates";
 "menu.lastAction" = "Last action: %@";
 "menu.quit" = "Quit";

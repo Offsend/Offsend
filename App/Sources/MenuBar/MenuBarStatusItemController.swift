@@ -22,8 +22,7 @@ final class MenuBarStatusItemController: NSObject {
     private var toggleClipboardMonitoring: (() -> Void)?
     private var openOnboarding: (() -> Void)?
     private var openSettings: (() -> Void)?
-    private var openDirectoryCheck: (() -> Void)?
-    private var openDocumentSanitize: (() -> Void)?
+    private var openPrepare: (() -> Void)?
     private var openWatchedDirectoryCheck: ((UUID) -> Void)?
     private var checkForUpdates: ((Any?) -> Void)?
 
@@ -57,14 +56,12 @@ final class MenuBarStatusItemController: NSObject {
     func configureWindowActions(
         openOnboarding: @escaping () -> Void,
         openSettings: @escaping () -> Void,
-        openDirectoryCheck: @escaping () -> Void,
-        openDocumentSanitize: @escaping () -> Void,
+        openPrepare: @escaping () -> Void,
         openWatchedDirectoryCheck: @escaping (UUID) -> Void
     ) {
         self.openOnboarding = openOnboarding
         self.openSettings = openSettings
-        self.openDirectoryCheck = openDirectoryCheck
-        self.openDocumentSanitize = openDocumentSanitize
+        self.openPrepare = openPrepare
         self.openWatchedDirectoryCheck = openWatchedDirectoryCheck
     }
 
@@ -248,8 +245,7 @@ final class MenuBarStatusItemController: NSObject {
         )
         menu.addItem(.separator())
 
-        addActionItem(OffsendStrings.menuCheckDirectory, action: #selector(openDirectoryCheckItem))
-        addActionItem(OffsendStrings.menuSanitizeDocument, action: #selector(openDocumentSanitizeItem))
+        addActionItem(OffsendStrings.prepareTitle, action: #selector(openPrepareItem))
         menu.addItem(.separator())
 
         let protectionTitle = OffsendStrings.menuProtection(settings.protectionEnabled ? OffsendStrings.commonOn : OffsendStrings.commonOff)
@@ -339,12 +335,8 @@ final class MenuBarStatusItemController: NSObject {
         openWatchedDirectoryCheck?(watchID)
     }
 
-    @objc private func openDirectoryCheckItem() {
-        openDirectoryCheck?()
-    }
-
-    @objc private func openDocumentSanitizeItem() {
-        openDocumentSanitize?()
+    @objc private func openPrepareItem() {
+        openPrepare?()
     }
 
     @objc private func checkForUpdatesItem(_ sender: Any?) {

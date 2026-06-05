@@ -22,6 +22,10 @@ final class DocumentProcessingPipelineTests: XCTestCase {
         XCTAssertTrue(result.detection.entities.contains { $0.type == .email })
         XCTAssertTrue(result.detection.entities.contains { $0.type == .contractId })
         XCTAssertNotEqual(result.assessment.recommendedAction, .allow)
+        XCTAssertEqual(result.assessment.score, RiskScoringEngine.nonSecretScoreCap)
+        XCTAssertEqual(result.assessment.level, .high)
+        XCTAssertEqual(result.assessment.recommendedAction, .mask)
+        XCTAssertFalse(result.assessment.hasCriticalSecret)
     }
 
     func testSanitizeMasksDetectedEntities() throws {

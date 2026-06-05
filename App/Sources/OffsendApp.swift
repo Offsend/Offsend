@@ -83,11 +83,8 @@ struct OffsendApp: App {
             openSettings: { [weak coordinator] in
                 coordinator?.openPresentedWindow(id: "settings")
             },
-            openDirectoryCheck: { [weak coordinator] in
-                coordinator?.openPrepareWindow(source: "menu_bar_directory")
-            },
-            openDocumentSanitize: { [weak coordinator] in
-                coordinator?.openPrepareWindow(source: "menu_bar_document")
+            openPrepare: { [weak coordinator] in
+                coordinator?.openPrepareWindow(source: "menu_bar")
             },
             openWatchedDirectoryCheck: { [weak coordinator] watchID in
                 coordinator?.openDirectoryCheckForWatch(watchID: watchID, source: "menu_bar")

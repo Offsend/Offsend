@@ -44,7 +44,36 @@ public struct PDFRedactionPlanBuilder: PDFRedactionPlanBuilding {
             .map(\.value)
             .filter { !resolvedValues.contains($0) }
 
-        let mergedRegions = Self.mergeOverlapping(autoRegions + manualRegions)
+        return Self.composePlan(
+            selectedEntityIDs: selectedEntityIDs,
+            manualRegions: manualRegions,
+            resolvedAutoRegions: autoRegions,
+            selectedEntities: selectedEntities
+        )
+    }
+
+    public static func composePlan(
+        selectedEntityIDs: Set<UUID>,
+        manualRegions: [PDFRedactionRegion],
+        resolvedAutoRegions: [PDFRedactionRegion],
+        selectedEntities: [SensitiveEntity]
+    ) -> PDFRedactionPlan {
+        let autoRegions = resolvedAutoRegions.filter { region in
+            guard case let .detected(entityID, _) = region.source else { return false }
+            return selectedEntityIDs.contains(entityID)
+        }
+
+        let resolvedValues = Set(
+            autoRegions.compactMap { region -> String? in
+                guard case let .detected(_, value) = region.source else { return nil }
+                return value
+            }
+        )
+        let unresolvedValues = selectedEntities.uniqueByValue()
+            .map(\.value)
+            .filter { !resolvedValues.contains($0) }
+
+        let mergedRegions = mergeOverlapping(autoRegions + manualRegions)
         return PDFRedactionPlan(regions: mergedRegions, unresolvedValues: unresolvedValues)
     }
 

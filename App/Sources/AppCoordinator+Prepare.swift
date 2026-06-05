@@ -12,11 +12,6 @@ extension AppCoordinator {
     }
 
     func openPrepareWindow(source: String) {
-        if source.contains("document") {
-            recordDocumentSanitizeOpened(source: source)
-        } else if source.contains("directory") {
-            recordDirectoryCheckOpened(source: source)
-        }
         openPrepareWindowAction?(nil)
     }
 }
