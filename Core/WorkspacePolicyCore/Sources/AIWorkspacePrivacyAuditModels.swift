@@ -24,49 +24,13 @@ public struct AIWorkspacePrivacyAuditConfiguration: Equatable {
         rules: AIWorkspacePrivacyRule.defaultRules,
         sensitivePatterns: AIWorkspaceSensitivePattern.defaultPatterns
     )
+}
 
-    /// Rule IDs covered by the Free tier. Pro adds detection for niche tooling
-    /// (Continue, Windsurf/Codeium, Gemini, generic LLM, Aider, Cline, Roo, Zed, Cody).
-    public static let freeTierRuleIDs: Set<String> = [
-        "cursor-ignore",
-        "cursor-indexing-ignore",
-        "cursor-project-rules",
-        "copilot-exclude",
-        "claude-ignore",
-        "claude-md",
-        "agents-md",
-        "git-ignore"
-    ]
-
-    /// Sensitive-pattern IDs covered by the Free tier. Pro adds patterns for cloud
-    /// providers, infra (Terraform), certificates, package managers, and DB dumps.
-    public static let freeTierPatternIDs: Set<String> = [
-        "env-files",
-        "pem-files",
-        "key-files",
-        "credentials-json",
-        "secrets-json",
-        "kube-config",
-        "firebase-keys",
-        "ssh-files",
-        "aws-files",
-        "npmrc-files",
-        "pypirc-files"
-    ]
-
-    /// Free tier scope: detection for the most popular AI tools and the most critical
-    /// secret patterns. Pro extends coverage and unlocks autofix / customization.
-    public static let freeTier = AIWorkspacePrivacyAuditConfiguration(
-        rules: AIWorkspacePrivacyRule.defaultRules.filter { freeTierRuleIDs.contains($0.id) },
-        sensitivePatterns: AIWorkspaceSensitivePattern.defaultPatterns.filter { freeTierPatternIDs.contains($0.id) }
-    )
-
-    /// Rule IDs whose one-click autofix is available on the Free tier (the two most
-    /// common AI ignore files). Pro unlocks autofix for every detected tool.
-    public static let freeFixableRuleIDs: Set<String> = [
-        "cursor-ignore",
-        "claude-ignore"
-    ]
+public enum AIWorkspacePrivacyFixScenario: Equatable, Sendable {
+    /// At least one scanning ignore file already exists; show updates first, then optional missing files.
+    case existingPolicyFiles
+    /// No scanning ignore files yet; show only files the user can create.
+    case noPolicyFiles
 }
 
 public struct AIWorkspacePrivacyRule: Equatable, Identifiable {

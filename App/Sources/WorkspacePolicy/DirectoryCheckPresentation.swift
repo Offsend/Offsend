@@ -34,6 +34,56 @@ enum DirectoryCheckPresentation {
         }
     }
 
+    static func displayStatusBadgeStyle(for status: DirectoryCheckDisplayStatus) -> OFStatusBadgeStyle {
+        switch status {
+        case .pass:
+            return .pass
+        case .fail:
+            return .fail
+        case .info:
+            return .info
+        }
+    }
+
+    /// UI-only status: FAIL for exposed sensitive files; INFO for missing ignore files and setup gaps.
+    static func displayStatus(for result: AIWorkspacePrivacyAuditResult) -> DirectoryCheckDisplayStatus {
+        if !result.errors.isEmpty { return .fail }
+        if hasPatternErrors(in: result) { return .fail }
+        if hasNoIgnoreFiles(in: result) { return .info }
+        if !result.missingRequiredRules.isEmpty { return .info }
+        if !result.missingRecommendedRules.isEmpty { return .info }
+        return .pass
+    }
+
+    static func displayStatusTitle(for result: AIWorkspacePrivacyAuditResult) -> String {
+        let status = displayStatus(for: result)
+        switch status {
+        case .info where hasNoIgnoreFiles(in: result) && !hasPatternErrors(in: result):
+            return OffsendStrings.directoryCheckStatusNoIgnoreFiles
+        case .info:
+            return OffsendStrings.directoryCheckStatusInfo
+        case .fail:
+            return statusTitle(for: .fail)
+        case .pass:
+            return statusTitle(for: .pass)
+        }
+    }
+
+    static func hasNoIgnoreFiles(in result: AIWorkspacePrivacyAuditResult) -> Bool {
+        !result.ruleFindings.contains {
+            $0.rule.scansForSensitivePatterns && $0.isSatisfied && !$0.matchedRelativePaths.isEmpty
+        }
+    }
+
+    static func hasPatternErrors(in result: AIWorkspacePrivacyAuditResult) -> Bool {
+        result.missingSensitivePatterns.contains(where: { !$0.isSatisfied })
+    }
+
+    static func hasSatisfiedFindings(in result: AIWorkspacePrivacyAuditResult) -> Bool {
+        result.ruleFindings.contains(where: \.isSatisfied)
+            || result.sensitivePatternFindings.contains(where: \.isSatisfied)
+    }
+
     static func severityTag(_ severity: AIWorkspacePrivacyRuleSeverity) -> DirectoryCheckFindingTag {
         switch severity {
         case .required:
@@ -46,14 +96,41 @@ enum DirectoryCheckPresentation {
     }
 
     static func issueCounts(for result: AIWorkspacePrivacyAuditResult) -> DirectoryCheckIssueCounts {
-        let fail = result.missingRequiredRules.count
-            + result.errors.count
-            + result.missingSensitivePatterns.filter { $0.pattern.severity == .required }.count
-        let warn = result.missingRecommendedRules.count
-            + result.missingSensitivePatterns.filter { $0.pattern.severity != .required }.count
+        let fail = result.errors.count
+            + result.missingSensitivePatterns.filter { !$0.isSatisfied }.count
+        let info = result.missingRequiredRules.count + result.missingRecommendedRules.count
         let ok = result.ruleFindings.filter(\.isSatisfied).count
             + result.sensitivePatternFindings.filter(\.isSatisfied).count
-        return DirectoryCheckIssueCounts(fail: fail, warn: warn, ok: ok)
+        return DirectoryCheckIssueCounts(fail: fail, info: info, ok: ok)
+    }
+
+    static func issueSummaryTitle(for counts: DirectoryCheckIssueCounts) -> String {
+        if counts.fail > 0 {
+            return OffsendStrings.directoryCheckIssuesFound(counts.fail)
+        }
+        if counts.info > 0 {
+            return OffsendStrings.directoryCheckSetupItemsFound(counts.info)
+        }
+        if counts.ok > 0 {
+            return OffsendStrings.directoryCheckAllChecksPassed
+        }
+        return OffsendStrings.directoryCheckIssuesFound(0)
+    }
+
+    static func satisfiedRuleSubtitle(for finding: AIWorkspacePrivacyRuleFinding) -> String {
+        guard !finding.matchedRelativePaths.isEmpty else {
+            return finding.rule.remediation
+        }
+        return OffsendStrings.directoryCheckSatisfiedFound(finding.matchedRelativePaths.joined(separator: ", "))
+    }
+
+    static func satisfiedPatternSubtitle(for finding: AIWorkspaceSensitivePatternFinding) -> String {
+        guard !finding.matchedIgnoreFilePaths.isEmpty else {
+            return OffsendStrings.directoryCheckSatisfiedPatternCovered
+        }
+        return OffsendStrings.directoryCheckSatisfiedPatternIgnoreFiles(
+            finding.matchedIgnoreFilePaths.joined(separator: ", ")
+        )
     }
 
     static func ruleFindingSubtitle(for finding: AIWorkspacePrivacyRuleFinding) -> String {
@@ -117,5 +194,48 @@ enum DirectoryCheckPresentation {
             parts.append(OffsendStrings.directoryCheckFixUpdated(result.updatedRelativePaths.joined(separator: ", ")))
         }
         return parts.joined(separator: "\n")
+    }
+
+    static func fixFooterStatusText(for summary: DirectoryCheckFixApplySummary) -> String {
+        guard summary.fileCount > 0 else {
+            return OffsendStrings.directoryCheckFixSelectionNoneSelected
+        }
+        if summary.createsNewFilesOnly {
+            return OffsendStrings.directoryCheckFixesCreateFiles(summary.fileCount)
+        }
+        if summary.patternFixCount > 0 {
+            return OffsendStrings.directoryCheckFixesPatternsInFiles(
+                summary.patternFixCount,
+                summary.fileCount
+            )
+        }
+        return OffsendStrings.directoryCheckFixesFilesSelected(summary.fileCount)
+    }
+
+    static func applyButtonTitle(for summary: DirectoryCheckFixApplySummary) -> String {
+        guard summary.fileCount > 0 else {
+            return OffsendStrings.directoryCheckApply
+        }
+        if summary.createsNewFilesOnly {
+            return OffsendStrings.directoryCheckApply
+        }
+
+        let fixes = max(summary.patternFixCount, summary.updatesExistingFiles ? 1 : 0)
+        let files = summary.fileCount
+
+        if fixes == 0 {
+            return OffsendStrings.directoryCheckApply
+        }
+
+        if fixes == 1, files == 1 {
+            return OffsendStrings.directoryCheckApplyFixToOneFile
+        }
+        if fixes == 1 {
+            return OffsendStrings.directoryCheckApplyFixToFiles(files)
+        }
+        if files == 1 {
+            return OffsendStrings.directoryCheckApplyFixesToOneFile(fixes)
+        }
+        return OffsendStrings.directoryCheckApplyFixesToFiles(fixes, files)
     }
 }

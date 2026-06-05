@@ -34,9 +34,20 @@ struct DirectoryCheckFolderWatchCard: View {
 
                 Spacer(minLength: 0)
 
+                OFButton(
+                    title: "",
+                    variant: .outline,
+                    icon: "arrow.clockwise",
+                    small: true
+                ) {
+                    viewModel.audit(directoryURL: result.directoryURL)
+                }
+                .disabled(viewModel.isBusy)
+                
+                let displayStatus = DirectoryCheckPresentation.displayStatus(for: result)
                 OFStatusCapsule(
-                    style: DirectoryCheckPresentation.statusBadgeStyle(for: result.status),
-                    title: DirectoryCheckPresentation.statusTitle(for: result.status)
+                    style: DirectoryCheckPresentation.displayStatusBadgeStyle(for: displayStatus),
+                    title: DirectoryCheckPresentation.displayStatusTitle(for: result)
                 )
             }
             .padding(.horizontal, OFSpacing.md)

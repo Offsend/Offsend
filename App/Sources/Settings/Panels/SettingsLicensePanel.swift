@@ -342,6 +342,7 @@ struct SettingsLicensePanel: View {
             VStack(alignment: .leading, spacing: 6) {
                 bullet(OffsendStrings.settingsLicenseFeatureFreeSafePaste, color: accent)
                 bullet(OffsendStrings.settingsLicenseFeatureFreeDetectors, color: accent)
+                bullet(OffsendStrings.settingsLicenseFeatureFreeDirectoryCheck, color: accent)
                 bullet(OffsendStrings.settingsLicenseFeatureFreeTtl, color: accent)
             }
             .padding(.top, 4)

@@ -73,69 +73,13 @@ final class AIWorkspacePrivacyAuditorTests: XCTestCase {
         XCTAssertTrue(result.missingRecommendedRules.contains { $0.rule.id == "cursor-project-rules" })
     }
 
-    func testFreeTierCoversPopularToolsAndCriticalPatternsOnly() throws {
-        let freeRuleIDs = Set(AIWorkspacePrivacyAuditConfiguration.freeTier.rules.map(\.id))
-        let freePatternIDs = Set(AIWorkspacePrivacyAuditConfiguration.freeTier.sensitivePatterns.map(\.id))
-
-        let expectedFreeRules: Set<String> = [
-            "cursor-ignore",
-            "cursor-indexing-ignore",
-            "cursor-project-rules",
-            "copilot-exclude",
-            "claude-ignore",
-            "claude-md",
-            "agents-md",
-            "git-ignore"
-        ]
-        XCTAssertEqual(freeRuleIDs, expectedFreeRules)
-
-        let proOnlyRuleSamples: Set<String> = [
-            "continue-ignore",
-            "codeium-ignore",
-            "gemini-ignore",
-            "llm-ignore",
-            "aider-ignore",
-            "cline-ignore",
-            "roo-ignore",
-            "zed-ignore",
-            "cody-ignore"
-        ]
-        XCTAssertTrue(freeRuleIDs.isDisjoint(with: proOnlyRuleSamples))
-
-        let requiredPatternIDs = Set(
-            AIWorkspaceSensitivePattern.defaultPatterns
-                .filter { $0.severity == .required }
-                .map(\.id)
-        )
-        XCTAssertTrue(
-            requiredPatternIDs.isSubset(of: freePatternIDs),
-            "All required patterns must be covered by Free; missing: \(requiredPatternIDs.subtracting(freePatternIDs))"
-        )
-
-        let proOnlyPatternSamples: Set<String> = [
-            "gcp-credentials",
-            "azure-credentials",
-            "terraform-state",
-            "terraform-vars",
-            "pkcs12-p12",
-            "pkcs12-pfx",
-            "pgp-keys",
-            "netrc-files",
-            "htpasswd-files",
-            "docker-config",
-            "db-dumps"
-        ]
-        XCTAssertTrue(freePatternIDs.isDisjoint(with: proOnlyPatternSamples))
-    }
-
-    func testFreeTierEmptyDirectoryReportsRequiredChecks() throws {
+    func testEmptyDirectoryReportsRequiredChecks() throws {
         let directoryURL = try makeTemporaryDirectory()
 
-        let result = auditor.audit(directoryURL: directoryURL, configuration: .freeTier)
+        let result = auditor.audit(directoryURL: directoryURL)
 
         XCTAssertEqual(result.status, .fail)
         XCTAssertEqual(result.missingRequiredRules.map(\.rule.id), ["cursor-ignore"])
-        XCTAssertTrue(result.missingSensitivePatterns.isEmpty)
     }
 
     func testCustomConfigurationCanRequireProjectSpecificRule() throws {
@@ -316,6 +260,57 @@ final class AIWorkspacePrivacyAuditorTests: XCTestCase {
         XCTAssertTrue(fixResult.errors.isEmpty, "\(fixResult.errors)")
         XCTAssertTrue(fixResult.createdRelativePaths.contains(".cursor/rules/privacy.mdc"))
         XCTAssertFalse(fixResult.createdRelativePaths.contains(".cursorignore"))
+    }
+
+    func testFixPlannerDefaultSelectionSelectsExposureGapAndAllPatterns() throws {
+        let directoryURL = try makeTemporaryDirectory()
+        try writeFile(".cursorignore", in: directoryURL, contents: ".env*\n")
+        try writeFile("server.pem", in: directoryURL, contents: "key")
+        try writeFile("secret.key", in: directoryURL, contents: "key")
+
+        let result = auditor.audit(directoryURL: directoryURL)
+        let items = AIWorkspacePrivacyFixPlanner.fixItems(for: result, configuration: .default)
+        let selection = AIWorkspacePrivacyFixPlanner.defaultSelection(for: items, result: result)
+
+        XCTAssertEqual(selection.ruleIDs, ["cursor-ignore"])
+        XCTAssertEqual(selection.patternIDs, Set(["pem-files", "key-files"]))
+    }
+
+    func testFixPlannerScenarioDetectsExistingAndMissingPolicyFiles() throws {
+        let emptyDirectory = try makeTemporaryDirectory()
+        let emptyResult = auditor.audit(directoryURL: emptyDirectory)
+        XCTAssertEqual(AIWorkspacePrivacyFixPlanner.fixScenario(for: emptyResult), .noPolicyFiles)
+
+        let existingDirectory = try makeTemporaryDirectory()
+        try writeFile(".cursorignore", in: existingDirectory, contents: ".env*\n")
+        try writeFile("server.pem", in: existingDirectory, contents: "key")
+        let existingResult = auditor.audit(directoryURL: existingDirectory)
+        XCTAssertEqual(AIWorkspacePrivacyFixPlanner.fixScenario(for: existingResult), .existingPolicyFiles)
+
+        let existingItems = AIWorkspacePrivacyFixPlanner.fixItems(for: existingResult, configuration: .default)
+        let ruleItems = existingItems.filter {
+            if case .ruleFile = $0.kind { return true }
+            return false
+        }
+        XCTAssertFalse(AIWorkspacePrivacyFixPlanner.exposureGapRuleItems(from: ruleItems, result: existingResult).isEmpty)
+        XCTAssertFalse(AIWorkspacePrivacyFixPlanner.missingRuleItems(from: ruleItems, result: existingResult).isEmpty)
+
+        let missingIgnoreFiles = AIWorkspacePrivacyFixPlanner.missingIgnoreFileItems(
+            for: existingResult,
+            configuration: .default
+        )
+        XCTAssertTrue(missingIgnoreFiles.contains { $0.id == "claude-ignore" })
+        XCTAssertTrue(missingIgnoreFiles.contains { $0.id == "copilot-exclude" })
+        XCTAssertFalse(missingIgnoreFiles.contains { $0.id == "cursor-ignore" })
+        XCTAssertFalse(missingIgnoreFiles.contains { $0.id == "cursor-project-rules" })
+
+        let missingOnlyItems = AIWorkspacePrivacyFixPlanner.fixItems(for: emptyResult, configuration: .default)
+        let missingOnlyRuleItems = missingOnlyItems.filter {
+            if case .ruleFile = $0.kind { return true }
+            return false
+        }
+        XCTAssertTrue(AIWorkspacePrivacyFixPlanner.exposureGapRuleItems(from: missingOnlyRuleItems, result: emptyResult).isEmpty)
+        XCTAssertFalse(AIWorkspacePrivacyFixPlanner.missingRuleItems(from: missingOnlyRuleItems, result: emptyResult).isEmpty)
     }
 
     func testFixPlannerDefaultSelectionMatchesAllFixItems() throws {
@@ -812,10 +807,14 @@ final class AIWorkspacePrivacyAuditorTests: XCTestCase {
 
     func testAuditDeltaFallsBackToFullAuditWhenConfigurationChanges() throws {
         let directoryURL = try makeTemporaryDirectory()
-        let baseline = auditor.audit(directoryURL: directoryURL, configuration: .freeTier)
+        let reducedConfiguration = AIWorkspacePrivacyAuditConfiguration(
+            rules: AIWorkspacePrivacyRule.defaultRules,
+            sensitivePatterns: AIWorkspaceSensitivePattern.defaultPatterns.filter { $0.id != "terraform-state" }
+        )
+        let baseline = auditor.audit(directoryURL: directoryURL, configuration: reducedConfiguration)
         XCTAssertFalse(
             baseline.sensitivePatternFindings.contains { $0.pattern.id == "terraform-state" },
-            "Free tier must not include the pro-only terraform-state pattern."
+            "Reduced configuration must not include terraform-state."
         )
 
         let deltaResult = auditor.auditDelta(

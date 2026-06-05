@@ -108,13 +108,13 @@ struct SettingsDirectoryCheckPanel: View {
                     icon: "line.3.horizontal.decrease",
                     label: OffsendStrings.settingsDirectoryCheckStatRules,
                     value: "\(stats.rules)",
-                    accessory: proExtraAccessory(stats.rulesProExtra)
+                    accessory: .none
                 )
                 OFStatTile(
                     icon: "gauge.medium",
                     label: OffsendStrings.settingsDirectoryCheckStatPatterns,
                     value: "\(stats.patterns)",
-                    accessory: proExtraAccessory(stats.patternsProExtra)
+                    accessory: .none
                 )
                 OFStatTile(
                     icon: "folder",
@@ -145,10 +145,6 @@ struct SettingsDirectoryCheckPanel: View {
         )
     }
 
-    private func proExtraAccessory(_ proExtra: Int) -> OFStatTileAccessory {
-        proExtra > 0 ? .proUpsell(OffsendStrings.settingsDirectoryCheckStatProExtra(proExtra)) : .none
-    }
-
     private func skippedAccessory(_ skipped: Int) -> OFStatTileAccessory {
         skipped > 0
             ? .caption(OffsendStrings.settingsDirectoryCheckStatSkippedCount(skipped))
@@ -165,24 +161,17 @@ struct SettingsDirectoryCheckPanel: View {
     private func directoryCheckStats() -> (
         rules: Int,
         patterns: Int,
-        skipped: Int,
-        rulesProExtra: Int,
-        patternsProExtra: Int
+        skipped: Int
     ) {
-        let isPro = coordinator.tariffFeatures.workspaceAuditFull
-        let baseConfig: AIWorkspacePrivacyAuditConfiguration = isPro ? .default : .freeTier
+        let baseConfig = coordinator.directoryCheckAuditConfiguration()
         let disabled = coordinator.settings.directoryCheckDisabledRuleIDs
         let activeRules = baseConfig.rules.filter { rule in
             rule.severity == .required || !disabled.contains(rule.id)
         }
-        let rulesProExtra = isPro ? 0 : max(0, AIWorkspacePrivacyRule.defaultRules.count - baseConfig.rules.count)
-        let patternsProExtra = isPro ? 0 : max(0, AIWorkspaceSensitivePattern.defaultPatterns.count - baseConfig.sensitivePatterns.count)
         return (
             activeRules.count,
             baseConfig.sensitivePatterns.count,
-            coordinator.settings.directoryCheckExtraSkippedDirectories.count,
-            rulesProExtra,
-            patternsProExtra
+            coordinator.settings.directoryCheckExtraSkippedDirectories.count
         )
     }
 
@@ -588,7 +577,6 @@ struct SettingsDirectoryCheckPanel: View {
 
     private func toolRuleRow(rule: AIWorkspacePrivacyRule) -> some View {
         let isRequired = rule.severity == .required
-        let isLockedByTariff = !isInRequiredFreeSet(rule) && !coordinator.tariffFeatures.workspaceAuditFull
         let disabledBinding = ruleDisabledBinding(for: rule.id)
 
         return HStack(alignment: .center, spacing: 12) {
@@ -598,9 +586,6 @@ struct SettingsDirectoryCheckPanel: View {
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(palette.text)
                     severityBadge(severity: rule.severity)
-                    if isLockedByTariff {
-                        scopeBadge(text: OffsendStrings.settingsDirectoryCheckScopePro, color: palette.amber)
-                    }
                 }
                 Text(rule.toolName)
                     .font(.system(size: 11.5))
@@ -612,10 +597,6 @@ struct SettingsDirectoryCheckPanel: View {
                 Text(OffsendStrings.settingsDirectoryCheckRequiredLocked)
                     .font(.system(size: 11))
                     .foregroundColor(palette.textMuted)
-            } else if isLockedByTariff {
-                Text(OffsendStrings.settingsDirectoryCheckProLocked)
-                    .font(.system(size: 11))
-                    .foregroundColor(palette.amberText)
             } else {
                 OFToggle(isOn: Binding(
                     get: { !disabledBinding.wrappedValue },
@@ -625,10 +606,6 @@ struct SettingsDirectoryCheckPanel: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-    }
-
-    private func isInRequiredFreeSet(_ rule: AIWorkspacePrivacyRule) -> Bool {
-        AIWorkspacePrivacyAuditConfiguration.freeTier.rules.contains(where: { $0.id == rule.id })
     }
 
     private func ruleDisabledBinding(for ruleID: String) -> Binding<Bool> {

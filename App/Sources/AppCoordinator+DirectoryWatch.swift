@@ -501,11 +501,6 @@ extension AppCoordinator {
     }
 
     func applyWorkspaceWatchFixFromNotification(watchID: UUID) {
-        guard tariffFeatures.workspaceAuditAutofix, licenseState.plan == .pro else {
-            openDirectoryCheckForWatch(watchID: watchID, source: "notification")
-            return
-        }
-
         guard let entry = settings.watchedDirectories.first(where: { $0.id == watchID }),
               let path = entry.resolvedPath else {
             return
@@ -606,16 +601,14 @@ extension AppCoordinator {
             )
         ]
 
-        if tariffFeatures.workspaceAuditAutofix, licenseState.plan == .pro {
-            actions.insert(
-                UNNotificationAction(
-                    identifier: "fix",
-                    title: OffsendStrings.notificationWorkspaceFixAction,
-                    options: [.foreground]
-                ),
-                at: 0
-            )
-        }
+        actions.insert(
+            UNNotificationAction(
+                identifier: "fix",
+                title: OffsendStrings.notificationWorkspaceFixAction,
+                options: [.foreground]
+            ),
+            at: 0
+        )
 
         let category = UNNotificationCategory(
             identifier: Self.workspaceDegradedNotificationCategoryID,

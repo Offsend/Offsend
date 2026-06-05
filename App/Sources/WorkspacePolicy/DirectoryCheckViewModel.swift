@@ -44,13 +44,9 @@ final class DirectoryCheckViewModel: ObservableObject {
         activeWork = nil
     }
 
-    func preferredWindowHeight(showsFreeBanner: Bool) -> CGFloat {
+    func preferredWindowHeight() -> CGFloat {
         guard auditResult != nil else {
-            var height = DirectoryCheckLayout.emptyStateHeight
-            if showsFreeBanner {
-                height += DirectoryCheckLayout.freeBannerExtra
-            }
-            return height
+            return DirectoryCheckLayout.emptyStateHeight
         }
         return DirectoryCheckLayout.resultStateHeight
     }
@@ -61,10 +57,6 @@ final class DirectoryCheckViewModel: ObservableObject {
             extraSkippedDirectories: coordinator.settings.directoryCheckExtraSkippedDirectories,
             customIgnoreTemplate: coordinator.settings.directoryCheckCustomIgnoreTemplate
         )
-    }
-
-    func canAutofix(coordinator: AppCoordinator) -> Bool {
-        coordinator.licenseState.plan == .pro && coordinator.tariffFeatures.workspaceAuditAutofix
     }
 
     func shouldShowPinnedFooter(for result: AIWorkspacePrivacyAuditResult, coordinator: AppCoordinator) -> Bool {
@@ -161,13 +153,175 @@ final class DirectoryCheckViewModel: ObservableObject {
         )
     }
 
-    func allFixItemsSelected(for result: AIWorkspacePrivacyAuditResult, coordinator: AppCoordinator) -> Bool {
-        let itemIDs = Set(fixItems(for: result, coordinator: coordinator).map(\.id))
+    func fixScenario(for result: AIWorkspacePrivacyAuditResult) -> AIWorkspacePrivacyFixScenario {
+        AIWorkspacePrivacyFixPlanner.fixScenario(for: result)
+    }
+
+    func ruleFileFixItems(
+        for result: AIWorkspacePrivacyAuditResult,
+        coordinator: AppCoordinator
+    ) -> [AIWorkspacePrivacyFixItem] {
+        fixItems(for: result, coordinator: coordinator).filter {
+            if case .ruleFile = $0.kind { return true }
+            return false
+        }
+    }
+
+    func exposureGapRuleFileItems(
+        for result: AIWorkspacePrivacyAuditResult,
+        coordinator: AppCoordinator
+    ) -> [AIWorkspacePrivacyFixItem] {
+        AIWorkspacePrivacyFixPlanner.exposureGapRuleItems(
+            from: ruleFileFixItems(for: result, coordinator: coordinator),
+            result: result
+        )
+    }
+
+    func missingRuleFileItems(
+        for result: AIWorkspacePrivacyAuditResult,
+        coordinator: AppCoordinator
+    ) -> [AIWorkspacePrivacyFixItem] {
+        AIWorkspacePrivacyFixPlanner.missingRuleItems(
+            from: ruleFileFixItems(for: result, coordinator: coordinator),
+            result: result
+        )
+    }
+
+    func missingIgnoreFileItems(
+        for result: AIWorkspacePrivacyAuditResult,
+        coordinator: AppCoordinator
+    ) -> [AIWorkspacePrivacyFixItem] {
+        AIWorkspacePrivacyFixPlanner.missingIgnoreFileItems(
+            for: result,
+            configuration: coordinator.directoryCheckAuditConfiguration()
+        )
+    }
+
+    /// Missing or updatable project rule files (.cursor/rules, …) — not AI ignore lists.
+    func projectRuleFileFixItems(
+        for result: AIWorkspacePrivacyAuditResult,
+        coordinator: AppCoordinator
+    ) -> [AIWorkspacePrivacyFixItem] {
+        ruleFileFixItems(for: result, coordinator: coordinator).filter { item in
+            guard let finding = result.ruleFindings.first(where: { $0.rule.id == item.id }) else {
+                return false
+            }
+            return !finding.rule.scansForSensitivePatterns
+        }
+    }
+
+    /// Required or recommended rule findings that are not represented in the fix picker.
+    func uncoveredRuleFindings(
+        for result: AIWorkspacePrivacyAuditResult,
+        coordinator: AppCoordinator
+    ) -> [AIWorkspacePrivacyRuleFinding] {
+        let representedRuleIDs = Set(ruleFileFixItems(for: result, coordinator: coordinator).map(\.id))
+            .union(Set(missingIgnoreFileItems(for: result, coordinator: coordinator).map(\.id)))
+        return (result.missingRequiredRules + result.missingRecommendedRules)
+            .filter { !representedRuleIDs.contains($0.rule.id) }
+    }
+
+    /// Missing project guidance files that are not AI ignore lists (.cursor/rules, AGENTS.md, …).
+    func otherProjectFileFindings(
+        for result: AIWorkspacePrivacyAuditResult,
+        coordinator: AppCoordinator
+    ) -> [AIWorkspacePrivacyRuleFinding] {
+        uncoveredRuleFindings(for: result, coordinator: coordinator)
+            .filter { !$0.rule.scansForSensitivePatterns }
+    }
+
+    func showsPatternSelection(
+        for result: AIWorkspacePrivacyAuditResult,
+        coordinator: AppCoordinator
+    ) -> Bool {
+        fixScenario(for: result) == .existingPolicyFiles
+            && !patternFixItems(for: result, coordinator: coordinator).isEmpty
+    }
+
+    func patternFixItems(
+        for result: AIWorkspacePrivacyAuditResult,
+        coordinator: AppCoordinator
+    ) -> [AIWorkspacePrivacyFixItem] {
+        fixItems(for: result, coordinator: coordinator).filter {
+            if case .sensitivePattern = $0.kind { return true }
+            return false
+        }
+    }
+
+    func selectedRuleFileCount(
+        for result: AIWorkspacePrivacyAuditResult,
+        coordinator: AppCoordinator
+    ) -> Int {
+        fixSelection(for: result, coordinator: coordinator).ruleIDs.count
+    }
+
+    func allRuleFilesSelected(items: [AIWorkspacePrivacyFixItem]) -> Bool {
+        let itemIDs = Set(items.map(\.id))
         return !itemIDs.isEmpty && itemIDs.isSubset(of: selectedFixItemIDs)
+    }
+
+    func toggleSelectAllRuleFiles(
+        items: [AIWorkspacePrivacyFixItem],
+        for result: AIWorkspacePrivacyAuditResult,
+        coordinator: AppCoordinator
+    ) {
+        let itemIDs = Set(items.map(\.id))
+        if allRuleFilesSelected(items: items) {
+            selectedFixItemIDs.subtract(itemIDs)
+        } else {
+            selectedFixItemIDs.formUnion(itemIDs)
+        }
+        syncImplicitPatternSelection(for: result, coordinator: coordinator)
     }
 
     var hasSelectedFixItems: Bool {
         !selectedFixItemIDs.isEmpty
+    }
+
+    func isUpdatingExistingIgnoreFile(
+        _ item: AIWorkspacePrivacyFixItem,
+        result: AIWorkspacePrivacyAuditResult
+    ) -> Bool {
+        guard case .ruleFile = item.kind else { return false }
+        return AIWorkspacePrivacyFixPlanner.isExposureGapRuleItem(item, in: result)
+    }
+
+    func fixApplySummary(
+        for result: AIWorkspacePrivacyAuditResult,
+        coordinator: AppCoordinator
+    ) -> DirectoryCheckFixApplySummary {
+        let selection = fixSelection(for: result, coordinator: coordinator)
+        let items = fixItems(for: result, coordinator: coordinator)
+        let selectedRuleItems = items.filter { item in
+            guard selection.ruleIDs.contains(item.id) else { return false }
+            if case .ruleFile = item.kind { return true }
+            return false
+        }
+
+        let fileCount = selectedRuleItems.count
+        let patternFixCount: Int
+        if selection.ruleIDs.isEmpty {
+            patternFixCount = 0
+        } else if usesImplicitPatternSelection(for: result, coordinator: coordinator) {
+            patternFixCount = result.missingSensitivePatterns.count
+        } else {
+            patternFixCount = selection.patternIDs.count
+        }
+
+        let createsNewFilesOnly = !selectedRuleItems.isEmpty && selectedRuleItems.allSatisfy { item in
+            guard case .ruleFile(_, let strategy) = item.kind else { return false }
+            return strategy == .createIfMissing
+        }
+        let updatesExistingFiles = selectedRuleItems.contains {
+            isUpdatingExistingIgnoreFile($0, result: result)
+        }
+
+        return DirectoryCheckFixApplySummary(
+            patternFixCount: patternFixCount,
+            fileCount: fileCount,
+            createsNewFilesOnly: createsNewFilesOnly,
+            updatesExistingFiles: updatesExistingFiles
+        )
     }
 
     func canApplyFixSelection(for result: AIWorkspacePrivacyAuditResult, coordinator: AppCoordinator) -> Bool {
@@ -186,35 +340,6 @@ final class DirectoryCheckViewModel: ObservableObject {
         !fixSelection(for: result, coordinator: coordinator).ruleIDs.isEmpty
     }
 
-    func hasSelectedPatternsWithoutTargets(for result: AIWorkspacePrivacyAuditResult, coordinator: AppCoordinator) -> Bool {
-        !hasSelectedPolicyFiles(for: result, coordinator: coordinator)
-            && fixItems(for: result, coordinator: coordinator).contains {
-                if case .sensitivePattern = $0.kind { return true }
-                return false
-            }
-    }
-
-    func isFreeApplicableFixItem(_ item: AIWorkspacePrivacyFixItem) -> Bool {
-        switch item.kind {
-        case .ruleFile:
-            return AIWorkspacePrivacyAuditConfiguration.freeFixableRuleIDs.contains(item.id)
-        case .sensitivePattern:
-            return true
-        }
-    }
-
-    func isProOnlyFixItem(_ item: AIWorkspacePrivacyFixItem, coordinator: AppCoordinator) -> Bool {
-        guard !canAutofix(coordinator: coordinator) else { return false }
-        return !isFreeApplicableFixItem(item)
-    }
-
-    func selectionRequiresPro(for result: AIWorkspacePrivacyAuditResult, coordinator: AppCoordinator) -> Bool {
-        guard !canAutofix(coordinator: coordinator) else { return false }
-        return fixItems(for: result, coordinator: coordinator).contains {
-            selectedFixItemIDs.contains($0.id) && isProOnlyFixItem($0, coordinator: coordinator)
-        }
-    }
-
     func toggleFixItemSelection(
         _ itemID: String,
         result: AIWorkspacePrivacyAuditResult,
@@ -222,28 +347,26 @@ final class DirectoryCheckViewModel: ObservableObject {
     ) {
         let item = fixItems(for: result, coordinator: coordinator).first { $0.id == itemID }
 
-        if selectedFixItemIDs.contains(itemID) {
-            selectedFixItemIDs.remove(itemID)
-            if case .ruleFile = item?.kind, !hasSelectedPolicyFiles(for: result, coordinator: coordinator) {
-                clearPatternSelection(for: result, coordinator: coordinator)
+        if case .sensitivePattern = item?.kind {
+            guard hasSelectedPolicyFiles(for: result, coordinator: coordinator) else { return }
+            if selectedFixItemIDs.contains(itemID) {
+                selectedFixItemIDs.remove(itemID)
+            } else {
+                selectedFixItemIDs.insert(itemID)
             }
             return
         }
 
-        if case .sensitivePattern = item?.kind, !hasSelectedPolicyFiles(for: result, coordinator: coordinator) {
+        guard case .ruleFile = item?.kind else { return }
+
+        if selectedFixItemIDs.contains(itemID) {
+            selectedFixItemIDs.remove(itemID)
+            syncImplicitPatternSelection(for: result, coordinator: coordinator)
             return
         }
 
         selectedFixItemIDs.insert(itemID)
-    }
-
-    func toggleSelectAllFixItems(for result: AIWorkspacePrivacyAuditResult, coordinator: AppCoordinator) {
-        let items = fixItems(for: result, coordinator: coordinator)
-        if allFixItemsSelected(for: result, coordinator: coordinator) {
-            selectedFixItemIDs.removeAll()
-        } else {
-            selectedFixItemIDs = Set(items.map(\.id))
-        }
+        syncImplicitPatternSelection(for: result, coordinator: coordinator)
     }
 
     func fixRowContent(
@@ -335,7 +458,6 @@ final class DirectoryCheckViewModel: ObservableObject {
 
     func fix(_ result: AIWorkspacePrivacyAuditResult, coordinator: AppCoordinator) {
         guard !isBusy else { return }
-        guard !selectionRequiresPro(for: result, coordinator: coordinator) else { return }
         guard canApplyFixSelection(for: result, coordinator: coordinator) else { return }
 
         let selectionBeforeFix = selectedFixItemIDs
@@ -395,21 +517,28 @@ private extension DirectoryCheckViewModel {
         coordinator: AppCoordinator
     ) -> Set<String> {
         let items = fixItems(for: result, coordinator: coordinator)
-        let applicableItems = canAutofix(coordinator: coordinator)
-            ? items
-            : items.filter { isFreeApplicableFixItem($0) }
-        let selection = AIWorkspacePrivacyFixPlanner.defaultSelection(for: applicableItems, result: result)
+        let selection = AIWorkspacePrivacyFixPlanner.defaultSelection(for: items, result: result)
         return selection.ruleIDs.union(selection.patternIDs)
     }
 
-    func clearPatternSelection(
+    func usesImplicitPatternSelection(
+        for result: AIWorkspacePrivacyAuditResult,
+        coordinator: AppCoordinator
+    ) -> Bool {
+        !showsPatternSelection(for: result, coordinator: coordinator)
+    }
+
+    func syncImplicitPatternSelection(
         for result: AIWorkspacePrivacyAuditResult,
         coordinator: AppCoordinator
     ) {
-        for item in fixItems(for: result, coordinator: coordinator) {
-            if case .sensitivePattern = item.kind {
-                selectedFixItemIDs.remove(item.id)
-            }
+        let patternIDs = Set(patternFixItems(for: result, coordinator: coordinator).map(\.id))
+        guard !patternIDs.isEmpty else { return }
+
+        if hasSelectedPolicyFiles(for: result, coordinator: coordinator) {
+            selectedFixItemIDs.formUnion(patternIDs)
+        } else {
+            selectedFixItemIDs.subtract(patternIDs)
         }
     }
 
@@ -474,6 +603,7 @@ private extension DirectoryCheckViewModel {
     ) {
         let availableIDs = Set(fixItems(for: result, coordinator: coordinator).map(\.id))
         selectedFixItemIDs = previousSelection.intersection(availableIDs)
+        syncImplicitPatternSelection(for: result, coordinator: coordinator)
     }
 
     func confirmFix(
