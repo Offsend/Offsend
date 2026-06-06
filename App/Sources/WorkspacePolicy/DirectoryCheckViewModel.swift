@@ -411,15 +411,18 @@ final class DirectoryCheckViewModel: ObservableObject {
         }
 
         guard let coordinator,
-              let entry = coordinator.watchedDirectoryEntry(matching: standardizedURL),
-              let raw = entry.lastStatus,
-              let status = AIWorkspacePrivacyAuditStatus(rawValue: raw) else {
+              let entry = coordinator.watchedDirectoryEntry(matching: standardizedURL) else {
             audit(directoryURL: standardizedURL)
             return
         }
 
-        auditResult = placeholderAuditResult(for: standardizedURL, status: status)
-        isShowingCachedWatchStatus = true
+        if let cached = coordinator.directoryWatchRuntime.lastResultByWatchID[entry.id] {
+            auditResult = cached
+            selectedFixItemIDs = defaultFixItemSelection(for: cached, coordinator: coordinator)
+            return
+        }
+
+        audit(directoryURL: standardizedURL)
     }
 
     func audit(directoryURL: URL) {

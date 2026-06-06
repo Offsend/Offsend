@@ -68,6 +68,20 @@ final class WorkspaceWatchAuditDebouncerTests: XCTestCase {
         XCTAssertEqual(fires[1], ["b", "c"], "All changes seen during the throttle wait must be reported together.")
     }
 
+    func testSensitiveChangesBypassMinIntervalThrottle() {
+        let scheduler = ManualScheduler()
+        var fires: [Set<String>] = []
+        let debouncer = makeDebouncer(scheduler: scheduler) { fires.append($0) }
+
+        debouncer.noteChanges([".cursorignore"])
+        scheduler.advance(by: 2) // first audit at t=2
+        debouncer.noteChanges(["cert.pem"], prefersImmediateFire: true)
+        scheduler.advance(by: 2) // t=4: debounce only, no min-interval wait
+
+        XCTAssertEqual(fires.count, 2)
+        XCTAssertEqual(fires[1], ["cert.pem"])
+    }
+
     func testCancelPreventsPendingFire() {
         let scheduler = ManualScheduler()
         var fires: [Set<String>] = []

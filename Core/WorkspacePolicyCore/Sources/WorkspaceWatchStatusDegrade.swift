@@ -15,11 +15,22 @@ public enum WorkspaceWatchStatusDegrade {
     }
 
     /// Free tier notifies only on FAIL; Pro also notifies on WARNING.
+    /// Also notifies when new sensitive paths become exposed, including while status stays at FAIL.
     public static func shouldNotify(
         from previous: AIWorkspacePrivacyAuditStatus?,
         to newStatus: AIWorkspacePrivacyAuditStatus,
-        workspaceAuditFull: Bool
+        workspaceAuditFull: Bool,
+        addedExposedRelativePaths: [String] = []
     ) -> Bool {
+        if !addedExposedRelativePaths.isEmpty {
+            if workspaceAuditFull {
+                return true
+            }
+            if newStatus == .fail {
+                return true
+            }
+        }
+
         guard didDegrade(from: previous, to: newStatus) else { return false }
         if workspaceAuditFull {
             return true

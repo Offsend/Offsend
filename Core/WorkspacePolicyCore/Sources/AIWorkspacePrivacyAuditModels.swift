@@ -158,6 +158,21 @@ public struct AIWorkspacePrivacyAuditResult: Equatable {
             )
         ).sorted()
     }
+
+    /// True when the audited path is missing or not a readable directory.
+    public var isDirectoryUnavailable: Bool {
+        errors.contains { $0.id == "directory-unavailable" }
+    }
+}
+
+public enum WorkspaceDirectoryAvailability {
+    public static func isReadableDirectory(at url: URL, fileManager: FileManager = .default) -> Bool {
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            return false
+        }
+        return fileManager.isReadableFile(atPath: url.path)
+    }
 }
 
 public enum AIWorkspacePrivacyAuditStatus: String, Equatable {

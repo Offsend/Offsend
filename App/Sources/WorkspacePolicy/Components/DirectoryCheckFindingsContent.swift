@@ -153,8 +153,8 @@ struct DirectoryCheckSatisfiedFindingsContent: View {
 
     @ViewBuilder
     var body: some View {
-        let satisfiedRules = result.ruleFindings.filter(\.isSatisfied)
-        let satisfiedPatterns = result.sensitivePatternFindings.filter(\.isSatisfied)
+        let satisfiedRules = DirectoryCheckPresentation.satisfiedRulesForDisplay(in: result)
+        let satisfiedPatterns = DirectoryCheckPresentation.satisfiedPatternsForDisplay(in: result)
         if satisfiedRules.isEmpty, satisfiedPatterns.isEmpty {
             EmptyView()
         } else {

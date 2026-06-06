@@ -553,20 +553,34 @@ public final class AIWorkspacePrivacyAuditor {
         }
 
         return ruleFindings.map { finding in
-            guard finding.rule.scansForSensitivePatterns, !finding.matchedRelativePaths.isEmpty else {
+            guard finding.rule.scansForSensitivePatterns else {
                 return finding
             }
 
             var exposed = Set<String>()
-            for ignorePath in finding.matchedRelativePaths {
-                let perFilePatterns = [ignorePath: ignorePatterns[ignorePath] ?? []]
-                let fileExposed = exposureChecker.exposedAmongIndexed(
-                    index: exposureIndex,
-                    sensitivePatterns: sensitivePatterns,
-                    ignorePatternsByFile: perFilePatterns,
-                    rootURL: rootURL
+            if finding.matchedRelativePaths.isEmpty {
+                guard finding.rule.severity == .required else {
+                    return finding
+                }
+                exposed = Set(
+                    exposureChecker.exposedAmongIndexed(
+                        index: exposureIndex,
+                        sensitivePatterns: sensitivePatterns,
+                        ignorePatternsByFile: [:],
+                        rootURL: rootURL
+                    ).map(\.relativePath)
                 )
-                exposed.formUnion(fileExposed.map(\.relativePath))
+            } else {
+                for ignorePath in finding.matchedRelativePaths {
+                    let perFilePatterns = [ignorePath: ignorePatterns[ignorePath] ?? []]
+                    let fileExposed = exposureChecker.exposedAmongIndexed(
+                        index: exposureIndex,
+                        sensitivePatterns: sensitivePatterns,
+                        ignorePatternsByFile: perFilePatterns,
+                        rootURL: rootURL
+                    )
+                    exposed.formUnion(fileExposed.map(\.relativePath))
+                }
             }
 
             return AIWorkspacePrivacyRuleFinding(
@@ -595,7 +609,7 @@ public final class AIWorkspacePrivacyAuditor {
         return configuration.sensitivePatterns.map { pattern in
             let baseline = baselineByID[pattern.id]
             var exposed = Set<String>()
-            for finding in ruleFindings where finding.rule.scansForSensitivePatterns && !finding.matchedRelativePaths.isEmpty {
+            for finding in ruleFindings where finding.rule.scansForSensitivePatterns {
                 for path in finding.exposedRelativePaths where SensitivePathMatcher.matchingPattern(
                     relativePath: path,
                     patterns: [pattern]
@@ -617,11 +631,18 @@ public final class AIWorkspacePrivacyAuditor {
         ruleFindings: [AIWorkspacePrivacyRuleFinding],
         sensitiveFindings: [AIWorkspaceSensitivePatternFinding]
     ) -> AIWorkspacePrivacyAuditStatus {
-        if ruleFindings.contains(where: { !$0.isSatisfied && $0.rule.severity == .required }) {
+        let hasRequiredExposure = sensitiveFindings.contains {
+            !$0.isSatisfied && $0.pattern.severity == .required
+        }
+        let hasRequiredRuleExposure = ruleFindings.contains {
+            !$0.exposedRelativePaths.isEmpty && $0.rule.severity == .required
+        }
+        if hasRequiredExposure || hasRequiredRuleExposure {
             return .fail
         }
-        if sensitiveFindings.contains(where: { !$0.isSatisfied && $0.pattern.severity == .required }) {
-            return .fail
+
+        if ruleFindings.contains(where: { !$0.isSatisfied && $0.rule.severity == .required }) {
+            return .warning
         }
         if ruleFindings.contains(where: { !$0.isSatisfied && $0.rule.severity == .recommended }) {
             return .warning

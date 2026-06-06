@@ -19,7 +19,7 @@ final class AIWorkspacePrivacyAuditorTests: XCTestCase {
 
         let result = auditor.audit(directoryURL: directoryURL)
 
-        XCTAssertEqual(result.status, .fail)
+        XCTAssertEqual(result.status, .warning)
         XCTAssertTrue(result.missingRequiredRules.contains { $0.rule.id == "cursor-ignore" })
         XCTAssertTrue(result.missingSensitivePatterns.isEmpty)
         XCTAssertTrue(result.errors.isEmpty)
@@ -78,7 +78,7 @@ final class AIWorkspacePrivacyAuditorTests: XCTestCase {
 
         let result = auditor.audit(directoryURL: directoryURL)
 
-        XCTAssertEqual(result.status, .fail)
+        XCTAssertEqual(result.status, .warning)
         XCTAssertEqual(result.missingRequiredRules.map(\.rule.id), ["cursor-ignore"])
     }
 
@@ -145,7 +145,16 @@ final class AIWorkspacePrivacyAuditorTests: XCTestCase {
 
         XCTAssertEqual(result.status, .fail)
         XCTAssertEqual(result.errors.first?.id, "directory-unavailable")
+        XCTAssertTrue(result.isDirectoryUnavailable)
         XCTAssertTrue(result.ruleFindings.isEmpty)
+    }
+
+    func testWorkspaceDirectoryAvailabilityDetectsMissingDirectory() throws {
+        let directoryURL = try makeTemporaryDirectory()
+        let missingURL = directoryURL.appendingPathComponent("missing")
+
+        XCTAssertTrue(WorkspaceDirectoryAvailability.isReadableDirectory(at: directoryURL))
+        XCTAssertFalse(WorkspaceDirectoryAvailability.isReadableDirectory(at: missingURL))
     }
 
     func testFixerCreatesDefaultPolicyFilesAndPassesAudit() throws {
@@ -767,14 +776,29 @@ final class AIWorkspacePrivacyAuditorTests: XCTestCase {
         )
 
         XCTAssertNotNil(deltaResult)
-        XCTAssertEqual(deltaResult?.status, .fail)
+        XCTAssertEqual(deltaResult?.status, .warning)
         XCTAssertTrue(deltaResult?.missingRequiredRules.contains { $0.rule.id == "cursor-ignore" } == true)
+    }
+
+    func testDeletingIgnoreFileWithSensitiveFilesRemainingFailsAudit() throws {
+        let directoryURL = try makeTemporaryDirectory()
+        try writeIgnoreFile(at: ".cursorignore", in: directoryURL)
+        try writeFile("server.pem", in: directoryURL, contents: "key")
+
+        let baseline = auditor.audit(directoryURL: directoryURL)
+        XCTAssertTrue(baseline.missingSensitivePatterns.isEmpty)
+
+        try FileManager.default.removeItem(at: directoryURL.appendingPathComponent(".cursorignore"))
+
+        let result = auditor.audit(directoryURL: directoryURL)
+        XCTAssertEqual(result.status, .fail)
+        XCTAssertEqual(result.missingSensitivePatterns.first?.exposedRelativePaths, ["server.pem"])
     }
 
     func testAuditDeltaMatchesFullAuditAfterIgnoreFileAdded() throws {
         let directoryURL = try makeTemporaryDirectory()
         let baseline = auditor.audit(directoryURL: directoryURL)
-        XCTAssertEqual(baseline.status, .fail)
+        XCTAssertEqual(baseline.status, .warning)
 
         try writeIgnoreFile(at: ".cursorignore", in: directoryURL)
 
@@ -898,6 +922,66 @@ final class AIWorkspacePrivacyAuditorTests: XCTestCase {
         XCTAssertEqual(deltaResult?.missingSensitivePatterns.map(\.pattern.id), ["pem-files"])
         XCTAssertEqual(deltaResult?.missingSensitivePatterns.first?.exposedRelativePaths, ["server.pem"])
         XCTAssertEqual(deltaResult?.status, fullResult.status)
+    }
+
+    func testAuditDeltaDetectsCursorExposureWhenOtherIgnoreFilesCoverPem() throws {
+        let directoryURL = try makeTemporaryDirectory()
+        try writeFile(".cursorignore", in: directoryURL, contents: ".env*\n")
+        try writeFile(".claudeignore", in: directoryURL, contents: AIWorkspacePrivacyIgnoreTemplate.contents)
+
+        let baseline = auditor.audit(directoryURL: directoryURL)
+        XCTAssertTrue(baseline.missingSensitivePatterns.isEmpty)
+        XCTAssertEqual(baseline.ruleFindings.first { $0.rule.id == "cursor-ignore" }?.exposedRelativePaths, [])
+
+        try writeFile("cert.pem", in: directoryURL, contents: "key")
+
+        let deltaResult = auditor.auditDelta(
+            directoryURL: directoryURL,
+            changedRelativePaths: ["cert.pem"],
+            previousResult: baseline
+        )
+        let fullResult = auditor.audit(directoryURL: directoryURL)
+
+        XCTAssertNotNil(deltaResult)
+        let cursorFinding = deltaResult?.ruleFindings.first { $0.rule.id == "cursor-ignore" }
+        XCTAssertEqual(cursorFinding?.exposedRelativePaths, ["cert.pem"])
+        XCTAssertEqual(deltaResult?.missingSensitivePatterns.first?.exposedRelativePaths, ["cert.pem"])
+        XCTAssertEqual(deltaResult?.status, .fail)
+        XCTAssertEqual(deltaResult?.status, fullResult.status)
+    }
+
+    func testMissingCursorIgnoreStillDetectsPemExposureWhenOtherToolsCoverIt() throws {
+        let directoryURL = try makeTemporaryDirectory()
+        try writeFile(".claudeignore", in: directoryURL, contents: AIWorkspacePrivacyIgnoreTemplate.contents)
+        try writeFile("cert.pem", in: directoryURL, contents: "key")
+
+        let result = auditor.audit(directoryURL: directoryURL)
+
+        let cursorFinding = result.ruleFindings.first { $0.rule.id == "cursor-ignore" }
+        XCTAssertFalse(cursorFinding?.isSatisfied ?? true)
+        XCTAssertEqual(cursorFinding?.exposedRelativePaths, ["cert.pem"])
+        XCTAssertEqual(result.missingSensitivePatterns.first?.exposedRelativePaths, ["cert.pem"])
+        XCTAssertEqual(result.status, .fail)
+    }
+
+    func testAuditDeltaDetectsMissingCursorIgnoreExposureWhenPemAppears() throws {
+        let directoryURL = try makeTemporaryDirectory()
+        try writeFile(".claudeignore", in: directoryURL, contents: AIWorkspacePrivacyIgnoreTemplate.contents)
+
+        let baseline = auditor.audit(directoryURL: directoryURL)
+        XCTAssertEqual(baseline.status, .warning)
+
+        try writeFile("cert.pem", in: directoryURL, contents: "key")
+
+        let deltaResult = auditor.auditDelta(
+            directoryURL: directoryURL,
+            changedRelativePaths: ["cert.pem"],
+            previousResult: baseline
+        )
+
+        XCTAssertNotNil(deltaResult)
+        XCTAssertEqual(deltaResult?.ruleFindings.first { $0.rule.id == "cursor-ignore" }?.exposedRelativePaths, ["cert.pem"])
+        XCTAssertEqual(deltaResult?.status, .fail)
     }
 
     func testAuditDeltaClearsExposedFileWhenDeleted() throws {

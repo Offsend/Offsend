@@ -79,9 +79,26 @@ enum DirectoryCheckPresentation {
         result.missingSensitivePatterns.contains(where: { !$0.isSatisfied })
     }
 
+    static func satisfiedRulesForDisplay(
+        in result: AIWorkspacePrivacyAuditResult
+    ) -> [AIWorkspacePrivacyRuleFinding] {
+        let satisfied = result.ruleFindings.filter(\.isSatisfied)
+        guard !hasNoIgnoreFiles(in: result) else {
+            return satisfied.filter { !$0.rule.scansForSensitivePatterns }
+        }
+        return satisfied
+    }
+
+    static func satisfiedPatternsForDisplay(
+        in result: AIWorkspacePrivacyAuditResult
+    ) -> [AIWorkspaceSensitivePatternFinding] {
+        guard !hasNoIgnoreFiles(in: result) else { return [] }
+        return result.sensitivePatternFindings.filter(\.isSatisfied)
+    }
+
     static func hasSatisfiedFindings(in result: AIWorkspacePrivacyAuditResult) -> Bool {
-        result.ruleFindings.contains(where: \.isSatisfied)
-            || result.sensitivePatternFindings.contains(where: \.isSatisfied)
+        !satisfiedRulesForDisplay(in: result).isEmpty
+            || !satisfiedPatternsForDisplay(in: result).isEmpty
     }
 
     static func severityTag(_ severity: AIWorkspacePrivacyRuleSeverity) -> DirectoryCheckFindingTag {
@@ -99,8 +116,8 @@ enum DirectoryCheckPresentation {
         let fail = result.errors.count
             + result.missingSensitivePatterns.filter { !$0.isSatisfied }.count
         let info = result.missingRequiredRules.count + result.missingRecommendedRules.count
-        let ok = result.ruleFindings.filter(\.isSatisfied).count
-            + result.sensitivePatternFindings.filter(\.isSatisfied).count
+        let ok = satisfiedRulesForDisplay(in: result).count
+            + satisfiedPatternsForDisplay(in: result).count
         return DirectoryCheckIssueCounts(fail: fail, info: info, ok: ok)
     }
 

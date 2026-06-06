@@ -479,9 +479,12 @@
 "notification.workspaceDegraded.title" = "Project is no longer AI-ready";
 "notification.workspaceDegraded.body" = "%@ is now %@.";
 "notification.workspaceDegraded.bodyWithExposed" = "%1$@ is now %2$@. Unignored: %3$@.";
+"notification.workspaceUnavailable.title" = "Monitored folder unavailable";
+"notification.workspaceUnavailable.body" = "%@ was moved or deleted. Open Settings to update monitoring.";
 "menu.workspaceStatus.needsAttention" = "Workspace: %d need attention";
 "menu.workspaceStatus.entry" = "%@ — %@";
 "notification.workspace.openAction" = "Open Directory Check";
+"notification.workspace.openSettingsAction" = "Open Settings";
 "notification.workspace.fixAction" = "Fix";
 "notification.workspace.fixApplied" = "Updated %d file(s) in %@.";
 "directoryCheck.changes.title" = "What changed since last audit";

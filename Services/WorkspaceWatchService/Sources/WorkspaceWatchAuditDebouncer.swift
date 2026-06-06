@@ -24,6 +24,7 @@ final class WorkspaceWatchAuditDebouncer {
     private let onFire: (Set<String>) -> Void
 
     private var pendingChangedPaths: Set<String> = []
+    private var prefersImmediateFirePending = false
     private var lastFiredAt: Date?
     private var timer: WorkspaceWatchTimerToken?
 
@@ -39,9 +40,12 @@ final class WorkspaceWatchAuditDebouncer {
         self.onFire = onFire
     }
 
-    func noteChanges(_ paths: Set<String>) {
+    func noteChanges(_ paths: Set<String>, prefersImmediateFire: Bool = false) {
         guard !paths.isEmpty else { return }
         pendingChangedPaths.formUnion(paths)
+        if prefersImmediateFire {
+            prefersImmediateFirePending = true
+        }
         scheduleDebounce()
     }
 
@@ -59,7 +63,7 @@ final class WorkspaceWatchAuditDebouncer {
 
     private func attemptFire() {
         let now = scheduler.now()
-        if let last = lastFiredAt {
+        if !prefersImmediateFirePending, let last = lastFiredAt {
             let elapsed = now.timeIntervalSince(last)
             if elapsed < minAuditInterval {
                 timer?.cancel()
@@ -73,6 +77,7 @@ final class WorkspaceWatchAuditDebouncer {
         let paths = pendingChangedPaths
         lastFiredAt = now
         pendingChangedPaths = []
+        prefersImmediateFirePending = false
         timer = nil
         onFire(paths)
     }

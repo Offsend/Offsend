@@ -153,6 +153,28 @@ final class WorkspaceWatchStatusDegradeTests: XCTestCase {
         )
     }
 
+    func testNotifiesWhenNewSensitivePathsAppearEvenIfStatusStaysFail() {
+        XCTAssertTrue(
+            WorkspaceWatchStatusDegrade.shouldNotify(
+                from: .fail,
+                to: .fail,
+                workspaceAuditFull: false,
+                addedExposedRelativePaths: ["cert.pem"]
+            )
+        )
+    }
+
+    func testFreeTierIgnoresNewExposureWhenStatusIsNotFail() {
+        XCTAssertFalse(
+            WorkspaceWatchStatusDegrade.shouldNotify(
+                from: .pass,
+                to: .warning,
+                workspaceAuditFull: false,
+                addedExposedRelativePaths: ["cert.pem"]
+            )
+        )
+    }
+
     func testWorstStatusReturnsNilForEmptyList() {
         XCTAssertNil(WorkspaceWatchStatusDegrade.worstStatus(in: []))
     }
