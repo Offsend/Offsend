@@ -14,11 +14,6 @@
   <img src="https://img.shields.io/badge/local--first-yes-2ea44f" alt="Local-first">
 </p>
 
-
-<p align="center">
-  <img src="assets/demo.gif" alt="Prepare: drop a file or folder, review findings, export an AI-ready copy">
-</p>
-
 ---
 
 Offsend is a local-first macOS menu bar app. It helps you get **projects**, **files**, and **clipboard text** AI-ready before ChatGPT, Claude, Cursor, or another tool sees them.
