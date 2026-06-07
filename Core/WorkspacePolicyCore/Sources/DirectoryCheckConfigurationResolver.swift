@@ -21,9 +21,8 @@ public struct DirectoryCheckConfigurationInput: Equatable, Sendable {
 
 public enum DirectoryCheckConfigurationResolver {
     public static func resolve(_ input: DirectoryCheckConfigurationInput) -> AIWorkspacePrivacyAuditConfiguration {
-        // Detection scope is identical on every tier: Free sees the full set of AI tools
-        // and sensitive patterns so it gets real value (and a clear view of what Pro fixes).
-        // `workspaceAuditFull` now only gates the custom ignore template below.
+        // Detection scope is identical on every tier: Free sees every AI tool and sensitive
+        // pattern. Pro unlocks custom ignore templates and more watched folders — not broader detection.
         let base: AIWorkspacePrivacyAuditConfiguration = .default
         let extraSkipped = Set(
             input.extraSkippedDirectories

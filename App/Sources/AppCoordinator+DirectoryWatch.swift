@@ -204,23 +204,44 @@ extension AppCoordinator {
 
         analytics.track(.watchNotificationOpened(action: response.actionIdentifier))
 
+        let isUnavailable = userInfo["directoryUnavailable"] as? String == "1"
+
         switch response.actionIdentifier {
-        case UNNotificationDefaultActionIdentifier, "open":
-            openDirectoryCheckForWatch(watchID: watchID, source: "notification")
+        case UNNotificationDefaultActionIdentifier, "open", "openSettings":
+            if isUnavailable {
+                openDirectoryCheckSettings(source: "notification")
+            } else {
+                openDirectoryCheckForWatch(watchID: watchID, source: "notification")
+            }
         case "fix":
-            applyWorkspaceWatchFixFromNotification(watchID: watchID)
+            if isUnavailable {
+                openDirectoryCheckSettings(source: "notification")
+            } else {
+                applyWorkspaceWatchFixFromNotification(watchID: watchID)
+            }
         default:
             break
         }
     }
 
+    func openDirectoryCheckSettings(source: String) {
+        pendingSettingsTab = .directoryCheck
+        openSettingsWindowAction?()
+        recordDirectoryCheckOpened(source: source)
+    }
+
     func openDirectoryCheckForWatch(watchID: UUID, source: String) {
+        if directoryWatchRuntime.unavailableWatchIDs.contains(watchID) {
+            openDirectoryCheckSettings(source: source)
+            return
+        }
+
         let url = settings.watchedDirectories
             .first(where: { $0.id == watchID })
             .flatMap(\.resolvedPath)
             .map { URL(fileURLWithPath: $0).standardizedFileURL }
         guard let url else {
-            openPrepareWindow(source: source)
+            openDirectoryCheckSettings(source: source)
             return
         }
         openPrepare(for: url, source: source)
@@ -277,6 +298,11 @@ extension AppCoordinator {
                 if resolution.bookmarkWasStale,
                    let refreshed = try? WatchedDirectoryBookmark.refreshBookmark(for: url) {
                     settings.watchedDirectories[index].bookmarkData = refreshed
+                }
+
+                guard WorkspaceDirectoryAvailability.isReadableDirectory(at: url) else {
+                    unavailable.insert(entry.id)
+                    continue
                 }
 
                 resolvedRoots.append((entry.id, url))
@@ -339,39 +365,59 @@ extension AppCoordinator {
 
         if directoryWatchRuntime.isAuditing.contains(watchID) {
             if watchAuditTasks[watchID] != nil {
+                queuePendingWatchAudit(watchID: watchID, changedRelativePaths: changedRelativePaths)
                 return
             }
             directoryWatchRuntime.isAuditing.remove(watchID)
         }
 
         let lastAuditAt = settings.watchedDirectories.first(where: { $0.id == watchID })?.lastAuditAt
-        guard DirectoryWatchAuditThrottle.shouldRunAudit(lastAuditAt: lastAuditAt, force: force) else {
+        let configuration = directoryCheckAuditConfiguration()
+        let hasSensitivePathChange = changedRelativePaths.map { paths in
+            paths.contains { path in
+                path.isEmpty
+                    || SensitivePathMatcher.matchingPattern(
+                        relativePath: path,
+                        patterns: configuration.sensitivePatterns
+                    ) != nil
+            }
+        } ?? false
+        guard DirectoryWatchAuditThrottle.shouldRunAudit(
+            lastAuditAt: lastAuditAt,
+            force: force || hasSensitivePathChange
+        ) else {
+            queuePendingWatchAudit(watchID: watchID, changedRelativePaths: changedRelativePaths)
+            scheduleThrottledWatchAuditRetry(watchID: watchID, rootURL: rootURL, lastAuditAt: lastAuditAt)
             return
         }
 
+        watchAuditRetryTasks[watchID]?.cancel()
+        watchAuditRetryTasks.removeValue(forKey: watchID)
+
         directoryWatchRuntime.isAuditing.insert(watchID)
         let auditStartedAt = Date()
-        let configuration = directoryCheckAuditConfiguration()
         let previousStatus = directoryWatchRuntime.statusByWatchID[watchID]
             ?? settings.watchedDirectories.first(where: { $0.id == watchID })?.lastStatus
             .flatMap(AIWorkspacePrivacyAuditStatus.init(rawValue:))
-        let previousResult = directoryWatchRuntime.lastResultByWatchID[watchID]
+        let previousResultAtStart = directoryWatchRuntime.lastResultByWatchID[watchID]
 
         watchAuditTasks[watchID] = Task { @MainActor in
             defer {
                 directoryWatchRuntime.isAuditing.remove(watchID)
                 watchAuditTasks.removeValue(forKey: watchID)
+                schedulePendingWatchAuditIfNeeded(watchID: watchID, rootURL: rootURL)
             }
 
             let result = await Task.detached(priority: .utility) {
                 let auditor = AIWorkspacePrivacyAuditor()
                 if let changedRelativePaths,
                    !changedRelativePaths.isEmpty,
-                   let previousResult,
+                   !hasSensitivePathChange,
+                   let previousResultAtStart,
                    let deltaResult = auditor.auditDelta(
                     directoryURL: rootURL,
                     changedRelativePaths: changedRelativePaths,
-                    previousResult: previousResult,
+                    previousResult: previousResultAtStart,
                     configuration: configuration
                    ) {
                     return deltaResult
@@ -386,7 +432,70 @@ extension AppCoordinator {
                 watchID: watchID,
                 result: result,
                 previousStatus: previousStatus,
+                previousResultAtStart: previousResultAtStart,
                 auditStartedAt: auditStartedAt
+            )
+        }
+    }
+
+    private func queuePendingWatchAudit(watchID: UUID, changedRelativePaths: Set<String>?) {
+        if let changedRelativePaths, !changedRelativePaths.isEmpty {
+            pendingWatchAuditChanges[watchID, default: []].formUnion(changedRelativePaths)
+        } else {
+            pendingWatchAuditNeedsFull.insert(watchID)
+        }
+    }
+
+    private func schedulePendingWatchAuditIfNeeded(watchID: UUID, rootURL: URL) {
+        if pendingWatchAuditNeedsFull.contains(watchID) {
+            pendingWatchAuditNeedsFull.remove(watchID)
+            pendingWatchAuditChanges.removeValue(forKey: watchID)
+            runWatchAudit(watchID: watchID, rootURL: rootURL, force: true)
+            return
+        }
+
+        guard let pendingPaths = pendingWatchAuditChanges.removeValue(forKey: watchID), !pendingPaths.isEmpty else {
+            return
+        }
+
+        runWatchAudit(
+            watchID: watchID,
+            rootURL: rootURL,
+            force: false,
+            changedRelativePaths: pendingPaths
+        )
+    }
+
+    private func scheduleThrottledWatchAuditRetry(watchID: UUID, rootURL: URL, lastAuditAt: Date?) {
+        guard let lastAuditAt else { return }
+
+        watchAuditRetryTasks[watchID]?.cancel()
+        let delay = max(
+            0.25,
+            DirectoryWatchAuditThrottle.minAuditInterval - Date().timeIntervalSince(lastAuditAt) + 0.05
+        )
+
+        watchAuditRetryTasks[watchID] = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            watchAuditRetryTasks.removeValue(forKey: watchID)
+
+            if pendingWatchAuditNeedsFull.contains(watchID) {
+                pendingWatchAuditNeedsFull.remove(watchID)
+                pendingWatchAuditChanges.removeValue(forKey: watchID)
+                runWatchAudit(watchID: watchID, rootURL: rootURL, force: true)
+                return
+            }
+
+            guard let pendingPaths = pendingWatchAuditChanges.removeValue(forKey: watchID), !pendingPaths.isEmpty else {
+                return
+            }
+
+            runWatchAudit(
+                watchID: watchID,
+                rootURL: rootURL,
+                force: false,
+                changedRelativePaths: pendingPaths
             )
         }
     }
@@ -395,6 +504,10 @@ extension AppCoordinator {
         watchAuditTasks[watchID]?.cancel()
         watchAuditTasks.removeValue(forKey: watchID)
         directoryWatchRuntime.isAuditing.remove(watchID)
+        pendingWatchAuditChanges.removeValue(forKey: watchID)
+        pendingWatchAuditNeedsFull.remove(watchID)
+        watchAuditRetryTasks[watchID]?.cancel()
+        watchAuditRetryTasks.removeValue(forKey: watchID)
     }
 
     private func cancelAllWatchAudits() {
@@ -403,6 +516,12 @@ extension AppCoordinator {
         }
         watchAuditTasks.removeAll()
         directoryWatchRuntime.isAuditing.removeAll()
+        pendingWatchAuditChanges.removeAll()
+        pendingWatchAuditNeedsFull.removeAll()
+        for task in watchAuditRetryTasks.values {
+            task.cancel()
+        }
+        watchAuditRetryTasks.removeAll()
     }
 
     func workspaceStatusNeedsAttentionCount() -> Int {
@@ -454,6 +573,7 @@ extension AppCoordinator {
         watchID: UUID,
         result: AIWorkspacePrivacyAuditResult,
         previousStatus: AIWorkspacePrivacyAuditStatus?,
+        previousResultAtStart: AIWorkspacePrivacyAuditResult?,
         auditStartedAt: Date
     ) {
         guard settings.watchedDirectories.contains(where: { $0.id == watchID }) else { return }
@@ -465,7 +585,12 @@ extension AppCoordinator {
             return
         }
 
-        let previousResult = directoryWatchRuntime.lastResultByWatchID[watchID]
+        if result.isDirectoryUnavailable {
+            handleUnavailableWatchAuditResult(watchID: watchID, result: result)
+            return
+        }
+
+        let previousResult = previousResultAtStart
         directoryWatchRuntime.statusByWatchID[watchID] = result.status
         directoryWatchRuntime.lastResultByWatchID[watchID] = result
 
@@ -476,36 +601,61 @@ extension AppCoordinator {
             persistWatchSettings()
         }
 
-        if settings.directoryWatchNotifyOnDegrade,
-           WorkspaceWatchStatusDegrade.shouldNotify(
-               from: previousStatus,
-               to: result.status,
-               workspaceAuditFull: tariffFeatures.workspaceAuditFull
-           ) {
-            analytics.track(
-                .watchStatusDegraded(
-                    fromStatus: (previousStatus ?? .pass).rawValue,
-                    toStatus: result.status.rawValue
+        if settings.directoryWatchNotifyOnDegrade {
+            let addedExposedPaths = previousResult.map {
+                AIWorkspacePrivacyAuditDelta.compute(from: $0, to: result).addedExposedRelativePaths
+            } ?? []
+            if WorkspaceWatchStatusDegrade.shouldNotify(
+                from: previousStatus,
+                to: result.status,
+                workspaceAuditFull: tariffFeatures.workspaceAuditFull,
+                addedExposedRelativePaths: addedExposedPaths
+            ) {
+                analytics.track(
+                    .watchStatusDegraded(
+                        fromStatus: (previousStatus ?? .pass).rawValue,
+                        toStatus: result.status.rawValue
+                    )
                 )
-            )
-            postWorkspaceDegradedNotification(
-                watchID: watchID,
-                directoryURL: result.directoryURL,
-                status: result.status,
-                auditResult: result,
-                previousResult: previousResult
-            )
+                postWorkspaceDegradedNotification(
+                    watchID: watchID,
+                    directoryURL: result.directoryURL,
+                    status: result.status,
+                    auditResult: result,
+                    previousResult: previousResult
+                )
+            }
         }
 
         refreshMenuBarStatusItem()
     }
 
-    func applyWorkspaceWatchFixFromNotification(watchID: UUID) {
-        guard tariffFeatures.workspaceAuditAutofix, licenseState.plan == .pro else {
-            openDirectoryCheckForWatch(watchID: watchID, source: "notification")
-            return
+    private func handleUnavailableWatchAuditResult(
+        watchID: UUID,
+        result: AIWorkspacePrivacyAuditResult
+    ) {
+        let wasUnavailable = directoryWatchRuntime.unavailableWatchIDs.contains(watchID)
+        directoryWatchRuntime.unavailableWatchIDs.insert(watchID)
+        directoryWatchRuntime.statusByWatchID.removeValue(forKey: watchID)
+        directoryWatchRuntime.lastResultByWatchID.removeValue(forKey: watchID)
+
+        if let index = settings.watchedDirectories.firstIndex(where: { $0.id == watchID }) {
+            settings.watchedDirectories[index].lastAuditAt = Date()
+            settings.watchedDirectories[index].lastStatus = nil
+            persistWatchSettings()
         }
 
+        if settings.directoryWatchNotifyOnDegrade, !wasUnavailable {
+            postWorkspaceUnavailableNotification(
+                watchID: watchID,
+                directoryURL: result.directoryURL
+            )
+        }
+
+        reloadDirectoryWatch(runInitialAudits: false)
+    }
+
+    func applyWorkspaceWatchFixFromNotification(watchID: UUID) {
         guard let entry = settings.watchedDirectories.first(where: { $0.id == watchID }),
               let path = entry.resolvedPath else {
             return
@@ -583,6 +733,28 @@ extension AppCoordinator {
         UNUserNotificationCenter.current().add(request)
     }
 
+    private func postWorkspaceUnavailableNotification(
+        watchID: UUID,
+        directoryURL: URL
+    ) {
+        let content = UNMutableNotificationContent()
+        content.title = OffsendStrings.notificationWorkspaceUnavailableTitle
+        content.body = OffsendStrings.notificationWorkspaceUnavailableBody(directoryURL.lastPathComponent)
+        content.categoryIdentifier = Self.workspaceUnavailableNotificationCategoryID
+        content.userInfo = [
+            "watchID": watchID.uuidString,
+            "directoryPath": directoryURL.path,
+            "directoryUnavailable": "1"
+        ]
+
+        let request = UNNotificationRequest(
+            identifier: "workspace-unavailable-\(watchID.uuidString)-\(UUID().uuidString)",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request)
+    }
+
     private func exposedPathsNotificationSummary(
         auditResult: AIWorkspacePrivacyAuditResult,
         previousResult: AIWorkspacePrivacyAuditResult?
@@ -596,9 +768,10 @@ extension AppCoordinator {
     }
 
     static let workspaceDegradedNotificationCategoryID = "workspace-degraded"
+    static let workspaceUnavailableNotificationCategoryID = "workspace-unavailable"
 
     func registerWorkspaceWatchNotificationCategories() {
-        var actions: [UNNotificationAction] = [
+        var degradedActions: [UNNotificationAction] = [
             UNNotificationAction(
                 identifier: "open",
                 title: OffsendStrings.notificationWorkspaceOpenAction,
@@ -606,24 +779,36 @@ extension AppCoordinator {
             )
         ]
 
-        if tariffFeatures.workspaceAuditAutofix, licenseState.plan == .pro {
-            actions.insert(
-                UNNotificationAction(
-                    identifier: "fix",
-                    title: OffsendStrings.notificationWorkspaceFixAction,
-                    options: [.foreground]
-                ),
-                at: 0
-            )
-        }
+        degradedActions.insert(
+            UNNotificationAction(
+                identifier: "fix",
+                title: OffsendStrings.notificationWorkspaceFixAction,
+                options: [.foreground]
+            ),
+            at: 0
+        )
 
-        let category = UNNotificationCategory(
+        let degradedCategory = UNNotificationCategory(
             identifier: Self.workspaceDegradedNotificationCategoryID,
-            actions: actions,
+            actions: degradedActions,
             intentIdentifiers: [],
             options: []
         )
-        UNUserNotificationCenter.current().setNotificationCategories([category])
+
+        let unavailableCategory = UNNotificationCategory(
+            identifier: Self.workspaceUnavailableNotificationCategoryID,
+            actions: [
+                UNNotificationAction(
+                    identifier: "openSettings",
+                    title: OffsendStrings.notificationWorkspaceOpenSettingsAction,
+                    options: [.foreground]
+                )
+            ],
+            intentIdentifiers: [],
+            options: []
+        )
+
+        UNUserNotificationCenter.current().setNotificationCategories([degradedCategory, unavailableCategory])
     }
 
     private func statusTitle(for status: AIWorkspacePrivacyAuditStatus) -> String {

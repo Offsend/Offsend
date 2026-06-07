@@ -95,6 +95,8 @@ final class AppCoordinator: ObservableObject {
     @Published var licenseActivationDeviceLimit: [LicenseActivatedDevice] = []
     /// `nil` = normal license UI. Non-`nil` (including `""`) = post-checkout deeplink flow with optional email prefill.
     @Published var licensePostCheckoutFlowEmail: String?
+    /// When set, the settings window opens on this tab (consumed by `SettingsView`).
+    @Published var pendingSettingsTab: SettingsSidebarTab?
     @Published var licensePricing = LicensePricingPresentation.fallback(
         LicensePricingFallbackStrings(
             headline: OffsendStrings.settingsLicensePricingFallbackHeadline,
@@ -133,6 +135,9 @@ final class AppCoordinator: ObservableObject {
     private var safePastePanel: SafePastePanelController?
     private var clipboardStatusPanel: ClipboardStatusPanelController?
     var watchAuditTasks: [UUID: Task<Void, Never>] = [:]
+    var pendingWatchAuditChanges: [UUID: Set<String>] = [:]
+    var pendingWatchAuditNeedsFull: Set<UUID> = []
+    var watchAuditRetryTasks: [UUID: Task<Void, Never>] = [:]
     private var permissionsChangeSubscription: AnyCancellable?
     private var clipboardAssessmentSnapshot: ClipboardAssessmentSnapshot?
     private var lastAppliedLaunchAtLoginPreference: Bool?

@@ -10,18 +10,15 @@ struct DirectoryCheckIssueSummaryBar: View {
         let counts = DirectoryCheckPresentation.issueCounts(for: result)
 
         HStack(spacing: OFSpacing.sm) {
-            Text(OffsendStrings.directoryCheckIssuesFound(counts.totalIssues))
+            Text(DirectoryCheckPresentation.issueSummaryTitle(for: counts))
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(.ofText)
 
             if counts.fail > 0 {
                 OFCountPill(count: counts.fail, style: .fail)
             }
-            if counts.warn > 0 {
-                OFCountPill(count: counts.warn, style: .warn)
-            }
-            if counts.ok > 0 {
-                OFCountPill(count: counts.ok, style: .ok)
+            if counts.info > 0 {
+                OFCountPill(count: counts.info, style: .info)
             }
 
             Spacer(minLength: 0)

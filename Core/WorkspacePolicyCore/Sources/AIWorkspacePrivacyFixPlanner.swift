@@ -42,6 +42,72 @@ public struct AIWorkspacePrivacyFixSelection: Equatable, Sendable {
 }
 
 public enum AIWorkspacePrivacyFixPlanner {
+    public static func fixScenario(for result: AIWorkspacePrivacyAuditResult) -> AIWorkspacePrivacyFixScenario {
+        let hasExisting = result.ruleFindings.contains {
+            $0.rule.scansForSensitivePatterns && $0.isSatisfied && !$0.matchedRelativePaths.isEmpty
+        }
+        return hasExisting ? .existingPolicyFiles : .noPolicyFiles
+    }
+
+    public static func isExposureGapRuleItem(
+        _ item: AIWorkspacePrivacyFixItem,
+        in result: AIWorkspacePrivacyAuditResult
+    ) -> Bool {
+        guard case .ruleFile(_, let strategy) = item.kind, strategy == .mergeLines else { return false }
+        return isExposureGapPolicyTarget(itemID: item.id, in: result)
+    }
+
+    public static func isMissingRuleItem(
+        _ item: AIWorkspacePrivacyFixItem,
+        in result: AIWorkspacePrivacyAuditResult
+    ) -> Bool {
+        guard case .ruleFile = item.kind else { return false }
+        guard let finding = result.ruleFindings.first(where: { $0.rule.id == item.id }) else { return false }
+        return !finding.isSatisfied
+    }
+
+    public static func exposureGapRuleItems(
+        from items: [AIWorkspacePrivacyFixItem],
+        result: AIWorkspacePrivacyAuditResult
+    ) -> [AIWorkspacePrivacyFixItem] {
+        items.filter { isExposureGapRuleItem($0, in: result) }
+    }
+
+    public static func missingRuleItems(
+        from items: [AIWorkspacePrivacyFixItem],
+        result: AIWorkspacePrivacyAuditResult
+    ) -> [AIWorkspacePrivacyFixItem] {
+        items.filter { isMissingRuleItem($0, in: result) }
+    }
+
+    /// Missing policy ignore files for other AI tools (`.claudeignore`, `.aiexclude`, …).
+    public static func missingIgnoreFileItems(
+        for result: AIWorkspacePrivacyAuditResult,
+        configuration: AIWorkspacePrivacyAuditConfiguration
+    ) -> [AIWorkspacePrivacyFixItem] {
+        let rulesByID = Dictionary(uniqueKeysWithValues: configuration.rules.map { ($0.id, $0) })
+        var items: [AIWorkspacePrivacyFixItem] = []
+
+        for finding in result.ruleFindings {
+            let rule = finding.rule
+            guard !finding.isSatisfied else { continue }
+            guard rule.scansForSensitivePatterns else { continue }
+            guard rule.severity != .informational else { continue }
+            guard let fix = rulesByID[rule.id]?.fix ?? rule.fix else { continue }
+            items.append(
+                AIWorkspacePrivacyFixItem(
+                    id: rule.id,
+                    kind: .ruleFile(relativePath: fix.relativePath, strategy: fix.strategy),
+                    title: rule.title,
+                    toolName: rule.toolName,
+                    severity: rule.severity
+                )
+            )
+        }
+
+        return items.sorted(by: sortFixItems)
+    }
+
     public static func fixItems(
         for result: AIWorkspacePrivacyAuditResult,
         configuration: AIWorkspacePrivacyAuditConfiguration

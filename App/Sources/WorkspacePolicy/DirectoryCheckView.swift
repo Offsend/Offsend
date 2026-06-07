@@ -22,12 +22,10 @@ struct DirectoryCheckContentView: View {
 
     @ViewBuilder
     private var directoryCheckRoot: some View {
-        let features = coordinator.tariffFeatures
-        let showsFreeBanner = !features.workspaceAuditFull
         let showsFooter = viewModel.auditResult.map {
             viewModel.shouldShowPinnedFooter(for: $0, coordinator: coordinator)
         } ?? false
-        let bodyHeight = viewModel.preferredWindowHeight(showsFreeBanner: showsFreeBanner)
+        let bodyHeight = viewModel.preferredWindowHeight()
         let windowSize = NSSize(
             width: PrepareWindowChrome.windowWidth(contentWidth: DirectoryCheckLayout.windowWidth),
             height: PrepareWindowChrome.windowHeight(bodyHeight: bodyHeight)
@@ -78,12 +76,7 @@ struct DirectoryCheckContentView: View {
 
     @ViewBuilder
     private var directoryBodyContent: some View {
-        let features = coordinator.tariffFeatures
-
         VStack(alignment: .leading, spacing: OFSpacing.lg) {
-            if !features.workspaceAuditFull {
-                DirectoryCheckFreeScopeNote()
-            }
 
             if let auditResult = viewModel.auditResult {
                 DirectoryCheckFolderWatchCard(viewModel: viewModel, result: auditResult)
@@ -106,15 +99,11 @@ struct DirectoryCheckContentView: View {
 
                     if viewModel.showsProtectedState(auditResult) {
                         protectedBanner(for: auditResult)
+                        DirectoryCheckIssueSummaryBar(viewModel: viewModel, result: auditResult)
+                        DirectoryCheckSatisfiedFindingsContent(result: auditResult)
                     } else {
                         DirectoryCheckIssueSummaryBar(viewModel: viewModel, result: auditResult)
                         DirectoryCheckFindingsContent(viewModel: viewModel, result: auditResult)
-                    }
-                }
-
-                if !features.workspaceAuditFull {
-                    DirectoryCheckProUpsellCard {
-                        Task { await coordinator.openProCheckout(prefillEmail: nil) }
                     }
                 }
             }

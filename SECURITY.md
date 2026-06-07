@@ -1,6 +1,6 @@
-# Security
+# Security Policy
 
-Offsend does not send your clipboard or project files anywhere for detection, masking, or directory audits.
+Offsend prepares project, document, and clipboard data for use with AI tools entirely on your Mac. It does not send your clipboard or project files anywhere for detection, masking, or directory audits.
 
 No cloud account. No server-side scanning. No "trust us".
 
@@ -29,3 +29,27 @@ Accessibility permission is used only to simulate paste into the active app. Wit
 ## Logging
 
 The app avoids logging clipboard content, detected values, masked text, and mappings. Debug logging must use synthetic data only.
+
+## Reporting a Vulnerability
+
+Please do not report security vulnerabilities through public GitHub issues.
+
+If you believe you found a vulnerability in Offsend, please contact:
+
+**support@offsend.io**
+
+Please include:
+
+- a short description of the issue
+- steps to reproduce
+- affected version or commit
+- screenshots or logs if useful
+- potential impact
+
+I will try to acknowledge reports within 72 hours.
+
+## Supported Versions
+
+Offsend is early-stage software. Security fixes are applied to the latest public release only.
+
+Please update to the latest version before reporting an issue.

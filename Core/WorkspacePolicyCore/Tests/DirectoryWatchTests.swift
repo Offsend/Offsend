@@ -2,8 +2,8 @@ import XCTest
 @testable import WorkspacePolicyCore
 
 final class DirectoryCheckConfigurationResolverTests: XCTestCase {
-    func testFreeTierUsesFullRuleSet() {
-        let config = DirectoryCheckConfigurationResolver.resolve(
+    func testFreeAndProUseIdenticalDetectionScope() {
+        let freeConfig = DirectoryCheckConfigurationResolver.resolve(
             DirectoryCheckConfigurationInput(
                 workspaceAuditFull: false,
                 disabledRuleIDs: [],
@@ -11,9 +11,19 @@ final class DirectoryCheckConfigurationResolverTests: XCTestCase {
                 customIgnoreTemplate: nil
             )
         )
+        let proConfig = DirectoryCheckConfigurationResolver.resolve(
+            DirectoryCheckConfigurationInput(
+                workspaceAuditFull: true,
+                disabledRuleIDs: [],
+                extraSkippedDirectories: [],
+                customIgnoreTemplate: nil
+            )
+        )
 
-        XCTAssertEqual(config.rules.count, AIWorkspacePrivacyRule.defaultRules.count)
-        XCTAssertEqual(config.sensitivePatterns.count, AIWorkspaceSensitivePattern.defaultPatterns.count)
+        XCTAssertEqual(freeConfig.rules.count, AIWorkspacePrivacyRule.defaultRules.count)
+        XCTAssertEqual(freeConfig.sensitivePatterns.count, AIWorkspaceSensitivePattern.defaultPatterns.count)
+        XCTAssertEqual(Set(freeConfig.rules.map(\.id)), Set(proConfig.rules.map(\.id)))
+        XCTAssertEqual(Set(freeConfig.sensitivePatterns.map(\.id)), Set(proConfig.sensitivePatterns.map(\.id)))
     }
 
     func testCustomTemplateIgnoredOnFreeTier() {
@@ -139,6 +149,28 @@ final class WorkspaceWatchStatusDegradeTests: XCTestCase {
                 from: nil,
                 to: .fail,
                 workspaceAuditFull: true
+            )
+        )
+    }
+
+    func testNotifiesWhenNewSensitivePathsAppearEvenIfStatusStaysFail() {
+        XCTAssertTrue(
+            WorkspaceWatchStatusDegrade.shouldNotify(
+                from: .fail,
+                to: .fail,
+                workspaceAuditFull: false,
+                addedExposedRelativePaths: ["cert.pem"]
+            )
+        )
+    }
+
+    func testFreeTierIgnoresNewExposureWhenStatusIsNotFail() {
+        XCTAssertFalse(
+            WorkspaceWatchStatusDegrade.shouldNotify(
+                from: .pass,
+                to: .warning,
+                workspaceAuditFull: false,
+                addedExposedRelativePaths: ["cert.pem"]
             )
         )
     }

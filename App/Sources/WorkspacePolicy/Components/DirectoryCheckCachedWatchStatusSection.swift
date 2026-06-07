@@ -33,22 +33,13 @@ struct DirectoryCheckCachedWatchStatusSection: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(.ofText)
 
+                let displayStatus = DirectoryCheckPresentation.displayStatus(for: result)
                 OFStatusCapsule(
-                    style: DirectoryCheckPresentation.statusBadgeStyle(for: result.status),
-                    title: DirectoryCheckPresentation.statusTitle(for: result.status)
+                    style: DirectoryCheckPresentation.displayStatusBadgeStyle(for: displayStatus),
+                    title: DirectoryCheckPresentation.displayStatusTitle(for: result)
                 )
 
                 Spacer(minLength: 0)
-
-                OFButton(
-                    title: OffsendStrings.directoryCheckRefreshAudit,
-                    variant: .outline,
-                    icon: "arrow.clockwise",
-                    small: true
-                ) {
-                    viewModel.audit(directoryURL: result.directoryURL)
-                }
-                .disabled(viewModel.isBusy)
             }
         }
     }

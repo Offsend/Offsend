@@ -5,26 +5,23 @@ import SwiftUI
 
 private enum OnboardingStep: Int, CaseIterable {
     case welcome
-    case directoryWatch
-    case privacy
     case hotkeys
-    case permissions
     case sample
+    case permissions
+    case directoryWatch
 
     var label: String {
         switch self {
         case .welcome:
             return OffsendStrings.onboardingStepWelcome
-        case .directoryWatch:
-            return OffsendStrings.onboardingStepDirectoryWatch
-        case .privacy:
-            return OffsendStrings.onboardingStepPrivacy
         case .hotkeys:
             return OffsendStrings.onboardingStepHotkeys
-        case .permissions:
-            return OffsendStrings.onboardingStepPermissions
         case .sample:
             return OffsendStrings.onboardingStepSample
+        case .permissions:
+            return OffsendStrings.onboardingStepPermissions
+        case .directoryWatch:
+            return OffsendStrings.onboardingStepDirectoryWatch
         }
     }
 }
@@ -115,7 +112,7 @@ struct OnboardingView: View {
                         .layoutPriority(1)
                 }
 
-                if step != .sample {
+                if step != .directoryWatch {
                     Rectangle()
                         .fill(step.rawValue < currentStep.rawValue ? Color.ofGreen : Color.ofBorder)
                         .frame(height: 1)
@@ -132,16 +129,14 @@ struct OnboardingView: View {
             switch currentStep {
             case .welcome:
                 welcome
-            case .directoryWatch:
-                directoryWatch
-            case .privacy:
-                privacy
             case .hotkeys:
                 hotkeys
-            case .permissions:
-                permissions
             case .sample:
                 sampleScenario
+            case .permissions:
+                permissions
+            case .directoryWatch:
+                directoryWatch
             }
         }
         .padding(OFSpacing.xxl)
@@ -159,9 +154,9 @@ struct OnboardingView: View {
                 Spacer()
 
                 OFButton(
-                    title: currentStep == .sample ? OffsendStrings.onboardingButtonFinish : OffsendStrings.onboardingButtonContinue,
+                    title: currentStep == .directoryWatch ? OffsendStrings.onboardingButtonFinish : OffsendStrings.onboardingButtonContinue,
                     variant: .primary,
-                    icon: currentStep == .sample ? "checkmark" : "arrow.right"
+                    icon: currentStep == .directoryWatch ? "checkmark" : "arrow.right"
                 ) {
                     moveForward()
                 }
@@ -176,14 +171,13 @@ struct OnboardingView: View {
 
     private var welcome: some View {
         VStack(alignment: .leading, spacing: 16) {
-
             OffsendAsset.Images.logoFull.swiftUIImage
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(height: 28)
                 .foregroundStyle(Color.ofText)
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(OffsendStrings.onboardingWelcomeTitle)
                     .font(.system(size: 26, weight: .bold))
                     .foregroundColor(.ofText)
@@ -195,29 +189,15 @@ struct OnboardingView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            VStack(alignment: .leading, spacing: 10) {
-                featureRow(icon: "folder.fill", text: OffsendStrings.onboardingWelcomeFeatureDirectoryCheck)
-                featureRow(icon: "lock.fill", text: OffsendStrings.onboardingWelcomeFeatureClipboard)
-                featureRow(icon: "bell.badge.fill", text: OffsendStrings.onboardingWelcomeFeatureMonitoring)
-                featureRow(icon: "desktopcomputer", text: OffsendStrings.onboardingWelcomeFeatureLocal)
+            VStack(alignment: .leading, spacing: 12) {
+                featureRow(icon: "folder.badge.gearshape", text: OffsendStrings.onboardingWelcomeFeatureDirectoryCheck)
+                featureRow(icon: "clipboard.fill", text: OffsendStrings.onboardingWelcomeFeatureClipboard)
+                featureRow(icon: "eye.fill", text: OffsendStrings.onboardingWelcomeFeatureMonitoring)
+                featureRow(icon: "doc.text.magnifyingglass", text: OffsendStrings.onboardingWelcomeFeatureLocal)
             }
-            .padding(.top, OFSpacing.sm)
-        }
-    }
+            .padding(.top, 12)
 
-    private var privacy: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            stepHeader(
-                title: OffsendStrings.onboardingPrivacyTitle,
-                subtitle: OffsendStrings.onboardingPrivacySubtitle
-            )
-
-            VStack(alignment: .leading, spacing: 10) {
-                featureRow(icon: "folder.fill", text: OffsendStrings.onboardingPrivacyFeatureDirectoryCheck)
-                featureRow(icon: "clipboard", text: OffsendStrings.onboardingPrivacyFeatureClipboard)
-                featureRow(icon: "lock.shield", text: OffsendStrings.onboardingPrivacyFeaturePrompt)
-                featureRow(icon: "key", text: OffsendStrings.onboardingPrivacyFeatureMappings)
-            }
+            Spacer(minLength: 0)
         }
     }
 
@@ -367,7 +347,7 @@ struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 16) {
             stepHeader(
                 title: OffsendStrings.onboardingSampleTitle,
-                subtitle: OffsendStrings.onboardingSampleSubtitle
+                subtitle: OffsendStrings.onboardingSampleSubtitle(safePasteHotkey)
             )
 
             Text(OffsendStrings.onboardingSampleDescription)
@@ -410,12 +390,12 @@ struct OnboardingView: View {
     private func featureRow(icon: String, text: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: icon)
-                .font(.system(size: 14))
+                .font(.system(size: 13))
                 .foregroundColor(.ofBlue)
-                .frame(width: 20)
+                .frame(width: 24, alignment: .center)
 
             Text(text)
-                .font(.system(size: 13))
+                .font(.system(size: 14))
                 .foregroundColor(.ofTextSub)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -510,7 +490,7 @@ struct OnboardingView: View {
     }
 
     private func moveForward() {
-        guard currentStep != .sample else {
+        guard currentStep != .directoryWatch else {
             coordinator.completeOnboarding()
             dismiss()
             return

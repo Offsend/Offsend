@@ -7,7 +7,12 @@ struct DirectoryCheckFindingsContent: View {
     let result: AIWorkspacePrivacyAuditResult
 
     private var showsFixSelection: Bool {
-        result.errors.isEmpty && result.status != .pass
+        guard result.errors.isEmpty else { return false }
+        if DirectoryCheckPresentation.hasNoIgnoreFiles(in: result),
+           !DirectoryCheckPresentation.hasPatternErrors(in: result) {
+            return true
+        }
+        return result.status != .pass
     }
 
     var body: some View {
@@ -19,6 +24,7 @@ struct DirectoryCheckFindingsContent: View {
                         DirectoryCheckReadOnlyFindingRow(
                             title: error.message,
                             subtitle: error.id,
+                            showsSeverityBadge: true,
                             tag: .fail
                         )
                     }
@@ -26,97 +32,293 @@ struct DirectoryCheckFindingsContent: View {
             }
 
             if showsFixSelection {
-                DirectoryCheckSuggestedFixesCard(viewModel: viewModel, result: result)
-            } else {
-                if !result.missingRequiredRules.isEmpty {
-                    DirectoryCheckFindingsCard(title: OffsendStrings.directoryCheckSectionRequired) {
-                        ForEach(Array(result.missingRequiredRules.enumerated()), id: \.element.id) { index, finding in
-                            if index > 0 { OFCardGroupDivider() }
-                            DirectoryCheckReadOnlyFindingRow(
-                                title: finding.rule.title,
-                                subtitle: DirectoryCheckPresentation.ruleFindingSubtitle(for: finding),
-                                tag: .fail,
-                                toolName: finding.rule.toolName
-                            )
-                        }
-                    }
+                DirectoryCheckFixSelectionContent(viewModel: viewModel, result: result)
+            } else if !result.errors.isEmpty {
+                readOnlyFindingsForErrors
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var readOnlyFindingsForErrors: some View {
+        if !result.missingSensitivePatterns.isEmpty {
+            DirectoryCheckExposedPatternsCard(result: result)
+        }
+
+        let missingIgnoreRules = (result.missingRequiredRules + result.missingRecommendedRules)
+            .filter(\.rule.scansForSensitivePatterns)
+        if !missingIgnoreRules.isEmpty {
+            DirectoryCheckFindingsCard(title: OffsendStrings.directoryCheckSectionMissingIgnoreFiles) {
+                ForEach(Array(missingIgnoreRules.enumerated()), id: \.element.id) { index, finding in
+                    if index > 0 { OFCardGroupDivider() }
+                    DirectoryCheckReadOnlyFindingRow(
+                        title: finding.rule.title,
+                        subtitle: DirectoryCheckPresentation.ruleFindingSubtitle(for: finding),
+                        showsSeverityBadge: false,
+                        toolName: finding.rule.toolName
+                    )
+                }
+            }
+        }
+
+        let otherProjectFiles = (result.missingRequiredRules + result.missingRecommendedRules)
+            .filter { !$0.rule.scansForSensitivePatterns }
+        if !otherProjectFiles.isEmpty {
+            DirectoryCheckOtherProjectFilesCard(findings: otherProjectFiles)
+        }
+    }
+}
+
+private struct DirectoryCheckFixSelectionContent: View {
+    @EnvironmentObject private var coordinator: AppCoordinator
+    @ObservedObject var viewModel: DirectoryCheckViewModel
+    let result: AIWorkspacePrivacyAuditResult
+
+    var body: some View {
+        let scenario = viewModel.fixScenario(for: result)
+
+        VStack(alignment: .leading, spacing: OFSpacing.md) {
+            if !result.missingSensitivePatterns.isEmpty {
+                DirectoryCheckExposedPatternsCard(result: result)
+            }
+
+            switch scenario {
+            case .existingPolicyFiles:
+                let exposureGapItems = viewModel.exposureGapRuleFileItems(for: result, coordinator: coordinator)
+                if !exposureGapItems.isEmpty {
+                    DirectoryCheckRuleFileSelectionCard(
+                        viewModel: viewModel,
+                        result: result,
+                        title: OffsendStrings.directoryCheckFixSelectionSectionUpdateFiles,
+                        hint: OffsendStrings.directoryCheckFixSelectionSectionUpdateFilesHint,
+                        items: exposureGapItems
+                    )
                 }
 
-                if !result.missingSensitivePatterns.isEmpty {
-                    DirectoryCheckFindingsCard(title: OffsendStrings.directoryCheckSectionSensitivePatterns) {
-                        ForEach(Array(result.missingSensitivePatterns.enumerated()), id: \.element.id) { index, finding in
-                            if index > 0 { OFCardGroupDivider() }
-                            DirectoryCheckReadOnlyFindingRow(
-                                title: finding.pattern.title,
-                                subtitle: DirectoryCheckPresentation.sensitivePatternSubtitle(for: finding),
-                                tag: DirectoryCheckPresentation.severityTag(finding.pattern.severity)
-                            )
-                        }
-                    }
+                let missingItems = viewModel.missingIgnoreFileItems(for: result, coordinator: coordinator)
+                if !missingItems.isEmpty {
+                    DirectoryCheckRuleFileSelectionCard(
+                        viewModel: viewModel,
+                        result: result,
+                        title: OffsendStrings.directoryCheckFixSelectionSectionMissingFiles,
+                        hint: OffsendStrings.directoryCheckFixSelectionSectionMissingFilesHint,
+                        items: missingItems
+                    )
                 }
 
-                if !result.missingRecommendedRules.isEmpty {
-                    DirectoryCheckFindingsCard(title: OffsendStrings.directoryCheckSectionRecommended) {
-                        ForEach(Array(result.missingRecommendedRules.enumerated()), id: \.element.id) { index, finding in
-                            if index > 0 { OFCardGroupDivider() }
-                            DirectoryCheckReadOnlyFindingRow(
-                                title: finding.rule.title,
-                                subtitle: DirectoryCheckPresentation.ruleFindingSubtitle(for: finding),
-                                tag: .warn,
-                                toolName: finding.rule.toolName
-                            )
-                        }
+            case .noPolicyFiles:
+                let missingItems = viewModel.missingIgnoreFileItems(for: result, coordinator: coordinator)
+                if !missingItems.isEmpty {
+                    DirectoryCheckRuleFileSelectionCard(
+                        viewModel: viewModel,
+                        result: result,
+                        title: OffsendStrings.directoryCheckFixSelectionSectionChooseFile,
+                        hint: OffsendStrings.directoryCheckFixSelectionSectionChooseFileHint,
+                        items: missingItems
+                    )
+                }
+            }
+
+            if viewModel.showsPatternSelection(for: result, coordinator: coordinator) {
+                DirectoryCheckImplicitPatternsNote()
+            }
+
+            let projectRuleItems = viewModel.projectRuleFileFixItems(for: result, coordinator: coordinator)
+            if !projectRuleItems.isEmpty {
+                DirectoryCheckRuleFileSelectionCard(
+                    viewModel: viewModel,
+                    result: result,
+                    title: OffsendStrings.directoryCheckFixSelectionSectionProjectRules,
+                    hint: OffsendStrings.directoryCheckFixSelectionSectionProjectRulesHint,
+                    items: projectRuleItems
+                )
+            }
+
+            let otherProjectFiles = viewModel.otherProjectFileFindings(for: result, coordinator: coordinator)
+            if !otherProjectFiles.isEmpty {
+                DirectoryCheckOtherProjectFilesCard(findings: otherProjectFiles)
+            }
+
+            if DirectoryCheckPresentation.hasSatisfiedFindings(in: result) {
+                DirectoryCheckSatisfiedFindingsContent(result: result)
+            }
+
+            DirectoryCheckFixSelectionFooter(viewModel: viewModel, result: result)
+        }
+    }
+}
+
+struct DirectoryCheckSatisfiedFindingsContent: View {
+    let result: AIWorkspacePrivacyAuditResult
+
+    @ViewBuilder
+    var body: some View {
+        let satisfiedRules = DirectoryCheckPresentation.satisfiedRulesForDisplay(in: result)
+        let satisfiedPatterns = DirectoryCheckPresentation.satisfiedPatternsForDisplay(in: result)
+        if satisfiedRules.isEmpty, satisfiedPatterns.isEmpty {
+            EmptyView()
+        } else {
+        let okCount = satisfiedRules.count + satisfiedPatterns.count
+
+        VStack(alignment: .leading, spacing: OFSpacing.sm) {
+            HStack(spacing: OFSpacing.sm) {
+                DirectoryCheckSectionHeader(title: OffsendStrings.directoryCheckSectionSatisfied)
+                OFCountPill(count: okCount, style: .ok)
+                Spacer(minLength: 0)
+            }
+
+            Text(OffsendStrings.directoryCheckSectionSatisfiedHint)
+                .font(.system(size: 11))
+                .foregroundColor(.ofTextMuted)
+                .fixedSize(horizontal: false, vertical: true)
+
+            OFCardGroup {
+            ForEach(Array(satisfiedRules.enumerated()), id: \.element.id) { index, finding in
+                if index > 0 { OFCardGroupDivider() }
+                DirectoryCheckReadOnlyFindingRow(
+                    title: finding.rule.title,
+                    subtitle: DirectoryCheckPresentation.satisfiedRuleSubtitle(for: finding),
+                    showsSeverityBadge: true,
+                    tag: .pass,
+                    toolName: finding.rule.toolName
+                )
+            }
+
+            if !satisfiedRules.isEmpty, !satisfiedPatterns.isEmpty {
+                OFCardGroupDivider()
+            }
+
+            ForEach(Array(satisfiedPatterns.enumerated()), id: \.element.id) { index, finding in
+                if index > 0 { OFCardGroupDivider() }
+                DirectoryCheckReadOnlyFindingRow(
+                    title: finding.pattern.title,
+                    subtitle: DirectoryCheckPresentation.satisfiedPatternSubtitle(for: finding),
+                    showsSeverityBadge: true,
+                    tag: .pass
+                )
+            }
+            }
+        }
+        }
+    }
+}
+
+private struct DirectoryCheckExposedPatternsCard: View {
+    let result: AIWorkspacePrivacyAuditResult
+
+    var body: some View {
+        DirectoryCheckFindingsCard(
+            title: OffsendStrings.directoryCheckSectionSensitivePatterns,
+            hint: OffsendStrings.directoryCheckSectionSensitivePatternsHint
+        ) {
+            ForEach(Array(result.missingSensitivePatterns.enumerated()), id: \.element.id) { index, finding in
+                if index > 0 { OFCardGroupDivider() }
+                DirectoryCheckReadOnlyFindingRow(
+                    title: finding.pattern.title,
+                    subtitle: DirectoryCheckPresentation.sensitivePatternSubtitle(for: finding),
+                    showsSeverityBadge: true,
+                    tag: DirectoryCheckPresentation.severityTag(finding.pattern.severity)
+                )
+            }
+        }
+    }
+}
+
+private struct DirectoryCheckOtherProjectFilesCard: View {
+    let findings: [AIWorkspacePrivacyRuleFinding]
+
+    var body: some View {
+        DirectoryCheckFindingsCard(
+            title: OffsendStrings.directoryCheckSectionOtherProjectFiles,
+            hint: OffsendStrings.directoryCheckSectionOtherProjectFilesHint
+        ) {
+            ForEach(Array(findings.enumerated()), id: \.element.id) { index, finding in
+                if index > 0 { OFCardGroupDivider() }
+                DirectoryCheckReadOnlyFindingRow(
+                    title: finding.rule.title,
+                    subtitle: DirectoryCheckPresentation.ruleFindingSubtitle(for: finding),
+                    showsSeverityBadge: false,
+                    toolName: finding.rule.toolName,
+                    icon: "doc.text",
+                    iconTint: .ofTextMuted
+                )
+            }
+        }
+    }
+}
+
+private struct DirectoryCheckImplicitPatternsNote: View {
+    var body: some View {
+        Text(OffsendStrings.directoryCheckFixSelectionImplicitPatternsNote)
+            .font(.system(size: 11))
+            .foregroundColor(.ofTextMuted)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+private struct DirectoryCheckRuleFileSelectionCard: View {
+    @EnvironmentObject private var coordinator: AppCoordinator
+    @ObservedObject var viewModel: DirectoryCheckViewModel
+    let result: AIWorkspacePrivacyAuditResult
+    let title: String
+    var hint: String?
+    let items: [AIWorkspacePrivacyFixItem]
+
+    var body: some View {
+        let showsSelectAll = items.count > 1
+
+        VStack(alignment: .leading, spacing: OFSpacing.sm) {
+            HStack {
+                DirectoryCheckSectionHeader(title: title)
+
+                if showsSelectAll {
+                    Spacer()
+
+                    Button {
+                        viewModel.toggleSelectAllRuleFiles(
+                            items: items,
+                            for: result,
+                            coordinator: coordinator
+                        )
+                    } label: {
+                        Text(
+                            viewModel.allRuleFilesSelected(items: items)
+                                ? OffsendStrings.directoryCheckFixSelectionDeselectAll
+                                : OffsendStrings.directoryCheckFixSelectionSelectAll
+                        )
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.ofBlue)
                     }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            if let hint {
+                Text(hint)
+                    .font(.system(size: 11))
+                    .foregroundColor(.ofTextMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            OFCardGroup {
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                    if index > 0 { OFCardGroupDivider() }
+                    DirectoryCheckFixRow(viewModel: viewModel, result: result, item: item)
                 }
             }
         }
     }
 }
 
-private struct DirectoryCheckSuggestedFixesCard: View {
-    @EnvironmentObject private var coordinator: AppCoordinator
+private struct DirectoryCheckFixSelectionFooter: View {
     @ObservedObject var viewModel: DirectoryCheckViewModel
     let result: AIWorkspacePrivacyAuditResult
 
     var body: some View {
-        let items = viewModel.fixItems(for: result, coordinator: coordinator)
-
-        VStack(alignment: .leading, spacing: OFSpacing.sm) {
-            HStack {
-                DirectoryCheckSectionHeader(title: OffsendStrings.directoryCheckSuggestedFixes)
-
-                Spacer()
-
-                Button {
-                    viewModel.toggleSelectAllFixItems(for: result, coordinator: coordinator)
-                } label: {
-                    Text(
-                        viewModel.allFixItemsSelected(for: result, coordinator: coordinator)
-                            ? OffsendStrings.directoryCheckFixSelectionDeselectAll
-                            : OffsendStrings.directoryCheckFixSelectionSelectAll
-                    )
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.ofBlue)
-                }
-                .buttonStyle(.plain)
-            }
-
-            OFCardGroup {
-                ForEach(Array(items.map(\.id).enumerated()), id: \.element) { index, itemID in
-                    if index > 0 { OFCardGroupDivider() }
-                    DirectoryCheckFixRow(viewModel: viewModel, result: result, itemID: itemID)
-                }
-            }
-
-            if !viewModel.hasSelectedFixItems {
-                Text(OffsendStrings.directoryCheckFixSelectionNoneSelected)
-                    .font(.system(size: 11))
-                    .foregroundColor(.ofAmberText)
-            } else if viewModel.hasSelectedPatternsWithoutTargets(for: result, coordinator: coordinator) {
-                Text(OffsendStrings.directoryCheckFixSelectionNoPatternTargets)
-                    .font(.system(size: 11))
-                    .foregroundColor(.ofTextMuted)
-            }
+        if !viewModel.hasSelectedFixItems {
+            Text(OffsendStrings.directoryCheckFixSelectionNoneSelected)
+                .font(.system(size: 11))
+                .foregroundColor(.ofAmberText)
         }
     }
 }
@@ -125,35 +327,40 @@ private struct DirectoryCheckFixRow: View {
     @EnvironmentObject private var coordinator: AppCoordinator
     @ObservedObject var viewModel: DirectoryCheckViewModel
     let result: AIWorkspacePrivacyAuditResult
-    let itemID: String
+    let item: AIWorkspacePrivacyFixItem
 
     var body: some View {
-        let policyFilesEnabled = viewModel.hasSelectedPolicyFiles(for: result, coordinator: coordinator)
-        if let item = viewModel.fixItems(for: result, coordinator: coordinator).first(where: { $0.id == itemID }) {
-            let content = viewModel.fixRowContent(for: result, item: item, itemID: itemID)
+        let content = viewModel.fixRowContent(for: result, item: item, itemID: item.id)
+        let highlightsAsFixTarget = viewModel.isUpdatingExistingIgnoreFile(item, result: result)
 
-            OFSelectableFixRow(
-                badgeStyle: DirectoryCheckPresentation.severityTag(item.severity).badgeStyle,
-                title: item.title,
-                toolName: item.toolName,
-                description: content.description,
-                isSelected: viewModel.selectedFixItemIDs.contains(itemID),
-                isEnabled: content.isPattern ? policyFilesEnabled : true,
-                isProLocked: viewModel.isProOnlyFixItem(item, coordinator: coordinator)
-            ) {
-                viewModel.toggleFixItemSelection(itemID, result: result, coordinator: coordinator)
-            }
+        OFSelectableFixRow(
+            title: item.title,
+            toolName: item.toolName,
+            description: content.description,
+            isSelected: viewModel.selectedFixItemIDs.contains(item.id),
+            isEnabled: true,
+            highlightsAsFixTarget: highlightsAsFixTarget
+        ) {
+            viewModel.toggleFixItemSelection(item.id, result: result, coordinator: coordinator)
         }
     }
 }
 
 private struct DirectoryCheckFindingsCard<Content: View>: View {
     let title: String
+    var hint: String?
     @ViewBuilder let content: () -> Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: OFSpacing.sm) {
             DirectoryCheckSectionHeader(title: title)
+
+            if let hint {
+                Text(hint)
+                    .font(.system(size: 11))
+                    .foregroundColor(.ofTextMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             OFCardGroup {
                 content()
@@ -165,13 +372,24 @@ private struct DirectoryCheckFindingsCard<Content: View>: View {
 private struct DirectoryCheckReadOnlyFindingRow: View {
     let title: String
     let subtitle: String
-    let tag: DirectoryCheckFindingTag
+    var showsSeverityBadge: Bool = false
+    var tag: DirectoryCheckFindingTag = .info
     var toolName: String?
+    var icon: String?
+    var iconTint: Color = .ofTextMuted
 
     var body: some View {
         HStack(alignment: .top, spacing: OFSpacing.md) {
-            OFStatusBadge(style: tag.badgeStyle, compact: true)
-                .padding(.top, 2)
+            if showsSeverityBadge {
+                OFStatusBadge(style: tag.badgeStyle, compact: true)
+                    .padding(.top, 2)
+            } else if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(iconTint)
+                    .frame(width: 28, alignment: .center)
+                    .padding(.top, 2)
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {

@@ -86,6 +86,9 @@ public final class WorkspaceWatchService {
     }
 
     private func startStreamOnQueue(id: UUID, url: URL) {
+        _ = url.startAccessingSecurityScopedResource()
+        let watchURL = url.standardizedFileURL.resolvingSymlinksInPath()
+
         let callbackContext = StreamCallbackContext(service: self, watchID: id)
         var streamContext = FSEventStreamContext(
             version: 0,
@@ -105,7 +108,7 @@ public final class WorkspaceWatchService {
             context.service?.handleFSEvents(watchID: context.watchID, absolutePaths: paths)
         }
 
-        let paths = [url.path] as CFArray
+        let paths = [watchURL.path] as CFArray
         guard let stream = FSEventStreamCreate(
             kCFAllocatorDefault,
             callback,
@@ -126,12 +129,12 @@ public final class WorkspaceWatchService {
             minAuditInterval: configuration.minAuditInterval,
             scheduler: scheduler
         ) { [weak self] changedPaths in
-            self?.fireAuditRequest(watchID: id, url: url, changedPaths: changedPaths)
+            self?.fireAuditRequest(watchID: id, url: watchURL, changedPaths: changedPaths)
         }
 
         contexts[id] = RootWatchContext(
             stream: stream,
-            url: url,
+            url: watchURL,
             debouncer: debouncer
         )
     }
@@ -146,7 +149,14 @@ public final class WorkspaceWatchService {
         )
         guard !relevant.isEmpty else { return }
 
-        ctx.debouncer.noteChanges(relevant)
+        let prefersImmediateFire = relevant.contains { path in
+            path.isEmpty
+                || SensitivePathMatcher.matchingPattern(
+                    relativePath: path,
+                    patterns: auditConfiguration.sensitivePatterns
+                ) != nil
+        }
+        ctx.debouncer.noteChanges(relevant, prefersImmediateFire: prefersImmediateFire)
     }
 
     private func fireAuditRequest(watchID: UUID, url: URL, changedPaths: Set<String>) {

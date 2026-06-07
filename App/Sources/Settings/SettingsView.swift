@@ -26,6 +26,12 @@ struct SettingsView: View {
                 tab = .license
             }
         }
+        .onChange(of: coordinator.pendingSettingsTab) { newValue in
+            if let newValue {
+                tab = newValue
+                coordinator.pendingSettingsTab = nil
+            }
+        }
         .dismissOnWindowCloseButton()
     }
 
