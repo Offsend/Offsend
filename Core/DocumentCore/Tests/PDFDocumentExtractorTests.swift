@@ -23,6 +23,7 @@ final class PDFDocumentExtractorTests: XCTestCase {
         XCTAssertEqual(result.format, DocumentFormat.pdf)
         XCTAssertTrue(result.plainText.contains(expectedText))
         XCTAssertTrue(result.warnings.isEmpty)
+        XCTAssertEqual(result.pdfData, data)
     }
 
     func testRejectsInvalidPDFData() {

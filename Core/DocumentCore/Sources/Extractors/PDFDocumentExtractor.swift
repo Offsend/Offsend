@@ -37,6 +37,6 @@ public struct PDFDocumentExtractor: DocumentTextExtracting {
         }
 
         let plainText = pageTexts.joined(separator: "\n\n")
-        return DocumentTextExtractionResult(format: .pdf, plainText: plainText)
+        return DocumentTextExtractionResult(format: .pdf, plainText: plainText, pdfData: request.data)
     }
 }

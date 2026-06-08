@@ -26,9 +26,17 @@ final class DocumentTextExtractorRegistryTests: XCTestCase {
     func testDefaultRegistrySupportedFileExtensionsMatchesExtractors() {
         let expected = PlainTextDocumentExtractor.supportedExtensions
             .union(RTFDocumentExtractor.supportedExtensions)
+            .union(WordDocumentExtractor.supportedExtensions)
             .union(PDFDocumentExtractor.supportedExtensions)
 
         XCTAssertEqual(DocumentTextExtractorRegistry.supportedFileExtensions, expected)
+    }
+
+    func testDefaultRegistrySelectsWordExtractor() {
+        let registry = DocumentTextExtractorRegistry.default
+
+        XCTAssertEqual(registry.extractor(for: DocumentSource(fileName: "memo.docx"))?.id, "word")
+        XCTAssertEqual(registry.extractor(for: DocumentSource(fileName: "legacy.doc"))?.id, "word")
     }
 
     func testDefaultRegistrySelectsRTFExtractor() {

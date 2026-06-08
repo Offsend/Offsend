@@ -98,6 +98,8 @@ public struct ExtractedDocument: Equatable, Sendable {
     public let wasTruncated: Bool
     public let extractorID: String
     public let warnings: [DocumentProcessingWarning]
+    /// PDF bytes used for redaction preview and export. Populated for native PDF and Word documents.
+    public let pdfData: Data?
 
     public init(
         source: DocumentSource,
@@ -106,7 +108,8 @@ public struct ExtractedDocument: Equatable, Sendable {
         characterCount: Int,
         wasTruncated: Bool,
         extractorID: String,
-        warnings: [DocumentProcessingWarning] = []
+        warnings: [DocumentProcessingWarning] = [],
+        pdfData: Data? = nil
     ) {
         self.source = source
         self.format = format
@@ -115,6 +118,7 @@ public struct ExtractedDocument: Equatable, Sendable {
         self.wasTruncated = wasTruncated
         self.extractorID = extractorID
         self.warnings = warnings
+        self.pdfData = pdfData
     }
 }
 

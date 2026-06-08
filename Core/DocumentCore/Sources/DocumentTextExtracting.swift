@@ -16,11 +16,18 @@ public struct DocumentTextExtractionResult: Equatable, Sendable {
     public let format: DocumentFormat
     public let plainText: String
     public let warnings: [DocumentProcessingWarning]
+    public let pdfData: Data?
 
-    public init(format: DocumentFormat, plainText: String, warnings: [DocumentProcessingWarning] = []) {
+    public init(
+        format: DocumentFormat,
+        plainText: String,
+        warnings: [DocumentProcessingWarning] = [],
+        pdfData: Data? = nil
+    ) {
         self.format = format
         self.plainText = plainText
         self.warnings = warnings
+        self.pdfData = pdfData
     }
 }
 
@@ -40,6 +47,7 @@ public struct DocumentTextExtractorRegistry: DocumentTextExtractorSelecting {
     private static let defaultExtractors: [any DocumentTextExtracting] = [
         PlainTextDocumentExtractor(),
         RTFDocumentExtractor(),
+        WordDocumentExtractor(),
         PDFDocumentExtractor()
     ]
 
@@ -112,7 +120,8 @@ public struct DocumentTextExtractor: Sendable {
             characterCount: normalized.text.count,
             wasTruncated: normalized.wasTruncated,
             extractorID: extractor.id,
-            warnings: warnings
+            warnings: warnings,
+            pdfData: extraction.pdfData
         )
     }
 

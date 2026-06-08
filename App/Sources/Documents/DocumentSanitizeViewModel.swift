@@ -69,7 +69,10 @@ final class DocumentSanitizeViewModel: ObservableObject {
     }
 
     var pdfEditorDocument: PDFRedactionDocumentSource {
-        .file(selectedFile)
+        if let data = cachedPdfData?.data {
+            return .memory(data, id: pdfSessionID)
+        }
+        return .file(selectedFile)
     }
 
     var windowContentPhase: DocumentSanitizeWindowContentPhase {
@@ -334,6 +337,7 @@ private extension DocumentSanitizeViewModel {
         entityGroups = DocumentSanitizeEntityGrouping.groups(for: result)
         selectedEntityIDs = Set(result.detection.entities.map(\.id))
         updateCurrentAssessment(for: result)
+        cachePdfDataIfNeeded(from: result)
     }
 
     func resetPdfRedactionState() {
@@ -370,9 +374,26 @@ private extension DocumentSanitizeViewModel {
             return cachedPdfData?.data
         }
 
+        if let extracted = analysisResult?.extracted,
+           extracted.format == .pdf,
+           let pdfData = extracted.pdfData {
+            cachedPdfData = (standardizedURL, pdfData)
+            return pdfData
+        }
+
         guard let data = await loadPdfDataFromDisk(from: standardizedURL) else { return nil }
         cachedPdfData = (standardizedURL, data)
         return data
+    }
+
+    func cachePdfDataIfNeeded(from result: DocumentAnalysisResult) {
+        guard result.extracted.format == .pdf,
+              let pdfData = result.extracted.pdfData else {
+            return
+        }
+
+        let standardizedURL = selectedFile.standardizedFileURL
+        cachedPdfData = (standardizedURL, pdfData)
     }
 
     func pushManualRegionsUndoSnapshot() {
@@ -426,7 +447,7 @@ private extension DocumentSanitizeViewModel {
 
         let panel = NSSavePanel()
         panel.canCreateDirectories = true
-        panel.nameFieldStringValue = sanitizedFileName(for: result.extracted.source.fileName)
+        panel.nameFieldStringValue = sanitizedRedactedPDFName(for: result.extracted.source.fileName)
         panel.allowedContentTypes = [.pdf]
 
         guard panel.runModal() == .OK, let destinationURL = panel.url else { return }
@@ -635,6 +656,12 @@ private extension DocumentSanitizeViewModel {
             return "\(base)\(suffix).txt"
         }
         return "\(base)\(suffix).\(ext)"
+    }
+
+    func sanitizedRedactedPDFName(for originalName: String) -> String {
+        let base = (originalName as NSString).deletingPathExtension
+        let suffix = OffsendStrings.documentSanitizeSafeSuffix
+        return "\(base)\(suffix).pdf"
     }
 
     func documentErrorMessage(_ error: Error) -> String {
