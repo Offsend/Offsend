@@ -51,16 +51,93 @@ final class DocumentProcessingPipelineTests: XCTestCase {
         XCTAssertTrue(result.masking.maskedText.contains("CN-4812"))
     }
 
-    func testRejectsUnsupportedFormat() {
+    func testAnalyzeExtractsDocxAsPDF() throws {
+        let docxData = try WordTestFixtures.makeDocx(containing: "Contact ivan@acme.com for invoice CN-4812")
         let request = DocumentProcessingRequest(
-            data: Data("binary".utf8),
+            data: docxData,
             source: DocumentSource(fileName: "scan.docx")
         )
         let pipeline = DocumentProcessingPipeline()
 
-        XCTAssertThrowsError(try pipeline.analyze(request)) { error in
-            XCTAssertEqual(error as? DocumentProcessingError, .unsupportedFormat(fileExtension: "docx"))
+        let result = try pipeline.analyze(request)
+
+        XCTAssertEqual(result.extracted.extractorID, "word")
+        XCTAssertEqual(result.extracted.format, .pdf)
+        XCTAssertNotNil(result.extracted.pdfData)
+        XCTAssertTrue(result.extracted.plainText.contains("ivan@acme.com"))
+        XCTAssertTrue(result.detection.entities.contains { $0.type == .email })
+    }
+
+    func testBuildsPDFRedactionPlanForConvertedDocx() throws {
+        let text = "Send payment to ivan@acme.com"
+        let docxData = try WordTestFixtures.makeDocx(containing: text)
+        let pdfData = try AppKitWordDocumentToPDFConverter().convert(data: docxData, fileExtension: "docx")
+        let pipeline = DocumentProcessingPipeline()
+        let request = DocumentProcessingRequest(
+            data: docxData,
+            source: DocumentSource(fileName: "invoice.docx")
+        )
+
+        let analysis = try pipeline.analyze(request)
+        let entityIDs = Set(analysis.detection.entities.map(\.id))
+
+        let plan = try pipeline.buildPDFRedactionPlan(
+            analysis: analysis,
+            pdfData: pdfData,
+            selectedEntityIDs: entityIDs,
+            manualRegions: []
+        )
+
+        XCTAssertFalse(plan.regions.isEmpty)
+        XCTAssertTrue(plan.unresolvedValues.isEmpty)
+    }
+
+    func testSanitizeMasksDetectedEntitiesInDocx() throws {
+        let docxData = try WordTestFixtures.makeDocx(containing: "Send invoice to ivan@acme.com")
+        let request = DocumentProcessingRequest(
+            data: docxData,
+            source: DocumentSource(fileName: "invoice.docx")
+        )
+        let pipeline = DocumentProcessingPipeline()
+
+        let result = try pipeline.sanitize(request)
+
+        XCTAssertEqual(result.extracted.format, .pdf)
+        XCTAssertTrue(result.masking.maskedText.contains("{{EMAIL_1}}"))
+        XCTAssertEqual(result.masking.mapping["{{EMAIL_1}}"], "ivan@acme.com")
+    }
+
+    func testExportsRedactedPDFFromDocx() throws {
+        let secret = "ivan@acme.com"
+        let docxData = try WordTestFixtures.makeDocx(containing: "Send payment to \(secret)")
+        let pipeline = DocumentProcessingPipeline()
+        let request = DocumentProcessingRequest(
+            data: docxData,
+            source: DocumentSource(fileName: "invoice.docx")
+        )
+
+        let analysis = try pipeline.analyze(request)
+        guard let pdfData = analysis.extracted.pdfData else {
+            return XCTFail("Expected converted PDF data")
         }
+
+        let session = PDFRedactionSession(
+            sourceData: pdfData,
+            analysis: analysis,
+            selectedEntityIDs: Set(analysis.detection.entities.map(\.id))
+        )
+        let destination = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("pdf")
+        defer { try? FileManager.default.removeItem(at: destination) }
+
+        let result = try PDFRedactionExporter().export(session: session, to: destination)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: destination.path))
+        XCTAssertFalse(
+            WordTestFixtures.extractPlainText(from: result.redactedData)
+                .localizedCaseInsensitiveContains(secret)
+        )
     }
 
     func testAnalyzeExtractsPDF() throws {
@@ -188,6 +265,7 @@ final class DocumentProcessingPipelineTests: XCTestCase {
         XCTAssertEqual(result.assessment.level, .high)
         XCTAssertEqual(result.masking.maskedText, "masked")
     }
+
 }
 
 private struct StubRegistry: DocumentTextExtractorSelecting {

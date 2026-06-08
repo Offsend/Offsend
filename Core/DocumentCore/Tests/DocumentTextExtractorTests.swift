@@ -32,15 +32,19 @@ final class DocumentTextExtractorTests: XCTestCase {
         })
     }
 
-    func testRejectsUnsupportedFormat() {
+    func testExtractsDocxThroughDefaultRegistry() throws {
+        let docxData = try WordTestFixtures.makeDocx(containing: "Contact ivan@acme.com")
         let request = DocumentProcessingRequest(
-            data: Data("content".utf8),
+            data: docxData,
             source: DocumentSource(fileName: "notes.docx")
         )
 
-        XCTAssertThrowsError(try extractor.extract(request)) { error in
-            XCTAssertEqual(error as? DocumentProcessingError, .unsupportedFormat(fileExtension: "docx"))
-        }
+        let extracted = try extractor.extract(request)
+
+        XCTAssertEqual(extracted.extractorID, "word")
+        XCTAssertEqual(extracted.format, .pdf)
+        XCTAssertNotNil(extracted.pdfData)
+        XCTAssertTrue(extracted.plainText.contains("ivan@acme.com"))
     }
 
     func testRejectsOversizedFile() {
@@ -108,4 +112,5 @@ final class DocumentTextExtractorTests: XCTestCase {
         XCTAssertEqual(extracted.plainText.count, 20)
         XCTAssertTrue(extracted.wasTruncated)
     }
+
 }
