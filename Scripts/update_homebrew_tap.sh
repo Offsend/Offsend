@@ -40,8 +40,8 @@ cask "offsend" do
   homepage "https://offsend.io"
 
   livecheck do
-    url :github_latest
-    regex(/^v?(\d+(?:\.\d+)+)$/i)
+    url "https://github.com/Offsend/Offsend/releases/latest"
+    strategy :github_latest
   end
 
   depends_on macos: ">= :ventura"
