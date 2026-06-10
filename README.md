@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/demo.gif" alt="Drop a file or folder into Prepare for AI">
+</p>
+
 <h1 align="center"><code>*}• Offsend</code></h1>
 
 <p align="center">
