@@ -42,8 +42,8 @@ Drop a file in **Prepare**, review findings, mask or redact sensitive items, the
 
 **Supported formats** *(more coming)*
 
-- **Text** — `.txt`, `.md`, `.markdown`, `.csv`, `.json`, `.log`, `.xml`, `.yaml`, `.yml`
-- **Documents** — `.pdf`, `.rtf`
+- **Plain text** — common extensions like `.txt`, `.md`, `.csv`, `.json`, `.log`, `.xml`, `.yaml`, plus any other text file (e.g. `.swift`, `.html`, or custom extensions like `.tt`)
+- **Documents** — `.pdf`, `.rtf`, `.doc`, `.docx`
 
 ### 3. Prepare clipboard text (Safe Paste)
 
