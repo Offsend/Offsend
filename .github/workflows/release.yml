@@ -220,6 +220,16 @@ jobs:
               --latest
           fi
 
+      - name: Update Homebrew tap
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ steps.app_version.outputs.version }}
+        run: |
+          set -euo pipefail
+          bash Scripts/update_homebrew_tap.sh \
+            "$VERSION" \
+            "build/Offsend-${VERSION}.dmg"
+
       - name: Rebuild website
         env:
           DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
