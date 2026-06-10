@@ -2,6 +2,7 @@ enum SettingsSidebarTab: String, CaseIterable, Identifiable {
     case general
     case hotkeys
     case detection
+    case ai
     case masking
     case privacy
     case directoryCheck
@@ -20,6 +21,8 @@ enum SettingsSidebarTab: String, CaseIterable, Identifiable {
             return OffsendStrings.settingsTabHotkeys
         case .detection:
             return OffsendStrings.settingsTabDetection
+        case .ai:
+            return OffsendStrings.settingsTabAi
         case .masking:
             return OffsendStrings.settingsTabMasking
         case .privacy:
@@ -43,6 +46,8 @@ enum SettingsSidebarTab: String, CaseIterable, Identifiable {
             return OffsendStrings.settingsSubtitleHotkeys
         case .detection:
             return OffsendStrings.settingsSubtitleDetection
+        case .ai:
+            return OffsendStrings.settingsSubtitleAi
         case .masking:
             return OffsendStrings.settingsSubtitleMasking
         case .privacy:
@@ -66,6 +71,8 @@ enum SettingsSidebarTab: String, CaseIterable, Identifiable {
             return "command"
         case .detection:
             return "scope"
+        case .ai:
+            return "cpu"
         case .masking:
             return "theatermasks"
         case .privacy:

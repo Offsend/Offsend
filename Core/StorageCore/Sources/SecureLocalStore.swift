@@ -20,6 +20,8 @@ public protocol LocalStoring {
     func clearEvents() throws
     func loadLicenseState() throws -> LicenseState
     func saveLicenseState(_ state: LicenseState) throws
+    func loadInstalledAIModels() throws -> [InstalledAIModel]
+    func saveInstalledAIModels(_ models: [InstalledAIModel]) throws
 }
 
 public final class SecureLocalStore: LocalStoring {
@@ -126,6 +128,14 @@ public final class SecureLocalStore: LocalStoring {
         try save(state, to: files.license)
     }
 
+    public func loadInstalledAIModels() throws -> [InstalledAIModel] {
+        try load([InstalledAIModel].self, from: files.aiModels) ?? []
+    }
+
+    public func saveInstalledAIModels(_ models: [InstalledAIModel]) throws {
+        try save(models, to: files.aiModels)
+    }
+
     private var files: StoreFiles {
         StoreFiles(directory: directory)
     }
@@ -169,6 +179,7 @@ private struct StoreFiles {
     var mappings: URL { directory.appendingPathComponent("mappings.sqlite.json") }
     var events: URL { directory.appendingPathComponent("local_events.json") }
     var license: URL { directory.appendingPathComponent("license.json") }
+    var aiModels: URL { directory.appendingPathComponent("ai_models.json") }
 }
 
 private struct StoredMapping: Codable, Equatable {

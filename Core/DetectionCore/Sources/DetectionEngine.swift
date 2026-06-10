@@ -1,38 +1,84 @@
 import Foundation
 
 public protocol SensitiveDataDetecting: Sendable {
-    func scan(_ request: DetectionRequest) -> DetectionResult
+    func scan(_ request: DetectionRequest) async -> DetectionResult
 }
 
 public final class DetectionEngine: SensitiveDataDetecting {
     private let regexRules: [CompiledRule]
     private let secretRules: [CompiledRule]
+    private let aiDetector: (any AIModelDetecting)?
 
-    public init() {
+    public init(aiDetector: (any AIModelDetecting)? = nil) {
         self.regexRules = DetectionRule.regexRules.map(CompiledRule.init)
         self.secretRules = DetectionRule.secretRules.map(CompiledRule.init)
+        self.aiDetector = aiDetector
     }
 
-    public func scan(_ request: DetectionRequest) -> DetectionResult {
+    public func scan(_ request: DetectionRequest) async -> DetectionResult {
         let normalized = TextNormalizer.normalize(request.text, maximumLength: request.options.maximumLength)
         guard !normalized.text.isEmpty else {
             return DetectionResult(entities: [], scannedText: normalized.text, wasTruncated: normalized.wasTruncated, scannedCharacterCount: 0)
         }
 
-        var entities: [SensitiveEntity] = []
-        entities += scanRules(regexRules, in: normalized.text, options: request.options)
-        entities += scanRules(secretRules, in: normalized.text, options: request.options)
-        entities += scanCustomDictionaries(request.options.customDictionaries, in: normalized.text, options: request.options)
+        DetectionDebugLogger.logScanStart(
+            characterCount: normalized.text.count,
+            wasTruncated: normalized.wasTruncated,
+            aiEnabled: request.options.aiDetectionEnabled,
+            selectedAIModelID: request.options.selectedAIModelID
+        )
+
+        let regexEntities = scanRules(regexRules, in: normalized.text, options: request.options)
+        DetectionDebugLogger.logPhase("regex", entities: regexEntities, in: normalized.text)
+
+        let secretEntities = scanRules(secretRules, in: normalized.text, options: request.options)
+        DetectionDebugLogger.logPhase("secret", entities: secretEntities, in: normalized.text)
+
+        let dictionaryEntities = scanCustomDictionaries(
+            request.options.customDictionaries,
+            in: normalized.text,
+            options: request.options
+        )
+        DetectionDebugLogger.logPhase("customDictionary", entities: dictionaryEntities, in: normalized.text)
+
+        var entities = regexEntities + secretEntities + dictionaryEntities
+
+        var aiDetectionError: String?
+        if request.options.aiDetectionEnabled {
+            if let aiDetector {
+                do {
+                    let aiEntities = try await aiDetector.detect(text: normalized.text, options: request.options)
+                    let filteredAI = aiEntities.filter { request.options.enabledTypes.contains($0.type) }
+                    DetectionDebugLogger.logPhase("ai", entities: filteredAI, in: normalized.text)
+                    entities += filteredAI
+                } catch {
+                    aiDetectionError = Self.localizedDetectionError(error)
+                    DetectionDebugLogger.logAIDetectionError(aiDetectionError ?? error.localizedDescription)
+                }
+            } else {
+                aiDetectionError = AIModelRuntimeError.modelNotLoaded.errorDescription
+                DetectionDebugLogger.logAIDetectionError(aiDetectionError ?? "model not loaded")
+            }
+        }
 
         let merged = OverlapResolver.resolve(entities, in: normalized.text)
-        let filtered = Self.filterFalsePositiveHighEntropyStrings(
-            Self.filterFalsePositiveMoney(Self.filterFalsePositivePhones(merged))
-        )
+        DetectionDebugLogger.logPhase("merged", entities: merged, in: normalized.text)
+
+        let afterPhoneFilter = Self.filterFalsePositivePhones(merged)
+        let afterMoneyFilter = Self.filterFalsePositiveMoney(afterPhoneFilter)
+        let filtered = Self.filterFalsePositiveHighEntropyStrings(afterMoneyFilter)
+        let removed = merged.filter { candidate in
+            !filtered.contains { $0.id == candidate.id }
+        }
+        DetectionDebugLogger.logFilteredOut(removed, in: normalized.text)
+        DetectionDebugLogger.logPhase("final", entities: filtered, in: normalized.text)
+
         return DetectionResult(
             entities: filtered,
             scannedText: normalized.text,
             wasTruncated: normalized.wasTruncated,
-            scannedCharacterCount: normalized.text.count
+            scannedCharacterCount: normalized.text.count,
+            aiDetectionError: aiDetectionError
         )
     }
 
@@ -63,6 +109,10 @@ public final class DetectionEngine: SensitiveDataDetecting {
             .flatMap { rule in rule.matches(in: text) }
     }
 
+    private static func localizedDetectionError(_ error: Error) -> String {
+        (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+    }
+
     private func scanCustomDictionaries(
         _ dictionaries: [CustomDictionaryItem],
         in text: String,
@@ -71,16 +121,56 @@ public final class DetectionEngine: SensitiveDataDetecting {
         dictionaries.flatMap { item -> [SensitiveEntity] in
             let type = item.kind.entityType
             guard options.enabledTypes.contains(type) else { return [] }
-            let escaped = NSRegularExpression.escapedPattern(for: item.value.trimmingCharacters(in: .whitespacesAndNewlines))
-            guard !escaped.isEmpty else { return [] }
+            guard let rule = CustomDictionaryRuleCache.rule(for: item) else { return [] }
+            return rule.matches(in: text)
+        }
+    }
+}
+
+enum CustomDictionaryRuleCache {
+    /// Hard cap so entries removed from the user's dictionaries can't accumulate forever.
+    private static let maxEntries = 512
+    private static let lock = NSLock()
+    private static var rules: [String: CompiledRule] = [:]
+
+    static func rule(for item: CustomDictionaryItem) -> CompiledRule? {
+        let trimmed = item.value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let key = "\(item.kind.rawValue):\(trimmed)"
+
+        return lock.withLock {
+            if let cached = rules[key] {
+                return cached
+            }
+            if rules.count >= maxEntries {
+                rules.removeAll(keepingCapacity: true)
+            }
+
+            let escaped = NSRegularExpression.escapedPattern(for: trimmed)
+            guard !escaped.isEmpty else { return nil }
             // Domain values must not match as a substring of a larger host (`acme.internal`
             // inside `notacme.internalx`); other values use word boundaries.
             let pattern = item.kind == .internalDomain
                 ? "(?<![A-Za-z0-9.-])\(escaped)(?![A-Za-z0-9.-])"
                 : "\\b\(escaped)\\b"
-            let rule = DetectionRule(type: type, source: .customDictionary, pattern: pattern, confidence: 0.95)
-            return CompiledRule(rule).matches(in: text)
+            let detectionRule = DetectionRule(
+                type: item.kind.entityType,
+                source: .customDictionary,
+                pattern: pattern,
+                confidence: 0.95
+            )
+            let compiled = CompiledRule(detectionRule)
+            rules[key] = compiled
+            return compiled
         }
+    }
+
+    static var entryCount: Int {
+        lock.withLock { rules.count }
+    }
+
+    static func resetForTesting() {
+        lock.withLock { rules.removeAll() }
     }
 }
 
@@ -315,6 +405,8 @@ public enum OverlapResolver {
         switch entity.source {
         case .customDictionary:
             return 500
+        case .ai:
+            return 90
         case .regex:
             return 100
         case .secret:

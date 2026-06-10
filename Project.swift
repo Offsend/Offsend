@@ -5,7 +5,7 @@ let appBuildNumber = "3" // Local default; release workflow overrides via github
 
 let appName = "Offsend"
 let bundlePrefix = "io.offsend"
-let macOSDeploymentTarget: DeploymentTargets = .macOS("13.0")
+let macOSDeploymentTarget: DeploymentTargets = .macOS("14.0")
 
 /// Developer ID + Hardened Runtime for Release (required for notarization). Do not pass CODE_SIGN_IDENTITY
 /// via `xcodebuild` — it applies to SwiftPM targets and conflicts with their automatic Apple Development signing.
@@ -27,7 +27,11 @@ let externalPackages: [Package] = [
     .remote(url: "https://github.com/sindresorhus/KeyboardShortcuts", requirement: .upToNextMajor(from: "2.3.0")),
     .remote(url: "https://github.com/stephencelis/SQLite.swift", requirement: .upToNextMajor(from: "0.15.0")),
     .remote(url: "https://github.com/sparkle-project/Sparkle", requirement: .upToNextMajor(from: "2.6.0")),
-    .remote(url: "https://github.com/TelemetryDeck/SwiftSDK", requirement: .upToNextMajor(from: "2.0.0"))
+    .remote(url: "https://github.com/TelemetryDeck/SwiftSDK", requirement: .upToNextMajor(from: "2.0.0")),
+    .remote(
+        url: "https://github.com/microsoft/onnxruntime-swift-package-manager",
+        requirement: .upToNextMajor(from: "1.24.2")
+    ),
 ]
 
 let coreTargets: [Target] = [
@@ -47,6 +51,10 @@ let coreTargets: [Target] = [
         bundleId: "\(bundlePrefix).detectioncore",
         deploymentTargets: macOSDeploymentTarget,
         sources: ["Core/DetectionCore/Sources/**"],
+        dependencies: [
+            .package(product: "onnxruntime"),
+            .sdk(name: "CoreML", type: .framework, status: .required),
+        ],
         settings: developerIDReleaseSigning
     ),
     .target(

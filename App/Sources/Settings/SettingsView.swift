@@ -209,6 +209,8 @@ struct SettingsView: View {
                         SettingsHotkeysPanel()
                     case .detection:
                         SettingsDetectionPanel()
+                    case .ai:
+                        SettingsAIPanel()
                     case .masking:
                         SettingsMaskingPanel()
                     case .privacy:
@@ -230,8 +232,37 @@ struct SettingsView: View {
                 .environmentObject(coordinator)
                 .padding(.horizontal, 24)
                 .padding(.top, showsTariffUpsellBanner ? 16 : 22)
-                .padding(.bottom, 24)
+                .padding(.bottom, scrollContentBottomPadding)
             }
+            .frame(maxHeight: .infinity)
+
+            if tab == .ai, coordinator.aiModelDownloadProgress != nil {
+                aiDownloadProgressBar(palette: palette)
+            }
+        }
+    }
+
+    private var scrollContentBottomPadding: CGFloat {
+        var padding: CGFloat = 24
+        if tab == .ai, coordinator.aiModelDownloadProgress != nil {
+            padding += SettingsAIDownloadProgressBanner.pinnedBarHeight
+        }
+        return padding
+    }
+
+    @ViewBuilder
+    private func aiDownloadProgressBar(palette: OFPalette) -> some View {
+        if let progress = coordinator.aiModelDownloadProgress {
+            VStack(spacing: 0) {
+                Rectangle()
+                    .fill(palette.border)
+                    .frame(height: 1)
+
+                SettingsAIDownloadProgressBanner(progress: progress)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 8)
+            }
+            .frame(height: SettingsAIDownloadProgressBanner.pinnedBarHeight)
         }
     }
 }

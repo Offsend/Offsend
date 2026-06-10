@@ -8,13 +8,18 @@ struct DocumentPDFPreviewPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: OFSpacing.sm) {
-            DocumentSanitizeSectionHeader(title: OffsendStrings.documentSanitizeRedactedPreview)
 
-            if let plan = viewModel.redactionPlan, !plan.unresolvedValues.isEmpty {
-                Text(OffsendStrings.documentSanitizeUnresolvedRedactions(plan.unresolvedValues.count))
-                    .font(.system(size: 11))
-                    .foregroundColor(.ofAmberText)
-                    .padding(.horizontal, 2)
+            HStack {
+                DocumentSanitizeSectionHeader(title: OffsendStrings.documentSanitizeRedactedPreview)
+
+                Spacer()
+
+                if let plan = viewModel.redactionPlan, !plan.unresolvedValues.isEmpty {
+                    Text(OffsendStrings.documentSanitizeUnresolvedRedactions(plan.unresolvedValues.count))
+                        .font(.system(size: 11))
+                        .foregroundColor(.ofAmberText)
+                        .padding(.horizontal, 2)
+                }
             }
 
             ZStack {

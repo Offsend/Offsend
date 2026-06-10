@@ -146,6 +146,12 @@ enum AppLocalization {
             return plural ? OffsendStrings.entityBearerTokens : OffsendStrings.entityBearerToken
         case .highEntropyString:
             return plural ? OffsendStrings.entityHighEntropySecrets : OffsendStrings.entityHighEntropySecret
+        case .personName:
+            return plural ? OffsendStrings.entityPersonNames : OffsendStrings.entityPersonName
+        case .streetAddress:
+            return plural ? OffsendStrings.entityStreetAddresses : OffsendStrings.entityStreetAddress
+        case .governmentId:
+            return plural ? OffsendStrings.entityGovernmentIds : OffsendStrings.entityGovernmentId
         }
     }
 }

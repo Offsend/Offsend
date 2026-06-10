@@ -4,11 +4,11 @@ import MaskingCore
 import RiskScoringCore
 
 public protocol DocumentProcessing: Sendable {
-    func analyze(_ request: DocumentProcessingRequest) throws -> DocumentAnalysisResult
+    func analyze(_ request: DocumentProcessingRequest) async throws -> DocumentAnalysisResult
     func sanitize(
         _ request: DocumentProcessingRequest,
         entities: [SensitiveEntity]?
-    ) throws -> DocumentSanitizationResult
+    ) async throws -> DocumentSanitizationResult
     func buildPDFRedactionPlan(
         analysis: DocumentAnalysisResult,
         pdfData: Data,
@@ -38,9 +38,9 @@ public final class DocumentProcessingPipeline: DocumentProcessing, Sendable {
         self.pdfRedactionPlanBuilder = pdfRedactionPlanBuilder
     }
 
-    public func analyze(_ request: DocumentProcessingRequest) throws -> DocumentAnalysisResult {
+    public func analyze(_ request: DocumentProcessingRequest) async throws -> DocumentAnalysisResult {
         let extracted = try textExtractor.extract(request)
-        let detection = detector.scan(
+        let detection = await detector.scan(
             DetectionRequest(text: extracted.plainText, options: Self.detectionOptions(for: request))
         )
         let assessment = riskScorer.assess(detection.entities)
@@ -54,8 +54,8 @@ public final class DocumentProcessingPipeline: DocumentProcessing, Sendable {
     public func sanitize(
         _ request: DocumentProcessingRequest,
         entities: [SensitiveEntity]? = nil
-    ) throws -> DocumentSanitizationResult {
-        let analysis = try analyze(request)
+    ) async throws -> DocumentSanitizationResult {
+        let analysis = try await analyze(request)
         let entitiesToMask = entities ?? analysis.detection.entities
         let masking = maskingEngine.mask(
             text: analysis.extracted.plainText,

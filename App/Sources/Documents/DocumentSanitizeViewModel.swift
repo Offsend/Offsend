@@ -89,6 +89,7 @@ final class DocumentSanitizeViewModel: ObservableObject {
     }
 
     func handleAppear() {
+        coordinator?.beginAIModelSession()
         windowResetToken = UUID()
         if analysisResult == nil, !isAnalyzing, !showsFileTooLargeBuyPro {
             selectFile(selectedFile)
@@ -96,6 +97,7 @@ final class DocumentSanitizeViewModel: ObservableObject {
     }
 
     func releaseSession() {
+        coordinator?.endAIModelSession()
         activeWork?.cancel()
         activeWork = nil
         previewWork?.cancel()

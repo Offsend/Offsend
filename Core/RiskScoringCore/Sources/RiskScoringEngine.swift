@@ -68,6 +68,8 @@ public final class RiskScoringEngine: RiskScoring {
             return 80
         case .iban:
             return 60
+        case .personName, .streetAddress, .governmentId:
+            return 25
         case .jwt:
             return 80
         case .apiKeyGeneric, .openAIAPIKey, .awsAccessKeyId, .githubToken, .slackToken,

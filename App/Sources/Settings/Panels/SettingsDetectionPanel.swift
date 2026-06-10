@@ -75,7 +75,7 @@ enum SettingsDetectionCatalog {
         DetectorGroupModel(
             kind: .personal,
             severity: .medium,
-            types: [.email, .phone, .ipAddress, .url]
+            types: [.email, .phone, .ipAddress, .url, .personName, .streetAddress, .governmentId]
         ),
         DetectorGroupModel(
             kind: .business,
@@ -315,6 +315,12 @@ struct SettingsDetectionPanel: View {
             return "Long random secret-like strings"
         case .customClient, .customCompany, .customProject, .customSensitiveTerm:
             return "Dictionary match"
+        case .personName:
+            return "John Smith"
+        case .streetAddress:
+            return "123 Main St"
+        case .governmentId:
+            return "Passport / SSN"
         }
     }
 
