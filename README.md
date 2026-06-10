@@ -40,9 +40,9 @@ Directory checks use paths and ignore rules only — not file contents.
 
 Drop a file in **Prepare**, review findings, mask or redact sensitive items, then copy or save an AI-ready version.
 
-**Supported formats** *(more coming)*
+**Supported formats**
 
-- **Plain text** — common extensions like `.txt`, `.md`, `.csv`, `.json`, `.log`, `.xml`, `.yaml`, plus any other text file (e.g. `.swift`, `.html`, or custom extensions like `.tt`)
+- **Plain text** — common extensions like `.txt`, `.md`, `.csv`, `.json`, `.log`, `.xml`, `.yaml`, plus any other text file (e.g. `.swift`, `.html`)
 - **Documents** — `.pdf`, `.rtf`, `.doc`, `.docx`
 
 ### 3. Prepare clipboard text (Safe Paste)
