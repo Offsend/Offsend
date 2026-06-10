@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="assets/demo.gif" alt="Drop a file or folder into Prepare for AI">
-</p>
-
 <h1 align="center"><code>*}• Offsend</code></h1>
 
 <p align="center">
@@ -16,6 +12,10 @@
   <a href="https://www.apple.com/macos/"><img src="https://img.shields.io/badge/platform-macOS%2013%2B-000000?logo=apple&logoColor=white" alt="Platform"></a>
   <img src="https://img.shields.io/badge/Swift-5.9-F05138?logo=swift&logoColor=white" alt="Swift 5.9">
   <img src="https://img.shields.io/badge/local--first-yes-2ea44f" alt="Local-first">
+</p>
+
+<p align="center">
+  <img src="assets/demo.gif" alt="Drop a file or folder into Prepare for AI">
 </p>
 
 ---
