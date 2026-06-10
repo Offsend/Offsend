@@ -11,6 +11,28 @@ final class PlainTextDocumentExtractorTests: XCTestCase {
         XCTAssertFalse(extractor.canExtract(source: DocumentSource(fileName: "scan.pdf")))
     }
 
+    func testSupportsUnknownTextExtensionWithoutURL() {
+        XCTAssertTrue(extractor.canExtract(source: DocumentSource(fileName: "notes.tt")))
+    }
+
+    func testSupportsUnknownTextExtensionWithTextContent() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("sample-\(UUID().uuidString).tt")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try "Hello from a custom extension".write(to: url, atomically: true, encoding: .utf8)
+
+        let source = DocumentSource(fileName: url.lastPathComponent, sourceURL: url)
+        XCTAssertTrue(extractor.canExtract(source: source))
+    }
+
+    func testRejectsBinaryFileWithUnknownExtension() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("binary-\(UUID().uuidString).tt")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try Data([0x00, 0x01, 0x02, 0xFF]).write(to: url)
+
+        let source = DocumentSource(fileName: url.lastPathComponent, sourceURL: url)
+        XCTAssertFalse(extractor.canExtract(source: source))
+    }
+
     func testExtractsUTF8Text() throws {
         let data = Data("Hello, world".utf8)
         let result = try extractor.extract(

@@ -37,10 +37,7 @@ enum PrepareURLClassification {
     }
 
     static func isSupportedFile(_ url: URL) -> Bool {
-        guard !isDirectory(url) else { return false }
-        return DocumentTextExtractorRegistry.supportedFileExtensions.contains(
-            url.pathExtension.lowercased()
-        )
+        DocumentTextExtractorRegistry.canProcessFile(at: url)
     }
 
     static func selectionFromPasteboard() -> PrepareSelection? {

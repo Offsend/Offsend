@@ -58,6 +58,20 @@ final class DocumentTextExtractorRegistryTests: XCTestCase {
 
         XCTAssertNil(registry.extractor(for: DocumentSource(fileName: "scan.pdf")))
     }
+
+    func testDefaultRegistryProcessesUnknownTextExtension() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("notes-\(UUID().uuidString).tt")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try "Sample text".write(to: url, atomically: true, encoding: .utf8)
+
+        XCTAssertTrue(DocumentTextExtractorRegistry.canProcessFile(at: url))
+        XCTAssertEqual(
+            DocumentTextExtractorRegistry.default.extractor(
+                for: DocumentSource(fileName: url.lastPathComponent, sourceURL: url)
+            )?.id,
+            "plain-text"
+        )
+    }
 }
 
 private struct StubDocumentTextExtractor: DocumentTextExtracting {
