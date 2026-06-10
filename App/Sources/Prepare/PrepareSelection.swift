@@ -2,28 +2,15 @@ import AppKit
 import DocumentCore
 import Foundation
 
-enum PrepareSelection: Equatable {
-    case directory(URL)
-    case document(URL)
-
-    var url: URL {
-        switch self {
-        case let .directory(url), let .document(url):
-            return url
-        }
-    }
-}
+typealias PrepareSelection = DocumentPrepareSelection
 
 enum PrepareURLClassification {
     static func selection(for url: URL) -> PrepareSelection? {
-        let standardized = url.standardizedFileURL
-        if isDirectory(standardized) {
-            return .directory(standardized)
-        }
-        if isSupportedFile(standardized) {
-            return .document(standardized)
-        }
-        return nil
+        DocumentPrepareSelectionClassifier.selection(for: url)
+    }
+
+    static func selection(forMultiple urls: [URL]) -> PrepareSelection? {
+        DocumentPrepareSelectionClassifier.selection(forMultiple: urls)
     }
 
     static func selection(forWindowPath path: String) -> PrepareSelection? {
@@ -31,13 +18,11 @@ enum PrepareURLClassification {
     }
 
     static func isDirectory(_ url: URL) -> Bool {
-        var isDirectory: ObjCBool = false
-        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
-            && isDirectory.boolValue
+        DocumentPrepareSelectionClassifier.isDirectory(url)
     }
 
     static func isSupportedFile(_ url: URL) -> Bool {
-        DocumentTextExtractorRegistry.canProcessFile(at: url)
+        DocumentPrepareSelectionClassifier.isSupportedFile(url)
     }
 
     static func selectionFromPasteboard() -> PrepareSelection? {
@@ -46,13 +31,7 @@ enum PrepareURLClassification {
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]
         ) as? [NSURL] {
-            let fileURLs = urls.map { $0 as URL }
-            if let directory = fileURLs.first(where: { isDirectory($0) }) {
-                return .directory(directory)
-            }
-            if let file = fileURLs.first(where: { isSupportedFile($0) }) {
-                return .document(file)
-            }
+            return selection(forMultiple: urls.map { $0 as URL })
         }
 
         if let fileURLString = pasteboard.string(forType: .fileURL),

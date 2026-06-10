@@ -3,16 +3,11 @@ import SwiftUI
 import WorkspacePolicyCore
 
 struct DirectoryCheckContentView: View {
-    let directoryURL: URL
-    let onReplaceSelection: (URL) -> Void
-
     @EnvironmentObject private var coordinator: AppCoordinator
     @StateObject private var viewModel: DirectoryCheckViewModel
 
-    init(directoryURL: URL, onReplaceSelection: @escaping (URL) -> Void) {
+    init(directoryURL: URL) {
         let standardized = directoryURL.standardizedFileURL
-        self.directoryURL = standardized
-        self.onReplaceSelection = onReplaceSelection
         _viewModel = StateObject(wrappedValue: DirectoryCheckViewModel(directoryURL: standardized))
     }
 
@@ -90,21 +85,17 @@ struct DirectoryCheckContentView: View {
                     )
                 }
 
-                if viewModel.isShowingCachedWatchStatus {
-                    DirectoryCheckCachedWatchStatusSection(viewModel: viewModel, result: auditResult)
-                } else {
-                    if let auditDelta = viewModel.auditDelta {
-                        DirectoryCheckAuditChangesSection(delta: auditDelta)
-                    }
+                if let auditDelta = viewModel.auditDelta {
+                    DirectoryCheckAuditChangesSection(delta: auditDelta)
+                }
 
-                    if viewModel.showsProtectedState(auditResult) {
-                        protectedBanner(for: auditResult)
-                        DirectoryCheckIssueSummaryBar(viewModel: viewModel, result: auditResult)
-                        DirectoryCheckSatisfiedFindingsContent(result: auditResult)
-                    } else {
-                        DirectoryCheckIssueSummaryBar(viewModel: viewModel, result: auditResult)
-                        DirectoryCheckFindingsContent(viewModel: viewModel, result: auditResult)
-                    }
+                if viewModel.showsProtectedState(auditResult) {
+                    protectedBanner(for: auditResult)
+                    DirectoryCheckIssueSummaryBar(viewModel: viewModel, result: auditResult)
+                    DirectoryCheckSatisfiedFindingsContent(result: auditResult)
+                } else {
+                    DirectoryCheckIssueSummaryBar(viewModel: viewModel, result: auditResult)
+                    DirectoryCheckFindingsContent(viewModel: viewModel, result: auditResult)
                 }
             }
         }

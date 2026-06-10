@@ -13,13 +13,16 @@ final class DirectoryCheckViewModel: ObservableObject {
     @Published var selectedFixItemIDs: Set<String> = []
     @Published private(set) var isAuditing = false
     @Published private(set) var isApplyingFix = false
-    @Published private(set) var isShowingCachedWatchStatus = false
     @Published private(set) var auditDelta: AIWorkspacePrivacyAuditDelta?
     @Published var windowResetToken = UUID()
 
     private weak var coordinator: AppCoordinator?
     private var auditToken = UUID()
     private var activeWork: Task<Void, Never>?
+    // Views call the planner many times per render with the current `auditResult`;
+    // both caches are invalidated whenever `auditResult` is replaced.
+    private var cachedFixItems: [AIWorkspacePrivacyFixItem]?
+    private var cachedMissingIgnoreFileItems: [AIWorkspacePrivacyFixItem]?
 
     var isBusy: Bool { isAuditing || isApplyingFix }
 
@@ -42,6 +45,8 @@ final class DirectoryCheckViewModel: ObservableObject {
     func releaseSession() {
         activeWork?.cancel()
         activeWork = nil
+        isAuditing = false
+        isApplyingFix = false
     }
 
     func preferredWindowHeight() -> CGFloat {
@@ -147,10 +152,13 @@ final class DirectoryCheckViewModel: ObservableObject {
         for result: AIWorkspacePrivacyAuditResult,
         coordinator: AppCoordinator
     ) -> [AIWorkspacePrivacyFixItem] {
-        AIWorkspacePrivacyFixPlanner.fixItems(
+        if let cachedFixItems { return cachedFixItems }
+        let items = AIWorkspacePrivacyFixPlanner.fixItems(
             for: result,
             configuration: coordinator.directoryCheckAuditConfiguration()
         )
+        cachedFixItems = items
+        return items
     }
 
     func fixScenario(for result: AIWorkspacePrivacyAuditResult) -> AIWorkspacePrivacyFixScenario {
@@ -191,10 +199,13 @@ final class DirectoryCheckViewModel: ObservableObject {
         for result: AIWorkspacePrivacyAuditResult,
         coordinator: AppCoordinator
     ) -> [AIWorkspacePrivacyFixItem] {
-        AIWorkspacePrivacyFixPlanner.missingIgnoreFileItems(
+        if let cachedMissingIgnoreFileItems { return cachedMissingIgnoreFileItems }
+        let items = AIWorkspacePrivacyFixPlanner.missingIgnoreFileItems(
             for: result,
             configuration: coordinator.directoryCheckAuditConfiguration()
         )
+        cachedMissingIgnoreFileItems = items
+        return items
     }
 
     /// Missing or updatable project rule files (.cursor/rules, …) — not AI ignore lists.
@@ -402,7 +413,6 @@ final class DirectoryCheckViewModel: ObservableObject {
     func selectDirectory(_ directoryURL: URL, runAudit: Bool) {
         let standardizedURL = directoryURL.standardizedFileURL
         selectedDirectory = standardizedURL
-        isShowingCachedWatchStatus = false
         auditDelta = nil
 
         if runAudit {
@@ -417,6 +427,7 @@ final class DirectoryCheckViewModel: ObservableObject {
         }
 
         if let cached = coordinator.directoryWatchRuntime.lastResultByWatchID[entry.id] {
+            invalidateFixItemCaches()
             auditResult = cached
             selectedFixItemIDs = defaultFixItemSelection(for: cached, coordinator: coordinator)
             return
@@ -437,7 +448,6 @@ final class DirectoryCheckViewModel: ObservableObject {
         auditToken = token
         isApplyingFix = false
         isAuditing = true
-        isShowingCachedWatchStatus = false
         auditDelta = nil
         activeWork?.cancel()
 
@@ -447,6 +457,7 @@ final class DirectoryCheckViewModel: ObservableObject {
             await MainActor.run {
                 guard auditToken == token else { return }
                 isAuditing = false
+                invalidateFixItemCaches()
                 auditResult = result
                 selectedFixItemIDs = defaultFixItemSelection(for: result, coordinator: coordinator)
                 if let entry = coordinator.watchedDirectoryEntry(matching: standardizedURL) {
@@ -490,6 +501,7 @@ final class DirectoryCheckViewModel: ObservableObject {
                 guard auditToken == token else { return }
                 isApplyingFix = false
                 fixMessage = DirectoryCheckPresentation.fixResultMessage(fixResult)
+                invalidateFixItemCaches()
                 auditResult = refreshedResult
                 reconcileSelectionAfterFix(
                     previousSelection: selectionBeforeFix,
@@ -511,6 +523,11 @@ final class DirectoryCheckViewModel: ObservableObject {
 // MARK: - Private helpers
 
 private extension DirectoryCheckViewModel {
+    func invalidateFixItemCaches() {
+        cachedFixItems = nil
+        cachedMissingIgnoreFileItems = nil
+    }
+
     func watchedEntryForSelection(coordinator: AppCoordinator) -> WatchedDirectory? {
         coordinator.watchedDirectoryEntry(matching: selectedDirectory)
     }
@@ -564,19 +581,6 @@ private extension DirectoryCheckViewModel {
         AIWorkspacePrivacyFixPlanner.selection(
             from: selectedFixItemIDs,
             in: fixItems(for: result, coordinator: coordinator)
-        )
-    }
-
-    func placeholderAuditResult(
-        for directoryURL: URL,
-        status: AIWorkspacePrivacyAuditStatus
-    ) -> AIWorkspacePrivacyAuditResult {
-        AIWorkspacePrivacyAuditResult(
-            directoryURL: directoryURL,
-            status: status,
-            ruleFindings: [],
-            sensitivePatternFindings: [],
-            errors: []
         )
     }
 

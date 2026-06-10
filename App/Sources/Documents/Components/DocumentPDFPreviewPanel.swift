@@ -26,8 +26,11 @@ struct DocumentPDFPreviewPanel: View {
                     isToolbarDisabled: viewModel.isBusy,
                     undoAccessibilityLabel: OffsendStrings.documentSanitizeUndo,
                     redoAccessibilityLabel: OffsendStrings.documentSanitizeRedo,
+                    copyAccessibilityLabel: OffsendStrings.documentSanitizeCopySafeText,
+                    canCopy: !viewModel.selectedEntityIDs.isEmpty,
                     onUndo: { viewModel.undoManualRegions(for: result) },
                     onRedo: { viewModel.redoManualRegions(for: result) },
+                    onCopy: { viewModel.copySafeText(for: result) },
                     onManualRegionAdded: { pageIndex, bounds in
                         viewModel.addManualRegion(pageIndex: pageIndex, bounds: bounds, for: result)
                     }

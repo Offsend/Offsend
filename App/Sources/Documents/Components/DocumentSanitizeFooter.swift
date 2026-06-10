@@ -3,6 +3,7 @@ import DocumentCore
 import SwiftUI
 
 struct DocumentSanitizeFooter: View {
+    @ObservedObject var batchViewModel: DocumentBatchSanitizeViewModel
     @ObservedObject var viewModel: DocumentSanitizeViewModel
     let result: DocumentAnalysisResult
 
@@ -18,14 +19,16 @@ struct DocumentSanitizeFooter: View {
 
                 Spacer(minLength: 0)
 
-                OFButton(
-                    title: OffsendStrings.documentSanitizeCopySafeText,
-                    variant: .outline,
-                    icon: "doc.on.doc",
-                    small: true,
-                    disabled: viewModel.isBusy || viewModel.selectedEntityIDs.isEmpty
-                ) {
-                    viewModel.copySafeText(for: result)
+                if batchViewModel.showsDocumentTabs {
+                    OFButton(
+                        title: OffsendStrings.documentSanitizeSaveAllPrepared,
+                        variant: .outline,
+                        icon: "square.and.arrow.down.on.square",
+                        small: true,
+                        disabled: !batchViewModel.canSaveAllPrepared
+                    ) {
+                        batchViewModel.saveAllPrepared()
+                    }
                 }
 
                 OFButton(
@@ -33,7 +36,7 @@ struct DocumentSanitizeFooter: View {
                     variant: .primary,
                     icon: "square.and.arrow.down",
                     small: true,
-                    disabled: viewModel.isBusy || (viewModel.isPdfDocument ? !viewModel.canExportPdfRedaction : viewModel.selectedEntityIDs.isEmpty)
+                    disabled: !viewModel.canSaveDocument(for: result) || batchViewModel.isSavingAll
                 ) {
                     viewModel.saveDocument(for: result)
                 }
