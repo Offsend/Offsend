@@ -55,18 +55,21 @@ extension AppCoordinator {
     func previewSanitizedDocument(
         from analysis: DocumentAnalysisResult,
         entities: [SensitiveEntity]
-    ) -> DocumentSanitizationResult {
-        let masking = maskingEngine.mask(
-            text: analysis.extracted.plainText,
-            entities: entities,
-            ttl: documentProcessingOptions().mappingTTL
-        )
-        return DocumentSanitizationResult(
-            extracted: analysis.extracted,
-            detection: analysis.detection,
-            assessment: analysis.assessment,
-            masking: masking
-        )
+    ) async -> DocumentSanitizationResult {
+        let maskingEngine = maskingEngine
+        let ttl = documentProcessingOptions().mappingTTL
+        return await Task.detached {
+            DocumentSanitizationResult(
+                extracted: analysis.extracted,
+                detection: analysis.detection,
+                assessment: analysis.assessment,
+                masking: maskingEngine.mask(
+                    text: analysis.extracted.plainText,
+                    entities: entities,
+                    ttl: ttl
+                )
+            )
+        }.value
     }
 
     func copySanitizedDocument(_ result: DocumentSanitizationResult) {

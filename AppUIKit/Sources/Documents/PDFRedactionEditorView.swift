@@ -7,6 +7,9 @@ public enum PDFRedactionDocumentSource: Equatable {
     /// `id` uniquely identifies the in-memory payload so the editor can detect
     /// changes in O(1) instead of hashing the whole buffer on every update.
     case memory(Data, id: AnyHashable)
+    /// Already-parsed document, so recreating the editor (e.g. on tab switch)
+    /// does not re-parse the PDF. `id` identifies the payload like `memory`.
+    case document(PDFDocument, id: AnyHashable)
 }
 
 /// A redaction rectangle expressed in PDF page coordinates, drawn as a live
@@ -29,8 +32,11 @@ public struct PDFRedactionEditorView: View {
     private let isToolbarDisabled: Bool
     private let undoAccessibilityLabel: String
     private let redoAccessibilityLabel: String
+    private let copyAccessibilityLabel: String?
+    private let canCopy: Bool
     private let onUndo: () -> Void
     private let onRedo: () -> Void
+    private let onCopy: (() -> Void)?
     private let onManualRegionAdded: (Int, CGRect) -> Void
 
     @State private var zoomPercentage = 100
@@ -44,8 +50,11 @@ public struct PDFRedactionEditorView: View {
         isToolbarDisabled: Bool = false,
         undoAccessibilityLabel: String,
         redoAccessibilityLabel: String,
+        copyAccessibilityLabel: String? = nil,
+        canCopy: Bool = false,
         onUndo: @escaping () -> Void,
         onRedo: @escaping () -> Void,
+        onCopy: (() -> Void)? = nil,
         onManualRegionAdded: @escaping (Int, CGRect) -> Void
     ) {
         self.document = document
@@ -55,8 +64,11 @@ public struct PDFRedactionEditorView: View {
         self.isToolbarDisabled = isToolbarDisabled
         self.undoAccessibilityLabel = undoAccessibilityLabel
         self.redoAccessibilityLabel = redoAccessibilityLabel
+        self.copyAccessibilityLabel = copyAccessibilityLabel
+        self.canCopy = canCopy
         self.onUndo = onUndo
         self.onRedo = onRedo
+        self.onCopy = onCopy
         self.onManualRegionAdded = onManualRegionAdded
     }
 
@@ -102,6 +114,17 @@ public struct PDFRedactionEditorView: View {
                     isDisabled: isToolbarDisabled || !canRedo,
                     action: onRedo
                 )
+
+                if let copyAccessibilityLabel, let onCopy {
+                    toolbarDivider
+
+                    toolbarIconButton(
+                        icon: "doc.on.doc",
+                        accessibilityLabel: copyAccessibilityLabel,
+                        isDisabled: isToolbarDisabled || !canCopy,
+                        action: onCopy
+                    )
+                }
             }
 
             Spacer(minLength: OFSpacing.sm)
@@ -311,6 +334,7 @@ private struct PDFRedactionEditorRepresentable: NSViewRepresentable {
 private enum PDFDocumentFingerprint: Equatable {
     case file(String)
     case memory(AnyHashable)
+    case document(AnyHashable)
 
     init(_ source: PDFRedactionDocumentSource) {
         switch source {
@@ -318,6 +342,8 @@ private enum PDFDocumentFingerprint: Equatable {
             self = .file(url.standardizedFileURL.path)
         case let .memory(_, id):
             self = .memory(id)
+        case let .document(_, id):
+            self = .document(id)
         }
     }
 }
@@ -578,6 +604,8 @@ private final class PDFRedactionEditorContainerView: NSView {
             document = PDFDocument(url: url)
         case let .memory(data, _):
             document = PDFDocument(data: data)
+        case let .document(parsedDocument, _):
+            document = parsedDocument
         }
         guard let document else { return }
         pdfView.document = document

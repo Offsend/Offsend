@@ -8,7 +8,7 @@ enum PrepareWindowChrome {
     /// Inset below traffic-light buttons when the prepare window uses a hidden title bar.
     static let contentTopInset: CGFloat = 0
     static let horizontalPadding: CGFloat = 0
-    static let compactHeaderHeight: CGFloat = 48
+    static let compactHeaderHeight: CGFloat = 60
 
     /// Matches `DocumentSanitizeContentView.Layout.windowWidth`.
     static let documentContentWidth: CGFloat = 782
@@ -18,7 +18,7 @@ enum PrepareWindowChrome {
 
     static func contentWidth(for selection: PrepareSelection?) -> CGFloat {
         switch selection {
-        case .document:
+        case .documents:
             return documentContentWidth
         case .directory:
             return directoryContentWidth
@@ -50,7 +50,6 @@ struct PrepareView: View {
     @State private var windowResetToken = UUID()
 
     private enum Layout {
-        static let windowWidth: CGFloat = 782
         static let emptyStateHeight: CGFloat = 400
     }
 
@@ -76,20 +75,14 @@ struct PrepareView: View {
 
             if let selection {
                 switch selection {
-                case let .document(fileURL):
-                    DocumentSanitizeContentView(
-                        fileURL: fileURL,
-                        onReplaceSelection: applyReplacement(from:)
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .id(fileURL)
+                case let .documents(fileURLs):
+                    DocumentSanitizeContentView(fileURLs: fileURLs)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .id(fileURLs.map(\.path).joined(separator: "|"))
                 case let .directory(directoryURL):
-                    DirectoryCheckContentView(
-                        directoryURL: directoryURL,
-                        onReplaceSelection: applyReplacement(from:)
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .id(directoryURL)
+                    DirectoryCheckContentView(directoryURL: directoryURL)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .id(directoryURL)
                 }
             } else {
                 emptyDropZone
@@ -183,8 +176,8 @@ struct PrepareView: View {
         return OffsendStrings.prepareDropHintWithFileSizeLimit(freeLimit, proLimit)
     }
 
-    private func applyReplacement(from url: URL) {
-        guard let replacement = PrepareURLClassification.selection(for: url) else { return }
+    private func applyReplacement(from urls: [URL]) {
+        guard let replacement = PrepareURLClassification.selection(forMultiple: urls) else { return }
         selection = replacement
     }
 
@@ -193,7 +186,7 @@ struct PrepareView: View {
               let resolved = PrepareURLClassification.selection(forWindowPath: prepareWindowPath) else {
             return
         }
-        guard selection?.url.standardizedFileURL != resolved.url.standardizedFileURL else { return }
+        guard selection != resolved else { return }
         selection = resolved
     }
 
@@ -208,31 +201,35 @@ struct PrepareView: View {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = true
-        panel.allowsMultipleSelection = false
-        panel.prompt = OffsendStrings.prepareChoose
+        panel.allowsMultipleSelection = true
+        panel.prompt = OffsendStrings.prepareSelectPrompt
 
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        applyReplacement(from: url)
+        guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
+        applyReplacement(from: panel.urls)
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
-        guard let provider = providers.first(where: { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }) else {
-            return false
+        let fileProviders = providers.filter {
+            $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
+        }
+        guard !fileProviders.isEmpty else { return false }
+
+        let group = DispatchGroup()
+        let collector = DroppedFileURLCollector(count: fileProviders.count)
+
+        for (index, provider) in fileProviders.enumerated() {
+            group.enter()
+            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                collector.set(Self.fileURL(from: item), at: index)
+                group.leave()
+            }
         }
 
-        provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-            guard let url = Self.fileURL(from: item),
-                  let resolved = PrepareURLClassification.selection(for: url) else {
+        group.notify(queue: .main) {
+            guard let resolved = PrepareURLClassification.selection(forMultiple: collector.orderedURLs()) else {
                 return
             }
-
-            DispatchQueue.main.async {
-                if self.selection != nil {
-                    self.coordinator.openPrepare(for: resolved.url, source: "prepare_drop")
-                } else {
-                    self.selection = resolved
-                }
-            }
+            self.selection = resolved
         }
         return true
     }
@@ -256,6 +253,28 @@ struct PrepareView: View {
             return URL(string: string)
         }
         return nil
+    }
+}
+
+/// `loadItem` callbacks arrive on arbitrary queues; guards index-ordered URL writes with a lock.
+private final class DroppedFileURLCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private var urls: [URL?]
+
+    init(count: Int) {
+        urls = Array(repeating: nil, count: count)
+    }
+
+    func set(_ url: URL?, at index: Int) {
+        lock.lock()
+        urls[index] = url
+        lock.unlock()
+    }
+
+    func orderedURLs() -> [URL] {
+        lock.lock()
+        defer { lock.unlock() }
+        return urls.compactMap { $0 }
     }
 }
 

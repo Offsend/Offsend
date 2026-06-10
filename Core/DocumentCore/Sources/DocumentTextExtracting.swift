@@ -45,10 +45,10 @@ public protocol DocumentTextExtractorSelecting: Sendable {
 
 public struct DocumentTextExtractorRegistry: DocumentTextExtractorSelecting {
     private static let defaultExtractors: [any DocumentTextExtracting] = [
-        PlainTextDocumentExtractor(),
         RTFDocumentExtractor(),
         WordDocumentExtractor(),
-        PDFDocumentExtractor()
+        PDFDocumentExtractor(),
+        PlainTextDocumentExtractor()
     ]
 
     private let extractors: [any DocumentTextExtracting]
@@ -63,6 +63,21 @@ public struct DocumentTextExtractorRegistry: DocumentTextExtractorSelecting {
         defaultExtractors.reduce(into: Set()) { extensions, extractor in
             extensions.formUnion(extractor.supportedFileExtensions)
         }
+    }
+
+    public static func canProcess(source: DocumentSource) -> Bool {
+        `default`.extractor(for: source) != nil
+    }
+
+    public static func canProcessFile(at url: URL) -> Bool {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+              !isDirectory.boolValue else {
+            return false
+        }
+
+        let source = DocumentSource(fileName: url.lastPathComponent, sourceURL: url)
+        return canProcess(source: source)
     }
 
     public func extractor(for source: DocumentSource) -> (any DocumentTextExtracting)? {
