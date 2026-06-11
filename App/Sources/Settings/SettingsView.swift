@@ -90,6 +90,9 @@ struct SettingsView: View {
                             Text(tb.title)
                                 .font(.system(size: 12.5, weight: active ? .semibold : .medium))
                                 .foregroundColor(active ? palette.text : palette.textSub)
+                            if tb == .ai {
+                                aiPreviewBadge(palette: palette, compact: true)
+                            }
                             Spacer(minLength: 0)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -165,9 +168,14 @@ struct SettingsView: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(palette.text)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(tab.title)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(palette.text)
+                    HStack(spacing: 8) {
+                        Text(tab.title)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(palette.text)
+                        if tab == .ai {
+                            aiPreviewBadge(palette: palette)
+                        }
+                    }
                     Text(tab.subtitle)
                         .font(.system(size: 11))
                         .foregroundColor(palette.textMuted)
@@ -248,6 +256,16 @@ struct SettingsView: View {
             padding += SettingsAIDownloadProgressBanner.pinnedBarHeight
         }
         return padding
+    }
+
+    private func aiPreviewBadge(palette: OFPalette, compact: Bool = false) -> some View {
+        Text(OffsendStrings.settingsTabAiPreviewBadge)
+            .font(.system(size: compact ? 9 : 9.5, weight: .bold))
+            .kerning(0.5)
+            .foregroundColor(palette.amberText)
+            .padding(.horizontal, compact ? 6 : 7)
+            .padding(.vertical, compact ? 1 : 2)
+            .background(Capsule().fill(palette.amberDim))
     }
 
     @ViewBuilder

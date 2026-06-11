@@ -142,6 +142,7 @@
 "settings.tab.hotkeys" = "Hotkeys";
 "settings.tab.detection" = "Detection";
 "settings.tab.ai" = "AI";
+"settings.tab.aiPreviewBadge" = "Preview";
 "settings.tab.masking" = "Masking";
 "settings.tab.privacy" = "Privacy";
 "settings.tab.directoryCheck" = "Directory Check";
