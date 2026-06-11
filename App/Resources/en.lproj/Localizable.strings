@@ -9,10 +9,11 @@
 
 "prepare.title" = "Prepare for AI";
 "prepare.subtitle" = "Check a project folder or prepare a document before sharing with AI tools.";
-"prepare.choose" = "Choose";
+"prepare.choose" = "Select New…";
 "prepare.dropTitle" = "Drop a file or folder here";
-"prepare.dropHint" = "or click Choose — nothing leaves your Mac.";
-"prepare.dropHintWithFileSizeLimit" = "or click Choose — folders, or txt, md, csv, json, pdf, and similar formats.\nUp to %@ on Free · %@ on Pro.";
+"prepare.dropHint" = "or click Select New — nothing leaves your Mac.";
+"prepare.dropHintWithFileSizeLimit" = "or click Select New — folders, or txt, md, csv, json, pdf, and similar formats.\nUp to %@ on Free · %@ on Pro.";
+"prepare.selectPrompt" = "Select";
 
 "common.on.lowercase" = "on";
 "common.off.lowercase" = "off";
@@ -682,6 +683,13 @@
 "documentSanitize.unresolvedRedactions" = "%d detected item(s) could not be placed on the PDF layout.";
 "documentSanitize.savedRedactedPDF" = "Saved redacted PDF as %@.";
 "documentSanitize.refreshingPreview" = "Updating preview…";
+"documentSanitize.tabStatus.pending" = "Waiting to analyze";
+"documentSanitize.tabStatus.findings" = "%d sensitive items found";
+"documentSanitize.batchAnalyzing" = "Analyzed %1$d of %2$d documents";
+"documentSanitize.saveAllPrepared" = "Save All Prepared";
+"documentSanitize.saveAllPrepared.chooseFolder" = "Save Here";
+"documentSanitize.saveAllPrepared.message" = "Choose a folder for %d prepared documents.";
+"documentSanitize.savedAllPrepared" = "Saved %1$d prepared documents to %2$@.";
 
 "safePaste.warning.truncated" = "Only the first 50,000 characters were scanned.";
 "safePaste.section.maskedPreview" = "MASKED PREVIEW";

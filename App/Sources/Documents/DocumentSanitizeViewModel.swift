@@ -3,6 +3,7 @@ import AppUIKit
 import DetectionCore
 import DocumentCore
 import Foundation
+import PDFKit
 import RiskScoringCore
 import UniformTypeIdentifiers
 
@@ -24,7 +25,6 @@ final class DocumentSanitizeViewModel: ObservableObject {
     @Published private(set) var pdfOverlayBoxes: [PDFRedactionOverlayBox] = []
     @Published private(set) var isRefreshingPdfPreview = false
     @Published private(set) var pdfSessionID = UUID()
-    @Published var windowResetToken = UUID()
 
     private weak var coordinator: AppCoordinator?
     private var analysisToken = UUID()
@@ -36,6 +36,7 @@ final class DocumentSanitizeViewModel: ObservableObject {
     private var previewWork: Task<Void, Never>?
     private var textPreviewWork: Task<Void, Never>?
     private var cachedPdfData: (url: URL, data: Data)?
+    private var cachedPdfDocument: PDFDocument?
     private var cachedAutoRegions: [PDFRedactionRegion] = []
     private let riskScorer = RiskScoringEngine()
 
@@ -69,15 +70,23 @@ final class DocumentSanitizeViewModel: ObservableObject {
     }
 
     var pdfEditorDocument: PDFRedactionDocumentSource {
+        if let cachedPdfDocument {
+            return .document(cachedPdfDocument, id: pdfSessionID)
+        }
         if let data = cachedPdfData?.data {
+            // Parse once and keep the document so recreating the editor
+            // (tab switches, layout resets) does not re-parse the PDF.
+            if let document = PDFDocument(data: data) {
+                cachedPdfDocument = document
+                return .document(document, id: pdfSessionID)
+            }
             return .memory(data, id: pdfSessionID)
         }
         return .file(selectedFile)
     }
 
     var windowContentPhase: DocumentSanitizeWindowContentPhase {
-        guard let analysisResult else { return .awaitingResult }
-        return showsFindingsLayout(for: analysisResult) ? .findingsResult : .safeResult
+        analysisResult == nil ? .awaitingResult : .findingsResult
     }
 
     init(fileURL: URL) {
@@ -88,16 +97,19 @@ final class DocumentSanitizeViewModel: ObservableObject {
         self.coordinator = coordinator
     }
 
-    func handleAppear() {
-        coordinator?.beginAIModelSession()
-        windowResetToken = UUID()
+    func beginInitialAnalysis() {
         if analysisResult == nil, !isAnalyzing, !showsFileTooLargeBuyPro {
             selectFile(selectedFile)
         }
     }
 
+    /// Starts the initial analysis (if needed) and suspends until it finishes.
+    func runInitialAnalysis() async {
+        beginInitialAnalysis()
+        await activeWork?.value
+    }
+
     func releaseSession() {
-        coordinator?.endAIModelSession()
         activeWork?.cancel()
         activeWork = nil
         previewWork?.cancel()
@@ -122,8 +134,6 @@ final class DocumentSanitizeViewModel: ObservableObject {
         switch windowContentPhase {
         case .awaitingResult:
             height = DocumentSanitizeLayout.awaitingResultHeight
-        case .safeResult:
-            height = DocumentSanitizeLayout.safeResultHeight
         case .findingsResult:
             height = DocumentSanitizeLayout.findingsResultHeight + DocumentSanitizeLayout.footerHeight
         }
@@ -132,15 +142,8 @@ final class DocumentSanitizeViewModel: ObservableObject {
             height += DocumentSanitizeLayout.footerHeight
         }
 
+        height += DocumentSanitizeLayout.contentVerticalSlack
         return height
-    }
-
-    func showsFindingsLayout(for _: DocumentAnalysisResult) -> Bool {
-        true
-    }
-
-    func shouldShowPinnedFooter(for result: DocumentAnalysisResult) -> Bool {
-        showsFindingsLayout(for: result)
     }
 
     func allEntitiesSelected(for result: DocumentAnalysisResult) -> Bool {
@@ -293,6 +296,41 @@ final class DocumentSanitizeViewModel: ObservableObject {
         }
     }
 
+    func canSaveDocument(for result: DocumentAnalysisResult) -> Bool {
+        guard !isBusy else { return false }
+        if result.extracted.format == .pdf {
+            return canExportPdfRedaction
+        }
+        return !selectedEntityIDs.isEmpty
+    }
+
+    func saveDocument(for result: DocumentAnalysisResult, to directoryURL: URL) async throws {
+        guard canSaveDocument(for: result) else { return }
+
+        let destinationURL = Self.uniqueFileURL(
+            in: directoryURL,
+            fileName: preparedExportFileName(for: result)
+        )
+
+        isSanitizing = true
+        defer { isSanitizing = false }
+
+        if result.extracted.format == .pdf {
+            try await exportRedactedPDF(for: result, to: destinationURL)
+        } else {
+            try await exportSafeText(for: result, to: destinationURL)
+        }
+    }
+
+    func reportSavedAllPrepared(count: Int, folderName: String) {
+        statusMessage = OffsendStrings.documentSanitizeSavedAllPrepared(count, folderName)
+        clearProcessingError()
+    }
+
+    func reportProcessingError(_ error: Error) {
+        applyDocumentProcessingError(error)
+    }
+
     func undoManualRegions(for result: DocumentAnalysisResult) {
         guard let previous = manualRegionsUndoStack.popLast() else { return }
         manualRegionsRedoStack.append(manualRegions)
@@ -368,6 +406,7 @@ private extension DocumentSanitizeViewModel {
 
     func invalidatePdfDataCache() {
         cachedPdfData = nil
+        cachedPdfDocument = nil
     }
 
     func pdfData(for fileURL: URL) async -> Data? {
@@ -410,10 +449,62 @@ private extension DocumentSanitizeViewModel {
         result.detection.entities.filter { selectedEntityIDs.contains($0.id) }
     }
 
+    func exportSafeText(for result: DocumentAnalysisResult, to destinationURL: URL) async throws {
+        guard let coordinator else { return }
+        let sanitized = try await coordinator.sanitizeDocument(
+            at: result.extracted.source.sourceURL ?? selectedFile,
+            entities: selectedEntities(from: result)
+        )
+        try coordinator.exportSanitizedDocument(sanitized, to: destinationURL)
+        sanitizeResult = sanitized
+    }
+
+    func exportRedactedPDF(for result: DocumentAnalysisResult, to destinationURL: URL) async throws {
+        guard let coordinator else { return }
+        guard let pdfData = await pdfData(for: selectedFile) else { return }
+
+        let session = PDFRedactionSession(
+            sourceData: pdfData,
+            analysis: result,
+            selectedEntityIDs: selectedEntityIDs,
+            manualRegions: manualRegions
+        )
+        _ = try await coordinator.exportRedactedPDF(session: session, to: destinationURL)
+    }
+
+    func preparedExportFileName(for result: DocumentAnalysisResult) -> String {
+        if result.extracted.format == .pdf {
+            return sanitizedRedactedPDFName(for: result.extracted.source.fileName)
+        }
+        return sanitizedFileName(for: result.extracted.source.fileName)
+    }
+
+    static func uniqueFileURL(in directoryURL: URL, fileName: String) -> URL {
+        let fileManager = FileManager.default
+        var candidate = directoryURL.appendingPathComponent(fileName)
+        guard fileManager.fileExists(atPath: candidate.path) else { return candidate }
+
+        let baseName = (fileName as NSString).deletingPathExtension
+        let pathExtension = (fileName as NSString).pathExtension
+
+        for suffix in 1...999 {
+            let numberedName: String
+            if pathExtension.isEmpty {
+                numberedName = "\(baseName)-\(suffix)"
+            } else {
+                numberedName = "\(baseName)-\(suffix).\(pathExtension)"
+            }
+            candidate = directoryURL.appendingPathComponent(numberedName)
+            if !fileManager.fileExists(atPath: candidate.path) {
+                return candidate
+            }
+        }
+
+        return directoryURL.appendingPathComponent(fileName)
+    }
+
     func saveSafeText(for result: DocumentAnalysisResult) {
-        guard let coordinator, !isBusy else { return }
-        let entities = selectedEntities(from: result)
-        guard !entities.isEmpty else { return }
+        guard canSaveDocument(for: result) else { return }
 
         let panel = NSSavePanel()
         panel.canCreateDirectories = true
@@ -426,14 +517,9 @@ private extension DocumentSanitizeViewModel {
         activeWork?.cancel()
         activeWork = Task {
             do {
-                let sanitized = try await coordinator.sanitizeDocument(
-                    at: result.extracted.source.sourceURL ?? selectedFile,
-                    entities: entities
-                )
-                try coordinator.exportSanitizedDocument(sanitized, to: destinationURL)
+                try await exportSafeText(for: result, to: destinationURL)
                 guard !Task.isCancelled else { return }
                 isSanitizing = false
-                sanitizeResult = sanitized
                 statusMessage = OffsendStrings.documentSanitizeSavedSafeText(destinationURL.lastPathComponent)
                 clearProcessingError()
             } catch {
@@ -445,7 +531,7 @@ private extension DocumentSanitizeViewModel {
     }
 
     func saveRedactedPDF(for result: DocumentAnalysisResult) {
-        guard let coordinator, !isBusy, canExportPdfRedaction else { return }
+        guard canSaveDocument(for: result) else { return }
 
         let panel = NSSavePanel()
         panel.canCreateDirectories = true
@@ -457,16 +543,8 @@ private extension DocumentSanitizeViewModel {
         isSanitizing = true
         activeWork?.cancel()
         activeWork = Task {
-            guard let pdfData = await pdfData(for: selectedFile) else { return }
-
             do {
-                let session = PDFRedactionSession(
-                    sourceData: pdfData,
-                    analysis: result,
-                    selectedEntityIDs: selectedEntityIDs,
-                    manualRegions: manualRegions
-                )
-                _ = try await coordinator.exportRedactedPDF(session: session, to: destinationURL)
+                try await exportRedactedPDF(for: result, to: destinationURL)
                 guard !Task.isCancelled else { return }
                 isSanitizing = false
                 statusMessage = OffsendStrings.documentSanitizeSavedRedactedPDF(
@@ -547,6 +625,7 @@ private extension DocumentSanitizeViewModel {
             return
         }
 
+        let token = analysisToken
         textPreviewWork?.cancel()
         textPreviewWork = Task {
             try? await Task.sleep(nanoseconds: PreviewTiming.textPreviewDebounceNanoseconds)
@@ -558,7 +637,9 @@ private extension DocumentSanitizeViewModel {
             }
 
             let entities = result.detection.entities.filter { selectedEntityIDs.contains($0.id) }
-            sanitizeResult = coordinator.previewSanitizedDocument(from: result, entities: entities)
+            let preview = await coordinator.previewSanitizedDocument(from: result, entities: entities)
+            guard !Task.isCancelled, analysisToken == token else { return }
+            sanitizeResult = preview
         }
     }
 

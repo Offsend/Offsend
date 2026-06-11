@@ -16,8 +16,7 @@ struct DocumentFindingsPreviewLayout: View {
                 if result.extracted.format == .pdf {
                     DocumentPDFPreviewPanel(viewModel: viewModel, result: result)
                 } else {
-                    DocumentMaskedPreview(text: viewModel.previewText)
-                        .equatable()
+                    DocumentMaskedPreview(viewModel: viewModel, result: result)
                 }
             }
             .frame(

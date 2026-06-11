@@ -14,6 +14,10 @@
   <img src="https://img.shields.io/badge/local--first-yes-2ea44f" alt="Local-first">
 </p>
 
+<p align="center">
+  <img src="assets/demo.gif" alt="Drop a file or folder into Prepare for AI">
+</p>
+
 ---
 
 Offsend is a local-first macOS menu bar app. It helps you get **projects**, **files**, and **clipboard text** AI-ready before ChatGPT, Claude, Cursor, or another tool sees them.
@@ -36,10 +40,10 @@ Directory checks use paths and ignore rules only — not file contents.
 
 Drop a file in **Prepare**, review findings, mask or redact sensitive items, then copy or save an AI-ready version.
 
-**Supported formats** *(more coming)*
+**Supported formats**
 
-- **Text** — `.txt`, `.md`, `.markdown`, `.csv`, `.json`, `.log`, `.xml`, `.yaml`, `.yml`
-- **Documents** — `.pdf`, `.rtf`
+- **Plain text** — common extensions like `.txt`, `.md`, `.csv`, `.json`, `.log`, `.xml`, `.yaml`, plus any other text file (e.g. `.swift`, `.html`)
+- **Documents** — `.pdf`, `.rtf`, `.doc`, `.docx`
 
 ### 3. Prepare clipboard text (Safe Paste)
 
@@ -79,7 +83,11 @@ Security issues: see [SECURITY.md](SECURITY.md).
 
 ## Install
 
-Download the latest build from [Releases](../../releases), or build from source:
+```bash
+brew install --cask offsend/tap/offsend
+```
+
+Or download the latest build from [Releases](../../releases), or build from source:
 
 ```bash
 brew install tuist
