@@ -83,7 +83,11 @@ Security issues: see [SECURITY.md](SECURITY.md).
 
 ## Install
 
-Download the latest build from [Releases](../../releases), or build from source:
+```bash
+brew install --cask offsend/tap/offsend
+```
+
+Or download the latest build from [Releases](../../releases), or build from source:
 
 ```bash
 brew install tuist
