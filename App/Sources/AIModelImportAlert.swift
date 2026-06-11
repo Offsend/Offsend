@@ -14,6 +14,7 @@ enum AIModelImportFailure: Equatable, Sendable {
 }
 
 enum AIModelImportAlert {
+    @MainActor
     static func present(_ failure: AIModelImportFailure) {
         let alert = NSAlert()
         alert.messageText = OffsendStrings.alertAiModelTitle

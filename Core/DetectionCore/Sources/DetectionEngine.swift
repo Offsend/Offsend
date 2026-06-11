@@ -4,7 +4,7 @@ public protocol SensitiveDataDetecting: Sendable {
     func scan(_ request: DetectionRequest) async -> DetectionResult
 }
 
-public final class DetectionEngine: SensitiveDataDetecting {
+public final class DetectionEngine: SensitiveDataDetecting, @unchecked Sendable {
     private let regexRules: [CompiledRule]
     private let secretRules: [CompiledRule]
     private let aiDetector: (any AIModelDetecting)?
@@ -176,7 +176,7 @@ enum CustomDictionaryRuleCache {
 
 /// Caches the compiled `NSRegularExpression` so a pattern is compiled once, not on every scan.
 /// Compilation failures surface in debug instead of being silently swallowed.
-final class CompiledRule {
+final class CompiledRule: @unchecked Sendable {
     let rule: DetectionRule
     private let regex: NSRegularExpression?
 

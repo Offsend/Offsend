@@ -8,11 +8,11 @@ enum OffsendDeepLink: Equatable, Sendable {
 
 /// Extensible registry: append new parsers for additional paths.
 enum OffsendDeepLinkParser {
-    typealias Parser = (URL) -> OffsendDeepLink?
+    typealias Parser = @Sendable (URL) -> OffsendDeepLink?
 
     /// Ordered list; first non-nil match wins.
     static let parsers: [Parser] = [
-        parseCheckoutSuccess
+        { Self.parseCheckoutSuccess($0) }
     ]
 
     static func parse(_ url: URL) -> OffsendDeepLink? {

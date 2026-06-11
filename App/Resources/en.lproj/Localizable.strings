@@ -15,6 +15,10 @@
 "prepare.dropHintWithFileSizeLimit" = "or click Select New — folders, or txt, md, csv, json, pdf, and similar formats.\nUp to %@ on Free · %@ on Pro.";
 "prepare.selectPrompt" = "Select";
 
+"alert.prepare.unsupportedTitle" = "Unsupported file";
+"alert.prepare.unsupportedMessage" = "“%@” cannot be opened in Prepare. Choose a folder, or a document such as txt, md, csv, json, or pdf.";
+"alert.prepare.unsupportedMessageMultiple" = "%1$d files cannot be opened in Prepare (%2$@). Choose a folder, or documents such as txt, md, csv, json, or pdf.";
+
 "common.on.lowercase" = "on";
 "common.off.lowercase" = "off";
 "common.on" = "On";

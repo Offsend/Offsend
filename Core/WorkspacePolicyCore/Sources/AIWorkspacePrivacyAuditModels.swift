@@ -1,6 +1,6 @@
 import Foundation
 
-public struct AIWorkspacePrivacyAuditConfiguration: Equatable {
+public struct AIWorkspacePrivacyAuditConfiguration: Equatable, Sendable {
     public let rules: [AIWorkspacePrivacyRule]
     public let sensitivePatterns: [AIWorkspaceSensitivePattern]
     /// Additional directory names whose descendants are skipped during the workspace walk
@@ -33,7 +33,7 @@ public enum AIWorkspacePrivacyFixScenario: Equatable, Sendable {
     case noPolicyFiles
 }
 
-public struct AIWorkspacePrivacyRule: Equatable, Identifiable {
+public struct AIWorkspacePrivacyRule: Equatable, Identifiable, Sendable {
     public let id: String
     public let toolName: String
     public let title: String
@@ -64,13 +64,13 @@ public struct AIWorkspacePrivacyRule: Equatable, Identifiable {
     }
 }
 
-public enum AIWorkspacePrivacyRuleSeverity: String, Equatable {
+public enum AIWorkspacePrivacyRuleSeverity: String, Equatable, Sendable {
     case required
     case recommended
     case informational
 }
 
-public struct AIWorkspaceSensitivePattern: Equatable, Identifiable {
+public struct AIWorkspaceSensitivePattern: Equatable, Identifiable, Sendable {
     public let id: String
     public let title: String
     public let acceptedPatterns: [String]
@@ -105,7 +105,7 @@ public struct AIWorkspaceSensitivePattern: Equatable, Identifiable {
     }
 }
 
-public struct AIWorkspacePrivacyAuditResult: Equatable {
+public struct AIWorkspacePrivacyAuditResult: Equatable, Sendable {
     public let directoryURL: URL
     public let status: AIWorkspacePrivacyAuditStatus
     public let ruleFindings: [AIWorkspacePrivacyRuleFinding]
@@ -175,13 +175,13 @@ public enum WorkspaceDirectoryAvailability {
     }
 }
 
-public enum AIWorkspacePrivacyAuditStatus: String, Equatable {
+public enum AIWorkspacePrivacyAuditStatus: String, Equatable, Sendable {
     case pass
     case warning
     case fail
 }
 
-public struct AIWorkspacePrivacyRuleFinding: Equatable, Identifiable {
+public struct AIWorkspacePrivacyRuleFinding: Equatable, Identifiable, Sendable {
     public var id: String { rule.id }
     public let rule: AIWorkspacePrivacyRule
     public let matchedRelativePaths: [String]
@@ -203,7 +203,7 @@ public struct AIWorkspacePrivacyRuleFinding: Equatable, Identifiable {
     }
 }
 
-public struct AIWorkspaceSensitivePatternFinding: Equatable, Identifiable {
+public struct AIWorkspaceSensitivePatternFinding: Equatable, Identifiable, Sendable {
     public var id: String { pattern.id }
     public let pattern: AIWorkspaceSensitivePattern
     /// Ignore files that declare coverage for this pattern type (informational).
@@ -226,7 +226,7 @@ public struct AIWorkspaceSensitivePatternFinding: Equatable, Identifiable {
     }
 }
 
-public struct AIWorkspacePrivacyAuditError: Equatable, Identifiable {
+public struct AIWorkspacePrivacyAuditError: Equatable, Identifiable, Sendable {
     public let id: String
     public let message: String
 
@@ -236,12 +236,12 @@ public struct AIWorkspacePrivacyAuditError: Equatable, Identifiable {
     }
 }
 
-public enum AIWorkspacePrivacyFileFixStrategy: Equatable {
+public enum AIWorkspacePrivacyFileFixStrategy: Equatable, Sendable {
     case createIfMissing
     case mergeLines
 }
 
-public struct AIWorkspacePrivacyFileFix: Equatable {
+public struct AIWorkspacePrivacyFileFix: Equatable, Sendable {
     public let relativePath: String
     public let contents: String
     public let strategy: AIWorkspacePrivacyFileFixStrategy
@@ -257,7 +257,7 @@ public struct AIWorkspacePrivacyFileFix: Equatable {
     }
 }
 
-public struct AIWorkspacePrivacyFixResult: Equatable {
+public struct AIWorkspacePrivacyFixResult: Equatable, Sendable {
     public let createdRelativePaths: [String]
     public let updatedRelativePaths: [String]
     public let errors: [AIWorkspacePrivacyAuditError]

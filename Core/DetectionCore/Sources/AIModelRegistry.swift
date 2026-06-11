@@ -8,7 +8,9 @@ public actor AIModelRegistry {
     /// (Ollama/GGUF `load` has side effects in the daemon).
     private var pendingLoad: Task<Void, Error>?
 
-    public init(makeRunner: @escaping @Sendable (AIModelFormat) -> any AIModelRunning = AIModelRuntimeFactory.make) {
+    public init(makeRunner: @escaping @Sendable (AIModelFormat) -> any AIModelRunning = { format in
+        AIModelRuntimeFactory.make(format: format)
+    }) {
         self.makeRunner = makeRunner
     }
 

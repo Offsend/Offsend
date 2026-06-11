@@ -5,7 +5,7 @@ let appBuildNumber = "3" // Local default; release workflow overrides via github
 
 let appName = "Offsend"
 let bundlePrefix = "io.offsend"
-let macOSDeploymentTarget: DeploymentTargets = .macOS("14.0")
+let macOSDeploymentTarget: DeploymentTargets = .macOS("13.0")
 
 /// Developer ID + Hardened Runtime for Release (required for notarization). Do not pass CODE_SIGN_IDENTITY
 /// via `xcodebuild` — it applies to SwiftPM targets and conflicts with their automatic Apple Development signing.

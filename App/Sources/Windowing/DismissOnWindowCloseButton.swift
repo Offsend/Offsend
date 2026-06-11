@@ -17,7 +17,7 @@ extension View {
 
 @MainActor
 private struct WindowWillCloseObserver: NSViewRepresentable {
-    let action: () -> Void
+    let action: @MainActor () -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(action: action)
@@ -37,8 +37,9 @@ private struct WindowWillCloseObserver: NSViewRepresentable {
         coordinator.detach()
     }
 
-    final class Coordinator {
-        private let action: () -> Void
+    @MainActor
+    final class Coordinator: @unchecked Sendable {
+        private let action: @MainActor () -> Void
         private weak var observedWindow: NSWindow?
         private var observer: NSObjectProtocol?
 
@@ -57,10 +58,13 @@ private struct WindowWillCloseObserver: NSViewRepresentable {
                 object: window,
                 queue: .main
             ) { [weak self] _ in
-                self?.action()
+                MainActor.assumeIsolated {
+                    self?.action()
+                }
             }
         }
 
+        @MainActor
         func detach() {
             if let observer {
                 NotificationCenter.default.removeObserver(observer)
@@ -69,10 +73,9 @@ private struct WindowWillCloseObserver: NSViewRepresentable {
             observedWindow = nil
         }
 
+        @MainActor
         deinit {
-            if let observer {
-                NotificationCenter.default.removeObserver(observer)
-            }
+            detach()
         }
     }
 }

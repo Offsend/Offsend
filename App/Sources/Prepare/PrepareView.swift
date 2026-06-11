@@ -177,17 +177,23 @@ struct PrepareView: View {
     }
 
     private func applyReplacement(from urls: [URL]) {
-        guard let replacement = PrepareURLClassification.selection(forMultiple: urls) else { return }
-        selection = replacement
+        guard !urls.isEmpty else { return }
+        if let replacement = PrepareURLClassification.selection(forMultiple: urls) {
+            selection = replacement
+        } else {
+            PrepareImportAlert.presentUnsupported(urls: urls)
+        }
     }
 
     private func bootstrapFromWindowPathIfNeeded() {
-        guard let prepareWindowPath,
-              let resolved = PrepareURLClassification.selection(forWindowPath: prepareWindowPath) else {
-            return
+        guard let prepareWindowPath else { return }
+        let url = URL(fileURLWithPath: prepareWindowPath)
+        if let resolved = PrepareURLClassification.selection(forWindowPath: prepareWindowPath) {
+            guard selection != resolved else { return }
+            selection = resolved
+        } else if !PrepareURLClassification.isDirectory(url) {
+            PrepareImportAlert.presentUnsupported(urls: [url])
         }
-        guard selection != resolved else { return }
-        selection = resolved
     }
 
     private func prefillFromPasteboardIfNeeded() {
@@ -226,10 +232,13 @@ struct PrepareView: View {
         }
 
         group.notify(queue: .main) {
-            guard let resolved = PrepareURLClassification.selection(forMultiple: collector.orderedURLs()) else {
-                return
+            let urls = collector.orderedURLs()
+            guard !urls.isEmpty else { return }
+            if let resolved = PrepareURLClassification.selection(forMultiple: urls) {
+                self.selection = resolved
+            } else {
+                PrepareImportAlert.presentUnsupported(urls: urls)
             }
-            self.selection = resolved
         }
         return true
     }

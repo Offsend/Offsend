@@ -1,6 +1,6 @@
 import Foundation
 
-public struct DetectionRequest {
+public struct DetectionRequest: Sendable {
     public let text: String
     public let options: DetectionOptions
 
@@ -10,7 +10,7 @@ public struct DetectionRequest {
     }
 }
 
-public struct DetectionOptions: Equatable {
+public struct DetectionOptions: Equatable, Sendable {
     public var enabledTypes: Set<SensitiveEntityType>
     public var customDictionaries: [CustomDictionaryItem]
     public var maximumLength: Int
@@ -34,7 +34,7 @@ public struct DetectionOptions: Equatable {
     public static let `default` = DetectionOptions()
 }
 
-public struct DetectionResult {
+public struct DetectionResult: @unchecked Sendable {
     /// Entity ranges are valid **only** against `scannedText`, never the original input.
     /// When `wasTruncated` is true, `scannedText` is shorter than the source and only it was scanned.
     public let entities: [SensitiveEntity]
@@ -59,7 +59,7 @@ public struct DetectionResult {
     }
 }
 
-public struct SensitiveEntity: Identifiable, Equatable {
+public struct SensitiveEntity: Identifiable, Equatable, @unchecked Sendable {
     public let id: UUID
     public let type: SensitiveEntityType
     /// Valid only against `DetectionResult.scannedText`; using it on any other string is undefined.
@@ -185,7 +185,7 @@ public enum DetectionSource: String, Codable, Equatable, Sendable {
     case ai
 }
 
-public enum CustomDictionaryKind: String, Codable, CaseIterable, Hashable {
+public enum CustomDictionaryKind: String, Codable, CaseIterable, Hashable, Sendable {
     case client
     case company
     case project
@@ -208,7 +208,7 @@ public enum CustomDictionaryKind: String, Codable, CaseIterable, Hashable {
     }
 }
 
-public struct CustomDictionaryItem: Identifiable, Codable, Equatable {
+public struct CustomDictionaryItem: Identifiable, Codable, Equatable, Sendable {
     public let id: UUID
     public var kind: CustomDictionaryKind
     public var value: String

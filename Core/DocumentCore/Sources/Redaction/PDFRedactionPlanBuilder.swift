@@ -40,7 +40,7 @@ public struct PDFRedactionPlanBuilder: PDFRedactionPlanBuilding {
                 return value
             }
         )
-        let unresolvedValues = selectedEntities.uniqueByValue()
+        _ = selectedEntities.uniqueByValue()
             .map(\.value)
             .filter { !resolvedValues.contains($0) }
 

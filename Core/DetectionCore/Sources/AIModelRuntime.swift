@@ -41,7 +41,7 @@ public protocol AIModelRunning: Sendable {
     func unload()
 }
 
-public enum AIModelRuntimeFactory {
+public enum AIModelRuntimeFactory: Sendable {
     public static func make(format: AIModelFormat) -> any AIModelRunning {
         switch format {
         // `.huggingFaceTransformers` is rejected by `AIModelRunnableInspector` before loading;
