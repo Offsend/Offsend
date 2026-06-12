@@ -163,7 +163,7 @@ jobs:
       - name: Install Sparkle CLI (generate_appcast)
         run: |
           set -euo pipefail
-          SPARKLE_VERSION="2.9.1"
+          SPARKLE_VERSION="2.7.1"
           curl -fsSL "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz" -o "$RUNNER_TEMP/sparkle.tar.xz"
           mkdir -p "$RUNNER_TEMP/sparkle"
           tar -xJf "$RUNNER_TEMP/sparkle.tar.xz" -C "$RUNNER_TEMP/sparkle" --strip-components 1

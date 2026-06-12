@@ -28,7 +28,7 @@ let externalPackages: [Package] = [
     .remote(url: "https://github.com/jpsim/Yams", requirement: .upToNextMajor(from: "5.1.0")),
     .remote(url: "https://github.com/sindresorhus/KeyboardShortcuts", requirement: .upToNextMajor(from: "2.3.0")),
     .remote(url: "https://github.com/stephencelis/SQLite.swift", requirement: .upToNextMajor(from: "0.15.0")),
-    .remote(url: "https://github.com/sparkle-project/Sparkle", requirement: .upToNextMajor(from: "2.6.0")),
+    .remote(url: "https://github.com/sparkle-project/Sparkle", requirement: .exact("2.7.1")),
     .remote(url: "https://github.com/TelemetryDeck/SwiftSDK", requirement: .upToNextMajor(from: "2.0.0")),
     .remote(
         url: "https://github.com/microsoft/onnxruntime-swift-package-manager",
