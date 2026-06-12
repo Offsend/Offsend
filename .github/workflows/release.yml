@@ -21,8 +21,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Tuist and create-dmg
-        run: brew install tuist create-dmg
+      - name: Install Tuist
+        uses: jdx/mise-action@v2
+        with:
+          install: true
+
+      - name: Install create-dmg
+        run: brew install create-dmg
 
       - name: Install dependencies
         run: tuist install
