@@ -38,7 +38,7 @@ public struct PDFRedactionPlan: Equatable, Sendable {
     public var isEmpty: Bool { regions.isEmpty }
 }
 
-public struct PDFRedactionSession {
+public struct PDFRedactionSession: @unchecked Sendable {
     public let sourceData: Data
     public let analysis: DocumentAnalysisResult
     public var selectedEntityIDs: Set<UUID>

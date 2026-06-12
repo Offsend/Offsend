@@ -122,7 +122,7 @@ public struct ExtractedDocument: Equatable, Sendable {
     }
 }
 
-public struct DocumentAnalysisResult {
+public struct DocumentAnalysisResult: @unchecked Sendable {
     public let extracted: ExtractedDocument
     public let detection: DetectionResult
     public let assessment: RiskAssessment
@@ -138,7 +138,7 @@ public struct DocumentAnalysisResult {
     }
 }
 
-public struct DocumentSanitizationResult {
+public struct DocumentSanitizationResult: @unchecked Sendable {
     public let extracted: ExtractedDocument
     public let detection: DetectionResult
     public let assessment: RiskAssessment

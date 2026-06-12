@@ -11,11 +11,11 @@ final class DocumentProcessingPipelineTests: XCTestCase {
             .appendingPathComponent("Fixtures/sample-invoice.txt")
     }
 
-    func testAnalyzeExtractsAndScoresFixture() throws {
+    func testAnalyzeExtractsAndScoresFixture() async throws {
         let pipeline = DocumentProcessingPipeline()
         let request = try DocumentProcessingRequest(fileURL: fixtureURL)
 
-        let result = try pipeline.analyze(request)
+        let result = try await pipeline.analyze(request)
 
         XCTAssertEqual(result.extracted.extractorID, "plain-text")
         XCTAssertEqual(result.extracted.source.fileName, "sample-invoice.txt")
@@ -28,30 +28,30 @@ final class DocumentProcessingPipelineTests: XCTestCase {
         XCTAssertFalse(result.assessment.hasCriticalSecret)
     }
 
-    func testSanitizeMasksDetectedEntities() throws {
+    func testSanitizeMasksDetectedEntities() async throws {
         let pipeline = DocumentProcessingPipeline()
         let request = try DocumentProcessingRequest(fileURL: fixtureURL)
 
-        let result = try pipeline.sanitize(request)
+        let result = try await pipeline.sanitize(request)
 
         XCTAssertTrue(result.masking.maskedText.contains("{{EMAIL_1}}"))
         XCTAssertTrue(result.masking.maskedText.contains("{{CONTRACT_1}}"))
         XCTAssertEqual(result.masking.mapping["{{EMAIL_1}}"], "ivan@acme.com")
     }
 
-    func testSanitizeUsesEntityOverride() throws {
+    func testSanitizeUsesEntityOverride() async throws {
         let pipeline = DocumentProcessingPipeline()
         let request = try DocumentProcessingRequest(fileURL: fixtureURL)
-        let analysis = try pipeline.analyze(request)
+        let analysis = try await pipeline.analyze(request)
         let emailOnly = analysis.detection.entities.filter { $0.type == .email }
 
-        let result = try pipeline.sanitize(request, entities: emailOnly)
+        let result = try await pipeline.sanitize(request, entities: emailOnly)
 
         XCTAssertTrue(result.masking.maskedText.contains("{{EMAIL_1}}"))
         XCTAssertTrue(result.masking.maskedText.contains("CN-4812"))
     }
 
-    func testAnalyzeExtractsDocxAsPDF() throws {
+    func testAnalyzeExtractsDocxAsPDF() async throws {
         let docxData = try WordTestFixtures.makeDocx(containing: "Contact ivan@acme.com for invoice CN-4812")
         let request = DocumentProcessingRequest(
             data: docxData,
@@ -59,7 +59,7 @@ final class DocumentProcessingPipelineTests: XCTestCase {
         )
         let pipeline = DocumentProcessingPipeline()
 
-        let result = try pipeline.analyze(request)
+        let result = try await pipeline.analyze(request)
 
         XCTAssertEqual(result.extracted.extractorID, "word")
         XCTAssertEqual(result.extracted.format, .pdf)
@@ -68,7 +68,7 @@ final class DocumentProcessingPipelineTests: XCTestCase {
         XCTAssertTrue(result.detection.entities.contains { $0.type == .email })
     }
 
-    func testBuildsPDFRedactionPlanForConvertedDocx() throws {
+    func testBuildsPDFRedactionPlanForConvertedDocx() async throws {
         let text = "Send payment to ivan@acme.com"
         let docxData = try WordTestFixtures.makeDocx(containing: text)
         let pdfData = try AppKitWordDocumentToPDFConverter().convert(data: docxData, fileExtension: "docx")
@@ -78,7 +78,7 @@ final class DocumentProcessingPipelineTests: XCTestCase {
             source: DocumentSource(fileName: "invoice.docx")
         )
 
-        let analysis = try pipeline.analyze(request)
+        let analysis = try await pipeline.analyze(request)
         let entityIDs = Set(analysis.detection.entities.map(\.id))
 
         let plan = try pipeline.buildPDFRedactionPlan(
@@ -92,7 +92,7 @@ final class DocumentProcessingPipelineTests: XCTestCase {
         XCTAssertTrue(plan.unresolvedValues.isEmpty)
     }
 
-    func testSanitizeMasksDetectedEntitiesInDocx() throws {
+    func testSanitizeMasksDetectedEntitiesInDocx() async throws {
         let docxData = try WordTestFixtures.makeDocx(containing: "Send invoice to ivan@acme.com")
         let request = DocumentProcessingRequest(
             data: docxData,
@@ -100,14 +100,14 @@ final class DocumentProcessingPipelineTests: XCTestCase {
         )
         let pipeline = DocumentProcessingPipeline()
 
-        let result = try pipeline.sanitize(request)
+        let result = try await pipeline.sanitize(request)
 
         XCTAssertEqual(result.extracted.format, .pdf)
         XCTAssertTrue(result.masking.maskedText.contains("{{EMAIL_1}}"))
         XCTAssertEqual(result.masking.mapping["{{EMAIL_1}}"], "ivan@acme.com")
     }
 
-    func testExportsRedactedPDFFromDocx() throws {
+    func testExportsRedactedPDFFromDocx() async throws {
         let secret = "ivan@acme.com"
         let docxData = try WordTestFixtures.makeDocx(containing: "Send payment to \(secret)")
         let pipeline = DocumentProcessingPipeline()
@@ -116,7 +116,7 @@ final class DocumentProcessingPipelineTests: XCTestCase {
             source: DocumentSource(fileName: "invoice.docx")
         )
 
-        let analysis = try pipeline.analyze(request)
+        let analysis = try await pipeline.analyze(request)
         guard let pdfData = analysis.extracted.pdfData else {
             return XCTFail("Expected converted PDF data")
         }
@@ -140,7 +140,7 @@ final class DocumentProcessingPipelineTests: XCTestCase {
         )
     }
 
-    func testAnalyzeExtractsPDF() throws {
+    func testAnalyzeExtractsPDF() async throws {
         let pipeline = DocumentProcessingPipeline()
         let pdfData = PDFTestFixtures.makePDF(containing: "Contact ivan@acme.com for invoice CN-4812")
         let request = DocumentProcessingRequest(
@@ -148,7 +148,7 @@ final class DocumentProcessingPipelineTests: XCTestCase {
             source: DocumentSource(fileName: "invoice.pdf")
         )
 
-        let result = try pipeline.analyze(request)
+        let result = try await pipeline.analyze(request)
 
         XCTAssertEqual(result.extracted.extractorID, "pdf")
         XCTAssertEqual(result.extracted.format, DocumentFormat.pdf)
@@ -156,7 +156,7 @@ final class DocumentProcessingPipelineTests: XCTestCase {
         XCTAssertTrue(result.detection.entities.contains { $0.type == .email })
     }
 
-    func testSanitizeMasksDetectedEntitiesInPDF() throws {
+    func testSanitizeMasksDetectedEntitiesInPDF() async throws {
         let pipeline = DocumentProcessingPipeline()
         let pdfData = PDFTestFixtures.makePDF(containing: "Send invoice to ivan@acme.com")
         let request = DocumentProcessingRequest(
@@ -164,42 +164,42 @@ final class DocumentProcessingPipelineTests: XCTestCase {
             source: DocumentSource(fileName: "invoice.pdf")
         )
 
-        let result = try pipeline.sanitize(request)
+        let result = try await pipeline.sanitize(request)
 
         XCTAssertTrue(result.masking.maskedText.contains("{{EMAIL_1}}"))
         XCTAssertEqual(result.masking.mapping["{{EMAIL_1}}"], "ivan@acme.com")
     }
 
-    func testRejectsInvalidPDF() {
+    func testRejectsInvalidPDF() async {
         let pipeline = DocumentProcessingPipeline()
         let request = DocumentProcessingRequest(
             data: Data("not-a-pdf".utf8),
             source: DocumentSource(fileName: "broken.pdf")
         )
 
-        XCTAssertThrowsError(try pipeline.analyze(request)) { error in
-            XCTAssertEqual(
-                error as? DocumentProcessingError,
-                .invalidPDF
-            )
+        do {
+            _ = try await pipeline.analyze(request)
+            XCTFail("Expected invalidPDF error")
+        } catch {
+            XCTAssertEqual(error as? DocumentProcessingError, .invalidPDF)
         }
     }
 
-    func testAnalyzesPDFWithoutExtractableText() throws {
+    func testAnalyzesPDFWithoutExtractableText() async throws {
         let pipeline = DocumentProcessingPipeline()
         let request = DocumentProcessingRequest(
             data: PDFTestFixtures.makeEmptyPDF(),
             source: DocumentSource(fileName: "blank.pdf")
         )
 
-        let result = try pipeline.analyze(request)
+        let result = try await pipeline.analyze(request)
 
         XCTAssertEqual(result.extracted.format, DocumentFormat.pdf)
         XCTAssertTrue(result.extracted.plainText.isEmpty)
         XCTAssertTrue(result.detection.entities.isEmpty)
     }
 
-    func testTruncatesExtractedPDFTextBeforeDetection() throws {
+    func testTruncatesExtractedPDFTextBeforeDetection() async throws {
         let text = String(repeating: "a", count: 30) + " ivan@acme.com"
         let pipeline = DocumentProcessingPipeline()
         let request = DocumentProcessingRequest(
@@ -208,13 +208,13 @@ final class DocumentProcessingPipelineTests: XCTestCase {
             options: DocumentProcessingOptions(maximumExtractedCharacterCount: 20)
         )
 
-        let result = try pipeline.analyze(request)
+        let result = try await pipeline.analyze(request)
 
         XCTAssertTrue(result.extracted.wasTruncated)
         XCTAssertFalse(result.detection.entities.contains { $0.type == .email })
     }
 
-    func testRejectsOversizedFile() {
+    func testRejectsOversizedFile() async {
         let request = DocumentProcessingRequest(
             data: Data(repeating: 0x41, count: 20),
             source: DocumentSource(fileName: "large.txt"),
@@ -222,12 +222,15 @@ final class DocumentProcessingPipelineTests: XCTestCase {
         )
         let pipeline = DocumentProcessingPipeline()
 
-        XCTAssertThrowsError(try pipeline.analyze(request)) { error in
+        do {
+            _ = try await pipeline.analyze(request)
+            XCTFail("Expected fileTooLarge error")
+        } catch {
             XCTAssertEqual(error as? DocumentProcessingError, .fileTooLarge(byteCount: 20, maximumByteCount: 10))
         }
     }
 
-    func testTruncatesExtractedTextBeforeDetection() throws {
+    func testTruncatesExtractedTextBeforeDetection() async throws {
         let text = String(repeating: "a", count: 30) + " ivan@acme.com"
         let request = DocumentProcessingRequest(
             data: Data(text.utf8),
@@ -236,7 +239,7 @@ final class DocumentProcessingPipelineTests: XCTestCase {
         )
         let pipeline = DocumentProcessingPipeline()
 
-        let result = try pipeline.analyze(request)
+        let result = try await pipeline.analyze(request)
 
         XCTAssertTrue(result.extracted.wasTruncated)
         XCTAssertTrue(result.extracted.warnings.contains {
@@ -245,7 +248,7 @@ final class DocumentProcessingPipelineTests: XCTestCase {
         XCTAssertFalse(result.detection.entities.contains { $0.type == .email })
     }
 
-    func testUsesInjectedDependencies() throws {
+    func testUsesInjectedDependencies() async throws {
         let stubExtractor = DocumentTextExtractor(registry: StubRegistry())
         let pipeline = DocumentProcessingPipeline(
             textExtractor: stubExtractor,
@@ -258,7 +261,7 @@ final class DocumentProcessingPipelineTests: XCTestCase {
             source: DocumentSource(fileName: "stub.txt")
         )
 
-        let result = try pipeline.sanitize(request)
+        let result = try await pipeline.sanitize(request)
 
         XCTAssertEqual(result.extracted.plainText, "stubbed document")
         XCTAssertEqual(result.detection.entities.count, 1)
@@ -286,7 +289,7 @@ private struct StubPlainExtractor: DocumentTextExtracting {
 }
 
 private struct StubDetector: SensitiveDataDetecting {
-    func scan(_ request: DetectionRequest) -> DetectionResult {
+    func scan(_ request: DetectionRequest) async -> DetectionResult {
         let text = request.text
         let range = text.startIndex..<text.endIndex
         return DetectionResult(

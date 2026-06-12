@@ -6,10 +6,7 @@ import MaskingCore
 extension AppCoordinator {
     func documentProcessingOptions() -> DocumentProcessingOptions {
         DocumentProcessingOptions(
-            detection: DetectionOptions(
-                enabledTypes: settings.enabledDetectors,
-                customDictionaries: tariffFeatures.customDictionaries ? customDictionaries : []
-            ),
+            detection: detectionOptions(),
             mappingTTL: MappingTTL.effective(
                 settings.mappingTTL,
                 extendedTTLAllowed: allowsExtendedMappingTTL
@@ -19,6 +16,7 @@ extension AppCoordinator {
     }
 
     func analyzeDocument(at fileURL: URL) async throws -> DocumentAnalysisResult {
+        await ensureAIModelLoadedForDetection()
         let request = try DocumentProcessingRequest(
             fileURL: fileURL.standardizedFileURL,
             options: documentProcessingOptions()
@@ -27,7 +25,7 @@ extension AppCoordinator {
         let riskScorer = riskEngine
         let maskingEngine = maskingEngine
         return try await Task.detached {
-            try DocumentProcessingPipeline(
+            try await DocumentProcessingPipeline(
                 detector: detector,
                 riskScorer: riskScorer,
                 maskingEngine: maskingEngine
@@ -36,6 +34,7 @@ extension AppCoordinator {
     }
 
     func sanitizeDocument(at fileURL: URL, entities: [SensitiveEntity]?) async throws -> DocumentSanitizationResult {
+        await ensureAIModelLoadedForDetection()
         let request = try DocumentProcessingRequest(
             fileURL: fileURL.standardizedFileURL,
             options: documentProcessingOptions()
@@ -44,7 +43,7 @@ extension AppCoordinator {
         let riskScorer = riskEngine
         let maskingEngine = maskingEngine
         return try await Task.detached {
-            try DocumentProcessingPipeline(
+            try await DocumentProcessingPipeline(
                 detector: detector,
                 riskScorer: riskScorer,
                 maskingEngine: maskingEngine

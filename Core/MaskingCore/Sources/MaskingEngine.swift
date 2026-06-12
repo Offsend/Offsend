@@ -1,10 +1,10 @@
 import DetectionCore
 import Foundation
 
-public struct MaskingResult: Codable, Equatable, Identifiable {
+public struct MaskingResult: Codable, Equatable, Identifiable, Sendable {
     /// Explicit lifetime of a mapping. `.ephemeral` means "never persist" — distinct from
     /// an expiry date, so consumers don't have to overload `expiresAt == nil`.
-    public enum Retention: Codable, Equatable {
+    public enum Retention: Codable, Equatable, Sendable {
         case ephemeral
         case expiring(Date)
     }

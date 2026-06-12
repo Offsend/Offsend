@@ -90,6 +90,9 @@ struct SettingsView: View {
                             Text(tb.title)
                                 .font(.system(size: 12.5, weight: active ? .semibold : .medium))
                                 .foregroundColor(active ? palette.text : palette.textSub)
+                            if tb == .ai {
+                                aiPreviewBadge(palette: palette, compact: true)
+                            }
                             Spacer(minLength: 0)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -165,9 +168,14 @@ struct SettingsView: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(palette.text)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(tab.title)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(palette.text)
+                    HStack(spacing: 8) {
+                        Text(tab.title)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(palette.text)
+                        if tab == .ai {
+                            aiPreviewBadge(palette: palette)
+                        }
+                    }
                     Text(tab.subtitle)
                         .font(.system(size: 11))
                         .foregroundColor(palette.textMuted)
@@ -209,6 +217,8 @@ struct SettingsView: View {
                         SettingsHotkeysPanel()
                     case .detection:
                         SettingsDetectionPanel()
+                    case .ai:
+                        SettingsAIPanel()
                     case .masking:
                         SettingsMaskingPanel()
                     case .privacy:
@@ -230,8 +240,47 @@ struct SettingsView: View {
                 .environmentObject(coordinator)
                 .padding(.horizontal, 24)
                 .padding(.top, showsTariffUpsellBanner ? 16 : 22)
-                .padding(.bottom, 24)
+                .padding(.bottom, scrollContentBottomPadding)
             }
+            .frame(maxHeight: .infinity)
+
+            if tab == .ai, coordinator.aiModelDownloadProgress != nil {
+                aiDownloadProgressBar(palette: palette)
+            }
+        }
+    }
+
+    private var scrollContentBottomPadding: CGFloat {
+        var padding: CGFloat = 24
+        if tab == .ai, coordinator.aiModelDownloadProgress != nil {
+            padding += SettingsAIDownloadProgressBanner.pinnedBarHeight
+        }
+        return padding
+    }
+
+    private func aiPreviewBadge(palette: OFPalette, compact: Bool = false) -> some View {
+        Text(OffsendStrings.settingsTabAiPreviewBadge)
+            .font(.system(size: compact ? 9 : 9.5, weight: .bold))
+            .kerning(0.5)
+            .foregroundColor(palette.amberText)
+            .padding(.horizontal, compact ? 6 : 7)
+            .padding(.vertical, compact ? 1 : 2)
+            .background(Capsule().fill(palette.amberDim))
+    }
+
+    @ViewBuilder
+    private func aiDownloadProgressBar(palette: OFPalette) -> some View {
+        if let progress = coordinator.aiModelDownloadProgress {
+            VStack(spacing: 0) {
+                Rectangle()
+                    .fill(palette.border)
+                    .frame(height: 1)
+
+                SettingsAIDownloadProgressBanner(progress: progress)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 8)
+            }
+            .frame(height: SettingsAIDownloadProgressBanner.pinnedBarHeight)
         }
     }
 }

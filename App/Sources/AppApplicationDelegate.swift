@@ -1,6 +1,5 @@
 import AppKit
-import Foundation
-import UserNotifications
+@preconcurrency import UserNotifications
 
 @MainActor
 final class OffsendApplicationDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
@@ -40,10 +39,10 @@ final class OffsendApplicationDelegate: NSObject, NSApplicationDelegate, UNUserN
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        Task { @MainActor in
+        MainActor.assumeIsolated {
             Self.coordinator?.handleWorkspaceWatchNotificationResponse(response)
-            completionHandler()
         }
+        completionHandler()
     }
 
     nonisolated func userNotificationCenter(

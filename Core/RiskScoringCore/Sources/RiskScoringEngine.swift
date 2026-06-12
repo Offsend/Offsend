@@ -1,7 +1,7 @@
 import DetectionCore
 import Foundation
 
-public struct RiskAssessment: Equatable {
+public struct RiskAssessment: Equatable, Sendable {
     public let score: Int
     public let level: RiskLevel
     public let recommendedAction: RecommendedAction
@@ -68,6 +68,8 @@ public final class RiskScoringEngine: RiskScoring {
             return 80
         case .iban:
             return 60
+        case .personName, .streetAddress, .governmentId:
+            return 25
         case .jwt:
             return 80
         case .apiKeyGeneric, .openAIAPIKey, .awsAccessKeyId, .githubToken, .slackToken,

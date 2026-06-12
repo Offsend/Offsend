@@ -1,6 +1,6 @@
 import Foundation
 
-public struct DetectionRequest {
+public struct DetectionRequest: Sendable {
     public let text: String
     public let options: DetectionOptions
 
@@ -10,41 +10,56 @@ public struct DetectionRequest {
     }
 }
 
-public struct DetectionOptions: Equatable {
+public struct DetectionOptions: Equatable, Sendable {
     public var enabledTypes: Set<SensitiveEntityType>
     public var customDictionaries: [CustomDictionaryItem]
     public var maximumLength: Int
+    public var aiDetectionEnabled: Bool
+    public var selectedAIModelID: String?
 
     public init(
         enabledTypes: Set<SensitiveEntityType> = Set(SensitiveEntityType.allCases),
         customDictionaries: [CustomDictionaryItem] = [],
-        maximumLength: Int = 50_000
+        maximumLength: Int = 50_000,
+        aiDetectionEnabled: Bool = false,
+        selectedAIModelID: String? = nil
     ) {
         self.enabledTypes = enabledTypes
         self.customDictionaries = customDictionaries
         self.maximumLength = maximumLength
+        self.aiDetectionEnabled = aiDetectionEnabled
+        self.selectedAIModelID = selectedAIModelID
     }
 
     public static let `default` = DetectionOptions()
 }
 
-public struct DetectionResult {
+public struct DetectionResult: @unchecked Sendable {
     /// Entity ranges are valid **only** against `scannedText`, never the original input.
     /// When `wasTruncated` is true, `scannedText` is shorter than the source and only it was scanned.
     public let entities: [SensitiveEntity]
     public let scannedText: String
     public let wasTruncated: Bool
     public let scannedCharacterCount: Int
+    /// Set when `aiDetectionEnabled` was true but inference failed; regex/secret results are still returned.
+    public let aiDetectionError: String?
 
-    public init(entities: [SensitiveEntity], scannedText: String, wasTruncated: Bool, scannedCharacterCount: Int) {
+    public init(
+        entities: [SensitiveEntity],
+        scannedText: String,
+        wasTruncated: Bool,
+        scannedCharacterCount: Int,
+        aiDetectionError: String? = nil
+    ) {
         self.entities = entities
         self.scannedText = scannedText
         self.wasTruncated = wasTruncated
         self.scannedCharacterCount = scannedCharacterCount
+        self.aiDetectionError = aiDetectionError
     }
 }
 
-public struct SensitiveEntity: Identifiable, Equatable {
+public struct SensitiveEntity: Identifiable, Equatable, @unchecked Sendable {
     public let id: UUID
     public let type: SensitiveEntityType
     /// Valid only against `DetectionResult.scannedText`; using it on any other string is undefined.
@@ -99,6 +114,9 @@ public enum SensitiveEntityType: String, CaseIterable, Codable, Hashable, Sendab
     case customProject
     case customSensitiveTerm
     case customInternalDomain
+    case personName
+    case streetAddress
+    case governmentId
 
     public var placeholderPrefix: String {
         switch self {
@@ -132,6 +150,12 @@ public enum SensitiveEntityType: String, CaseIterable, Codable, Hashable, Sendab
             return "PROJECT"
         case .customSensitiveTerm:
             return "CUSTOM"
+        case .personName:
+            return "PERSON"
+        case .streetAddress:
+            return "ADDRESS"
+        case .governmentId:
+            return "GOV_ID"
         default:
             return "SECRET"
         }
@@ -158,9 +182,10 @@ public enum DetectionSource: String, Codable, Equatable, Sendable {
     case regex
     case secret
     case customDictionary
+    case ai
 }
 
-public enum CustomDictionaryKind: String, Codable, CaseIterable, Hashable {
+public enum CustomDictionaryKind: String, Codable, CaseIterable, Hashable, Sendable {
     case client
     case company
     case project
@@ -183,7 +208,7 @@ public enum CustomDictionaryKind: String, Codable, CaseIterable, Hashable {
     }
 }
 
-public struct CustomDictionaryItem: Identifiable, Codable, Equatable {
+public struct CustomDictionaryItem: Identifiable, Codable, Equatable, Sendable {
     public let id: UUID
     public var kind: CustomDictionaryKind
     public var value: String

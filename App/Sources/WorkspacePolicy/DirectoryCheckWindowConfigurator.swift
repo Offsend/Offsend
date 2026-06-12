@@ -1,12 +1,13 @@
 import AppKit
 import SwiftUI
 
+@MainActor
 struct DirectoryCheckWindowConfigurator: NSViewRepresentable, Equatable {
     let minimumSize: NSSize
     let preferredSize: NSSize
     let resetToken: UUID
 
-    static func == (lhs: Self, rhs: Self) -> Bool {
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.minimumSize == rhs.minimumSize
             && lhs.preferredSize == rhs.preferredSize
             && lhs.resetToken == rhs.resetToken

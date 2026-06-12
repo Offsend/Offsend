@@ -12,6 +12,7 @@ final class DocumentBatchSanitizeViewModel: ObservableObject {
     let fileURLs: [URL]
     private(set) var documentViewModels: [DocumentSanitizeViewModel]
 
+    private weak var coordinator: AppCoordinator?
     private var cancellables = Set<AnyCancellable>()
     private var analysisTask: Task<Void, Never>?
     private var saveAllTask: Task<Void, Never>?
@@ -70,6 +71,7 @@ final class DocumentBatchSanitizeViewModel: ObservableObject {
     }
 
     func bind(coordinator: AppCoordinator) {
+        self.coordinator = coordinator
         cancellables.removeAll()
         for viewModel in documentViewModels {
             viewModel.bind(coordinator: coordinator)
@@ -86,6 +88,7 @@ final class DocumentBatchSanitizeViewModel: ObservableObject {
     }
 
     func handleAppear() {
+        coordinator?.beginAIModelSession()
         syncLayoutToActiveDocument(force: true)
         startAnalysisPipeline()
     }
@@ -100,6 +103,7 @@ final class DocumentBatchSanitizeViewModel: ObservableObject {
         for viewModel in documentViewModels {
             viewModel.releaseSession()
         }
+        coordinator?.endAIModelSession()
     }
 
     func selectDocument(at index: Int) {

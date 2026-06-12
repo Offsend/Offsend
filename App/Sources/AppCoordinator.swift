@@ -77,13 +77,28 @@ final class AppCoordinator: ObservableObject {
     }
     @Published var isOnboardingPresentationRequested = false
     @Published var directoryWatchRuntime = WorkspaceWatchRuntimeState()
+    @Published var installedAIModels: [InstalledAIModel] = []
+    @Published var aiModelDownloadProgress: AIModelDownloadProgress?
+    @Published var hasHuggingFaceToken = false
+    @Published var huggingFaceTokenPreview: String?
+    @Published var aiModelLoadState: AIModelLoadState = .idle
+    /// MainActor mirror of `aiModelRegistry.activeModelID` (the registry is an actor and has no sync access).
+    var loadedAIModelID: String?
+    @Published var isClipboardScanInProgress = false
+    @Published var ollamaDiscoveredModels: [String] = []
 
     let clipboardService = ClipboardService()
     let workspaceWatchService: WorkspaceWatchService
     let pasteService = PasteService()
     let permissionsService = PermissionsService()
     let hotkeyService = HotkeyService()
-    let detectionEngine = DetectionEngine()
+    let aiModelRegistry = AIModelRegistry()
+    lazy var aiModelSessionManager = AIModelSessionManager { [weak self] in
+        Task { @MainActor in
+            self?.unloadAIModelAfterIdleTimeout()
+        }
+    }
+    lazy var detectionEngine: DetectionEngine = DetectionEngine(aiDetector: aiModelRegistry)
     let riskEngine = RiskScoringEngine()
     let maskingEngine = MaskingEngine()
     let dockActivationController = DockActivationController()
@@ -142,6 +157,8 @@ final class AppCoordinator: ObservableObject {
     private var clipboardAssessmentSnapshot: ClipboardAssessmentSnapshot?
     private var lastAppliedLaunchAtLoginPreference: Bool?
     private var lastAppliedDirectoryWatchSnapshot: DirectoryWatchSettingsSnapshot
+    var aiModelDownloadTask: Task<Void, Never>?
+    var clipboardScanTask: Task<Void, Never>?
 
     init() {
         var store: LocalStoring
@@ -173,6 +190,15 @@ final class AppCoordinator: ObservableObject {
         #endif
 
         self.store = store
+        self.installedAIModels = (try? store.loadInstalledAIModels()) ?? []
+        let token = (try? HuggingFaceTokenStore.shared.loadToken()).flatMap { $0 }
+        if let token {
+            self.hasHuggingFaceToken = true
+            self.huggingFaceTokenPreview = HuggingFaceTokenStore.maskedPreview(for: token)
+        } else {
+            self.hasHuggingFaceToken = false
+            self.huggingFaceTokenPreview = nil
+        }
         self.analytics = AppAnalytics(
             local: LocalAnalytics(store: store),
             product: TelemetryDeckAnalytics(isEnabled: initialSettings.analyticsOptIn)
@@ -227,6 +253,7 @@ final class AppCoordinator: ObservableObject {
             }
         refreshMenuBarStatusItem()
 
+        reconcileAIDetectionSettings()
         Task { await performStartupLicenseTasks() }
     }
 
@@ -304,15 +331,20 @@ final class AppCoordinator: ObservableObject {
             return
         }
 
-        let (detection, assessment) = assessClipboardText(text)
-        rememberClipboardAssessment(text: text, detection: detection, assessment: assessment)
-        analytics.track(.safePasteUsed(
-            riskLevel: assessment.level,
-            entityCount: detection.entities.count,
-            usedCachedScan: false
-        ))
-
-        handleSafePaste(snapshot: ClipboardAssessmentSnapshot(text: text, detection: detection, assessment: assessment), showsPopupForNewRisk: true)
+        lastStatusMessage = OffsendStrings.statusClipboardScanning
+        runClipboardAssessment(for: text) { [weak self] detection, assessment in
+            guard let self else { return }
+            rememberClipboardAssessment(text: text, detection: detection, assessment: assessment)
+            analytics.track(.safePasteUsed(
+                riskLevel: assessment.level,
+                entityCount: detection.entities.count,
+                usedCachedScan: false
+            ))
+            handleSafePaste(
+                snapshot: ClipboardAssessmentSnapshot(text: text, detection: detection, assessment: assessment),
+                showsPopupForNewRisk: true
+            )
+        }
     }
 
     func restorePlaceholders() {
@@ -355,18 +387,44 @@ final class AppCoordinator: ObservableObject {
             return
         }
 
-        let (detection, assessment) = assessClipboardText(text)
-        rememberClipboardAssessment(text: text, detection: detection, assessment: assessment)
-        guard !detection.entities.isEmpty, assessment.recommendedAction != .allow else {
-            clipboardAssessmentStatus = .safe
-            lastStatusMessage = detection.wasTruncated ? OffsendStrings.statusClipboardLooksSafeScanned : OffsendStrings.statusClipboardLooksSafe
-            showClipboardStatusPopup(assessment: assessment, wasTruncated: detection.wasTruncated)
+        if let snapshot = clipboardAssessmentSnapshot(for: text) {
+            presentClipboardStatus(from: snapshot)
             return
         }
 
-        clipboardAssessmentStatus = resolvedClipboardAssessmentStatus(for: detection, assessment: assessment)
-        lastStatusMessage = OffsendStrings.statusClipboardRiskDetected(AppLocalization.riskLevelName(assessment.level))
-        showSafePastePopup(originalText: detection.scannedText, entities: detection.entities, assessment: assessment, wasTruncated: detection.wasTruncated)
+        lastStatusMessage = OffsendStrings.statusClipboardScanning
+        runClipboardAssessment(for: text) { [weak self] detection, assessment in
+            guard let self else { return }
+            rememberClipboardAssessment(text: text, detection: detection, assessment: assessment)
+            presentClipboardStatus(
+                from: ClipboardAssessmentSnapshot(text: text, detection: detection, assessment: assessment)
+            )
+        }
+    }
+
+    private func presentClipboardStatus(from snapshot: ClipboardAssessmentSnapshot) {
+        guard !snapshot.detection.entities.isEmpty, snapshot.assessment.recommendedAction != .allow else {
+            clipboardAssessmentStatus = .safe
+            lastStatusMessage = snapshot.detection.wasTruncated
+                ? OffsendStrings.statusClipboardLooksSafeScanned
+                : OffsendStrings.statusClipboardLooksSafe
+            showClipboardStatusPopup(assessment: snapshot.assessment, wasTruncated: snapshot.detection.wasTruncated)
+            return
+        }
+
+        clipboardAssessmentStatus = resolvedClipboardAssessmentStatus(
+            for: snapshot.detection,
+            assessment: snapshot.assessment
+        )
+        lastStatusMessage = OffsendStrings.statusClipboardRiskDetected(
+            AppLocalization.riskLevelName(snapshot.assessment.level)
+        )
+        showSafePastePopup(
+            originalText: snapshot.detection.scannedText,
+            entities: snapshot.detection.entities,
+            assessment: snapshot.assessment,
+            wasTruncated: snapshot.detection.wasTruncated
+        )
     }
 
     func maskAndPaste(originalText: String, entities: [SensitiveEntity]) {
@@ -878,9 +936,21 @@ final class AppCoordinator: ObservableObject {
             return
         }
 
-        let (detection, assessment) = assessClipboardText(text)
-        rememberClipboardAssessment(text: text, detection: detection, assessment: assessment)
+        if let snapshot = clipboardAssessmentSnapshot(for: text) {
+            applyMonitoredClipboardAssessment(snapshot)
+            return
+        }
 
+        runClipboardAssessment(for: text) { [weak self] detection, assessment in
+            guard let self else { return }
+            rememberClipboardAssessment(text: text, detection: detection, assessment: assessment)
+            applyMonitoredClipboardAssessment(
+                ClipboardAssessmentSnapshot(text: text, detection: detection, assessment: assessment)
+            )
+        }
+    }
+
+    private func applyMonitoredClipboardAssessment(_ snapshot: ClipboardAssessmentSnapshot) {
         if let excludedApplicationName = frontmostExcludedClipboardApplicationName() {
             clipboardAssessmentStatus = .idle
             lastStatusMessage = OffsendStrings.statusClipboardMonitoringPausedForApp(excludedApplicationName)
@@ -888,15 +958,27 @@ final class AppCoordinator: ObservableObject {
             return
         }
 
-        guard !detection.entities.isEmpty, assessment.recommendedAction != .allow else {
+        guard !snapshot.detection.entities.isEmpty, snapshot.assessment.recommendedAction != .allow else {
             clipboardAssessmentStatus = .safe
-            lastStatusMessage = detection.wasTruncated ? OffsendStrings.statusClipboardLooksSafeScanned : OffsendStrings.statusClipboardLooksSafe
+            lastStatusMessage = snapshot.detection.wasTruncated
+                ? OffsendStrings.statusClipboardLooksSafeScanned
+                : OffsendStrings.statusClipboardLooksSafe
             return
         }
 
-        clipboardAssessmentStatus = resolvedClipboardAssessmentStatus(for: detection, assessment: assessment)
-        lastStatusMessage = OffsendStrings.statusClipboardRiskDetected(AppLocalization.riskLevelName(assessment.level))
-        showSafePastePopup(originalText: detection.scannedText, entities: detection.entities, assessment: assessment, wasTruncated: detection.wasTruncated)
+        clipboardAssessmentStatus = resolvedClipboardAssessmentStatus(
+            for: snapshot.detection,
+            assessment: snapshot.assessment
+        )
+        lastStatusMessage = OffsendStrings.statusClipboardRiskDetected(
+            AppLocalization.riskLevelName(snapshot.assessment.level)
+        )
+        showSafePastePopup(
+            originalText: snapshot.detection.scannedText,
+            entities: snapshot.detection.entities,
+            assessment: snapshot.assessment,
+            wasTruncated: snapshot.detection.wasTruncated
+        )
     }
 
     private func resolvedClipboardAssessmentStatus(for detection: DetectionResult, assessment: RiskAssessment) -> ClipboardAssessmentStatus {
@@ -917,39 +999,32 @@ final class AppCoordinator: ObservableObject {
         tariffFeatures.customDictionaries ? customDictionaries : []
     }
 
-    private func assessClipboardText(_ text: String) -> (DetectionResult, RiskAssessment) {
-        let detectionOptions = DetectionOptions(
-            enabledTypes: settings.enabledDetectors,
-            customDictionaries: activeCustomDictionaries
-        )
-        let detection = detectionEngine.scan(DetectionRequest(text: text, options: detectionOptions))
-        return (detection, riskEngine.assess(detection.entities))
-    }
-
     private func rememberClipboardAssessment(text: String, detection: DetectionResult, assessment: RiskAssessment) {
         clipboardAssessmentSnapshot = ClipboardAssessmentSnapshot(text: text, detection: detection, assessment: assessment)
     }
 
     private func syncClipboardAssessmentStatus(for text: String) {
-        let (detection, assessment) = assessClipboardText(text)
-        rememberClipboardAssessment(text: text, detection: detection, assessment: assessment)
+        runClipboardAssessment(for: text) { [weak self] detection, assessment in
+            guard let self else { return }
+            rememberClipboardAssessment(text: text, detection: detection, assessment: assessment)
 
-        guard settings.protectionEnabled, settings.clipboardMonitoringEnabled else {
-            clipboardAssessmentStatus = .idle
-            return
+            guard settings.protectionEnabled, settings.clipboardMonitoringEnabled else {
+                clipboardAssessmentStatus = .idle
+                return
+            }
+
+            if frontmostExcludedClipboardApplicationName() != nil {
+                clipboardAssessmentStatus = .idle
+                return
+            }
+
+            guard !detection.entities.isEmpty, assessment.recommendedAction != .allow else {
+                clipboardAssessmentStatus = .safe
+                return
+            }
+
+            clipboardAssessmentStatus = resolvedClipboardAssessmentStatus(for: detection, assessment: assessment)
         }
-
-        if frontmostExcludedClipboardApplicationName() != nil {
-            clipboardAssessmentStatus = .idle
-            return
-        }
-
-        guard !detection.entities.isEmpty, assessment.recommendedAction != .allow else {
-            clipboardAssessmentStatus = .safe
-            return
-        }
-
-        clipboardAssessmentStatus = resolvedClipboardAssessmentStatus(for: detection, assessment: assessment)
     }
 
     private func syncClipboardAssessmentFromCurrentPasteboard() {

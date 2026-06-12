@@ -224,7 +224,7 @@ public final class AIWorkspacePrivacyAuditor {
         let scanCompletion: SensitivePathExposureScanCompletion
 
         if let changedRelativePaths,
-           let previousFindings,
+           previousFindings != nil,
            shouldRescanAllExposure(
                changedRelativePaths: changedRelativePaths,
                ignoreFilePaths: ignoreFilePathSet

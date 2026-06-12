@@ -52,6 +52,11 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var allowPasteOriginalForCriticalSecrets: Bool
     public var excludedClipboardApplications: [ExcludedClipboardApplication]
 
+    // MARK: AI Detection
+
+    public var aiDetectionEnabled: Bool
+    public var selectedAIModelID: String?
+
     // MARK: Directory Check
 
     /// IDs of `AIWorkspacePrivacyRule` the user has disabled. Required rules are still enforced regardless of this set.
@@ -82,6 +87,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case analyticsOptIn
         case allowPasteOriginalForCriticalSecrets
         case excludedClipboardApplications
+        case aiDetectionEnabled
+        case selectedAIModelID
         case directoryCheckDisabledRuleIDs
         case directoryCheckConfirmFix
         case directoryCheckCustomIgnoreTemplate
@@ -106,6 +113,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
         excludedClipboardApplications: [ExcludedClipboardApplication] = [
             ExcludedClipboardApplication(displayName: "Figma", bundleIdentifier: "com.figma.Desktop")
         ],
+        aiDetectionEnabled: Bool = false,
+        selectedAIModelID: String? = nil,
         directoryCheckDisabledRuleIDs: Set<String> = [],
         directoryCheckConfirmFix: Bool = true,
         directoryCheckCustomIgnoreTemplate: String? = nil,
@@ -126,6 +135,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.analyticsOptIn = analyticsOptIn
         self.allowPasteOriginalForCriticalSecrets = allowPasteOriginalForCriticalSecrets
         self.excludedClipboardApplications = excludedClipboardApplications
+        self.aiDetectionEnabled = aiDetectionEnabled
+        self.selectedAIModelID = selectedAIModelID
         self.directoryCheckDisabledRuleIDs = directoryCheckDisabledRuleIDs
         self.directoryCheckConfirmFix = directoryCheckConfirmFix
         self.directoryCheckCustomIgnoreTemplate = directoryCheckCustomIgnoreTemplate
@@ -153,6 +164,10 @@ public struct AppSettings: Codable, Equatable, Sendable {
                 [ExcludedClipboardApplication].self,
                 forKey: .excludedClipboardApplications
             ) ?? AppSettings.default.excludedClipboardApplications,
+            aiDetectionEnabled: try container.decodeIfPresent(Bool.self, forKey: .aiDetectionEnabled) ?? false,
+            selectedAIModelID: try container.decodeIfPresent(String.self, forKey: .selectedAIModelID)
+                ?? (try? decoder.container(keyedBy: LegacyCodingKeys.self))
+                    .flatMap { try $0.decodeIfPresent(String.self, forKey: .selectedAIModelRepositoryID) } ?? nil,
             directoryCheckDisabledRuleIDs: try container.decodeIfPresent(
                 Set<String>.self,
                 forKey: .directoryCheckDisabledRuleIDs
@@ -176,6 +191,10 @@ public struct AppSettings: Codable, Equatable, Sendable {
     }
 
     public static let `default` = AppSettings()
+}
+
+private enum LegacyCodingKeys: String, CodingKey {
+    case selectedAIModelRepositoryID
 }
 
 public struct LicenseState: Codable, Equatable {

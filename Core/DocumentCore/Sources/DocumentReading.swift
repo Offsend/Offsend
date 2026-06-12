@@ -5,13 +5,10 @@ public protocol DocumentReading: Sendable {
 }
 
 public struct FileManagerDocumentReader: DocumentReading {
-    private let fileManager: FileManager
-
-    public init(fileManager: FileManager = .default) {
-        self.fileManager = fileManager
-    }
+    public init() {}
 
     public func data(at url: URL) throws -> Data {
+        let fileManager = FileManager.default
         guard fileManager.fileExists(atPath: url.path) else {
             throw DocumentProcessingError.unreadableFile(message: "File does not exist.")
         }
