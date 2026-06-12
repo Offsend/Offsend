@@ -74,6 +74,10 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var watchedDirectories: [WatchedDirectory]
     public var directoryWatchNotifyOnDegrade: Bool
 
+    // MARK: Git Hooks
+
+    public var hookedRepositories: [HookedRepository]
+
     private enum CodingKeys: String, CodingKey {
         case hasCompletedOnboarding
         case protectionEnabled
@@ -96,6 +100,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case directoryWatchEnabled
         case watchedDirectories
         case directoryWatchNotifyOnDegrade
+        case hookedRepositories
     }
 
     public init(
@@ -121,7 +126,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
         directoryCheckExtraSkippedDirectories: [String] = [],
         directoryWatchEnabled: Bool = false,
         watchedDirectories: [WatchedDirectory] = [],
-        directoryWatchNotifyOnDegrade: Bool = true
+        directoryWatchNotifyOnDegrade: Bool = true,
+        hookedRepositories: [HookedRepository] = []
     ) {
         self.hasCompletedOnboarding = hasCompletedOnboarding
         self.protectionEnabled = protectionEnabled
@@ -144,6 +150,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.directoryWatchEnabled = directoryWatchEnabled
         self.watchedDirectories = watchedDirectories
         self.directoryWatchNotifyOnDegrade = directoryWatchNotifyOnDegrade
+        self.hookedRepositories = hookedRepositories
     }
 
     public init(from decoder: Decoder) throws {
@@ -186,7 +193,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
             ) ?? [],
             directoryWatchEnabled: try container.decodeIfPresent(Bool.self, forKey: .directoryWatchEnabled) ?? false,
             watchedDirectories: try container.decodeIfPresent([WatchedDirectory].self, forKey: .watchedDirectories) ?? [],
-            directoryWatchNotifyOnDegrade: try container.decodeIfPresent(Bool.self, forKey: .directoryWatchNotifyOnDegrade) ?? true
+            directoryWatchNotifyOnDegrade: try container.decodeIfPresent(Bool.self, forKey: .directoryWatchNotifyOnDegrade) ?? true,
+            hookedRepositories: try container.decodeIfPresent([HookedRepository].self, forKey: .hookedRepositories) ?? []
         )
     }
 

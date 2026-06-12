@@ -1,5 +1,5 @@
 {
-  "originHash" : "58f2c77d0a3387c9b764a48f93f925d937b209148faadd25d757225fcd1929ab",
+  "originHash" : "286cc7c4ca740ce7a7fef51fb52d302c1803b0af73073ca27562546b20ce49e0",
   "pins" : [
     {
       "identity" : "keyboardshortcuts",
@@ -38,12 +38,30 @@
       }
     },
     {
+      "identity" : "swift-argument-parser",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-argument-parser",
+      "state" : {
+        "revision" : "6a52f3251125d74daf04fcbd5e6f08a75d074382",
+        "version" : "1.8.2"
+      }
+    },
+    {
       "identity" : "swiftsdk",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/TelemetryDeck/SwiftSDK",
       "state" : {
         "revision" : "24564d36ea7719e882e9d19608f868c4dc02905f",
         "version" : "2.13.0"
+      }
+    },
+    {
+      "identity" : "yams",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/jpsim/Yams",
+      "state" : {
+        "revision" : "3d6871d5b4a5cd519adf233fbb576e0a2af71c17",
+        "version" : "5.4.0"
       }
     }
   ],

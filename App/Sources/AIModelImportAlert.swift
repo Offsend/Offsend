@@ -1,4 +1,5 @@
 import AppKit
+import AIDetectionCore
 import DetectionCore
 import Foundation
 

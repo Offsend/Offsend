@@ -4,6 +4,7 @@ import AppKit
 import ClipboardService
 import Combine
 import DetectionCore
+import AIDetectionCore
 import DocumentCore
 import Foundation
 import HotkeyService
@@ -104,6 +105,7 @@ final class AppCoordinator: ObservableObject {
     let dockActivationController = DockActivationController()
     let menuBarStatusItemController = MenuBarStatusItemController()
     let store: LocalStoring
+    let aiModelStore: InstalledAIModelStoring
     let analytics: AppAnalytics
     var licenseService: LicenseService
 
@@ -162,10 +164,12 @@ final class AppCoordinator: ObservableObject {
 
     init() {
         var store: LocalStoring
+        var aiModelStore: InstalledAIModelStoring
         var initialSettings: AppSettings
         var initialLicenseState: LicenseState
         do {
             store = try SecureLocalStore()
+            aiModelStore = (try? InstalledAIModelStore()) ?? InMemoryInstalledAIModelStore()
             initialSettings = try store.loadSettings()
             initialLicenseState = try store.loadLicenseState()
             self.settings = initialSettings
@@ -175,6 +179,7 @@ final class AppCoordinator: ObservableObject {
             self.mappingSummaries = try store.mappingSummaries()
         } catch {
             store = InMemoryLocalStore()
+            aiModelStore = InMemoryInstalledAIModelStore()
             initialSettings = .default
             initialLicenseState = LicenseState()
             self.settings = initialSettings
@@ -190,7 +195,8 @@ final class AppCoordinator: ObservableObject {
         #endif
 
         self.store = store
-        self.installedAIModels = (try? store.loadInstalledAIModels()) ?? []
+        self.aiModelStore = aiModelStore
+        self.installedAIModels = (try? aiModelStore.loadInstalledAIModels()) ?? []
         let token = (try? HuggingFaceTokenStore.shared.loadToken()).flatMap { $0 }
         if let token {
             self.hasHuggingFaceToken = true

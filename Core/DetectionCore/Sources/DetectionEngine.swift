@@ -56,7 +56,7 @@ public final class DetectionEngine: SensitiveDataDetecting, @unchecked Sendable 
                     DetectionDebugLogger.logAIDetectionError(aiDetectionError ?? error.localizedDescription)
                 }
             } else {
-                aiDetectionError = AIModelRuntimeError.modelNotLoaded.errorDescription
+                aiDetectionError = "AI model is not loaded."
                 DetectionDebugLogger.logAIDetectionError(aiDetectionError ?? "model not loaded")
             }
         }

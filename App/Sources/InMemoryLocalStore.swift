@@ -11,7 +11,6 @@ final class InMemoryLocalStore: LocalStoring {
     private var mappings: [MaskingResult] = []
     private var events: [LocalEvent] = []
     private var license = LicenseState()
-    private var installedAIModels: [InstalledAIModel] = []
     private let maskingEngine = MaskingEngine()
 
     func loadSettings() throws -> AppSettings { settings }
@@ -48,8 +47,6 @@ final class InMemoryLocalStore: LocalStoring {
     func clearEvents() throws { events.removeAll() }
     func loadLicenseState() throws -> LicenseState { license }
     func saveLicenseState(_ state: LicenseState) throws { license = state }
-    func loadInstalledAIModels() throws -> [InstalledAIModel] { installedAIModels }
-    func saveInstalledAIModels(_ models: [InstalledAIModel]) throws { installedAIModels = models }
 
     private func cleanupExpired() {
         let now = Date()

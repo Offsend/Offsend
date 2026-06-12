@@ -1,5 +1,6 @@
 import AppKit
 import DetectionCore
+import AIDetectionCore
 import Foundation
 import StorageCore
 import UniformTypeIdentifiers
@@ -36,7 +37,7 @@ extension AppCoordinator {
     }
 
     func reloadInstalledAIModels() {
-        installedAIModels = (try? store.loadInstalledAIModels()) ?? []
+        installedAIModels = (try? aiModelStore.loadInstalledAIModels()) ?? []
         reconcileAIDetectionSettings()
         Task { await reloadActiveAIModelIfNeeded(force: aiModelSessionManager.hasActiveSessions) }
     }
@@ -85,7 +86,7 @@ extension AppCoordinator {
         do {
             try AIModelFileStore.deleteModelFiles(localDirectoryName: model.localDirectoryName)
             let models = installedAIModels.filter { $0.id != modelID }
-            try store.saveInstalledAIModels(models)
+            try aiModelStore.saveInstalledAIModels(models)
             installedAIModels = models
             if settings.selectedAIModelID == modelID {
                 settings.selectedAIModelID = models.first?.id
@@ -263,7 +264,7 @@ extension AppCoordinator {
                 var models = installedAIModels.filter { $0.id != result.model.id }
                 models.append(result.model)
                 models.sort { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
-                try store.saveInstalledAIModels(models)
+                try aiModelStore.saveInstalledAIModels(models)
                 installedAIModels = models
 
                 if settings.selectedAIModelID == nil {

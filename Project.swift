@@ -24,6 +24,8 @@ let developerIDReleaseSigning: Settings = .settings(
 )
 
 let externalPackages: [Package] = [
+    .remote(url: "https://github.com/apple/swift-argument-parser", requirement: .upToNextMajor(from: "1.3.0")),
+    .remote(url: "https://github.com/jpsim/Yams", requirement: .upToNextMajor(from: "5.1.0")),
     .remote(url: "https://github.com/sindresorhus/KeyboardShortcuts", requirement: .upToNextMajor(from: "2.3.0")),
     .remote(url: "https://github.com/stephencelis/SQLite.swift", requirement: .upToNextMajor(from: "0.15.0")),
     .remote(url: "https://github.com/sparkle-project/Sparkle", requirement: .upToNextMajor(from: "2.6.0")),
@@ -51,7 +53,17 @@ let coreTargets: [Target] = [
         bundleId: "\(bundlePrefix).detectioncore",
         deploymentTargets: macOSDeploymentTarget,
         sources: ["Core/DetectionCore/Sources/**"],
+        settings: developerIDReleaseSigning
+    ),
+    .target(
+        name: "AIDetectionCore",
+        destinations: .macOS,
+        product: .framework,
+        bundleId: "\(bundlePrefix).aidetectioncore",
+        deploymentTargets: macOSDeploymentTarget,
+        sources: ["Core/AIDetectionCore/Sources/**"],
         dependencies: [
+            .target(name: "DetectionCore"),
             .package(product: "onnxruntime"),
             .sdk(name: "CoreML", type: .framework, status: .required),
         ],
@@ -99,6 +111,24 @@ let coreTargets: [Target] = [
             .target(name: "DetectionCore"),
             .target(name: "MaskingCore"),
             .package(product: "SQLite")
+        ],
+        settings: developerIDReleaseSigning
+    ),
+    .target(
+        name: "OffsendRuntime",
+        destinations: .macOS,
+        product: .framework,
+        bundleId: "\(bundlePrefix).offsendruntime",
+        deploymentTargets: macOSDeploymentTarget,
+        sources: ["Core/OffsendRuntime/Sources/**"],
+        dependencies: [
+            .target(name: "DetectionCore"),
+            .target(name: "DocumentCore"),
+            .target(name: "WorkspacePolicyCore"),
+            .target(name: "RiskScoringCore"),
+            .target(name: "StorageCore"),
+            .target(name: "LicenseCore"),
+            .package(product: "Yams")
         ],
         settings: developerIDReleaseSigning
     ),
@@ -183,6 +213,42 @@ let serviceTargets: [Target] = [
     )
 ]
 
+let cliTargets: [Target] = [
+    .target(
+        name: "OffsendCLI",
+        destinations: .macOS,
+        product: .commandLineTool,
+        bundleId: "\(bundlePrefix).cli",
+        deploymentTargets: macOSDeploymentTarget,
+        infoPlist: .file(path: "CLI/Resources/Info.plist"),
+        sources: ["CLI/Sources/**"],
+        dependencies: [
+            .target(name: "OffsendRuntime"),
+            .package(product: "ArgumentParser")
+        ],
+        settings: .settings(
+            base: [
+                "PRODUCT_NAME": "offsend",
+                "MARKETING_VERSION": "\(appMarketingVersion)",
+                "CURRENT_PROJECT_VERSION": "\(appBuildNumber)",
+                "CREATE_INFOPLIST_SECTION_IN_BINARY": "YES",
+                "LD_RUNPATH_SEARCH_PATHS": "$(inherited) @executable_path @loader_path @executable_path/../Frameworks @executable_path/Frameworks"
+            ],
+            configurations: [
+                .debug(name: .debug),
+                .release(
+                    name: .release,
+                    settings: [
+                        "CODE_SIGN_IDENTITY": "Developer ID Application",
+                        "ENABLE_HARDENED_RUNTIME": "YES"
+                    ]
+                )
+            ],
+            defaultSettings: .recommended
+        )
+    )
+]
+
 let uiTargets: [Target] = [
     .target(
         name: "AppUIKit",
@@ -214,9 +280,35 @@ let appTarget = Target.target(
         )
     ],
     entitlements: "App/Resources/Offsend.entitlements",
+    scripts: [
+        .post(
+            script: """
+            set -euo pipefail
+            CLI_SRC="${BUILT_PRODUCTS_DIR}/offsend"
+            APP_HELPERS="${BUILT_PRODUCTS_DIR}/${WRAPPER_NAME}/Contents/Helpers"
+            CLI_DEST="${APP_HELPERS}/offsend"
+            if [ ! -f "$CLI_SRC" ]; then
+              echo "error: OffsendCLI product not found at $CLI_SRC" >&2
+              exit 1
+            fi
+            mkdir -p "$APP_HELPERS"
+            cp -f "$CLI_SRC" "$CLI_DEST"
+            chmod +x "$CLI_DEST"
+            if [ -n "${EXPANDED_CODE_SIGN_IDENTITY:-}" ] && [ "${EXPANDED_CODE_SIGN_IDENTITY}" != "-" ]; then
+              /usr/bin/codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY}" --options runtime --timestamp "$CLI_DEST"
+            fi
+            echo "Embedded offsend CLI at $CLI_DEST"
+            """,
+            name: "Embed Offsend CLI",
+            inputPaths: ["$(BUILT_PRODUCTS_DIR)/offsend"],
+            outputPaths: ["$(BUILT_PRODUCTS_DIR)/$(WRAPPER_NAME)/Contents/Helpers/offsend"],
+            basedOnDependencyAnalysis: false
+        )
+    ],
     dependencies: [
         .target(name: "LicenseCore"),
         .target(name: "DetectionCore"),
+        .target(name: "AIDetectionCore"),
         .target(name: "DocumentCore"),
         .target(name: "MaskingCore"),
         .target(name: "RiskScoringCore"),
@@ -229,6 +321,8 @@ let appTarget = Target.target(
         .target(name: "PermissionsService"),
         .target(name: "AnalyticsCore"),
         .target(name: "AppUIKit"),
+        .target(name: "OffsendRuntime"),
+        .target(name: "OffsendCLI"),
         .package(product: "Sparkle")
     ],
     settings: .settings(
@@ -265,6 +359,18 @@ let testTargets: [Target] = [
         deploymentTargets: macOSDeploymentTarget,
         sources: ["Core/DetectionCore/Tests/**"],
         dependencies: [.target(name: "DetectionCore")]
+    ),
+    .target(
+        name: "AIDetectionCoreTests",
+        destinations: .macOS,
+        product: .unitTests,
+        bundleId: "\(bundlePrefix).aidetectioncore.tests",
+        deploymentTargets: macOSDeploymentTarget,
+        sources: ["Core/AIDetectionCore/Tests/**"],
+        dependencies: [
+            .target(name: "AIDetectionCore"),
+            .target(name: "DetectionCore")
+        ]
     ),
     .target(
         name: "MaskingCoreTests",
@@ -339,6 +445,15 @@ let testTargets: [Target] = [
         dependencies: [.target(name: "WorkspaceWatchService")]
     ),
     .target(
+        name: "OffsendRuntimeTests",
+        destinations: .macOS,
+        product: .unitTests,
+        bundleId: "\(bundlePrefix).offsendruntime.tests",
+        deploymentTargets: macOSDeploymentTarget,
+        sources: ["Core/OffsendRuntime/Tests/**"],
+        dependencies: [.target(name: "OffsendRuntime")]
+    ),
+    .target(
         name: "DocumentCoreTests",
         destinations: .macOS,
         product: .unitTests,
@@ -359,7 +474,7 @@ let project = Project(
     organizationName: "Offsend",
     options: .options(automaticSchemesOptions: .enabled()),
     packages: externalPackages,
-    targets: [appTarget] + coreTargets + serviceTargets + uiTargets + testTargets,
+    targets: [appTarget] + coreTargets + cliTargets + serviceTargets + uiTargets + testTargets,
     resourceSynthesizers: [
         .strings(parserOptions: ["separator": "/"]),
         .assets(),

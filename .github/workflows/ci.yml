@@ -17,3 +17,14 @@ jobs:
         run: tuist install
       - name: Run tests
         run: tuist test
+      - name: Build OffsendCLI
+        run: |
+          xcodebuild \
+            -workspace Offsend.xcworkspace \
+            -scheme OffsendCLI \
+            -configuration Debug \
+            -destination "platform=macOS" \
+            -derivedDataPath build/DerivedData \
+            build
+      - name: Run CLI E2E smoke
+        run: bash Scripts/ci_cli_e2e.sh build/DerivedData/Build/Products/Debug/offsend

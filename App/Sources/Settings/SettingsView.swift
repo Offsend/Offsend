@@ -229,6 +229,8 @@ struct SettingsView: View {
                         }
                     case .directoryCheck:
                         SettingsDirectoryCheckPanel()
+                    case .hooks:
+                        SettingsHooksPanel()
                     case .license:
                         SettingsLicensePanel()
                     #if DEBUG

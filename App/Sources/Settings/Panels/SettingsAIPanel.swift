@@ -1,4 +1,5 @@
 import AppUIKit
+import AIDetectionCore
 import DetectionCore
 import SwiftUI
 

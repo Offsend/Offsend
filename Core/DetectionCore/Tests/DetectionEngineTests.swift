@@ -256,7 +256,7 @@ final class DetectionEngineTests: XCTestCase {
         )
 
         XCTAssertTrue(result.entities.contains { $0.type == .email })
-        XCTAssertEqual(result.aiDetectionError, AIModelRuntimeError.inferenceFailed("mock failure").errorDescription)
+        XCTAssertEqual(result.aiDetectionError, "mock failure")
     }
 
     func testRecordsMissingAIDetectorError() async {
@@ -269,12 +269,20 @@ final class DetectionEngineTests: XCTestCase {
         )
 
         XCTAssertTrue(result.entities.contains { $0.type == .email })
-        XCTAssertEqual(result.aiDetectionError, AIModelRuntimeError.modelNotLoaded.errorDescription)
+        XCTAssertEqual(result.aiDetectionError, "AI model is not loaded.")
     }
 }
 
 private struct FailingAIDetector: AIModelDetecting {
     func detect(text: String, options: DetectionOptions) async throws -> [SensitiveEntity] {
-        throw AIModelRuntimeError.inferenceFailed("mock failure")
+        throw StubAIModelError.inferenceFailed
+    }
+}
+
+private enum StubAIModelError: LocalizedError {
+    case inferenceFailed
+
+    var errorDescription: String? {
+        "mock failure"
     }
 }
