@@ -1,0 +1,28 @@
+version: 1
+
+check:
+  fail_on: block
+  policy: false
+  exclude:
+    - ".git/**"
+    - ".DS_Store"
+    - "Derived/**"
+    - "Tuist/.build/**"
+    - "Tuist/Dependencies/**"
+    - "*.xcodeproj/**"
+    - "*.xcworkspace/**"
+    - "build/**"
+    - "*.xcarchive/**"
+    - "*.dmg"
+    - "xcuserdata/**"
+    - "*.xcuserstate"
+    - "*.moved-aside"
+    - "*.mobileprovision"
+    - "*.provisionprofile"
+    - "**/Secrets.xcconfig"
+    - ".env"
+
+hooks:
+  type: pre-commit
+  fail_on: block
+  policy: false

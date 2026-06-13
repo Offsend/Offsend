@@ -13,7 +13,8 @@ public enum OffsendCLILocator {
         // version-specific Cellar path that breaks on upgrade.
         if let invokedPath, invokedPath.contains("/") {
             let absolute = URL(fileURLWithPath: invokedPath).standardizedFileURL.path
-            if fileManager.isExecutableFile(atPath: absolute) {
+            if !isAppBundleMainExecutablePath(absolute),
+               fileManager.isExecutableFile(atPath: absolute) {
                 return absolute
             }
         }
@@ -27,15 +28,17 @@ public enum OffsendCLILocator {
 
         let bundleCandidates = [
             "/Applications/Offsend.app/Contents/Helpers/offsend",
-            "\(NSHomeDirectory())/Applications/Offsend.app/Contents/Helpers/offsend",
-            "/Applications/Offsend.app/Contents/MacOS/offsend",
-            "\(NSHomeDirectory())/Applications/Offsend.app/Contents/MacOS/offsend"
+            "\(NSHomeDirectory())/Applications/Offsend.app/Contents/Helpers/offsend"
         ]
         for candidate in bundleCandidates where fileManager.isExecutableFile(atPath: candidate) {
             return candidate
         }
 
         return which("offsend", fileManager: fileManager)
+    }
+
+    static func isAppBundleMainExecutablePath(_ path: String) -> Bool {
+        path.contains(".app/Contents/MacOS/")
     }
 
     private static func which(_ command: String, fileManager: FileManager) -> String? {

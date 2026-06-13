@@ -12,18 +12,7 @@ enum HookedRepositoryDisplayStatus: String, Sendable {
 
 extension AppCoordinator {
     var offsendCLIExecutablePath: String? {
-        if let bundled = Bundle.main.url(forAuxiliaryExecutable: "offsend") {
-            return bundled.path
-        }
-
-        let helpersPath = Bundle.main.bundleURL
-            .appendingPathComponent("Contents/Helpers/offsend")
-            .path
-        if FileManager.default.isExecutableFile(atPath: helpersPath) {
-            return helpersPath
-        }
-
-        return OffsendCLILocator.resolvedExecutablePath()
+        OffsendCLILocator.resolvedExecutablePath()
     }
 
     var hookedRepositoryInstallCommand: String? {

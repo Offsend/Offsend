@@ -203,14 +203,36 @@ version: 1
 
 check:
   fail_on: block
+  policy: false
   exclude:
     - "*.lock"
     - "vendor/**"
+  detectors:
+    disable:
+      - phone
 
 hooks:
   type: pre-commit
   fail_on: block
+  policy: false
 ```
+
+Supported settings:
+
+- `version` — config schema version. Use `1`; other versions are rejected.
+- `check.fail_on` — exit policy for `offsend check`. `block` fails only on blocking findings such as critical secrets or failed policy checks. `warn` also fails on warning/mask findings. `none` reports findings but exits successfully.
+- `check.policy` — when `true`, `offsend check` also runs workspace policy checks for ignore files and exposed sensitive paths. When `false`, it scans file contents only.
+- `check.exclude` — repository-relative glob patterns skipped by file scanning. Plain file globs such as `*.lock` match file names, path globs such as `build/**` match directories recursively, and slash patterns are matched against repository-relative paths.
+- `check.detectors.disable` — detector IDs to turn off for this project. Unknown IDs are ignored.
+- `hooks.type` — git hook type to install. Currently supported: `pre-commit`.
+- `hooks.fail_on` — exit policy used by installed hooks. If omitted, it falls back to `check.fail_on`, then `block`.
+- `hooks.policy` — whether installed hooks include workspace policy checks. If omitted, it falls back to `check.policy`, then `false`. For faster commits that check only staged files, keep this `false`.
+
+CLI flags override config values when they are provided explicitly. For example, `offsend check --policy` enables policy checks even if `check.policy` is `false`.
+
+Supported `check.detectors.disable` IDs:
+
+`email`, `phone`, `money`, `url`, `ipAddress`, `internalDomain`, `contractId`, `invoiceId`, `orderId`, `apiKeyGeneric`, `openAIAPIKey`, `awsAccessKeyId`, `githubToken`, `slackToken`, `stripeKey`, `jwt`, `privateKey`, `sshPrivateKey`, `databaseURLWithPassword`, `bearerToken`, `highEntropyString`, `creditCardLike`, `iban`, `customClient`, `customCompany`, `customProject`, `customSensitiveTerm`, `customInternalDomain`, `personName`, `streetAddress`, `governmentId`.
 
 ### CI snippet
 

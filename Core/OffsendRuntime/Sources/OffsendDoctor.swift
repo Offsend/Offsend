@@ -95,7 +95,7 @@ public struct OffsendDoctor: Sendable {
                 DoctorCheck(
                     name: "cli",
                     status: .fail,
-                    message: "offsend executable not found in PATH or Offsend.app bundle."
+                    message: "offsend executable not found in PATH or Offsend.app Contents/Helpers."
                 )
             )
         }
