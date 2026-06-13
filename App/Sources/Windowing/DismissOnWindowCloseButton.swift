@@ -37,7 +37,6 @@ private struct WindowWillCloseObserver: NSViewRepresentable {
         coordinator.detach()
     }
 
-    @MainActor
     final class Coordinator: @unchecked Sendable {
         private let action: @MainActor () -> Void
         private weak var observedWindow: NSWindow?
@@ -64,7 +63,6 @@ private struct WindowWillCloseObserver: NSViewRepresentable {
             }
         }
 
-        @MainActor
         func detach() {
             if let observer {
                 NotificationCenter.default.removeObserver(observer)
@@ -73,7 +71,6 @@ private struct WindowWillCloseObserver: NSViewRepresentable {
             observedWindow = nil
         }
 
-        @MainActor
         deinit {
             detach()
         }

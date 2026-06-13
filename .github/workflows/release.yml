@@ -21,8 +21,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Tuist and create-dmg
-        run: brew install tuist create-dmg
+      - name: Install Tuist
+        uses: jdx/mise-action@v2
+        with:
+          install: true
+
+      - name: Install create-dmg
+        run: brew install create-dmg
 
       - name: Install dependencies
         run: tuist install
@@ -109,6 +114,23 @@ jobs:
             -exportPath "build/export" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
 
+      - name: Verify embedded CLI in app bundle
+        run: |
+          set -euo pipefail
+          CLI="build/export/Offsend.app/Contents/Helpers/offsend"
+          test -x "$CLI"
+          codesign --verify --deep --strict --verbose=2 "$CLI"
+          echo "Embedded CLI OK: $CLI"
+
+      - name: Package CLI for Homebrew
+        env:
+          VERSION: ${{ github.event.inputs.marketing_version }}
+        run: |
+          set -euo pipefail
+          bash Scripts/package_cli.sh \
+            "build/export/Offsend.app" \
+            "build/offsend-cli-${VERSION}.zip"
+
       - name: Read app version from exported bundle
         id: app_version
         run: |
@@ -141,7 +163,7 @@ jobs:
       - name: Install Sparkle CLI (generate_appcast)
         run: |
           set -euo pipefail
-          SPARKLE_VERSION="2.9.1"
+          SPARKLE_VERSION="2.7.1"
           curl -fsSL "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz" -o "$RUNNER_TEMP/sparkle.tar.xz"
           mkdir -p "$RUNNER_TEMP/sparkle"
           tar -xJf "$RUNNER_TEMP/sparkle.tar.xz" -C "$RUNNER_TEMP/sparkle" --strip-components 1
@@ -186,6 +208,7 @@ jobs:
           path: |
             build/Offsend-${{ steps.app_version.outputs.version }}.dmg
             build/export/Offsend.app
+            build/offsend-cli-${{ steps.app_version.outputs.version }}.zip
             appcast/appcast.xml
 
       - name: Push version tag
@@ -207,13 +230,15 @@ jobs:
           set -euo pipefail
           TAG="v${VERSION}"
           DMG="build/Offsend-${VERSION}.dmg"
+          CLI_ZIP="build/offsend-cli-${VERSION}.zip"
           APPCAST="appcast/appcast.xml"
           test -f "$APPCAST"
+          test -f "$CLI_ZIP"
           REPO="${{ github.repository }}"
           if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$DMG" "$APPCAST" --repo "$REPO" --clobber
+            gh release upload "$TAG" "$DMG" "$CLI_ZIP" "$APPCAST" --repo "$REPO" --clobber
           else
-            gh release create "$TAG" "$DMG" "$APPCAST" \
+            gh release create "$TAG" "$DMG" "$CLI_ZIP" "$APPCAST" \
               --repo "$REPO" \
               --title "Offsend ${VERSION}" \
               --generate-notes \
@@ -228,7 +253,8 @@ jobs:
           set -euo pipefail
           bash Scripts/update_homebrew_tap.sh \
             "$VERSION" \
-            "build/Offsend-${VERSION}.dmg"
+            "build/Offsend-${VERSION}.dmg" \
+            "build/offsend-cli-${VERSION}.zip"
 
       - name: Rebuild website
         env:

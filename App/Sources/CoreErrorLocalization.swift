@@ -1,4 +1,5 @@
 import DetectionCore
+import AIDetectionCore
 import Foundation
 
 /// Core frameworks produce English `errorDescription`s. The app maps the typed errors it

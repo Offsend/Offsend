@@ -69,6 +69,4 @@ private final class InMemoryLocalStoreForAnalyticsTests: LocalStoring {
     func appendEvent(_ event: LocalEvent) throws { events.append(event) }
     func loadEvents() throws -> [LocalEvent] { events }
     func clearEvents() throws { events.removeAll() }
-    func loadInstalledAIModels() throws -> [InstalledAIModel] { [] }
-    func saveInstalledAIModels(_ models: [InstalledAIModel]) throws {}
 }

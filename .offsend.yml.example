@@ -1,0 +1,17 @@
+version: 1
+
+check:
+  fail_on: block
+  policy: false
+  exclude:
+    - "*.lock"
+    - "vendor/**"
+    - "DerivedData/**"
+  detectors:
+    disable:
+      - phone
+
+hooks:
+  type: pre-commit
+  fail_on: block
+  policy: false
