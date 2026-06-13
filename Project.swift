@@ -284,7 +284,13 @@ let appTarget = Target.target(
         .post(
             script: """
             set -euo pipefail
-            CLI_SRC="${BUILT_PRODUCTS_DIR}/offsend"
+            CLI_BUILT_PRODUCT="${BUILT_PRODUCTS_DIR}/offsend"
+            CLI_INSTALLED_PRODUCT="${DSTROOT}/usr/local/bin/offsend"
+            if [ -f "$CLI_INSTALLED_PRODUCT" ]; then
+              CLI_SRC="$CLI_INSTALLED_PRODUCT"
+            else
+              CLI_SRC="$CLI_BUILT_PRODUCT"
+            fi
             APP_HELPERS="${BUILT_PRODUCTS_DIR}/${WRAPPER_NAME}/Contents/Helpers"
             CLI_DEST="${APP_HELPERS}/offsend"
             if [ ! -f "$CLI_SRC" ]; then
@@ -300,7 +306,10 @@ let appTarget = Target.target(
             echo "Embedded offsend CLI at $CLI_DEST"
             """,
             name: "Embed Offsend CLI",
-            inputPaths: ["$(BUILT_PRODUCTS_DIR)/offsend"],
+            inputPaths: [
+                "$(BUILT_PRODUCTS_DIR)/offsend",
+                "$(DSTROOT)/usr/local/bin/offsend"
+            ],
             outputPaths: ["$(BUILT_PRODUCTS_DIR)/$(WRAPPER_NAME)/Contents/Helpers/offsend"],
             basedOnDependencyAnalysis: false
         )
