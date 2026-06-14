@@ -75,39 +75,57 @@ jobs:
             -configuration Release \
             -destination "platform=macOS" \
             -archivePath "build/Offsend.xcarchive" \
+            -derivedDataPath "build/DerivedData" \
             DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
             TELEMETRYDECK_APP_ID="$TELEMETRYDECK_APP_ID" \
             MARKETING_VERSION="$MARKETING_VERSION" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             clean archive
 
-      - name: Embed CLI in archive
+      - name: Embed CLI into archive
         run: |
           set -euo pipefail
-          bash Scripts/embed_cli_in_archive.sh "build/Offsend.xcarchive"
+          # The CLI uses SKIP_INSTALL=YES so the archive stays a valid single-app archive.
+          # Inject the (Developer ID-signed) CLI built during archive into the archived app here,
+          # outside Xcode's user-script sandbox, so exportArchive re-seals the bundle around it.
+          bash Scripts/embed_cli_in_archive.sh "build/Offsend.xcarchive" "build/DerivedData"
 
-      - name: Copy and re-sign archived .app
+      - name: Write ExportOptions.plist (Developer ID)
         env:
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID || secrets.TEAM_ID }}
         run: |
           set -euo pipefail
           test -n "${TEAM_ID:-}" || { echo "Missing secret: set repository secret APPLE_TEAM_ID (or TEAM_ID) to your Apple Developer Team ID"; exit 1; }
-          APP_IN_ARCHIVE="build/Offsend.xcarchive/Products/Applications/Offsend.app"
-          APP_EXPORT="build/export/Offsend.app"
-          ENTITLEMENTS="App/Resources/Offsend.entitlements"
-          SIGN_IDENTITY="$(
-            security find-identity -v -p codesigning |
-              sed -n "s/.*\"\(Developer ID Application: .*(${TEAM_ID})\)\".*/\1/p" |
-              head -n 1
-          )"
-          test -d "$APP_IN_ARCHIVE" || { echo "Archived app not found at $APP_IN_ARCHIVE"; exit 1; }
-          test -f "$ENTITLEMENTS" || { echo "Entitlements file not found at $ENTITLEMENTS"; exit 1; }
-          test -n "$SIGN_IDENTITY" || { echo "Developer ID Application signing identity not found for team ${TEAM_ID}"; exit 1; }
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>developer-id</string>
+            <key>signingStyle</key>
+            <string>automatic</string>
+            <key>teamID</key>
+            <string>${TEAM_ID}</string>
+            <key>destination</key>
+            <string>export</string>
+          </dict>
+          </plist>
+          PLIST
+          sed -i '' 's/^[[:space:]]*//' "$RUNNER_TEMP/ExportOptions.plist"
+
+      - name: Export signed .app (re-signs Sparkle + embedded CLI)
+        run: |
+          set -euo pipefail
           rm -rf "build/export"
-          mkdir -p "build/export"
-          ditto "$APP_IN_ARCHIVE" "$APP_EXPORT"
-          codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp --entitlements "$ENTITLEMENTS" "$APP_EXPORT"
-          codesign --verify --deep --strict --verbose=2 "$APP_EXPORT"
+          # exportArchive re-signs the whole bundle — Sparkle's XPC services/Updater.app and the
+          # embedded CLI included — with Developer ID + secure timestamps, then strips get-task-allow.
+          xcodebuild \
+            -exportArchive \
+            -archivePath "build/Offsend.xcarchive" \
+            -exportPath "build/export" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
+          codesign --verify --deep --strict --verbose=2 "build/export/Offsend.app"
 
       - name: Verify embedded CLI in app bundle
         run: |
