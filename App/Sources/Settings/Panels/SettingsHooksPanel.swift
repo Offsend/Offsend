@@ -322,7 +322,9 @@ struct SettingsHooksPanel: View {
     }
 
     private var cliSection: some View {
-        OFSettingsGroup(
+        let pathStatus = coordinator.cliPathInstallationStatus
+
+        return OFSettingsGroup(
             title: OffsendStrings.settingsHooksSectionCli,
             hint: OffsendStrings.settingsHooksSectionCliHint
         ) {
@@ -340,7 +342,61 @@ struct SettingsHooksPanel: View {
 
             OFSettingsGroupDivider()
 
+            OFSettingsRow(
+                label: OffsendStrings.settingsHooksCliPathCommandLabel,
+                hint: cliPathStatusHint(pathStatus),
+                alignTop: true
+            ) {
+                VStack(alignment: .trailing, spacing: 7) {
+                    cliPathStatusBadge(pathStatus.state)
+                    Text(pathStatus.commandPath ?? pathStatus.installPath)
+                        .font(.system(size: 10.5, design: .monospaced))
+                        .foregroundColor(palette.textMuted)
+                        .lineLimit(2)
+                        .textSelection(.enabled)
+                }
+                .frame(maxWidth: 360, alignment: .trailing)
+            }
+
+            OFSettingsGroupDivider()
+
             HStack(spacing: 8) {
+                switch pathStatus.state {
+                case .installed:
+                    OFCompactButton(
+                        title: OffsendStrings.settingsHooksCliPathUninstall,
+                        icon: "trash",
+                        variant: .outline
+                    ) {
+                        coordinator.uninstallCLICommandFromPath()
+                    }
+                case .notInstalled, .brokenManagedLink:
+                    OFCompactButton(
+                        title: OffsendStrings.settingsHooksCliPathInstall,
+                        icon: "terminal",
+                        variant: .primary
+                    ) {
+                        coordinator.installCLICommandInPath()
+                    }
+                case .availableViaHomebrew:
+                    OFCompactButton(
+                        title: OffsendStrings.settingsHooksCliPathCopyBrewUninstall,
+                        icon: "doc.on.doc",
+                        variant: .outline
+                    ) {
+                        coordinator.copyHomebrewCLIUninstallCommand()
+                    }
+                case .availableViaForeign, .targetBlocked:
+                    OFCompactButton(
+                        title: OffsendStrings.settingsHooksCliPathInstall,
+                        icon: "terminal",
+                        variant: .outline
+                    ) {
+                        coordinator.installCLICommandInPath()
+                    }
+                    .disabled(true)
+                }
+
                 OFCompactButton(
                     title: OffsendStrings.settingsHooksCopyGlobalCommand,
                     icon: "doc.on.doc",
@@ -358,6 +414,65 @@ struct SettingsHooksPanel: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
+        }
+    }
+
+    private func cliPathStatusBadge(_ state: CLIPathInstallationState) -> some View {
+        let title: String
+        let textColor: Color
+        let bgColor: Color
+
+        switch state {
+        case .installed:
+            title = OffsendStrings.settingsHooksCliPathStatusInstalled
+            textColor = palette.greenText
+            bgColor = palette.greenDim
+        case .notInstalled:
+            title = OffsendStrings.settingsHooksCliPathStatusMissing
+            textColor = palette.textMuted
+            bgColor = palette.bg3
+        case .availableViaHomebrew:
+            title = OffsendStrings.settingsHooksCliPathStatusHomebrew
+            textColor = palette.blue
+            bgColor = palette.blueDim
+        case .availableViaForeign:
+            title = OffsendStrings.settingsHooksCliPathStatusExternal
+            textColor = palette.amberText
+            bgColor = palette.amberDim
+        case .targetBlocked:
+            title = OffsendStrings.settingsHooksCliPathStatusBlocked
+            textColor = palette.redText
+            bgColor = palette.redDim
+        case .brokenManagedLink:
+            title = OffsendStrings.settingsHooksCliPathStatusBroken
+            textColor = palette.amberText
+            bgColor = palette.amberDim
+        }
+
+        return Text(title)
+            .font(.system(size: 9, weight: .bold, design: .monospaced))
+            .tracking(0.5)
+            .foregroundColor(textColor)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(bgColor)
+            .cornerRadius(4)
+    }
+
+    private func cliPathStatusHint(_ status: CLIPathInstallationStatus) -> String {
+        switch status.state {
+        case .installed:
+            return OffsendStrings.settingsHooksCliPathHintInstalled
+        case .notInstalled:
+            return OffsendStrings.settingsHooksCliPathHintMissing
+        case .availableViaHomebrew:
+            return OffsendStrings.settingsHooksCliPathHintHomebrew
+        case .availableViaForeign:
+            return OffsendStrings.settingsHooksCliPathHintExternal(status.commandPath ?? "offsend")
+        case .targetBlocked:
+            return OffsendStrings.settingsHooksCliPathHintBlocked(status.installPath)
+        case .brokenManagedLink:
+            return OffsendStrings.settingsHooksCliPathHintBroken
         }
     }
 

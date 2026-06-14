@@ -60,6 +60,8 @@ enum AppLocalization {
             return OffsendStrings.dictionaryKindSensitiveTerm
         case .internalDomain:
             return OffsendStrings.dictionaryKindInternalDomain
+        case .regex:
+            return OffsendStrings.dictionaryKindRegex
         }
     }
 

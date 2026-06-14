@@ -1,18 +1,15 @@
 import Foundation
 
 public struct DirectoryCheckConfigurationInput: Equatable, Sendable {
-    public let workspaceAuditFull: Bool
     public let disabledRuleIDs: Set<String>
     public let extraSkippedDirectories: [String]
     public let customIgnoreTemplate: String?
 
     public init(
-        workspaceAuditFull: Bool,
         disabledRuleIDs: Set<String>,
         extraSkippedDirectories: [String],
         customIgnoreTemplate: String?
     ) {
-        self.workspaceAuditFull = workspaceAuditFull
         self.disabledRuleIDs = disabledRuleIDs
         self.extraSkippedDirectories = extraSkippedDirectories
         self.customIgnoreTemplate = customIgnoreTemplate
@@ -21,17 +18,16 @@ public struct DirectoryCheckConfigurationInput: Equatable, Sendable {
 
 public enum DirectoryCheckConfigurationResolver {
     public static func resolve(_ input: DirectoryCheckConfigurationInput) -> AIWorkspacePrivacyAuditConfiguration {
-        // Detection scope is identical on every tier: Free sees every AI tool and sensitive
-        // pattern. Pro unlocks custom ignore templates and more watched folders — not broader detection.
+        // Detection scope is identical on every tier: every user sees every AI tool and
+        // sensitive pattern, and can customize the ignore template. Pro only unlocks more
+        // watched folders — not broader detection.
         let base: AIWorkspacePrivacyAuditConfiguration = .default
         let extraSkipped = Set(
             input.extraSkippedDirectories
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }
         )
-        let customTemplate = input.workspaceAuditFull
-            ? trimmedCustomTemplate(input.customIgnoreTemplate)
-            : nil
+        let customTemplate = trimmedCustomTemplate(input.customIgnoreTemplate)
 
         let resolvedRules: [AIWorkspacePrivacyRule] = base.rules.compactMap { rule in
             if rule.severity != .required, input.disabledRuleIDs.contains(rule.id) {

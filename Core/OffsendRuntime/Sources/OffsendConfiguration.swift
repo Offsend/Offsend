@@ -10,6 +10,7 @@ public enum OffsendConfiguration {
         context: OffsendRuntimeContext,
         enableAIDetection: Bool,
         disabledDetectors: Set<SensitiveEntityType> = [],
+        additionalDictionaries: [CustomDictionaryItem] = [],
         maximumLength: Int = 50_000
     ) -> DetectionOptions {
         let aiEnabled = enableAIDetection
@@ -21,7 +22,7 @@ public enum OffsendConfiguration {
 
         return DetectionOptions(
             enabledTypes: enabledTypes,
-            customDictionaries: context.tariffFeatures.customDictionaries ? context.customDictionaries : [],
+            customDictionaries: context.customDictionaries + additionalDictionaries,
             maximumLength: maximumLength,
             aiDetectionEnabled: aiEnabled,
             selectedAIModelID: context.settings.selectedAIModelID
@@ -31,28 +32,24 @@ public enum OffsendConfiguration {
     public static func documentProcessingOptions(
         context: OffsendRuntimeContext,
         enableAIDetection: Bool = false,
-        disabledDetectors: Set<SensitiveEntityType> = []
+        disabledDetectors: Set<SensitiveEntityType> = [],
+        additionalDictionaries: [CustomDictionaryItem] = []
     ) -> DocumentProcessingOptions {
         DocumentProcessingOptions(
             detection: detectionOptions(
                 context: context,
                 enableAIDetection: enableAIDetection,
-                disabledDetectors: disabledDetectors
+                disabledDetectors: disabledDetectors,
+                additionalDictionaries: additionalDictionaries
             ),
-            mappingTTL: MappingTTL.effective(
-                context.settings.mappingTTL,
-                extendedTTLAllowed: context.isProEntitlementActive && context.tariffFeatures.safePasteUnlimited
-            ),
-            maximumFileByteCount: DocumentProcessingLimits.maximumFileByteCount(
-                isPro: context.isProEntitlementActive
-            )
+            mappingTTL: context.settings.mappingTTL,
+            maximumFileByteCount: .max
         )
     }
 
     public static func directoryCheckConfiguration(context: OffsendRuntimeContext) -> AIWorkspacePrivacyAuditConfiguration {
         DirectoryCheckConfigurationResolver.resolve(
             DirectoryCheckConfigurationInput(
-                workspaceAuditFull: context.tariffFeatures.workspaceAuditFull,
                 disabledRuleIDs: context.settings.directoryCheckDisabledRuleIDs,
                 extraSkippedDirectories: context.settings.directoryCheckExtraSkippedDirectories,
                 customIgnoreTemplate: context.settings.directoryCheckCustomIgnoreTemplate

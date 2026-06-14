@@ -20,7 +20,8 @@ public struct LicenseTariffFeatures: Equatable, Sendable {
     public static let freeTier = Self(
         safePasteUnlimited: false,
         advancedDetectors: false,
-        customDictionaries: false,
+        // Custom dictionaries are available to every user, regardless of plan.
+        customDictionaries: true,
         workspaceAuditFull: false,
         workspaceAuditAutofix: false
     )
@@ -51,7 +52,8 @@ public struct LicenseTariffFeatures: Equatable, Sendable {
     public init(features: [String: Bool]) {
         self.safePasteUnlimited = Self.bool(for: .safePasteUnlimited, in: features)
         self.advancedDetectors = Self.bool(for: .advancedDetectors, in: features)
-        self.customDictionaries = Self.bool(for: .customDictionaries, in: features)
+        // Custom dictionaries are available to every user, regardless of plan.
+        self.customDictionaries = true
         self.workspaceAuditFull = Self.workspaceAuditFullEnabled(in: features)
         self.workspaceAuditAutofix = Self.workspaceAuditAutofixEnabled(in: features)
     }

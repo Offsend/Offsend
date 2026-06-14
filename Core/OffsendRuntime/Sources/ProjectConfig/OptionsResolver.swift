@@ -6,17 +6,20 @@ public struct ResolvedCheckOptions: Equatable, Sendable {
     public let policy: Bool
     public let excludePatterns: [String]
     public let disabledDetectors: Set<SensitiveEntityType>
+    public let customDictionaries: [CustomDictionaryItem]
 
     public init(
         failPolicy: CheckFailPolicy,
         policy: Bool,
         excludePatterns: [String] = [],
-        disabledDetectors: Set<SensitiveEntityType> = []
+        disabledDetectors: Set<SensitiveEntityType> = [],
+        customDictionaries: [CustomDictionaryItem] = []
     ) {
         self.failPolicy = failPolicy
         self.policy = policy
         self.excludePatterns = excludePatterns
         self.disabledDetectors = disabledDetectors
+        self.customDictionaries = customDictionaries
     }
 }
 
@@ -93,7 +96,8 @@ public enum OptionsResolver {
             failPolicy: failPolicy,
             policy: policy,
             excludePatterns: checkConfig?.exclude ?? [],
-            disabledDetectors: disabledDetectors(from: checkConfig)
+            disabledDetectors: disabledDetectors(from: checkConfig),
+            customDictionaries: customDictionaries(from: checkConfig)
         )
     }
 
@@ -133,5 +137,15 @@ public enum OptionsResolver {
     private static func disabledDetectors(from config: OffsendProjectCheckConfig?) -> Set<SensitiveEntityType> {
         guard let rawValues = config?.detectors?.disable else { return [] }
         return Set(rawValues.compactMap { SensitiveEntityType(rawValue: $0) })
+    }
+
+    private static func customDictionaries(from config: OffsendProjectCheckConfig?) -> [CustomDictionaryItem] {
+        guard let entries = config?.dictionaries else { return [] }
+        return entries.compactMap { entry in
+            guard let kind = CustomDictionaryKind(rawValue: entry.kind) else { return nil }
+            let value = entry.value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !value.isEmpty else { return nil }
+            return CustomDictionaryItem(kind: kind, value: value)
+        }
     }
 }

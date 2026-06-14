@@ -15,6 +15,10 @@ extension AppCoordinator {
         OffsendCLILocator.resolvedExecutablePath()
     }
 
+    var cliPathInstallationStatus: CLIPathInstallationStatus {
+        CLIPathInstaller().status()
+    }
+
     var hookedRepositoryInstallCommand: String? {
         guard let cliPath = offsendCLIExecutablePath else { return nil }
         return "\(Self.shellQuote(cliPath)) hook install --cli-path \(Self.shellQuote(cliPath))"
@@ -195,6 +199,33 @@ extension AppCoordinator {
         lastStatusMessage = OffsendStrings.settingsHooksCopiedInstallCommand
     }
 
+    func installCLICommandInPath() {
+        do {
+            try CLIPathInstaller().install()
+            lastStatusMessage = OffsendStrings.settingsHooksCliPathInstalled
+        } catch let error as CLIPathInstallerError {
+            lastStatusMessage = message(for: error)
+        } catch {
+            lastStatusMessage = error.localizedDescription
+        }
+    }
+
+    func uninstallCLICommandFromPath() {
+        do {
+            try CLIPathInstaller().uninstall()
+            lastStatusMessage = OffsendStrings.settingsHooksCliPathUninstalled
+        } catch let error as CLIPathInstallerError {
+            lastStatusMessage = message(for: error)
+        } catch {
+            lastStatusMessage = error.localizedDescription
+        }
+    }
+
+    func copyHomebrewCLIUninstallCommand() {
+        clipboardService.writeString("brew uninstall --cask offsend-cli")
+        lastStatusMessage = OffsendStrings.settingsHooksCliPathBrewUninstallCopied
+    }
+
     func openHookedRepositoryInFinder(id: UUID) {
         guard let url = try? resolveHookedRepositoryURL(id: id) else { return }
         NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: url.path)
@@ -267,6 +298,19 @@ extension AppCoordinator {
             return OffsendStrings.settingsHooksErrorCliNotFound
         case .writeFailed(_, let message):
             return message
+        }
+    }
+
+    private func message(for error: CLIPathInstallerError) -> String {
+        switch error {
+        case .bundledCLINotExecutable(let path):
+            return OffsendStrings.settingsHooksCliPathErrorBundledMissing(path)
+        case .commandAlreadyAvailable(let path):
+            return OffsendStrings.settingsHooksCliPathErrorAlreadyAvailable(path)
+        case .installPathBlocked(let path):
+            return OffsendStrings.settingsHooksCliPathErrorBlocked(path)
+        case .privilegedHelperFailed(let message):
+            return OffsendStrings.settingsHooksCliPathErrorPrivileged(message)
         }
     }
 

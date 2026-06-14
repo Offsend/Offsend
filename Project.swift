@@ -127,7 +127,6 @@ let coreTargets: [Target] = [
             .target(name: "WorkspacePolicyCore"),
             .target(name: "RiskScoringCore"),
             .target(name: "StorageCore"),
-            .target(name: "LicenseCore"),
             .package(product: "Yams")
         ],
         settings: developerIDReleaseSigning

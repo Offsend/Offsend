@@ -11,6 +11,7 @@ public struct OffsendCheckRequest: Sendable {
     public let workingDirectory: URL
     public let excludePatterns: [String]
     public let disabledDetectors: Set<SensitiveEntityType>
+    public let customDictionaries: [CustomDictionaryItem]
 
     public init(
         fileURLs: [URL],
@@ -18,7 +19,8 @@ public struct OffsendCheckRequest: Sendable {
         failPolicy: CheckFailPolicy = .block,
         workingDirectory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
         excludePatterns: [String] = [],
-        disabledDetectors: Set<SensitiveEntityType> = []
+        disabledDetectors: Set<SensitiveEntityType> = [],
+        customDictionaries: [CustomDictionaryItem] = []
     ) {
         self.fileURLs = fileURLs
         self.policyDirectoryURL = policyDirectoryURL
@@ -26,6 +28,7 @@ public struct OffsendCheckRequest: Sendable {
         self.workingDirectory = workingDirectory
         self.excludePatterns = excludePatterns
         self.disabledDetectors = disabledDetectors
+        self.customDictionaries = customDictionaries
     }
 }
 
@@ -47,7 +50,8 @@ public struct OffsendCheckService: Sendable {
     public func run(_ request: OffsendCheckRequest) async -> CheckReport {
         let options = OffsendConfiguration.documentProcessingOptions(
             context: context,
-            disabledDetectors: request.disabledDetectors
+            disabledDetectors: request.disabledDetectors,
+            additionalDictionaries: request.customDictionaries
         )
 
         let filteredURLs = PathExcludeMatcher.filter(

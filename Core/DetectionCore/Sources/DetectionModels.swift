@@ -191,6 +191,8 @@ public enum CustomDictionaryKind: String, Codable, CaseIterable, Hashable, Senda
     case project
     case sensitiveTerm
     case internalDomain
+    /// User-supplied regular expression. `value` is used as the pattern verbatim.
+    case regex
 
     public var entityType: SensitiveEntityType {
         switch self {
@@ -200,7 +202,7 @@ public enum CustomDictionaryKind: String, Codable, CaseIterable, Hashable, Senda
             return .customCompany
         case .project:
             return .customProject
-        case .sensitiveTerm:
+        case .sensitiveTerm, .regex:
             return .customSensitiveTerm
         case .internalDomain:
             return .customInternalDomain

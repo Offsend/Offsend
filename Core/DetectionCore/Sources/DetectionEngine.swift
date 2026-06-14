@@ -146,13 +146,26 @@ enum CustomDictionaryRuleCache {
                 rules.removeAll(keepingCapacity: true)
             }
 
-            let escaped = NSRegularExpression.escapedPattern(for: trimmed)
-            guard !escaped.isEmpty else { return nil }
-            // Domain values must not match as a substring of a larger host (`acme.internal`
-            // inside `notacme.internalx`); other values use word boundaries.
-            let pattern = item.kind == .internalDomain
-                ? "(?<![A-Za-z0-9.-])\(escaped)(?![A-Za-z0-9.-])"
-                : "\\b\(escaped)\\b"
+            let pattern: String
+            switch item.kind {
+            case .regex:
+                // User-supplied pattern is used verbatim. Bail out on invalid regex so the
+                // CompiledRule below never trips its debug assertion on user input.
+                guard (try? NSRegularExpression(pattern: trimmed, options: [.caseInsensitive])) != nil else {
+                    return nil
+                }
+                pattern = trimmed
+            case .internalDomain:
+                let escaped = NSRegularExpression.escapedPattern(for: trimmed)
+                guard !escaped.isEmpty else { return nil }
+                // Domain values must not match as a substring of a larger host (`acme.internal`
+                // inside `notacme.internalx`).
+                pattern = "(?<![A-Za-z0-9.-])\(escaped)(?![A-Za-z0-9.-])"
+            default:
+                let escaped = NSRegularExpression.escapedPattern(for: trimmed)
+                guard !escaped.isEmpty else { return nil }
+                pattern = "\\b\(escaped)\\b"
+            }
             let detectionRule = DetectionRule(
                 type: item.kind.entityType,
                 source: .customDictionary,
@@ -255,13 +268,25 @@ private enum PhoneMatchSanitizer {
     }
 }
 
-/// `highEntropyString` allows `/`, so multi-segment URL paths can match as one token. Base64
-/// (e.g. Sparkle `edSignature`) also contains `/`; reject URL-shaped paths, not slash count alone.
+/// `highEntropyString` is a fuzzy length-only rule, so long source identifiers,
+/// model IDs, localization keys, and URL path segments can match as soon as the precise
+/// URL detector is disabled. Keep this heuristic conservative: exact secret rules catch
+/// known keys, while fuzzy entropy should only catch token-like strings.
 private enum HighEntropyMatchSanitizer {
     static func shouldRejectHighEntropyValue(_ value: String) -> Bool {
-        if value.contains("://") { return true }
-        let slashCount = value.filter { $0 == "/" }.count
-        return slashCount >= 2 && value.contains(".")
+        if isLikelySourceIdentifier(value) { return true }
+        if isPathLikeWithoutBase64Padding(value) { return true }
+        let hasSecretSignal = value.contains { $0.isNumber || $0 == "+" || $0 == "=" }
+        return !hasSecretSignal
+    }
+
+    private static func isLikelySourceIdentifier(_ value: String) -> Bool {
+        guard let first = value.first, first.isLetter || first == "_" else { return false }
+        return value.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" }
+    }
+
+    private static func isPathLikeWithoutBase64Padding(_ value: String) -> Bool {
+        value.contains("/") && !value.contains("+") && !value.contains("=")
     }
 }
 

@@ -16,10 +16,6 @@ struct SettingsDirectoryCheckPanel: View {
         AIWorkspacePrivacyIgnoreTemplate.contents
     }
 
-    private var canEditTemplate: Bool {
-        coordinator.tariffFeatures.workspaceAuditFull
-    }
-
     private var trimmedNewSkippedDirectory: String {
         newSkippedDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -29,7 +25,7 @@ struct SettingsDirectoryCheckPanel: View {
     }
 
     private var canResetTemplate: Bool {
-        canEditTemplate && coordinator.settings.directoryCheckCustomIgnoreTemplate != nil
+        coordinator.settings.directoryCheckCustomIgnoreTemplate != nil
     }
 
     var body: some View {
@@ -676,7 +672,7 @@ struct SettingsDirectoryCheckPanel: View {
         .padding(.vertical, 10)
     }
 
-    // MARK: Ignore template (Pro)
+    // MARK: Ignore template
 
     private var ignoreTemplateSection: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -686,15 +682,6 @@ struct SettingsDirectoryCheckPanel: View {
                     .kerning(0.8)
                     .foregroundColor(palette.textMuted)
                 Spacer()
-                if !canEditTemplate {
-                    Text(OffsendStrings.settingsDirectoryCheckScopePro)
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(palette.amberText)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(palette.amberDim)
-                        .cornerRadius(6)
-                }
             }
             .padding(.leading, 2)
 
@@ -707,22 +694,16 @@ struct SettingsDirectoryCheckPanel: View {
             VStack(alignment: .leading, spacing: 0) {
                 TextEditor(text: $templateDraft)
                     .font(.system(size: 12, design: .monospaced))
-                    .foregroundColor(canEditTemplate ? palette.text : palette.textMuted)
+                    .foregroundColor(palette.text)
                     .scrollContentBackground(.hidden)
-                    .background(canEditTemplate ? palette.bg0 : palette.bg1)
+                    .background(palette.bg0)
                     .frame(minHeight: 180, maxHeight: 320)
-                    .disabled(!canEditTemplate)
                     .onChange(of: templateDraft) { newValue in
-                        guard canEditTemplate, templateInitialized else { return }
+                        guard templateInitialized else { return }
                         saveTemplateDraft(newValue)
                     }
 
                 HStack(spacing: 8) {
-                    if !canEditTemplate {
-                        Text(OffsendStrings.settingsDirectoryCheckTemplateLocked)
-                            .font(.system(size: 11))
-                            .foregroundColor(palette.textMuted)
-                    }
                     Spacer()
                     OFCompactButton(
                         title: OffsendStrings.settingsDirectoryCheckTemplateReset,

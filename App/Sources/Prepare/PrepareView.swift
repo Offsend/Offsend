@@ -168,12 +168,7 @@ struct PrepareView: View {
     }
 
     private var prepareDropHint: String {
-        guard !coordinator.isProEntitlementActive else {
-            return OffsendStrings.prepareDropHint
-        }
-        let freeLimit = Self.formattedMegabytes(DocumentProcessingLimits.freeMaximumFileByteCount)
-        let proLimit = Self.formattedMegabytes(DocumentProcessingLimits.proMaximumFileByteCount)
-        return OffsendStrings.prepareDropHintWithFileSizeLimit(freeLimit, proLimit)
+        OffsendStrings.prepareDropHint
     }
 
     private func applyReplacement(from urls: [URL]) {
@@ -241,14 +236,6 @@ struct PrepareView: View {
             }
         }
         return true
-    }
-
-    private static func formattedMegabytes(_ bytes: Int) -> String {
-        let megabytes = Double(bytes) / (1024 * 1024)
-        if megabytes >= 10 {
-            return String(format: "%.0f MB", megabytes)
-        }
-        return String(format: "%.1f MB", megabytes)
     }
 
     nonisolated private static func fileURL(from item: NSSecureCoding?) -> URL? {

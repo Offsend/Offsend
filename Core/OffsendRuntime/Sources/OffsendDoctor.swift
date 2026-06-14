@@ -54,24 +54,6 @@ public struct OffsendDoctor: Sendable {
                     message: "Loaded \(context.settings.enabledDetectors.count) enabled detector(s) from local settings."
                 )
             )
-
-            if context.isProEntitlementActive {
-                checks.append(
-                    DoctorCheck(
-                        name: "license",
-                        status: .ok,
-                        message: "Pro entitlement is active."
-                    )
-                )
-            } else {
-                checks.append(
-                    DoctorCheck(
-                        name: "license",
-                        status: .warn,
-                        message: "Free tier limits apply (file size, custom dictionaries)."
-                    )
-                )
-            }
         } else {
             checks.append(
                 DoctorCheck(
@@ -100,6 +82,17 @@ public struct OffsendDoctor: Sendable {
             )
         }
 
+        if let bundledCLIPath = bundledAppCLIPath() {
+            let terminalStatus = CLIPathInstaller(bundledCLIPath: bundledCLIPath, fileManager: fileManager).status()
+            checks.append(
+                DoctorCheck(
+                    name: "terminal-command",
+                    status: doctorStatus(for: terminalStatus.state),
+                    message: terminalCommandMessage(for: terminalStatus)
+                )
+            )
+        }
+
         if fileManager.isExecutableFile(atPath: gitExecutable) {
             checks.append(
                 DoctorCheck(
@@ -120,25 +113,98 @@ public struct OffsendDoctor: Sendable {
 
         let configLoader = ProjectConfigLoader(fileManager: fileManager)
         let cwd = URL(fileURLWithPath: fileManager.currentDirectoryPath)
-        if let configURL = configLoader.configURL(for: cwd) {
-            checks.append(
-                DoctorCheck(
-                    name: "project-config",
-                    status: .ok,
-                    message: configURL.path
-                )
+        checks.append(projectConfigCheck(loader: configLoader, directory: cwd))
+
+        return DoctorReport(checks: checks)
+    }
+
+    private func projectConfigCheck(loader: ProjectConfigLoader, directory: URL) -> DoctorCheck {
+        guard let configURL = loader.configURL(for: directory) else {
+            return DoctorCheck(
+                name: "project-config",
+                status: .warn,
+                message: "No \(ProjectConfigLoader.filename) found for the current directory."
             )
-        } else {
-            checks.append(
-                DoctorCheck(
+        }
+
+        do {
+            guard let config = try loader.load(from: directory) else {
+                return DoctorCheck(
                     name: "project-config",
                     status: .warn,
                     message: "No \(ProjectConfigLoader.filename) found for the current directory."
                 )
+            }
+            let contents = try String(contentsOf: configURL, encoding: .utf8)
+            let issues = ProjectConfigValidator.validateYAMLStructure(contents)
+                + ProjectConfigValidator.validate(config)
+            guard issues.isEmpty else {
+                return DoctorCheck(
+                    name: "project-config",
+                    status: .warn,
+                    message: "\(configURL.path) — \(issues.joined(separator: " "))"
+                )
+            }
+            return DoctorCheck(name: "project-config", status: .ok, message: configURL.path)
+        } catch let error as ProjectConfigLoaderError {
+            return DoctorCheck(
+                name: "project-config",
+                status: .fail,
+                message: projectConfigErrorMessage(error, path: configURL.path)
+            )
+        } catch {
+            return DoctorCheck(
+                name: "project-config",
+                status: .fail,
+                message: "\(configURL.path): \(error.localizedDescription)"
             )
         }
+    }
 
-        return DoctorReport(checks: checks)
+    private func projectConfigErrorMessage(_ error: ProjectConfigLoaderError, path: String) -> String {
+        switch error {
+        case .unreadable(let path):
+            return "Could not read \(path)."
+        case .invalidYAML(let path, let message):
+            return "Invalid YAML in \(path): \(message)"
+        case .unsupportedVersion(let version):
+            return "\(path): unsupported version \(version); expected 1."
+        }
+    }
+
+    private func bundledAppCLIPath() -> String? {
+        let candidates = [
+            Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/offsend").path,
+            "/Applications/Offsend.app/Contents/Helpers/offsend",
+            "\(NSHomeDirectory())/Applications/Offsend.app/Contents/Helpers/offsend"
+        ]
+        return candidates.first { fileManager.isExecutableFile(atPath: $0) }
+    }
+
+    private func doctorStatus(for state: CLIPathInstallationState) -> DoctorCheckStatus {
+        switch state {
+        case .installed, .availableViaHomebrew:
+            return .ok
+        case .notInstalled, .availableViaForeign, .targetBlocked, .brokenManagedLink:
+            return .warn
+        }
+    }
+
+    private func terminalCommandMessage(for status: CLIPathInstallationStatus) -> String {
+        switch status.state {
+        case .installed:
+            return status.commandPath ?? status.installPath
+        case .availableViaHomebrew:
+            return "offsend is available through Homebrew at \(status.commandPath ?? "offsend")."
+        case .availableViaForeign:
+            return "offsend resolves to another executable at \(status.commandPath ?? "offsend")."
+        case .targetBlocked:
+            return "\(status.installPath) exists and is not an Offsend-managed symlink."
+        case .brokenManagedLink:
+            return "\(status.installPath) points to a moved or deleted Offsend.app. Reinstall the command from Settings."
+        case .notInstalled:
+            return "offsend is not installed in PATH. Install it from Settings → Hooks → CLI."
+        }
     }
 }
 
