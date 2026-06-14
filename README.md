@@ -122,7 +122,7 @@ The app gives you the full menu bar workflow: Safe Paste hotkeys, drag-and-drop 
 Use the standalone CLI for free when you need terminal, git hook, or CI checks without installing the full app:
 
 ```bash
-brew install offsend/tap/offsend-cli
+brew install --cask offsend/tap/offsend-cli
 offsend doctor
 ```
 
@@ -238,7 +238,7 @@ Supported `check.detectors.disable` IDs:
 
 ```yaml
 - name: Install Offsend CLI
-  run: brew install offsend/tap/offsend-cli
+  run: brew install --cask offsend/tap/offsend-cli
 
 - name: Check staged changes for secrets
   run: offsend check --staged

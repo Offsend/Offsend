@@ -34,7 +34,7 @@ if ! git clone --depth 1 \
   git -C "$TAP_DIR" remote add origin "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/${TAP_REPO}.git"
 fi
 
-mkdir -p "$TAP_DIR/Casks" "$TAP_DIR/Formula"
+mkdir -p "$TAP_DIR/Casks"
 
 cat > "$TAP_DIR/Casks/offsend.rb" <<'RUBY'
 cask "offsend" do
@@ -68,37 +68,50 @@ sed -i '' \
   -e "s/SHA256_PLACEHOLDER/${DMG_SHA256}/g" \
   "$TAP_DIR/Casks/offsend.rb"
 
-cat > "$TAP_DIR/Formula/offsend-cli.rb" <<'RUBY'
-class OffsendCli < Formula
+# The CLI ships as a Cask (not a Formula): it is a pre-built, Developer ID-signed
+# binary plus signed frameworks. A Formula install triggers Homebrew's Mach-O
+# relocation + ad-hoc re-signing, which breaks the Developer ID signature and fails
+# on framework bundles ("bundle format is ambiguous", "load commands do not fit").
+# Casks install the artifact verbatim, leaving the signature intact.
+cat > "$TAP_DIR/Casks/offsend-cli.rb" <<'RUBY'
+cask "offsend-cli" do
+  version "VERSION_PLACEHOLDER"
+  sha256 "CLI_SHA256_PLACEHOLDER"
+
+  url "https://github.com/Offsend/Offsend/releases/download/v#{version}/offsend-cli-#{version}.zip"
+  name "Offsend CLI"
   desc "Local sensitive data checks for developers (Offsend CLI)"
   homepage "https://offsend.io"
-  url "https://github.com/Offsend/Offsend/releases/download/vVERSION_PLACEHOLDER/offsend-cli-VERSION_PLACEHOLDER.zip"
-  sha256 "CLI_SHA256_PLACEHOLDER"
-  version "VERSION_PLACEHOLDER"
 
-  def install
-    libexec.install Dir["*"]
-    (bin/"offsend").write <<~EOS
-      #!/bin/bash
-      exec "#{libexec}/offsend" "$@"
-    EOS
-    chmod 0755, bin/"offsend"
+  livecheck do
+    url "https://github.com/Offsend/Offsend/releases/latest"
+    strategy :github_latest
   end
 
-  test do
-    assert_match "offsend", shell_output("#{bin}/offsend --version")
-  end
+  depends_on macos: :ventura
+
+  binary "offsend"
+
+  zap trash: [
+    "~/Library/Application Support/Offsend",
+    "~/Library/Preferences/io.offsend.plist",
+    "~/Library/Caches/io.offsend",
+  ]
 end
 RUBY
 
 sed -i '' \
   -e "s/VERSION_PLACEHOLDER/${VERSION}/g" \
   -e "s/CLI_SHA256_PLACEHOLDER/${CLI_SHA256}/g" \
-  "$TAP_DIR/Formula/offsend-cli.rb"
+  "$TAP_DIR/Casks/offsend-cli.rb"
 
 git -C "$TAP_DIR" config user.name "github-actions[bot]"
 git -C "$TAP_DIR" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-git -C "$TAP_DIR" add Casks/offsend.rb Formula/offsend-cli.rb
+# Drop the legacy Formula if the tap still carries it from previous releases.
+if [[ -f "$TAP_DIR/Formula/offsend-cli.rb" ]]; then
+  git -C "$TAP_DIR" rm -q "Formula/offsend-cli.rb"
+fi
+git -C "$TAP_DIR" add Casks/offsend.rb Casks/offsend-cli.rb
 
 if git -C "$TAP_DIR" diff --cached --quiet; then
   echo "Homebrew tap already up to date for ${VERSION}"

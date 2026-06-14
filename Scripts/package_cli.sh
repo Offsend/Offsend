@@ -68,7 +68,10 @@ mkdir -p "$(dirname "$OUTPUT_ZIP")"
 rm -f "$OUTPUT_ZIP"
 (
   cd "$stage"
-  zip -q -r -X "$OUTPUT_ZIP" offsend Frameworks
+  # -y (--symlinks) is required: without it `zip` follows the framework's internal
+  # symlinks and stores them as duplicate real files, which breaks the .framework
+  # bundle structure ("bundle format is ambiguous") and invalidates its signature.
+  zip -q -r -X -y "$OUTPUT_ZIP" offsend Frameworks
 )
 
 echo "Created $OUTPUT_ZIP"

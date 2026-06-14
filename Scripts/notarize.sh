@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DMG_PATH="${DMG_PATH:-build/Offsend.dmg}"
+# ARTIFACT_PATH is the file submitted to notarytool. DMG_PATH is kept for backward
+# compatibility with existing callers. A .zip (e.g. the standalone CLI) cannot be
+# stapled because it contains a bare Mach-O, so stapling is skipped for it; Gatekeeper
+# validates such binaries online against the notarization ticket.
+ARTIFACT_PATH="${ARTIFACT_PATH:-${DMG_PATH:-build/Offsend.dmg}}"
 
-if [[ ! -f "$DMG_PATH" ]]; then
-  echo "DMG not found: $DMG_PATH"
+if [[ ! -f "$ARTIFACT_PATH" ]]; then
+  echo "Artifact not found: $ARTIFACT_PATH"
   exit 1
 fi
 
@@ -13,11 +17,11 @@ if [[ -z "${APPLE_ID:-}" || -z "${APPLE_TEAM_ID:-}" || -z "${APPLE_APP_PASSWORD:
   exit 1
 fi
 
-echo "Submitting for notarization: $DMG_PATH ($(stat -f%z "$DMG_PATH") bytes)"
+echo "Submitting for notarization: $ARTIFACT_PATH ($(stat -f%z "$ARTIFACT_PATH") bytes)"
 
 # notarytool may exit 0 even when status is Invalid; always inspect JSON before stapling.
 NOTARY_JSON="$(
-  xcrun notarytool submit "$DMG_PATH" \
+  xcrun notarytool submit "$ARTIFACT_PATH" \
     --apple-id "$APPLE_ID" \
     --team-id "$APPLE_TEAM_ID" \
     --password "$APPLE_APP_PASSWORD" \
@@ -42,10 +46,15 @@ if [[ "$STATUS" != "Accepted" ]]; then
   exit 1
 fi
 
-xcrun stapler staple "$DMG_PATH"
+if [[ "$ARTIFACT_PATH" == *.zip ]]; then
+  echo "Notarization accepted for $ARTIFACT_PATH (zip is not stapled; Gatekeeper verifies online)."
+  exit 0
+fi
 
-if ! xcrun stapler validate "$DMG_PATH"; then
-  echo "stapler validate failed for $DMG_PATH" >&2
+xcrun stapler staple "$ARTIFACT_PATH"
+
+if ! xcrun stapler validate "$ARTIFACT_PATH"; then
+  echo "stapler validate failed for $ARTIFACT_PATH" >&2
   exit 1
 fi
 
