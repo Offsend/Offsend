@@ -105,6 +105,11 @@ jobs:
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             clean archive
 
+      - name: Embed CLI in archive
+        run: |
+          set -euo pipefail
+          bash Scripts/embed_cli_in_archive.sh "build/Offsend.xcarchive"
+
       - name: Export signed .app
         run: |
           set -euo pipefail
