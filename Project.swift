@@ -232,6 +232,10 @@ let cliTargets: [Target] = [
                 "MARKETING_VERSION": "\(appMarketingVersion)",
                 "CURRENT_PROJECT_VERSION": "\(appBuildNumber)",
                 "CREATE_INFOPLIST_SECTION_IN_BINARY": "YES",
+                // Keep the CLI out of the archive's Products root so the archive stays a valid
+                // single-app archive (otherwise `xcodebuild -exportArchive` rejects it as generic).
+                // The app target embeds + signs the CLI into Contents/Helpers during the build.
+                "SKIP_INSTALL": "YES",
                 "LD_RUNPATH_SEARCH_PATHS": "$(inherited) @executable_path @loader_path @executable_path/../Frameworks @executable_path/Frameworks"
             ],
             configurations: [
@@ -284,17 +288,11 @@ let appTarget = Target.target(
         .post(
             script: """
             set -euo pipefail
-            if [ "${ACTION:-}" = "install" ]; then
-              echo "Skipping Offsend CLI embedding during archive; release workflow embeds it after archive creation."
-              exit 0
-            fi
-            CLI_BUILT_PRODUCT="${BUILT_PRODUCTS_DIR}/offsend"
-            CLI_INSTALLED_PRODUCT="${DSTROOT}/usr/local/bin/offsend"
-            if [ -f "$CLI_INSTALLED_PRODUCT" ]; then
-              CLI_SRC="$CLI_INSTALLED_PRODUCT"
-            else
-              CLI_SRC="$CLI_BUILT_PRODUCT"
-            fi
+            # Embed the CLI on every build (including `archive`/install) so the archived app already
+            # contains a signed Contents/Helpers/offsend. The CLI uses SKIP_INSTALL=YES, so it is only
+            # available in BUILT_PRODUCTS_DIR (never DSTROOT) — sign it inside-out here, then the
+            # outer app signing / `xcodebuild -exportArchive` re-seals the bundle around it.
+            CLI_SRC="${BUILT_PRODUCTS_DIR}/offsend"
             APP_HELPERS="${BUILT_PRODUCTS_DIR}/${WRAPPER_NAME}/Contents/Helpers"
             CLI_DEST="${APP_HELPERS}/offsend"
             if [ ! -f "$CLI_SRC" ]; then
@@ -311,8 +309,7 @@ let appTarget = Target.target(
             """,
             name: "Embed Offsend CLI",
             inputPaths: [
-                "$(BUILT_PRODUCTS_DIR)/offsend",
-                "$(DSTROOT)/usr/local/bin/offsend"
+                "$(BUILT_PRODUCTS_DIR)/offsend"
             ],
             outputPaths: ["$(BUILT_PRODUCTS_DIR)/$(WRAPPER_NAME)/Contents/Helpers/offsend"],
             basedOnDependencyAnalysis: false
