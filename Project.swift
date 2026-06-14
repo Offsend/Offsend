@@ -284,6 +284,10 @@ let appTarget = Target.target(
         .post(
             script: """
             set -euo pipefail
+            if [ "${ACTION:-}" = "install" ]; then
+              echo "Skipping Offsend CLI embedding during archive; release workflow embeds it after archive creation."
+              exit 0
+            fi
             CLI_BUILT_PRODUCT="${BUILT_PRODUCTS_DIR}/offsend"
             CLI_INSTALLED_PRODUCT="${DSTROOT}/usr/local/bin/offsend"
             if [ -f "$CLI_INSTALLED_PRODUCT" ]; then
