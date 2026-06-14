@@ -288,10 +288,14 @@ let appTarget = Target.target(
         .post(
             script: """
             set -euo pipefail
-            # Embed the CLI on every build (including `archive`/install) so the archived app already
-            # contains a signed Contents/Helpers/offsend. The CLI uses SKIP_INSTALL=YES, so it is only
-            # available in BUILT_PRODUCTS_DIR (never DSTROOT) — sign it inside-out here, then the
-            # outer app signing / `xcodebuild -exportArchive` re-seals the bundle around it.
+            # Local/dev builds embed the CLI into the app so it runs from the bundle.
+            # During `archive` (ACTION=install) the user-script sandbox denies reading the build
+            # products, so the release workflow injects the CLI into the .xcarchive and lets
+            # `xcodebuild -exportArchive` sign it instead.
+            if [ "${ACTION:-}" = "install" ]; then
+              echo "Skipping CLI embed during archive; release workflow injects + signs it via exportArchive."
+              exit 0
+            fi
             CLI_SRC="${BUILT_PRODUCTS_DIR}/offsend"
             APP_HELPERS="${BUILT_PRODUCTS_DIR}/${WRAPPER_NAME}/Contents/Helpers"
             CLI_DEST="${APP_HELPERS}/offsend"

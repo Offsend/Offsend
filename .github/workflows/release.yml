@@ -75,11 +75,20 @@ jobs:
             -configuration Release \
             -destination "platform=macOS" \
             -archivePath "build/Offsend.xcarchive" \
+            -derivedDataPath "build/DerivedData" \
             DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
             TELEMETRYDECK_APP_ID="$TELEMETRYDECK_APP_ID" \
             MARKETING_VERSION="$MARKETING_VERSION" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             clean archive
+
+      - name: Embed CLI into archive
+        run: |
+          set -euo pipefail
+          # The CLI uses SKIP_INSTALL=YES so the archive stays a valid single-app archive.
+          # Inject the (Developer ID-signed) CLI built during archive into the archived app here,
+          # outside Xcode's user-script sandbox, so exportArchive re-seals the bundle around it.
+          bash Scripts/embed_cli_in_archive.sh "build/Offsend.xcarchive" "build/DerivedData"
 
       - name: Write ExportOptions.plist (Developer ID)
         env:
@@ -109,9 +118,8 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf "build/export"
-          # The CLI is embedded into Contents/Helpers during archive (SKIP_INSTALL keeps the archive
-          # a valid single-app archive), so exportArchive re-signs the whole bundle — Sparkle's XPC
-          # services/Updater.app and the embedded CLI included — with Developer ID + secure timestamps.
+          # exportArchive re-signs the whole bundle — Sparkle's XPC services/Updater.app and the
+          # embedded CLI included — with Developer ID + secure timestamps, then strips get-task-allow.
           xcodebuild \
             -exportArchive \
             -archivePath "build/Offsend.xcarchive" \
