@@ -22,7 +22,7 @@ test -f "$CLI_ZIP_PATH" || {
 
 DMG_SHA256="$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')"
 CLI_SHA256="$(shasum -a 256 "$CLI_ZIP_PATH" | awk '{print $1}')"
-TAP_DIR="${TAP_DIR:-$RUNNER_TEMP/homebrew-tap}"
+TAP_DIR="${TAP_DIR:-${RUNNER_TEMP:-/tmp}/homebrew-tap}"
 
 rm -rf "$TAP_DIR"
 if ! git clone --depth 1 \

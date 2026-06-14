@@ -4,6 +4,9 @@ set -euo pipefail
 
 APP_PATH="${1:?Usage: $0 <path-to-Offsend.app> <output-zip>}"
 OUTPUT_ZIP="${2:?Usage: $0 <path-to-Offsend.app> <output-zip>}"
+if [[ "$OUTPUT_ZIP" != /* ]]; then
+  OUTPUT_ZIP="$(pwd)/$OUTPUT_ZIP"
+fi
 
 CLI_PATH="${APP_PATH}/Contents/Helpers/offsend"
 FRAMEWORKS_DIR="${APP_PATH}/Contents/Frameworks"
