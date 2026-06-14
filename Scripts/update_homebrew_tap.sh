@@ -51,7 +51,7 @@ cask "offsend" do
     strategy :github_latest
   end
 
-  depends_on macos: ">= :ventura"
+  depends_on macos: :ventura
 
   app "Offsend.app"
 
@@ -75,8 +75,6 @@ class OffsendCli < Formula
   url "https://github.com/Offsend/Offsend/releases/download/vVERSION_PLACEHOLDER/offsend-cli-VERSION_PLACEHOLDER.zip"
   sha256 "CLI_SHA256_PLACEHOLDER"
   version "VERSION_PLACEHOLDER"
-
-  depends_on macos: ">= :ventura"
 
   def install
     libexec.install Dir["*"]
