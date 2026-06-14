@@ -151,6 +151,14 @@ jobs:
             "build/export/Offsend.app" \
             "build/offsend-cli-${VERSION}.zip"
 
+      - name: Notarize CLI zip (notarytool)
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID || secrets.TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          ARTIFACT_PATH: build/offsend-cli-${{ github.event.inputs.marketing_version }}.zip
+        run: bash Scripts/notarize.sh
+
       - name: Read app version from exported bundle
         id: app_version
         run: |
