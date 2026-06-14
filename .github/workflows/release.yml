@@ -82,14 +82,6 @@ jobs:
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             clean archive
 
-      - name: Embed CLI into archive
-        run: |
-          set -euo pipefail
-          # The CLI uses SKIP_INSTALL=YES so the archive stays a valid single-app archive.
-          # Inject the (Developer ID-signed) CLI built during archive into the archived app here,
-          # outside Xcode's user-script sandbox, so exportArchive re-seals the bundle around it.
-          bash Scripts/embed_cli_in_archive.sh "build/Offsend.xcarchive" "build/DerivedData"
-
       - name: Write ExportOptions.plist (Developer ID)
         env:
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID || secrets.TEAM_ID }}
@@ -114,12 +106,14 @@ jobs:
           PLIST
           sed -i '' 's/^[[:space:]]*//' "$RUNNER_TEMP/ExportOptions.plist"
 
-      - name: Export signed .app (re-signs Sparkle + embedded CLI)
+      - name: Export signed .app (re-signs Sparkle)
         run: |
           set -euo pipefail
           rm -rf "build/export"
-          # exportArchive re-signs the whole bundle — Sparkle's XPC services/Updater.app and the
-          # embedded CLI included — with Developer ID + secure timestamps, then strips get-task-allow.
+          # exportArchive re-signs the app + Sparkle's XPC services/Updater.app with Developer ID +
+          # secure timestamps and strips get-task-allow. The CLI is added afterwards (next step):
+          # it is not in the archive, and exportArchive re-signs foreign helpers without the hardened
+          # runtime, which fails notarization.
           xcodebuild \
             -exportArchive \
             -archivePath "build/Offsend.xcarchive" \
@@ -127,13 +121,26 @@ jobs:
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
           codesign --verify --deep --strict --verbose=2 "build/export/Offsend.app"
 
+      - name: Embed + sign CLI in exported app
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID || secrets.TEAM_ID }}
+        run: |
+          set -euo pipefail
+          test -n "${TEAM_ID:-}" || { echo "Missing secret: set repository secret APPLE_TEAM_ID (or TEAM_ID) to your Apple Developer Team ID"; exit 1; }
+          bash Scripts/embed_cli_in_app.sh \
+            "build/export/Offsend.app" \
+            "build/DerivedData" \
+            "$TEAM_ID" \
+            "App/Resources/Offsend.entitlements"
+
       - name: Verify embedded CLI in app bundle
         run: |
           set -euo pipefail
           CLI="build/export/Offsend.app/Contents/Helpers/offsend"
           test -x "$CLI"
-          codesign --verify --deep --strict --verbose=2 "$CLI"
-          echo "Embedded CLI OK: $CLI"
+          codesign --verify --strict --verbose=2 "$CLI"
+          codesign -d --verbose=4 "$CLI" 2>&1 | grep -q "flags=.*runtime" || { echo "CLI missing hardened runtime"; exit 1; }
+          echo "Embedded CLI OK (hardened runtime present): $CLI"
 
       - name: Package CLI for Homebrew
         env:
