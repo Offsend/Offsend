@@ -21,24 +21,28 @@ public struct OffsendProjectCheckConfig: Codable, Equatable, Sendable {
     public var policy: Bool?
     public var exclude: [String]?
     public var detectors: OffsendProjectDetectorsConfig?
+    public var dictionaries: [OffsendProjectDictionaryEntry]?
 
     enum CodingKeys: String, CodingKey {
         case failOn = "fail_on"
         case policy
         case exclude
         case detectors
+        case dictionaries
     }
 
     public init(
         failOn: String? = nil,
         policy: Bool? = nil,
         exclude: [String]? = nil,
-        detectors: OffsendProjectDetectorsConfig? = nil
+        detectors: OffsendProjectDetectorsConfig? = nil,
+        dictionaries: [OffsendProjectDictionaryEntry]? = nil
     ) {
         self.failOn = failOn
         self.policy = policy
         self.exclude = exclude
         self.detectors = detectors
+        self.dictionaries = dictionaries
     }
 }
 
@@ -47,6 +51,16 @@ public struct OffsendProjectDetectorsConfig: Codable, Equatable, Sendable {
 
     public init(disable: [String]? = nil) {
         self.disable = disable
+    }
+}
+
+public struct OffsendProjectDictionaryEntry: Codable, Equatable, Sendable {
+    public var kind: String
+    public var value: String
+
+    public init(kind: String, value: String) {
+        self.kind = kind
+        self.value = value
     }
 }
 

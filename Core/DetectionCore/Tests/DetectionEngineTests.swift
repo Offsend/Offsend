@@ -124,6 +124,27 @@ final class DetectionEngineTests: XCTestCase {
         XCTAssertTrue(result.entities.contains { $0.type == .customInternalDomain })
     }
 
+    func testCustomRegexDictionaryMatchesPattern() async {
+        let options = DetectionOptions(customDictionaries: [
+            CustomDictionaryItem(kind: .regex, value: #"ACME-\d{4,}"#)
+        ])
+
+        let result = await engine.scan(DetectionRequest(text: "ticket ACME-12345 filed", options: options))
+
+        let matches = result.entities.filter { $0.type == .customSensitiveTerm }
+        XCTAssertEqual(matches.map(\.value), ["ACME-12345"])
+    }
+
+    func testCustomRegexDictionaryIgnoresInvalidPattern() async {
+        let options = DetectionOptions(customDictionaries: [
+            CustomDictionaryItem(kind: .regex, value: "ACME-[")
+        ])
+
+        let result = await engine.scan(DetectionRequest(text: "ACME-[ literal", options: options))
+
+        XCTAssertFalse(result.entities.contains { $0.type == .customSensitiveTerm })
+    }
+
     func testSparkleEdSignaturesDetectedAsHighEntropySecrets() async {
         let sig1 = "pNFd7KbcQSu+Mq7UYrbQXTPq82luht2ACXm/r2utp1u/Uv/5hWqctdT2jwQgMejW7DRoeV/hVr6J4VdZYdwWDw=="
         let sig2 = "Ody3D/ybSMH4T+P/oNj3LN4F0SA8RJGLEr1TI4UemrBAiJ9aEcDnYV3u58P75AbcFjI13jPYmHDUHXMSTFQbDw=="
@@ -135,6 +156,43 @@ final class DetectionEngineTests: XCTestCase {
         let secrets = result.entities.filter { $0.type == .highEntropyString }.map(\.value)
 
         XCTAssertEqual(secrets, [sig1, sig2])
+    }
+
+    func testLongSwiftIdentifierNotDetectedAsHighEntropySecret() async {
+        let text = "subheadline: OffsendStrings.settingsLicensePricingFallbackSubheadline,"
+        let result = await engine.scan(DetectionRequest(text: text))
+        XCTAssertFalse(
+            result.entities.contains { $0.type == .highEntropyString },
+            "A letters-only identifier must not be a secret: \(result.entities.map { ($0.type, $0.value) })"
+        )
+    }
+
+    func testLetterOnlyURLPathSegmentsNotDetectedAsHighEntropySecret() async {
+        // No scheme, so the URL detector cannot absorb it; the path is still letters + slashes only.
+        let text = "route = api/internal/customers/accounts/settings/profile"
+        let result = await engine.scan(DetectionRequest(text: text))
+        XCTAssertFalse(
+            result.entities.contains { $0.type == .highEntropyString },
+            "A letters-only path must not be a secret: \(result.entities.map(\.value))"
+        )
+    }
+
+    func testHighEntropyTokenWithDigitsStillDetected() async {
+        let token = "0bCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf"
+        let result = await engine.scan(DetectionRequest(text: "value = \(token)"))
+        XCTAssertTrue(
+            result.entities.contains { $0.type == .highEntropyString && $0.value == token },
+            "A long mixed token with digits must still flag: \(result.entities.map(\.value))"
+        )
+    }
+
+    func testModelIdentifierNotDetectedAsHighEntropySecret() async {
+        let text = "Isotonic/mdeberta-v3-base_finetuned_ai4privacy_v2"
+        let result = await engine.scan(DetectionRequest(text: text))
+        XCTAssertFalse(
+            result.entities.contains { $0.type == .highEntropyString },
+            "A model identifier must not be a secret: \(result.entities.map(\.value))"
+        )
     }
 
     func testFigmaFileURLDoesNotFalsePositiveAsSecretOrPhone() async {

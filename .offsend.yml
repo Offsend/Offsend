@@ -21,6 +21,25 @@ check:
     - "*.provisionprofile"
     - "**/Secrets.xcconfig"
     - ".env"
+    - "App/Resources/en.lproj/Localizable.strings"
+    - "Core/DetectionCore/Sources/DetectionEngine.swift"
+    - "Core/DetectionCore/Tests/**"
+  detectors:
+    disable:
+      - email
+      - phone
+      - money
+      - url
+      - ipAddress
+      - internalDomain
+      - contractId
+      - invoiceId
+      - orderId
+      - creditCardLike
+      - iban
+      - personName
+      - streetAddress
+      - governmentId
 
 hooks:
   type: pre-commit

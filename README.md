@@ -85,6 +85,8 @@ You can also install the standalone `offsend-cli` for free when you want `offsen
 
 Built-in detectors cover emails, phone numbers, IDs, amounts, URLs, IPs, API keys, tokens, private keys, and similar patterns. Turn individual detectors on or off in **Settings → Detection**.
 
+You can also add **custom dictionaries** in **Settings → Detection** to flag your own client names, companies, projects, internal domains, sensitive terms, or custom regular-expression patterns. Custom dictionaries are available to everyone and also work in the CLI via `.offsend.yml`.
+
 ### Local AI detection
 
 Offsend can also run local AI models alongside the built-in pattern detectors. This is useful for NER/PII cases that are harder to catch with regular expressions, such as names, addresses, organization names, and contextual personal data.
@@ -116,6 +118,8 @@ brew install --cask offsend/tap/offsend
 Or download the latest `.dmg` from [Releases](../../releases).
 
 The app gives you the full menu bar workflow: Safe Paste hotkeys, drag-and-drop file preparation, project checks, watched folders, settings, local AI model management, hook management UI, and the bundled CLI helper used by local checks and hooks.
+
+To make the bundled CLI available as `offsend` in terminals, open **Settings → Hooks → CLI** and install the terminal command. Offsend creates `/usr/local/bin/offsend` as a symlink to the CLI inside `Offsend.app` and does not overwrite an existing Homebrew or third-party `offsend` command.
 
 ### Free CLI only
 
@@ -156,7 +160,7 @@ The macOS app already includes the CLI helper at:
 
 `Offsend.app/Contents/Helpers/offsend`
 
-Install the free `offsend-cli` separately if you want `offsend` available on `PATH` for shells, hooks, and CI.
+Install the command from **Settings → Hooks → CLI** if you want the app-bundled CLI available as `offsend` on `PATH`. Install the free `offsend-cli` cask separately for CI or standalone terminal-only setups.
 
 ---
 
@@ -210,6 +214,11 @@ check:
   detectors:
     disable:
       - phone
+  dictionaries:
+    - kind: project
+      value: "Project Apollo"
+    - kind: regex
+      value: "ACME-\\d{4,}"
 
 hooks:
   type: pre-commit
@@ -224,6 +233,7 @@ Supported settings:
 - `check.policy` — when `true`, `offsend check` also runs workspace policy checks for ignore files and exposed sensitive paths. When `false`, it scans file contents only.
 - `check.exclude` — repository-relative glob patterns skipped by file scanning. Plain file globs such as `*.lock` match file names, path globs such as `build/**` match directories recursively, and slash patterns are matched against repository-relative paths.
 - `check.detectors.disable` — detector IDs to turn off for this project. Unknown IDs are ignored.
+- `check.dictionaries` — extra custom-dictionary entries matched alongside the built-in detectors. Each entry has a `kind` (`client`, `company`, `project`, `sensitiveTerm`, `internalDomain`, or `regex`) and a `value`. For every kind except `regex`, `value` is matched literally (with word boundaries); for `regex`, `value` is used as a regular-expression pattern. Invalid patterns and unknown kinds are ignored. Entries merge with dictionaries configured in the app.
 - `hooks.type` — git hook type to install. Currently supported: `pre-commit`.
 - `hooks.fail_on` — exit policy used by installed hooks. If omitted, it falls back to `check.fail_on`, then `block`.
 - `hooks.policy` — whether installed hooks include workspace policy checks. If omitted, it falls back to `check.policy`, then `false`. For faster commits that check only staged files, keep this `false`.
@@ -250,7 +260,7 @@ Other useful commands: `offsend check`, `offsend hook status`, `offsend hook uni
 
 ## Free vs Pro
 
-The CLI is free for local checks, git hooks, and CI. Pro expands the interactive macOS app workflow for larger files, longer restore windows, editable templates, custom dictionaries, and unlimited watched folders.
+The CLI is free for local checks, git hooks, and CI. Pro expands the interactive macOS app workflow with longer restore windows and unlimited watched folders.
 
 | | **Free** | **Pro** |
 | --- | --- | --- |
@@ -258,10 +268,10 @@ The CLI is free for local checks, git hooks, and CI. Pro expands the interactive
 | Directory audit & one-click fixes | Full | Full |
 | Free CLI for terminal, hooks & CI | Yes | Yes |
 | Hook management UI | Yes | Yes |
+| File size | Unlimited | Unlimited |
+| Custom dictionaries (incl. regex) | Yes | Yes |
 | Watched folders | 1 | Unlimited |
-| Custom ignore templates | Default | Editable |
-| File size | 15 MB | 50 MB |
-| Custom dictionaries | — | Yes |
+| Custom ignore templates | Editable | Editable |
 | Mapping TTL | 1 hour | Up to 24 hours |
 
 ---

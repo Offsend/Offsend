@@ -124,7 +124,8 @@ struct Check: AsyncParsableCommand {
                 failPolicy: resolved.failPolicy,
                 workingDirectory: scanRoot,
                 excludePatterns: resolved.excludePatterns,
-                disabledDetectors: resolved.disabledDetectors
+                disabledDetectors: resolved.disabledDetectors,
+                customDictionaries: resolved.customDictionaries
             )
         )
 

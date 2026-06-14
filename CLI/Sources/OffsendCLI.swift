@@ -18,7 +18,7 @@ struct OffsendCLI: AsyncParsableCommand {
         commandName: "offsend",
         abstract: "Local sensitive data checks for developers.",
         version: marketingVersion,
-        subcommands: [Check.self, Hook.self, Doctor.self],
+        subcommands: [Init.self, Edit.self, Check.self, Hook.self, Doctor.self],
         defaultSubcommand: nil
     )
 }

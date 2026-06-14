@@ -26,7 +26,6 @@ extension AppCoordinator {
     func directoryCheckAuditConfiguration() -> AIWorkspacePrivacyAuditConfiguration {
         DirectoryCheckConfigurationResolver.resolve(
             DirectoryCheckConfigurationInput(
-                workspaceAuditFull: tariffFeatures.workspaceAuditFull,
                 disabledRuleIDs: settings.directoryCheckDisabledRuleIDs,
                 extraSkippedDirectories: settings.directoryCheckExtraSkippedDirectories,
                 customIgnoreTemplate: settings.directoryCheckCustomIgnoreTemplate

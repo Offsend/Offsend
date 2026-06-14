@@ -2,49 +2,37 @@ import XCTest
 @testable import WorkspacePolicyCore
 
 final class DirectoryCheckConfigurationResolverTests: XCTestCase {
-    func testFreeAndProUseIdenticalDetectionScope() {
-        let freeConfig = DirectoryCheckConfigurationResolver.resolve(
-            DirectoryCheckConfigurationInput(
-                workspaceAuditFull: false,
-                disabledRuleIDs: [],
-                extraSkippedDirectories: [],
-                customIgnoreTemplate: nil
-            )
-        )
-        let proConfig = DirectoryCheckConfigurationResolver.resolve(
-            DirectoryCheckConfigurationInput(
-                workspaceAuditFull: true,
-                disabledRuleIDs: [],
-                extraSkippedDirectories: [],
-                customIgnoreTemplate: nil
-            )
-        )
-
-        XCTAssertEqual(freeConfig.rules.count, AIWorkspacePrivacyRule.defaultRules.count)
-        XCTAssertEqual(freeConfig.sensitivePatterns.count, AIWorkspaceSensitivePattern.defaultPatterns.count)
-        XCTAssertEqual(Set(freeConfig.rules.map(\.id)), Set(proConfig.rules.map(\.id)))
-        XCTAssertEqual(Set(freeConfig.sensitivePatterns.map(\.id)), Set(proConfig.sensitivePatterns.map(\.id)))
-    }
-
-    func testCustomTemplateIgnoredOnFreeTier() {
+    func testDetectionScopeMatchesDefaults() {
         let config = DirectoryCheckConfigurationResolver.resolve(
             DirectoryCheckConfigurationInput(
-                workspaceAuditFull: false,
                 disabledRuleIDs: [],
                 extraSkippedDirectories: [],
-                customIgnoreTemplate: "# custom\nsecret/"
+                customIgnoreTemplate: nil
+            )
+        )
+
+        XCTAssertEqual(config.rules.count, AIWorkspacePrivacyRule.defaultRules.count)
+        XCTAssertEqual(config.sensitivePatterns.count, AIWorkspaceSensitivePattern.defaultPatterns.count)
+    }
+
+    func testCustomTemplateAppliedRegardlessOfTier() {
+        let template = "# custom\nsecret/"
+        let config = DirectoryCheckConfigurationResolver.resolve(
+            DirectoryCheckConfigurationInput(
+                disabledRuleIDs: [],
+                extraSkippedDirectories: [],
+                customIgnoreTemplate: template
             )
         )
 
         let cursorFix = config.rules.first { $0.id == "cursor-ignore" }?.fix
-        XCTAssertEqual(cursorFix?.contents, AIWorkspacePrivacyIgnoreTemplate.contents)
+        XCTAssertEqual(cursorFix?.contents, template)
     }
 
     func testDisabledRecommendedRulesAreExcluded() {
         let disabled: Set<String> = ["copilot-exclude"]
         let config = DirectoryCheckConfigurationResolver.resolve(
             DirectoryCheckConfigurationInput(
-                workspaceAuditFull: true,
                 disabledRuleIDs: disabled,
                 extraSkippedDirectories: [],
                 customIgnoreTemplate: nil
@@ -55,25 +43,9 @@ final class DirectoryCheckConfigurationResolverTests: XCTestCase {
         XCTAssertTrue(config.rules.contains(where: { $0.id == "cursor-ignore" }))
     }
 
-    func testCustomTemplateAppliedToFixableRules() {
-        let template = "# custom\nsecret/"
-        let config = DirectoryCheckConfigurationResolver.resolve(
-            DirectoryCheckConfigurationInput(
-                workspaceAuditFull: true,
-                disabledRuleIDs: [],
-                extraSkippedDirectories: [],
-                customIgnoreTemplate: template
-            )
-        )
-
-        let cursorRule = config.rules.first(where: { $0.id == "cursor-ignore" })
-        XCTAssertEqual(cursorRule?.fix?.contents, template)
-    }
-
     func testExtraSkippedDirectoriesMerged() {
         let config = DirectoryCheckConfigurationResolver.resolve(
             DirectoryCheckConfigurationInput(
-                workspaceAuditFull: true,
                 disabledRuleIDs: [],
                 extraSkippedDirectories: ["  vendor  ", ""],
                 customIgnoreTemplate: nil

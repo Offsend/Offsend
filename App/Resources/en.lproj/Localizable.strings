@@ -426,6 +426,8 @@
 "settings.customDictionaries" = "Custom Dictionaries";
 "settings.kind" = "Kind";
 "settings.dictionaryPlaceholder" = "Client, company, project, term, or domain";
+"settings.dictionaryRegexPlaceholder" = "Regular expression, e.g. ACME-\\d{4,}";
+"settings.dictionaryRegexInvalid" = "Invalid regular expression";
 "settings.add" = "Add";
 "settings.mappingTTL" = "Mapping TTL";
 "settings.mappingTTL.oneHour" = "1 hour";
@@ -562,7 +564,6 @@
 "settings.directoryCheck.section.template" = "Ignore template";
 "settings.directoryCheck.templateHint" = "Lines written into auto-generated ignore files (e.g. .cursorignore) when Offsend creates them.";
 "settings.directoryCheck.templateReset" = "Reset to default";
-"settings.directoryCheck.templateLocked" = "Editing the ignore template is a Pro feature.";
 "settings.directoryCheck.severity.required" = "REQUIRED";
 "settings.directoryCheck.severity.recommended" = "RECOMMENDED";
 "settings.directoryCheck.severity.informational" = "INFORMATIONAL";
@@ -617,6 +618,29 @@
 "settings.hooks.section.cliHint" = "Hooks call the offsend CLI. Use the same detection settings as the menu bar app.";
 "settings.hooks.cliPathLabel" = "Executable";
 "settings.hooks.cliMissingPath" = "Not found — build OffsendCLI or install offsend from the app bundle.";
+"settings.hooks.cliPath.commandLabel" = "Terminal command";
+"settings.hooks.cliPath.install" = "Install offsend command";
+"settings.hooks.cliPath.uninstall" = "Uninstall command";
+"settings.hooks.cliPath.copyBrewUninstall" = "Copy brew uninstall";
+"settings.hooks.cliPath.status.installed" = "INSTALLED";
+"settings.hooks.cliPath.status.missing" = "NOT INSTALLED";
+"settings.hooks.cliPath.status.homebrew" = "HOMEBREW";
+"settings.hooks.cliPath.status.external" = "EXTERNAL";
+"settings.hooks.cliPath.status.blocked" = "BLOCKED";
+"settings.hooks.cliPath.status.broken" = "BROKEN";
+"settings.hooks.cliPath.hint.installed" = "`offsend` is available in terminals via the app-bundled CLI.";
+"settings.hooks.cliPath.hint.missing" = "Create /usr/local/bin/offsend as a symlink to the CLI inside Offsend.app. macOS will ask for administrator approval.";
+"settings.hooks.cliPath.hint.homebrew" = "`offsend` is already available through the Homebrew offsend-cli cask. Offsend will not overwrite it.";
+"settings.hooks.cliPath.hint.external" = "`offsend` already resolves to %@. Offsend will not overwrite another command.";
+"settings.hooks.cliPath.hint.blocked" = "%@ already exists and is not an Offsend-managed symlink.";
+"settings.hooks.cliPath.hint.broken" = "The existing Offsend symlink points to a moved or deleted app. Reinstall to repair it.";
+"settings.hooks.cliPath.installed" = "`offsend` command installed in /usr/local/bin.";
+"settings.hooks.cliPath.uninstalled" = "`offsend` command removed from /usr/local/bin.";
+"settings.hooks.cliPath.brewUninstallCopied" = "Homebrew uninstall command copied to clipboard.";
+"settings.hooks.cliPath.error.bundledMissing" = "Bundled CLI is not executable at %@.";
+"settings.hooks.cliPath.error.alreadyAvailable" = "`offsend` is already available at %@.";
+"settings.hooks.cliPath.error.blocked" = "Cannot install command because %@ is not an Offsend-managed symlink.";
+"settings.hooks.cliPath.error.privileged" = "Could not install command: %@";
 "settings.hooks.copyGlobalCommand" = "Copy install command";
 "settings.hooks.refreshStatuses" = "Refresh statuses";
 "settings.hooks.copiedInstallCommand" = "Install command copied to clipboard.";
@@ -820,6 +844,7 @@
 "dictionaryKind.project" = "Project";
 "dictionaryKind.sensitiveTerm" = "Sensitive term";
 "dictionaryKind.internalDomain" = "Internal domain";
+"dictionaryKind.regex" = "Regex";
 
 "riskLevel.low" = "Low";
 "riskLevel.medium" = "Medium";

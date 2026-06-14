@@ -275,7 +275,8 @@ final class AppCoordinator: ObservableObject {
     }
 
     var documentMaximumFileByteCount: Int {
-        DocumentProcessingLimits.maximumFileByteCount(isPro: isProEntitlementActive)
+        // No file size limit: document processing is unrestricted for every user.
+        .max
     }
 
     var isProEntitlementActive: Bool {

@@ -1,5 +1,6 @@
 import AppUIKit
 import DetectionCore
+import Foundation
 import LicenseCore
 import SwiftUI
 
@@ -371,7 +372,7 @@ struct SettingsDetectionPanel: View {
                         },
                         width: 130
                     )
-                    TextField(OffsendStrings.settingsDictionaryPlaceholder, text: $newDictionaryValue)
+                    TextField(dictionaryValuePlaceholder, text: $newDictionaryValue)
                         .textFieldStyle(.plain)
                         .font(.system(size: 12))
                         .foregroundColor(palette.text)
@@ -386,7 +387,12 @@ struct SettingsDetectionPanel: View {
                     OFCompactButton(title: OffsendStrings.settingsAdd, icon: "plus", variant: .outline) {
                         addDictionaryItem()
                     }
-                    .disabled(newDictionaryValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(!canAddDictionaryItem)
+                }
+                if let regexError = newDictionaryRegexError {
+                    Text(regexError)
+                        .font(.system(size: 11))
+                        .foregroundColor(.red)
                 }
                 OFFlexibleWrap(spacing: 6) {
                     ForEach(coordinator.customDictionaries) { item in
@@ -423,10 +429,36 @@ struct SettingsDetectionPanel: View {
         }
     }
 
+    private var dictionaryValuePlaceholder: String {
+        newDictionaryKind == .regex
+            ? OffsendStrings.settingsDictionaryRegexPlaceholder
+            : OffsendStrings.settingsDictionaryPlaceholder
+    }
+
+    private var canAddDictionaryItem: Bool {
+        let trimmed = newDictionaryValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        if newDictionaryKind == .regex {
+            return Self.isValidRegex(trimmed)
+        }
+        return true
+    }
+
+    private var newDictionaryRegexError: String? {
+        guard newDictionaryKind == .regex else { return nil }
+        let trimmed = newDictionaryValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !Self.isValidRegex(trimmed) else { return nil }
+        return OffsendStrings.settingsDictionaryRegexInvalid
+    }
+
+    private static func isValidRegex(_ pattern: String) -> Bool {
+        (try? NSRegularExpression(pattern: pattern)) != nil
+    }
+
     private func addDictionaryItem() {
         guard coordinator.tariffFeatures.customDictionaries else { return }
+        guard canAddDictionaryItem else { return }
         let trimmed = newDictionaryValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
         coordinator.customDictionaries.append(CustomDictionaryItem(kind: newDictionaryKind, value: trimmed))
         newDictionaryValue = ""
         coordinator.saveCustomDictionaries()
