@@ -464,7 +464,10 @@ let testTargets: [Target] = [
         bundleId: "\(bundlePrefix).offsendruntime.tests",
         deploymentTargets: macOSDeploymentTarget,
         sources: ["Core/OffsendRuntime/Tests/**"],
-        dependencies: [.target(name: "OffsendRuntime")]
+        dependencies: [
+            .target(name: "OffsendRuntime"),
+            .target(name: "WorkspacePolicyCore")
+        ]
     ),
     .target(
         name: "DocumentCoreTests",
