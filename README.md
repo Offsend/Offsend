@@ -151,7 +151,7 @@ macOS may ask for Accessibility (to paste into the front app) and folder access 
 | Best for | Daily interactive work | Free terminal, git hook, and CI checks |
 | Safe Paste | Yes: scan, mask, paste, restore | No |
 | File preparation | Drag-and-drop UI, review, copy/save | Path-based scans |
-| Project checks | UI checks, ignore files, watched folders | `offsend check`, `--staged`, `--policy` |
+| Project checks | UI checks, ignore files, watched folders | `offsend check`, `--staged`, `--policy`, `offsend prepare` |
 | Git hooks | Install/manage in Settings → Hooks | `offsend hook install/status/uninstall` |
 | AI models | Download, import, select, and manage models | Not used by the CLI |
 | Automation | Background watcher and notifications | Scriptable text/json output |
@@ -185,6 +185,37 @@ Use JSON output in automation:
 ```bash
 offsend check --staged --format json --quiet
 ```
+
+### Prepare AI ignore files
+
+`offsend prepare` creates the AI ignore files a project is missing (`.cursorignore`, `.claudeignore`, `.aiexclude`, `.geminiignore`, and similar), so AI tools respect your privacy boundaries. It mirrors the macOS app's one-click directory fix and uses the same rules and custom ignore template configured there.
+
+Create the missing ignore files in the current directory:
+
+```bash
+offsend prepare
+```
+
+Preview what would change without writing anything:
+
+```bash
+offsend prepare --dry-run
+```
+
+Also append missing sensitive-data patterns (such as `secrets.json` or `*.pem`) to ignore files that already exist:
+
+```bash
+offsend prepare --sync-patterns
+```
+
+Options:
+
+- `[path]` — directory to prepare. Defaults to the current directory.
+- `--dry-run` — show which files would be created or updated without writing them.
+- `--sync-patterns` — also append missing sensitive-data patterns to ignore files that already exist. Without it, existing files are left untouched.
+- `--format` — output format, `text` (default) or `json`.
+
+Only missing files are created; existing ignore files are never overwritten, and informational suggestions (`.gitignore`, `AGENTS.md`, `.cursorindexingignore`) are left for you to add manually. Exit code is `0` on success and `2` if the directory is unavailable or a file could not be written.
 
 ### Install a pre-commit hook
 
@@ -254,7 +285,7 @@ Supported `check.detectors.disable` IDs:
   run: offsend check --staged
 ```
 
-Other useful commands: `offsend check`, `offsend hook status`, `offsend hook uninstall`.
+Other useful commands: `offsend check`, `offsend prepare`, `offsend hook status`, `offsend hook uninstall`.
 
 ---
 
