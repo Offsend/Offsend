@@ -26,6 +26,7 @@ git -C "$repo" config user.email "ci@example.com"
 git -C "$repo" config user.name "Offsend CI"
 
 # Use a realistic AKIA-shaped key; AWS doc sample `AKIAIOSFODNN7EXAMPLE` is filtered as a placeholder.
+# offsend:ignore-next-line
 printf '%s\n' "AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF" > "$repo/secrets.env"
 git -C "$repo" add secrets.env
 
