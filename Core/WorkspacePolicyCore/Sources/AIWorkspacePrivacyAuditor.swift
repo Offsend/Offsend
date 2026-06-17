@@ -56,12 +56,7 @@ public final class AIWorkspacePrivacyAuditor {
             rootURL: standardizedURL,
             skippedDirectoryNames: skippedDirectoryNames
         )
-        let ignorePatterns = loadIgnorePatterns(
-            ruleFindings
-                .filter { $0.rule.scansForSensitivePatterns }
-                .flatMap(\.matchedRelativePaths),
-            from: standardizedURL
-        )
+        let ignorePatterns = exposureState.ignorePatterns
         let ruleFindingsWithExposure = ruleFindingsWithPerToolExposure(
             ruleFindings: ruleFindings,
             exposureIndex: exposureState.index,
@@ -155,12 +150,7 @@ public final class AIWorkspacePrivacyAuditor {
             previousExposureIndex: previousResult.exposureIndex,
             previousExposureScanCompletion: previousResult.exposureScanCompletion
         )
-        let ignorePatterns = loadIgnorePatterns(
-            updatedRuleFindings
-                .filter { $0.rule.scansForSensitivePatterns }
-                .flatMap(\.matchedRelativePaths),
-            from: standardizedURL
-        )
+        let ignorePatterns = exposureState.ignorePatterns
         let ruleFindingsWithExposure = ruleFindingsWithPerToolExposure(
             ruleFindings: updatedRuleFindings,
             exposureIndex: exposureState.index,
@@ -201,6 +191,9 @@ public final class AIWorkspacePrivacyAuditor {
         let index: SensitivePathExposureIndex?
         let scanCompletion: SensitivePathExposureScanCompletion
         let errors: [AIWorkspacePrivacyAuditError]
+        /// Ignore-file patterns loaded during this pass, reused by the caller so ignore
+        /// files are read from disk only once per audit.
+        let ignorePatterns: [String: Set<String>]
     }
 
     private func sensitiveExposureState(
@@ -296,7 +289,8 @@ public final class AIWorkspacePrivacyAuditor {
             sensitiveFindings: sensitiveFindings,
             index: index,
             scanCompletion: scanCompletion,
-            errors: errors
+            errors: errors,
+            ignorePatterns: ignorePatterns
         )
     }
 

@@ -2,9 +2,21 @@ import XCTest
 @testable import WorkspacePolicyCore
 
 final class IgnorePatternPathMatcherTests: XCTestCase {
-    func testGlobLineMatchesWithinSegment() {
+    func testSlashlessGlobMatchesAtAnyDepth() {
+        // gitignore semantics: a pattern with no "/" matches the name at any depth.
         XCTAssertTrue(IgnorePatternPathMatcher.matches(relativePath: "id.pem", ignoreLine: "*.pem"))
-        XCTAssertFalse(IgnorePatternPathMatcher.matches(relativePath: "nested/id.pem", ignoreLine: "*.pem"))
+        XCTAssertTrue(IgnorePatternPathMatcher.matches(relativePath: "nested/id.pem", ignoreLine: "*.pem"))
+        XCTAssertTrue(IgnorePatternPathMatcher.matches(relativePath: "a/b/c/id.pem", ignoreLine: "*.pem"))
+    }
+
+    func testSlashlessLiteralMatchesAtAnyDepth() {
+        XCTAssertTrue(IgnorePatternPathMatcher.matches(relativePath: "secrets.json", ignoreLine: "secrets.json"))
+        XCTAssertTrue(IgnorePatternPathMatcher.matches(relativePath: "config/secrets.json", ignoreLine: "secrets.json"))
+    }
+
+    func testLeadingSlashAnchorsToRoot() {
+        XCTAssertTrue(IgnorePatternPathMatcher.matches(relativePath: "secrets.json", ignoreLine: "/secrets.json"))
+        XCTAssertFalse(IgnorePatternPathMatcher.matches(relativePath: "config/secrets.json", ignoreLine: "/secrets.json"))
     }
 
     func testGlobLineMatchesRecursivePath() {
@@ -31,6 +43,29 @@ final class IgnorePatternPathMatcherTests: XCTestCase {
     func testEnvWildcardMatchesVariants() {
         XCTAssertTrue(IgnorePatternPathMatcher.matches(relativePath: ".env", ignoreLine: ".env*"))
         XCTAssertTrue(IgnorePatternPathMatcher.matches(relativePath: ".env.local", ignoreLine: ".env*"))
+    }
+
+    func testNegationReincludesPath() {
+        let lines: Set<String> = ["*.pem", "!keep.pem"]
+        XCTAssertTrue(IgnorePatternPathMatcher.isIgnored(relativePath: "secret.pem", ignoreLines: lines))
+        XCTAssertFalse(IgnorePatternPathMatcher.isIgnored(relativePath: "keep.pem", ignoreLines: lines))
+    }
+
+    func testNegationWithoutPositiveMatchIsNotIgnored() {
+        XCTAssertFalse(
+            IgnorePatternPathMatcher.isIgnored(relativePath: "keep.pem", ignoreLines: ["!keep.pem"])
+        )
+    }
+
+    func testNegationAppliesPerFile() {
+        // A negation in one file must not un-cover a path another file ignores.
+        let byFile: [String: Set<String>] = [
+            ".cursorignore": ["*.pem"],
+            ".claudeignore": ["*.pem", "!keep.pem"]
+        ]
+        XCTAssertTrue(
+            IgnorePatternPathMatcher.isIgnored(relativePath: "keep.pem", ignorePatternsByFile: byFile)
+        )
     }
 }
 

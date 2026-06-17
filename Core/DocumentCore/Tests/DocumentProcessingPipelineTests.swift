@@ -23,8 +23,10 @@ final class DocumentProcessingPipelineTests: XCTestCase {
         XCTAssertTrue(result.detection.entities.contains { $0.type == .contractId })
         XCTAssertNotEqual(result.assessment.recommendedAction, .allow)
         XCTAssertEqual(result.assessment.score, RiskScoringEngine.nonSecretScoreCap)
-        XCTAssertEqual(result.assessment.level, .high)
-        XCTAssertEqual(result.assessment.recommendedAction, .mask)
+        // The fixture lives under `Tests/Fixtures/`, so the pipeline classifies its path as `docsOrTests`
+        // and caps non-secret PII at `warn` — this also verifies the file context flows into scoring.
+        XCTAssertEqual(result.assessment.level, .medium)
+        XCTAssertEqual(result.assessment.recommendedAction, .warn)
         XCTAssertFalse(result.assessment.hasCriticalSecret)
     }
 
@@ -310,7 +312,7 @@ private struct StubDetector: SensitiveDataDetecting {
 }
 
 private struct StubRiskScorer: RiskScoring {
-    func assess(_ entities: [SensitiveEntity]) -> RiskAssessment {
+    func assess(_ entities: [SensitiveEntity], context: DetectionContext) -> RiskAssessment {
         RiskAssessment(score: 60, level: .high, recommendedAction: .mask, hasCriticalSecret: false)
     }
 }

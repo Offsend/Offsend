@@ -16,19 +16,25 @@ public struct DetectionOptions: Equatable, Sendable {
     public var maximumLength: Int
     public var aiDetectionEnabled: Bool
     public var selectedAIModelID: String?
+    /// Whether `offsend:ignore` / `offsend:ignore-next-line` comments suppress findings. Enable **only**
+    /// when scanning trusted, user-authored files (e.g. `offsend check`). Must stay `false` for the
+    /// clipboard guard, otherwise copied content carrying the directive could silently disable masking.
+    public var honorInlineIgnore: Bool
 
     public init(
         enabledTypes: Set<SensitiveEntityType> = Set(SensitiveEntityType.allCases),
         customDictionaries: [CustomDictionaryItem] = [],
         maximumLength: Int = 50_000,
         aiDetectionEnabled: Bool = false,
-        selectedAIModelID: String? = nil
+        selectedAIModelID: String? = nil,
+        honorInlineIgnore: Bool = false
     ) {
         self.enabledTypes = enabledTypes
         self.customDictionaries = customDictionaries
         self.maximumLength = maximumLength
         self.aiDetectionEnabled = aiDetectionEnabled
         self.selectedAIModelID = selectedAIModelID
+        self.honorInlineIgnore = honorInlineIgnore
     }
 
     public static let `default` = DetectionOptions()

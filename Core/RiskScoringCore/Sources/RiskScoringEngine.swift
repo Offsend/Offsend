@@ -16,7 +16,14 @@ public struct RiskAssessment: Equatable, Sendable {
 }
 
 public protocol RiskScoring: Sendable {
-    func assess(_ entities: [SensitiveEntity]) -> RiskAssessment
+    func assess(_ entities: [SensitiveEntity], context: DetectionContext) -> RiskAssessment
+}
+
+public extension RiskScoring {
+    /// Convenience for callers without file-location context (e.g. clipboard scans).
+    func assess(_ entities: [SensitiveEntity]) -> RiskAssessment {
+        assess(entities, context: .neutral)
+    }
 }
 
 public final class RiskScoringEngine: RiskScoring {
@@ -25,11 +32,16 @@ public final class RiskScoringEngine: RiskScoring {
 
     public init() {}
 
-    public func assess(_ entities: [SensitiveEntity]) -> RiskAssessment {
+    public func assess(_ entities: [SensitiveEntity], context: DetectionContext = .neutral) -> RiskAssessment {
+        guard !entities.isEmpty else {
+            return RiskAssessment(score: 0, level: .low, recommendedAction: .allow, hasCriticalSecret: false)
+        }
+
         let rawScore = entities.reduce(0) { $0 + Self.weight(for: $1.type) }
         let hasConfirmedSecret = entities.contains { $0.type.countsAsCriticalSecret }
 
         if hasConfirmedSecret {
+            // Confirmed secrets always block; a key in a README or test file is still a leaked key.
             return RiskAssessment(
                 score: max(rawScore, 100),
                 level: .critical,
@@ -38,8 +50,19 @@ public final class RiskScoringEngine: RiskScoring {
             )
         }
 
-        let score = min(rawScore, Self.nonSecretScoreCap)
+        switch context.sensitivity {
+        case .neutral:
+            return Self.nonSecretAssessment(score: min(rawScore, Self.nonSecretScoreCap))
+        case .secretsConfig:
+            // Raise: keep the uncapped score and bump non-secret PII one severity step.
+            return Self.escalated(Self.nonSecretAssessment(score: rawScore))
+        case .docsOrTests:
+            // Lower noise: cap non-secret PII at `warn` (placeholders/sample data are rarely actionable).
+            return Self.cappedAtWarn(Self.nonSecretAssessment(score: min(rawScore, Self.nonSecretScoreCap)))
+        }
+    }
 
+    private static func nonSecretAssessment(score: Int) -> RiskAssessment {
         switch score {
         case 0...19:
             return RiskAssessment(score: score, level: .low, recommendedAction: .allow, hasCriticalSecret: false)
@@ -47,6 +70,28 @@ public final class RiskScoringEngine: RiskScoring {
             return RiskAssessment(score: score, level: .medium, recommendedAction: .warn, hasCriticalSecret: false)
         default:
             return RiskAssessment(score: score, level: .high, recommendedAction: .mask, hasCriticalSecret: false)
+        }
+    }
+
+    private static func escalated(_ base: RiskAssessment) -> RiskAssessment {
+        switch base.level {
+        case .low:
+            return RiskAssessment(score: base.score, level: .medium, recommendedAction: .warn, hasCriticalSecret: false)
+        case .medium:
+            return RiskAssessment(score: base.score, level: .high, recommendedAction: .mask, hasCriticalSecret: false)
+        case .high:
+            return RiskAssessment(score: base.score, level: .critical, recommendedAction: .block, hasCriticalSecret: false)
+        case .critical:
+            return base
+        }
+    }
+
+    private static func cappedAtWarn(_ base: RiskAssessment) -> RiskAssessment {
+        switch base.recommendedAction {
+        case .mask, .block:
+            return RiskAssessment(score: base.score, level: .medium, recommendedAction: .warn, hasCriticalSecret: base.hasCriticalSecret)
+        case .allow, .warn:
+            return base
         }
     }
 

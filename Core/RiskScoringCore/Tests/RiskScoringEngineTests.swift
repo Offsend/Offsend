@@ -158,6 +158,52 @@ final class RiskScoringEngineTests: XCTestCase {
         XCTAssertEqual(doubled.level, .medium)
     }
 
+    // MARK: - File-location context
+
+    func testSecretsConfigContextEscalatesNonSecretPII() {
+        let neutral = engine.assess([entity(.email)])
+        XCTAssertEqual(neutral.recommendedAction, .warn, "Baseline: one email is medium/warn")
+
+        let raised = engine.assess([entity(.email)], context: DetectionContext(sensitivity: .secretsConfig))
+        XCTAssertEqual(raised.level, .high)
+        XCTAssertEqual(raised.recommendedAction, .mask)
+        XCTAssertFalse(raised.hasCriticalSecret)
+    }
+
+    func testSecretsConfigContextDoesNotCapScoreAndCanBlock() {
+        let entities = (0..<5).map { _ in entity(.contractId) } // 5 * 25 = 125 raw
+
+        let neutral = engine.assess(entities)
+        XCTAssertEqual(neutral.score, RiskScoringEngine.nonSecretScoreCap)
+        XCTAssertEqual(neutral.recommendedAction, .mask)
+
+        let raised = engine.assess(entities, context: DetectionContext(sensitivity: .secretsConfig))
+        XCTAssertEqual(raised.score, 125, "Sensitive paths keep the uncapped score")
+        XCTAssertEqual(raised.level, .critical)
+        XCTAssertEqual(raised.recommendedAction, .block)
+        XCTAssertFalse(raised.hasCriticalSecret, "Escalated PII blocks but is not a confirmed secret")
+    }
+
+    func testDocsOrTestsContextCapsNonSecretAtWarn() {
+        let entities = [entity(.email), entity(.phone), entity(.money)] // 60 -> high/mask
+
+        let neutral = engine.assess(entities)
+        XCTAssertEqual(neutral.recommendedAction, .mask)
+
+        let lowered = engine.assess(entities, context: DetectionContext(sensitivity: .docsOrTests))
+        XCTAssertEqual(lowered.level, .medium)
+        XCTAssertEqual(lowered.recommendedAction, .warn)
+    }
+
+    func testConfirmedSecretAlwaysBlocksRegardlessOfContext() {
+        for tier in [FileSensitivityTier.secretsConfig, .neutral, .docsOrTests] {
+            let assessment = engine.assess([entity(.openAIAPIKey)], context: DetectionContext(sensitivity: tier))
+            XCTAssertEqual(assessment.recommendedAction, .block, "tier \(tier)")
+            XCTAssertEqual(assessment.level, .critical, "tier \(tier)")
+            XCTAssertTrue(assessment.hasCriticalSecret, "tier \(tier)")
+        }
+    }
+
     private func entity(_ type: SensitiveEntityType) -> SensitiveEntity {
         let text = "value"
         return SensitiveEntity(type: type, range: text.startIndex..<text.endIndex, value: text, confidence: 1, source: .regex)

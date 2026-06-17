@@ -31,7 +31,9 @@ public enum WorkspaceWatchNotificationFormatter {
 }
 
 public extension AIWorkspacePrivacyAuditResult {
+    /// Alias for `allExposedRelativePaths` so notification copy and audit results use a
+    /// single source of truth (pattern-level and per-tool rule exposures combined).
     var exposedRelativePaths: [String] {
-        missingSensitivePatterns.flatMap(\.exposedRelativePaths).sorted()
+        allExposedRelativePaths
     }
 }

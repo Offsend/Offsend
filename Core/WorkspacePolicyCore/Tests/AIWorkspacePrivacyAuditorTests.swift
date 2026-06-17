@@ -635,6 +635,21 @@ final class AIWorkspacePrivacyAuditorTests: XCTestCase {
         )
     }
 
+    func testSlashlessIgnoreLineCoversNestedSensitiveFiles() throws {
+        // Regression: gitignore semantics mean `*.pem` covers PEM files at any depth,
+        // so `prepare`'s template (which writes `*.pem`) silences nested findings too.
+        let directoryURL = try makeTemporaryDirectory()
+        try writeFile(".cursorignore", in: directoryURL, contents: ".env*\n*.pem\n")
+        try writeFile("certs/server.pem", in: directoryURL, contents: "key")
+
+        let result = auditor.audit(directoryURL: directoryURL)
+
+        XCTAssertFalse(
+            result.missingSensitivePatterns.contains { $0.pattern.id == "pem-files" },
+            "`*.pem` must cover nested PEM files, matching how AI tools read ignore files."
+        )
+    }
+
     func testTrailingSlashIsNormalizedForCoverage() throws {
         let directoryURL = try makeTemporaryDirectory()
         try writeFile(".cursorignore", in: directoryURL, contents: ".env*\n.ssh\n")
