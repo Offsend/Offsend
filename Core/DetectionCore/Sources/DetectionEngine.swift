@@ -17,29 +17,34 @@ public final class DetectionEngine: SensitiveDataDetecting, @unchecked Sendable 
 
     public func scan(_ request: DetectionRequest) async -> DetectionResult {
         let normalized = TextNormalizer.normalize(request.text, maximumLength: request.options.maximumLength)
-        guard !normalized.text.isEmpty else {
-            return DetectionResult(entities: [], scannedText: normalized.text, wasTruncated: normalized.wasTruncated, scannedCharacterCount: 0)
+        let text = normalized.text
+        guard !text.isEmpty else {
+            return DetectionResult(entities: [], scannedText: text, wasTruncated: normalized.wasTruncated, scannedCharacterCount: 0)
         }
 
         DetectionDebugLogger.logScanStart(
-            characterCount: normalized.text.count,
+            characterCount: text.count,
             wasTruncated: normalized.wasTruncated,
             aiEnabled: request.options.aiDetectionEnabled,
             selectedAIModelID: request.options.selectedAIModelID
         )
 
-        let regexEntities = scanRules(regexRules, in: normalized.text, options: request.options)
-        DetectionDebugLogger.logPhase("regex", entities: regexEntities, in: normalized.text)
+        // Deterministic detectors scan the full text in overlapping windows, so nothing is silently
+        // dropped past `maximumLength` (the old behavior). The window only bounds per-pass regex cost.
+        let window = request.options.maximumLength
+        let regexEntities = scanRules(regexRules, in: text, window: window, options: request.options)
+        DetectionDebugLogger.logPhase("regex", entities: regexEntities, in: text)
 
-        let secretEntities = scanRules(secretRules, in: normalized.text, options: request.options)
-        DetectionDebugLogger.logPhase("secret", entities: secretEntities, in: normalized.text)
+        let secretEntities = scanRules(secretRules, in: text, window: window, options: request.options)
+        DetectionDebugLogger.logPhase("secret", entities: secretEntities, in: text)
 
         let dictionaryEntities = scanCustomDictionaries(
             request.options.customDictionaries,
-            in: normalized.text,
+            in: text,
+            window: window,
             options: request.options
         )
-        DetectionDebugLogger.logPhase("customDictionary", entities: dictionaryEntities, in: normalized.text)
+        DetectionDebugLogger.logPhase("customDictionary", entities: dictionaryEntities, in: text)
 
         var entities = regexEntities + secretEntities + dictionaryEntities
 
@@ -47,9 +52,13 @@ public final class DetectionEngine: SensitiveDataDetecting, @unchecked Sendable 
         if request.options.aiDetectionEnabled {
             if let aiDetector {
                 do {
-                    let aiEntities = try await aiDetector.detect(text: normalized.text, options: request.options)
-                    let filteredAI = aiEntities.filter { request.options.enabledTypes.contains($0.type) }
-                    DetectionDebugLogger.logPhase("ai", entities: filteredAI, in: normalized.text)
+                    // AI inference stays bounded to a prefix (cost guard); ranges are remapped back onto
+                    // the full text so they remain valid against `scannedText`.
+                    let aiText = normalized.wasTruncated ? String(text.prefix(window)) : text
+                    let aiEntities = try await aiDetector.detect(text: aiText, options: request.options)
+                    let mappedAI = normalized.wasTruncated ? Self.remap(aiEntities, from: aiText, to: text) : aiEntities
+                    let filteredAI = mappedAI.filter { request.options.enabledTypes.contains($0.type) }
+                    DetectionDebugLogger.logPhase("ai", entities: filteredAI, in: text)
                     entities += filteredAI
                 } catch {
                     aiDetectionError = Self.localizedDetectionError(error)
@@ -61,25 +70,51 @@ public final class DetectionEngine: SensitiveDataDetecting, @unchecked Sendable 
             }
         }
 
-        let merged = OverlapResolver.resolve(entities, in: normalized.text)
-        DetectionDebugLogger.logPhase("merged", entities: merged, in: normalized.text)
+        let merged = OverlapResolver.resolve(entities, in: text)
+        DetectionDebugLogger.logPhase("merged", entities: merged, in: text)
 
         let afterPhoneFilter = Self.filterFalsePositivePhones(merged)
         let afterMoneyFilter = Self.filterFalsePositiveMoney(afterPhoneFilter)
-        let filtered = Self.filterFalsePositiveHighEntropyStrings(afterMoneyFilter)
+        let afterCardFilter = Self.filterFalsePositiveCards(afterMoneyFilter)
+        let afterIBANFilter = Self.filterFalsePositiveIBANs(afterCardFilter)
+        let afterJWTFilter = Self.filterFalsePositiveJWTs(afterIBANFilter)
+        let afterPlaceholderFilter = Self.filterPlaceholderSecrets(afterJWTFilter)
+        let afterEntropyFilter = Self.filterFalsePositiveHighEntropyStrings(afterPlaceholderFilter)
+        // Inline opt-outs are honored only for trusted file scans; never for clipboard content, where a
+        // copied `offsend:ignore` could otherwise suppress masking of a real secret.
+        let filtered = request.options.honorInlineIgnore
+            ? Self.filterInlineIgnored(afterEntropyFilter, in: text)
+            : afterEntropyFilter
         let removed = merged.filter { candidate in
             !filtered.contains { $0.id == candidate.id }
         }
-        DetectionDebugLogger.logFilteredOut(removed, in: normalized.text)
-        DetectionDebugLogger.logPhase("final", entities: filtered, in: normalized.text)
+        DetectionDebugLogger.logFilteredOut(removed, in: text)
+        DetectionDebugLogger.logPhase("final", entities: filtered, in: text)
 
         return DetectionResult(
             entities: filtered,
-            scannedText: normalized.text,
+            scannedText: text,
             wasTruncated: normalized.wasTruncated,
-            scannedCharacterCount: normalized.text.count,
+            scannedCharacterCount: text.count,
             aiDetectionError: aiDetectionError
         )
+    }
+
+    /// Re-anchors entities found in a prefix substring (`source`) onto the full text by character offset.
+    /// The prefix shares offsets with `destination`, so a UTF-16 range in one is valid in the other.
+    private static func remap(_ entities: [SensitiveEntity], from source: String, to destination: String) -> [SensitiveEntity] {
+        entities.compactMap { entity in
+            let nsRange = NSRange(entity.range, in: source)
+            guard let range = Range(nsRange, in: destination), !range.isEmpty else { return nil }
+            return SensitiveEntity(
+                id: entity.id,
+                type: entity.type,
+                range: range,
+                value: String(destination[range]),
+                confidence: entity.confidence,
+                source: entity.source
+            )
+        }
     }
 
     private static func filterFalsePositiveMoney(_ entities: [SensitiveEntity]) -> [SensitiveEntity] {
@@ -103,10 +138,49 @@ public final class DetectionEngine: SensitiveDataDetecting, @unchecked Sendable 
         }
     }
 
-    private func scanRules(_ rules: [CompiledRule], in text: String, options: DetectionOptions) -> [SensitiveEntity] {
-        rules
-            .filter { options.enabledTypes.contains($0.rule.type) }
-            .flatMap { rule in rule.matches(in: text) }
+    /// Drops `creditCardLike` matches that fail the Luhn checksum (most random 13–19 digit runs).
+    private static func filterFalsePositiveCards(_ entities: [SensitiveEntity]) -> [SensitiveEntity] {
+        entities.filter { entity in
+            guard entity.type == .creditCardLike else { return true }
+            return !CreditCardMatchSanitizer.shouldRejectCardValue(entity.value)
+        }
+    }
+
+    /// Drops `iban` matches that fail the ISO 13616 mod-97 checksum.
+    private static func filterFalsePositiveIBANs(_ entities: [SensitiveEntity]) -> [SensitiveEntity] {
+        entities.filter { entity in
+            guard entity.type == .iban else { return true }
+            return !IBANMatchSanitizer.shouldRejectIBANValue(entity.value)
+        }
+    }
+
+    /// Drops `jwt` matches whose header segment is not decodable base64url JSON with an `alg` field.
+    private static func filterFalsePositiveJWTs(_ entities: [SensitiveEntity]) -> [SensitiveEntity] {
+        entities.filter { entity in
+            guard entity.type == .jwt else { return true }
+            return !JWTMatchSanitizer.shouldRejectJWTValue(entity.value)
+        }
+    }
+
+    /// Drops secret matches whose value is an obvious placeholder (`<your-key>`, `xxxx…`, `changeme`).
+    private static func filterPlaceholderSecrets(_ entities: [SensitiveEntity]) -> [SensitiveEntity] {
+        entities.filter { entity in
+            guard entity.type.isSecret else { return true }
+            return !PlaceholderSecretSanitizer.isPlaceholder(entity.value)
+        }
+    }
+
+    /// Suppresses entities on lines opted out via `offsend:ignore` (same line) or `offsend:ignore-next-line`.
+    private static func filterInlineIgnored(_ entities: [SensitiveEntity], in text: String) -> [SensitiveEntity] {
+        InlineIgnoreFilter.filter(entities, in: text)
+    }
+
+    private func scanRules(_ rules: [CompiledRule], in text: String, window: Int, options: DetectionOptions) -> [SensitiveEntity] {
+        let enabled = rules.filter { options.enabledTypes.contains($0.rule.type) }
+        guard !enabled.isEmpty else { return [] }
+        return WindowScanner.scan(text: text, window: window) { range in
+            enabled.flatMap { $0.matches(in: text, range: range) }
+        }
     }
 
     private static func localizedDetectionError(_ error: Error) -> String {
@@ -116,14 +190,51 @@ public final class DetectionEngine: SensitiveDataDetecting, @unchecked Sendable 
     private func scanCustomDictionaries(
         _ dictionaries: [CustomDictionaryItem],
         in text: String,
+        window: Int,
         options: DetectionOptions
     ) -> [SensitiveEntity] {
-        dictionaries.flatMap { item -> [SensitiveEntity] in
-            let type = item.kind.entityType
-            guard options.enabledTypes.contains(type) else { return [] }
-            guard let rule = CustomDictionaryRuleCache.rule(for: item) else { return [] }
-            return rule.matches(in: text)
+        let rules = dictionaries.compactMap { item -> CompiledRule? in
+            guard options.enabledTypes.contains(item.kind.entityType) else { return nil }
+            return CustomDictionaryRuleCache.rule(for: item)
         }
+        guard !rules.isEmpty else { return [] }
+        return WindowScanner.scan(text: text, window: window) { range in
+            rules.flatMap { $0.matches(in: text, range: range) }
+        }
+    }
+}
+
+/// Scans `text` in overlapping UTF-16 windows so very large inputs are covered in full while each regex
+/// pass stays bounded. For inputs that fit in one window this is a single pass with no extra work.
+enum WindowScanner {
+    /// Overlap large enough to contain any single token we detect (keys, JWTs, PEM blocks fit comfortably).
+    private static let maxOverlap = 8192
+
+    static func scan(text: String, window: Int, body: (NSRange) -> [SensitiveEntity]) -> [SensitiveEntity] {
+        let length = (text as NSString).length
+        let windowSize = max(1, window)
+        if length <= windowSize {
+            return body(NSRange(location: 0, length: length))
+        }
+
+        let overlap = min(maxOverlap, max(1, windowSize / 2))
+        let step = max(1, windowSize - overlap)
+        var results: [SensitiveEntity] = []
+        var seen = Set<String>()
+        var start = 0
+        while start < length {
+            let len = min(windowSize, length - start)
+            for entity in body(NSRange(location: start, length: len)) {
+                let nsRange = NSRange(entity.range, in: text)
+                let key = "\(nsRange.location):\(nsRange.length):\(entity.type.rawValue):\(entity.source.rawValue)"
+                if seen.insert(key).inserted {
+                    results.append(entity)
+                }
+            }
+            if start + len >= length { break }
+            start += step
+        }
+        return results
     }
 }
 
@@ -204,9 +315,15 @@ final class CompiledRule: @unchecked Sendable {
     }
 
     func matches(in text: String) -> [SensitiveEntity] {
+        matches(in: text, range: NSRange(text.startIndex..<text.endIndex, in: text))
+    }
+
+    /// Matches only within `range`, but with transparent/non-anchoring bounds so `\b` and lookarounds
+    /// still see across a window edge — letting `WindowScanner` slice large inputs without splitting tokens.
+    func matches(in text: String, range: NSRange) -> [SensitiveEntity] {
         guard let regex else { return [] }
-        let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
-        return regex.matches(in: text, range: nsRange).compactMap { match in
+        let matchingOptions: NSRegularExpression.MatchingOptions = [.withTransparentBounds, .withoutAnchoringBounds]
+        return regex.matches(in: text, options: matchingOptions, range: range).compactMap { match in
             guard let range = Range(match.range, in: text), !range.isEmpty else { return nil }
             let value = String(text[range])
             return SensitiveEntity(type: rule.type, range: range, value: value, confidence: rule.confidence, source: rule.source)
@@ -290,26 +407,119 @@ private enum HighEntropyMatchSanitizer {
     }
 }
 
-private enum TextNormalizer {
-    /// Only the returned text is scanned. Anything past `maximumLength` is **not** examined, so
-    /// callers must treat `wasTruncated == true` as "input not fully sanitized". We cut on a
-    /// whitespace boundary when one exists so a token (e.g. a secret) is never split into a
-    /// partial, mis-detected fragment at the edge; without a boundary we fall back to a hard cut.
-    static func normalize(_ text: String, maximumLength: Int) -> NormalizedText {
-        guard text.count > maximumLength else {
-            return NormalizedText(text: text, wasTruncated: false)
+/// `creditCardLike` is a loose 13–19 digit run; the Luhn checksum rejects the overwhelming majority of
+/// non-card numbers (IDs, timestamps, serials) that share that shape.
+private enum CreditCardMatchSanitizer {
+    static func shouldRejectCardValue(_ value: String) -> Bool {
+        let digits = value.compactMap { $0.wholeNumberValue }
+        guard (13...19).contains(digits.count) else { return true }
+        var sum = 0
+        for (offset, digit) in digits.reversed().enumerated() {
+            if offset.isMultiple(of: 2) {
+                sum += digit
+            } else {
+                let doubled = digit * 2
+                sum += doubled > 9 ? doubled - 9 : doubled
+            }
         }
-        let hardLimit = text.index(text.startIndex, offsetBy: maximumLength)
-        let cut = tokenBoundary(in: text, before: hardLimit) ?? hardLimit
-        return NormalizedText(text: String(text[..<cut]), wasTruncated: true)
+        return sum % 10 != 0
+    }
+}
+
+/// `iban` matches the country/length shape; the ISO 13616 mod-97 checksum confirms it is a real IBAN.
+private enum IBANMatchSanitizer {
+    static func shouldRejectIBANValue(_ value: String) -> Bool {
+        let normalized = value.uppercased().filter { $0.isLetter || $0.isNumber }
+        guard (15...34).contains(normalized.count) else { return true }
+        let rearranged = normalized.dropFirst(4) + normalized.prefix(4)
+        var remainder = 0
+        for character in rearranged {
+            guard let scalar = character.unicodeScalars.first else { return true }
+            let digits: [Int]
+            if character.isNumber {
+                digits = [Int(scalar.value - 48)]
+            } else {
+                // A=10 … Z=35, fed in as two decimal digits.
+                let mapped = Int(scalar.value - 55)
+                digits = [mapped / 10, mapped % 10]
+            }
+            for digit in digits {
+                remainder = (remainder * 10 + digit) % 97
+            }
+        }
+        return remainder != 1
+    }
+}
+
+/// `jwt` matches `eyJ…`-shaped triplets; a real JWT has a base64url header decoding to JSON with an `alg`.
+private enum JWTMatchSanitizer {
+    static func shouldRejectJWTValue(_ value: String) -> Bool {
+        let segments = value.split(separator: ".", omittingEmptySubsequences: false)
+        guard segments.count == 3 else { return true }
+        guard let headerData = base64URLDecode(String(segments[0])),
+              let object = try? JSONSerialization.jsonObject(with: headerData) as? [String: Any],
+              object["alg"] != nil else {
+            return true
+        }
+        return false
     }
 
-    /// Last whitespace at or before `limit`; `nil` when the only boundary would leave an empty prefix.
-    private static func tokenBoundary(in text: String, before limit: String.Index) -> String.Index? {
-        guard let boundary = text[..<limit].lastIndex(where: \.isWhitespace), boundary > text.startIndex else {
-            return nil
+    private static func base64URLDecode(_ input: String) -> Data? {
+        var base64 = input.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        let padding = base64.count % 4
+        if padding > 0 {
+            base64 += String(repeating: "=", count: 4 - padding)
         }
-        return boundary
+        return Data(base64Encoded: base64)
+    }
+}
+
+/// Doc/sample placeholders (`<your-token>`, `${API_KEY}`, `xxxxxxxx`, `changeme`) match secret shapes but
+/// carry no real credential. Kept conservative so real keys (including `sk_test_…`) are never dropped.
+private enum PlaceholderSecretSanitizer {
+    private static let markerWords = [
+        "your", "example", "placeholder", "changeme", "change_me", "redacted",
+        "dummy", "insert", "todo", "fixme", "xxxx", "yyyy", "notarealkey",
+    ]
+
+    static func isPlaceholder(_ value: String) -> Bool {
+        if value.contains("<") || value.contains(">") { return true }
+        if value.contains("{{") || value.contains("${") || value.contains("%(") { return true }
+        if value.contains("****") || value.contains("....") { return true }
+        let lower = value.lowercased()
+        if markerWords.contains(where: lower.contains) { return true }
+        return false
+    }
+}
+
+/// Honors inline opt-outs:
+///   `… secret …   # offsend:ignore`            suppresses findings on that line
+///   `# offsend:ignore-next-line`                suppresses findings on the following line
+enum InlineIgnoreFilter {
+    private static let token = "offsend:ignore"
+    private static let nextLineToken = "offsend:ignore-next-line"
+
+    static func filter(_ entities: [SensitiveEntity], in text: String) -> [SensitiveEntity] {
+        guard text.contains(token) else { return entities }
+        let lines = text.components(separatedBy: "\n")
+        return entities.filter { entity in
+            let lineIndex = text[text.startIndex..<entity.range.lowerBound].reduce(into: 0) { count, character in
+                if character == "\n" { count += 1 }
+            }
+            let line = lineIndex < lines.count ? lines[lineIndex] : ""
+            if line.contains(token), !line.contains(nextLineToken) { return false }
+            if lineIndex > 0, lines[lineIndex - 1].contains(nextLineToken) { return false }
+            return true
+        }
+    }
+}
+
+private enum TextNormalizer {
+    /// The full text is always returned and scanned by the deterministic detectors (via windowing).
+    /// `wasTruncated` now means only that the input exceeded `maximumLength`, so the optional AI pass
+    /// analyzed a prefix rather than the whole text — callers use it for a "partially analyzed" hint.
+    static func normalize(_ text: String, maximumLength: Int) -> NormalizedText {
+        NormalizedText(text: text, wasTruncated: text.count > maximumLength)
     }
 }
 
@@ -376,6 +586,24 @@ public extension DetectionRule {
         .init(type: .databaseURLWithPassword, source: .secret, pattern: #"\b(?:postgres|postgresql|mysql|mongodb|redis)://[^:\s/@]+:[^@\s]+@[^\s]+"#, confidence: 0.99),
         .init(type: .bearerToken, source: .secret, pattern: #"\bBearer\s+[A-Za-z0-9._~+/=-]{20,}\b"#, confidence: 0.95),
         .init(type: .apiKeyGeneric, source: .secret, pattern: #"\b(?:api[_-]?key|secret|token|client[_-]?secret)\s*[:=]\s*['"]?[A-Za-z0-9._~+/=-]{20,}['"]?"#, confidence: 0.9),
+        // Provider-specific keys. Each has a distinctive prefix so false positives stay low; all map to
+        // `.apiKeyGeneric` (a critical secret) rather than per-provider types to keep the entity model flat.
+        // Vercel/Railway core tokens are unprefixed/UUID-shaped, so only Vercel's blob token is fingerprintable
+        // here — their generic tokens fall through to `apiKeyGeneric` (`key=value`) or `highEntropyString`.
+        .init(type: .apiKeyGeneric, source: .secret, pattern: #"\bsk-ant-[A-Za-z0-9_-]{20,}\b"#, confidence: 0.99), // Anthropic
+        .init(type: .apiKeyGeneric, source: .secret, pattern: #"\bgsk_[A-Za-z0-9]{20,}\b"#, confidence: 0.98), // Groq
+        .init(type: .apiKeyGeneric, source: .secret, pattern: #"\bxai-[A-Za-z0-9]{20,}\b"#, confidence: 0.98), // xAI
+        .init(type: .apiKeyGeneric, source: .secret, pattern: #"\bAIza[0-9A-Za-z_-]{35}\b"#, confidence: 0.97), // Google / Gemini
+        .init(type: .apiKeyGeneric, source: .secret, pattern: #"\bsbp_[a-f0-9]{40}\b"#, confidence: 0.98), // Supabase personal access token
+        .init(type: .apiKeyGeneric, source: .secret, pattern: #"\bsb_(?:secret|publishable)_[A-Za-z0-9_-]{20,}\b"#, confidence: 0.97), // Supabase API keys
+        .init(type: .apiKeyGeneric, source: .secret, pattern: #"\bre_[A-Za-z0-9]{6,}_[A-Za-z0-9]{16,}\b"#, confidence: 0.95), // Resend
+        .init(type: .apiKeyGeneric, source: .secret, pattern: #"\blin_(?:api|oauth)_[A-Za-z0-9]{20,}\b"#, confidence: 0.97), // Linear
+        .init(type: .apiKeyGeneric, source: .secret, pattern: #"\bvercel_blob_rw_[A-Za-z0-9]{18,}_[A-Za-z0-9]{18,}\b"#, confidence: 0.97), // Vercel Blob
+        .init(type: .apiKeyGeneric, source: .secret, pattern: #"\bglpat-[A-Za-z0-9_-]{20,}\b"#, confidence: 0.98), // GitLab personal access token
+        .init(type: .apiKeyGeneric, source: .secret, pattern: #"\bhf_[A-Za-z0-9]{30,}\b"#, confidence: 0.96), // Hugging Face
+        .init(type: .apiKeyGeneric, source: .secret, pattern: #"\bSG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}\b"#, confidence: 0.98), // SendGrid
+        .init(type: .apiKeyGeneric, source: .secret, pattern: #"\bnpm_[A-Za-z0-9]{36}\b"#, confidence: 0.97), // npm
+        .init(type: .apiKeyGeneric, source: .secret, pattern: #"\bdp\.(?:pt|st|ct|sa|scim|audit)\.[A-Za-z0-9]{40,}\b"#, confidence: 0.97), // Doppler
         // Lookarounds instead of `\b`: `+`, `/`, and `=` are non-word, so `\b` truncates base64 padding (`==`).
         // `=` is already in the class, so trailing padding is consumed by the main quantifier.
         .init(type: .highEntropyString, source: .secret, pattern: #"(?<![A-Za-z0-9+/=_-])[A-Za-z0-9+/=_-]{40,}(?![A-Za-z0-9+/=_-])"#, confidence: 0.65)

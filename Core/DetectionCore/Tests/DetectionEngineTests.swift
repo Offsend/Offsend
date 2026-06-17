@@ -31,6 +31,41 @@ final class DetectionEngineTests: XCTestCase {
         XCTAssertTrue(types.contains(.jwt))
     }
 
+    func testDetectsProviderServiceKeysAsCriticalSecrets() async {
+        // (label, token) — all map to `.apiKeyGeneric` (a critical secret) via their provider prefix.
+        let cases: [(String, String)] = [
+            ("groq", "gsk_012345678901234567890123456789"),
+            ("xai", "xai-012345678901234567890123456789"),
+            ("google", "AIza01234567890123456789012345678901234"),
+            ("supabasePAT", "sbp_0123456789abcdef0123456789abcdef01234567"),
+            ("supabaseSecret", "sb_secret_0123456789abcdefABCDEF01"),
+            ("resend", "re_AbCdEf12_0123456789abcdef"),
+            ("linear", "lin_api_012345678901234567890123456789"),
+            ("vercelBlob", "vercel_blob_rw_012345678901234567_012345678901234567"),
+            ("gitlab", "glpat-012345678901234567890123"),
+            ("huggingface", "hf_012345678901234567890123456789abcd"),
+            ("sendgrid", "SG.0123456789012345678901.0123456789012345678901234567890123456789012"),
+            ("npm", "npm_012345678901234567890123456789abcdef"),
+            ("doppler", "dp.pt.0123456789012345678901234567890123456789"),
+        ]
+        for (label, token) in cases {
+            let result = await engine.scan(DetectionRequest(text: "key = \(token)"))
+            XCTAssertTrue(
+                result.entities.contains { $0.type == .apiKeyGeneric && $0.value == token },
+                "\(label): expected apiKeyGeneric for \(token), got: \(result.entities.map { ($0.type, $0.value) })"
+            )
+        }
+    }
+
+    func testDetectsAnthropicKeyAsCriticalSecret() async {
+        let token = "sk-ant-api03-012345678901234567890123456789"
+        let result = await engine.scan(DetectionRequest(text: "ANTHROPIC_API_KEY=\(token)"))
+        XCTAssertTrue(
+            result.entities.contains { $0.type.countsAsCriticalSecret },
+            "Anthropic key must flag as a critical secret, got: \(result.entities.map(\.type))"
+        )
+    }
+
     func testSwiftClosureDollarDigitsNotDetectedAsMoney() async {
         let text =
             #"let cursedColor = (([0xDEADBEEF].enumerated().reduce(CGFloat(0)) { $0 + CGFloat(($1.element >> ($1.offset * 8)) & 0xFF) / 255.0 })"#
@@ -72,11 +107,26 @@ final class DetectionEngineTests: XCTestCase {
         XCTAssertEqual(result.entities.first?.value, "Acme Corp")
     }
 
-    func testTruncatesLongClipboardText() async {
+    func testFlagsTruncationButStillScansFullTextWhenOverLimit() async {
         let result = await engine.scan(DetectionRequest(text: String(repeating: "a", count: 20), options: DetectionOptions(maximumLength: 10)))
 
+        // `wasTruncated` now only signals the input exceeded the limit (AI sees a prefix); deterministic
+        // detectors still cover the whole input, so the full character count is reported.
         XCTAssertTrue(result.wasTruncated)
-        XCTAssertEqual(result.scannedCharacterCount, 10)
+        XCTAssertEqual(result.scannedCharacterCount, 20)
+    }
+
+    func testSecretBeyondLegacyTruncationLimitIsStillDetected() async {
+        // A secret placed far past `maximumLength` would have been silently dropped by the old hard cut.
+        let token = "AKIA1234567890ABCDEF"
+        let text = String(repeating: "padding ", count: 50) + token
+        let result = await engine.scan(DetectionRequest(text: text, options: DetectionOptions(maximumLength: 32)))
+
+        XCTAssertTrue(result.wasTruncated)
+        XCTAssertTrue(
+            result.entities.contains { $0.type == .awsAccessKeyId && $0.value == token },
+            "Windowed scanning must find a secret past the limit: \(result.entities.map { ($0.type, $0.value) })"
+        )
     }
 
     func testSpacedCardNumberNotDetectedAsPhone() async {
@@ -238,23 +288,14 @@ final class DetectionEngineTests: XCTestCase {
 
     // MARK: - Truncation
 
-    func testTruncationCutsOnTokenBoundary() async {
+    func testFullTextIsRetainedWhenOverLimit() async {
         let result = await engine.scan(
             DetectionRequest(text: "alpha bravo charlie", options: DetectionOptions(maximumLength: 15))
         )
 
         XCTAssertTrue(result.wasTruncated)
-        XCTAssertEqual(result.scannedText, "alpha bravo", "Trailing partial token must be dropped")
-        XCTAssertEqual(result.scannedCharacterCount, 11)
-    }
-
-    func testTruncationFallsBackToHardCutWithoutWhitespace() async {
-        let result = await engine.scan(
-            DetectionRequest(text: String(repeating: "a", count: 20), options: DetectionOptions(maximumLength: 10))
-        )
-
-        XCTAssertTrue(result.wasTruncated)
-        XCTAssertEqual(result.scannedCharacterCount, 10)
+        XCTAssertEqual(result.scannedText, "alpha bravo charlie", "Full text is retained, not cut")
+        XCTAssertEqual(result.scannedCharacterCount, 19)
     }
 
     // MARK: - Phone boundary
@@ -328,6 +369,98 @@ final class DetectionEngineTests: XCTestCase {
 
         XCTAssertTrue(result.entities.contains { $0.type == .email })
         XCTAssertEqual(result.aiDetectionError, "AI model is not loaded.")
+    }
+}
+
+extension DetectionEngineTests {
+    // MARK: - Checksum / structural validators
+
+    func testInvalidLuhnNumberNotDetectedAsCard() async {
+        let result = await engine.scan(DetectionRequest(text: "1234 5678 9012 3456"))
+        XCTAssertFalse(
+            result.entities.contains { $0.type == .creditCardLike },
+            "A 16-digit number failing Luhn must not be a card: \(result.entities.map(\.type))"
+        )
+    }
+
+    func testValidLuhnNumberDetectedAsCard() async {
+        let result = await engine.scan(DetectionRequest(text: "4111 1111 1111 1111"))
+        XCTAssertTrue(result.entities.contains { $0.type == .creditCardLike })
+    }
+
+    func testInvalidIBANChecksumRejected() async {
+        let result = await engine.scan(DetectionRequest(text: "GB00WEST12345698765432"))
+        XCTAssertFalse(result.entities.contains { $0.type == .iban }, "Bad mod-97 IBAN must be rejected")
+    }
+
+    func testValidIBANChecksumDetected() async {
+        let result = await engine.scan(DetectionRequest(text: "GB82WEST12345698765432"))
+        XCTAssertTrue(result.entities.contains { $0.type == .iban })
+    }
+
+    func testNonDecodableJWTRejected() async {
+        // Three base64url-ish segments, but the header is not valid JSON with an `alg`.
+        let result = await engine.scan(DetectionRequest(text: "eyJrandomdata.payloadsegment.signaturepart"))
+        XCTAssertFalse(result.entities.contains { $0.type == .jwt }, "Header without decodable alg must be rejected")
+    }
+
+    func testStructurallyValidJWTDetected() async {
+        let token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.signature"
+        let result = await engine.scan(DetectionRequest(text: token))
+        XCTAssertTrue(result.entities.contains { $0.type == .jwt })
+    }
+
+    // MARK: - Placeholder denylist
+
+    func testPlaceholderSecretValueRejected() async {
+        let result = await engine.scan(DetectionRequest(text: "OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"))
+        XCTAssertFalse(
+            result.entities.contains { $0.type.isSecret },
+            "An `xxxx…` placeholder key must not flag: \(result.entities.map { ($0.type, $0.value) })"
+        )
+    }
+
+    func testRealSecretWithTestKeywordStillDetected() async {
+        // `test` appears in real Stripe test-mode keys, so it must not be treated as a placeholder.
+        let token = "sk_test_0123456789abcdefABCDEF12"
+        let result = await engine.scan(DetectionRequest(text: "STRIPE=\(token)"))
+        XCTAssertTrue(result.entities.contains { $0.type == .stripeKey && $0.value == token })
+    }
+
+    // MARK: - Inline ignore
+
+    private var ignoreEnabled: DetectionOptions { DetectionOptions(honorInlineIgnore: true) }
+
+    func testInlineIgnoreSuppressesSameLine() async {
+        let token = "AKIA1234567890ABCDEF"
+        let withComment = await engine.scan(DetectionRequest(text: "aws = \(token) // offsend:ignore", options: ignoreEnabled))
+        XCTAssertFalse(withComment.entities.contains { $0.type == .awsAccessKeyId }, "Same-line ignore must suppress")
+
+        let withoutComment = await engine.scan(DetectionRequest(text: "aws = \(token)", options: ignoreEnabled))
+        XCTAssertTrue(withoutComment.entities.contains { $0.type == .awsAccessKeyId }, "Sanity: detected without comment")
+    }
+
+    func testInlineIgnoreNextLineSuppressesFollowingLine() async {
+        let text = "# offsend:ignore-next-line\nAKIA1234567890ABCDEF"
+        let result = await engine.scan(DetectionRequest(text: text, options: ignoreEnabled))
+        XCTAssertFalse(result.entities.contains { $0.type == .awsAccessKeyId })
+    }
+
+    func testInlineIgnoreOnlyAffectsTargetedLine() async {
+        let text = "AKIA1111111111111111 // offsend:ignore\nAKIA2222222222222222"
+        let result = await engine.scan(DetectionRequest(text: text, options: ignoreEnabled))
+        let aws = result.entities.filter { $0.type == .awsAccessKeyId }.map(\.value)
+        XCTAssertEqual(aws, ["AKIA2222222222222222"], "Only the commented line is suppressed")
+    }
+
+    func testInlineIgnoreNotHonoredByDefault() async {
+        // Clipboard path uses default options: a copied `offsend:ignore` must NOT disable masking.
+        let text = "aws = AKIA1234567890ABCDEF // offsend:ignore"
+        let result = await engine.scan(DetectionRequest(text: text))
+        XCTAssertTrue(
+            result.entities.contains { $0.type == .awsAccessKeyId },
+            "Inline ignore must be off by default so untrusted content can't suppress findings"
+        )
     }
 }
 

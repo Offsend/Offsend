@@ -35,13 +35,16 @@ public enum OffsendConfiguration {
         disabledDetectors: Set<SensitiveEntityType> = [],
         additionalDictionaries: [CustomDictionaryItem] = []
     ) -> DocumentProcessingOptions {
-        DocumentProcessingOptions(
-            detection: detectionOptions(
-                context: context,
-                enableAIDetection: enableAIDetection,
-                disabledDetectors: disabledDetectors,
-                additionalDictionaries: additionalDictionaries
-            ),
+        var detection = detectionOptions(
+            context: context,
+            enableAIDetection: enableAIDetection,
+            disabledDetectors: disabledDetectors,
+            additionalDictionaries: additionalDictionaries
+        )
+        // `offsend check` scans trusted, user-authored repository files, so inline opt-outs are honored here.
+        detection.honorInlineIgnore = true
+        return DocumentProcessingOptions(
+            detection: detection,
             mappingTTL: context.settings.mappingTTL,
             maximumFileByteCount: .max
         )

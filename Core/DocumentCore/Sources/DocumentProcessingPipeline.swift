@@ -43,7 +43,8 @@ public final class DocumentProcessingPipeline: DocumentProcessing, Sendable {
         let detection = await detector.scan(
             DetectionRequest(text: extracted.plainText, options: Self.detectionOptions(for: request))
         )
-        let assessment = riskScorer.assess(detection.entities)
+        let context = DetectionContext(path: request.source.sourceURL?.path ?? request.source.fileName)
+        let assessment = riskScorer.assess(detection.entities, context: context)
         return DocumentAnalysisResult(
             extracted: extracted,
             detection: detection,

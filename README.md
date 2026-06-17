@@ -151,7 +151,7 @@ macOS may ask for Accessibility (to paste into the front app) and folder access 
 | Best for | Daily interactive work | Free terminal, git hook, and CI checks |
 | Safe Paste | Yes: scan, mask, paste, restore | No |
 | File preparation | Drag-and-drop UI, review, copy/save | Path-based scans |
-| Project checks | UI checks, ignore files, watched folders | `offsend check`, `--staged`, `--policy`, `offsend prepare` |
+| Project checks | UI checks, ignore files, watched folders | `offsend check`, `--staged`, `--policy`, `offsend show`, `offsend prepare` |
 | Git hooks | Install/manage in Settings → Hooks | `offsend hook install/status/uninstall` |
 | AI models | Download, import, select, and manage models | Not used by the CLI |
 | Automation | Background watcher and notifications | Scriptable text/json output |
@@ -185,6 +185,29 @@ Use JSON output in automation:
 ```bash
 offsend check --staged --format json --quiet
 ```
+
+### Show files exposed to AI tools
+
+`offsend show` lists the sensitive files that would be sent to AI tools because no ignore file covers them — secrets, `.env` files, private keys, credentials, and similar — grouped by data type. It mirrors the macOS app's directory exposure audit and uses the same rules, ignore patterns, and custom template configured there. Like all directory checks, it reads ignore-file contents only, never the matched files themselves.
+
+List exposed files in the current directory:
+
+```bash
+offsend show
+```
+
+Use JSON output in automation:
+
+```bash
+offsend show --format json
+```
+
+Options:
+
+- `[path]` — directory to inspect. Defaults to the current directory.
+- `--format` — output format, `text` (default) or `json`.
+
+`offsend show` is read-only and informational: it exits `0` even when files are exposed, and `2` only if the directory is unavailable. When it surfaces exposed files, run `offsend prepare` to create the missing ignore files that cover them.
 
 ### Prepare AI ignore files
 
@@ -285,7 +308,7 @@ Supported `check.detectors.disable` IDs:
   run: offsend check --staged
 ```
 
-Other useful commands: `offsend check`, `offsend prepare`, `offsend hook status`, `offsend hook uninstall`.
+Other useful commands: `offsend check`, `offsend show`, `offsend prepare`, `offsend hook status`, `offsend hook uninstall`.
 
 ---
 

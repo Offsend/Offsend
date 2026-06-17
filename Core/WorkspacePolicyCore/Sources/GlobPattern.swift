@@ -52,14 +52,16 @@ public struct GlobPattern: Equatable {
     }
 }
 
-/// Compiled glob regexes are immutable and the set of distinct patterns is small
-/// and bounded (rules + accepted patterns), so memoizing avoids recompiling the
-/// same `NSRegularExpression` on every match during directory walks.
+/// Compiled glob regexes are immutable, so memoizing avoids recompiling the same
+/// `NSRegularExpression` on every match during directory walks. Patterns include
+/// user-authored ignore-file lines, so the cache is capped to bound memory in a
+/// long-running app; on overflow it is cleared and entries recompile lazily.
 private final class GlobRegexCache: @unchecked Sendable {
     static let shared = GlobRegexCache()
 
     /// Compiled from a fixed, always-valid literal; matches no input.
     private static let neverMatching = try! NSRegularExpression(pattern: "\\b\\B")
+    private static let maximumEntries = 4096
 
     private let lock = NSLock()
     private var storage: [String: NSRegularExpression] = [:]
@@ -69,6 +71,9 @@ private final class GlobRegexCache: @unchecked Sendable {
         defer { lock.unlock() }
         if let cached = storage[pattern] {
             return cached
+        }
+        if storage.count >= Self.maximumEntries {
+            storage.removeAll(keepingCapacity: true)
         }
         // The translation only emits escaped literals and standard glob tokens, so it
         // is always valid. The fallbacks keep an unexpected translation bug from
