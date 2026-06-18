@@ -634,6 +634,10 @@
 "settings.hooks.cliPath.hint.external" = "`offsend` already resolves to %@. Offsend will not overwrite another command.";
 "settings.hooks.cliPath.hint.blocked" = "%@ already exists and is not an Offsend-managed symlink.";
 "settings.hooks.cliPath.hint.broken" = "The existing Offsend symlink points to a moved or deleted app. Reinstall to repair it.";
+"settings.hooks.cliPath.shadowing.label" = "Legacy install";
+"settings.hooks.cliPath.shadowing.status" = "SHADOWING";
+"settings.hooks.cliPath.shadowing.hint" = "An older Offsend-managed `offsend` at %1$@ may run before %2$@ in your terminal. Remove it to stop shadowing the newer install.";
+"settings.hooks.cliPath.shadowing.remove" = "Remove legacy install";
 "settings.hooks.cliPath.installed" = "`offsend` command installed in /usr/local/bin.";
 "settings.hooks.cliPath.uninstalled" = "`offsend` command removed from /usr/local/bin.";
 "settings.hooks.cliPath.brewUninstallCopied" = "Homebrew uninstall command copied to clipboard.";

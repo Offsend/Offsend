@@ -92,6 +92,39 @@ final class CLIPathInstallerTests: XCTestCase {
         }
     }
 
+    func testStatusDetectsShadowingManagedInstallWhenHomebrewResolvesFirst() throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let appCLI = try makeExecutable(at: root.appendingPathComponent("Offsend.app/Contents/Helpers/offsend"))
+        let brewCellarCLI = try makeExecutable(
+            at: root.appendingPathComponent("Caskroom/offsend-cli/1.2.3/offsend")
+        )
+        let brewBin = root.appendingPathComponent("homebrew/bin", isDirectory: true)
+        let localBin = root.appendingPathComponent("usr/local/bin", isDirectory: true)
+        try FileManager.default.createDirectory(at: brewBin, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: localBin, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(
+            at: brewBin.appendingPathComponent("offsend"),
+            withDestinationURL: brewCellarCLI
+        )
+        let managedCommand = localBin.appendingPathComponent("offsend")
+        try FileManager.default.createSymbolicLink(at: managedCommand, withDestinationURL: appCLI)
+
+        let installer = CLIPathInstaller(
+            bundledCLIPath: appCLI.path,
+            installPath: managedCommand.path,
+            pathEnvironment: "\(brewBin.path):\(localBin.path)",
+            includeDefaultSearchPaths: false,
+            runPrivilegedShell: { _ in }
+        )
+
+        let status = installer.status()
+        XCTAssertEqual(status.state, .availableViaHomebrew)
+        XCTAssertEqual(status.commandPath, brewBin.appendingPathComponent("offsend").path)
+        XCTAssertEqual(status.shadowingManagedInstallPath, managedCommand.path)
+    }
+
     func testInstallRunsPrivilegedScriptWhenTargetIsFree() throws {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }

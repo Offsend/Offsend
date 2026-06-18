@@ -7,12 +7,15 @@ public struct ShowExposedGroup: Sendable, Equatable {
     public let typeID: String
     public let typeTitle: String
     public let severity: String
+    /// How to cover this data type, e.g. which ignore-file line to add.
+    public let remediation: String
     public let relativePaths: [String]
 
-    public init(typeID: String, typeTitle: String, severity: String, relativePaths: [String]) {
+    public init(typeID: String, typeTitle: String, severity: String, remediation: String, relativePaths: [String]) {
         self.typeID = typeID
         self.typeTitle = typeTitle
         self.severity = severity
+        self.remediation = remediation
         self.relativePaths = relativePaths
     }
 }
@@ -93,6 +96,7 @@ public struct OffsendShowService: Sendable {
                     typeID: finding.pattern.id,
                     typeTitle: finding.pattern.title,
                     severity: finding.pattern.severity.rawValue,
+                    remediation: finding.pattern.remediation,
                     relativePaths: finding.exposedRelativePaths.sorted()
                 )
             }

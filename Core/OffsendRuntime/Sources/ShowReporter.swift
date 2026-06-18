@@ -1,18 +1,23 @@
 import Foundation
+import WorkspacePolicyCore
 
 public struct ShowReporter: Sendable {
+    /// Cap per group so a directory full of one secret type can't flood the terminal;
+    /// the full list stays available via `--format json`.
+    private static let maxPathsPerGroup = 50
+
     public init() {}
 
-    public func render(_ report: ShowReport, format: CheckOutputFormat) -> String {
+    public func render(_ report: ShowReport, format: CheckOutputFormat, useColor: Bool = false) -> String {
         switch format {
         case .text:
-            return renderText(report)
+            return renderText(report, palette: CLIPalette(enabled: useColor))
         case .json:
             return renderJSON(report)
         }
     }
 
-    private func renderText(_ report: ShowReport) -> String {
+    private func renderText(_ report: ShowReport, palette: CLIPalette) -> String {
         var lines: [String] = []
 
         for error in report.errors {
@@ -28,12 +33,28 @@ public struct ShowReporter: Sendable {
             return lines.joined(separator: "\n")
         }
 
-        lines.append("\(report.totalExposedCount) file(s) would be sent to AI tools:")
+        lines.append(palette.dim("Scanned: \(report.directoryPath)"))
+
+        let fileWord = Self.pluralize(report.totalExposedCount, singular: "file")
+        let summary = Self.severitySummary(for: report.groups)
+        let suffix = summary.isEmpty ? "" : " (\(summary))"
+        lines.append("\(report.totalExposedCount) \(fileWord) would be sent to AI tools\(suffix):")
+
         for group in report.groups {
             lines.append("")
-            lines.append("\(group.typeTitle) [\(group.severity)]")
-            for path in group.relativePaths {
+            let header = "\(Self.marker(for: group.severity)) \(group.typeTitle) [\(group.severity)]"
+            lines.append(Self.colorize(header, severity: group.severity, palette: palette))
+
+            if !group.remediation.isEmpty {
+                lines.append(palette.dim("    \(group.remediation)"))
+            }
+
+            for path in group.relativePaths.prefix(Self.maxPathsPerGroup) {
                 lines.append("  - \(path)")
+            }
+            let overflow = group.relativePaths.count - Self.maxPathsPerGroup
+            if overflow > 0 {
+                lines.append(palette.dim("  … and \(overflow) more (use --format json for the full list)"))
             }
         }
 
@@ -45,6 +66,7 @@ public struct ShowReporter: Sendable {
             let typeID: String
             let typeTitle: String
             let severity: String
+            let remediation: String
             let relativePaths: [String]
         }
         struct Payload: Encodable {
@@ -64,6 +86,7 @@ public struct ShowReporter: Sendable {
                     typeID: $0.typeID,
                     typeTitle: $0.typeTitle,
                     severity: $0.severity,
+                    remediation: $0.remediation,
                     relativePaths: $0.relativePaths
                 )
             },
@@ -76,5 +99,44 @@ public struct ShowReporter: Sendable {
             return #"{"groups":[],"totalExposedCount":0,"errors":[]}"#
         }
         return json
+    }
+
+    private static func pluralize(_ count: Int, singular: String) -> String {
+        count == 1 ? singular : "\(singular)s"
+    }
+
+    private static func marker(for severity: String) -> String {
+        switch severity {
+        case AIWorkspacePrivacyRuleSeverity.required.rawValue: return "✗"
+        case AIWorkspacePrivacyRuleSeverity.recommended.rawValue: return "!"
+        default: return "•"
+        }
+    }
+
+    private static func colorize(_ text: String, severity: String, palette: CLIPalette) -> String {
+        switch severity {
+        case AIWorkspacePrivacyRuleSeverity.required.rawValue: return palette.red(text)
+        case AIWorkspacePrivacyRuleSeverity.recommended.rawValue: return palette.yellow(text)
+        default: return text
+        }
+    }
+
+    /// "2 required, 1 recommended" — distinct exposed files per severity, most severe first.
+    private static func severitySummary(for groups: [ShowExposedGroup]) -> String {
+        var pathsBySeverity: [String: Set<String>] = [:]
+        for group in groups {
+            pathsBySeverity[group.severity, default: []].formUnion(group.relativePaths)
+        }
+
+        let order = [
+            AIWorkspacePrivacyRuleSeverity.required.rawValue,
+            AIWorkspacePrivacyRuleSeverity.recommended.rawValue,
+            AIWorkspacePrivacyRuleSeverity.informational.rawValue
+        ]
+        return order.compactMap { severity in
+            guard let count = pathsBySeverity[severity]?.count, count > 0 else { return nil }
+            return "\(count) \(severity)"
+        }
+        .joined(separator: ", ")
     }
 }

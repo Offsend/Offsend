@@ -13,6 +13,8 @@ public struct CLIPathInstallationStatus: Sendable, Equatable {
     public let state: CLIPathInstallationState
     public let commandPath: String?
     public let commandTargetPath: String?
+    /// App-managed symlink at `installPath` when another `offsend` resolves first in PATH.
+    public let shadowingManagedInstallPath: String?
     public let installPath: String
     public let bundledCLIPath: String
 
@@ -20,12 +22,14 @@ public struct CLIPathInstallationStatus: Sendable, Equatable {
         state: CLIPathInstallationState,
         commandPath: String?,
         commandTargetPath: String?,
+        shadowingManagedInstallPath: String? = nil,
         installPath: String,
         bundledCLIPath: String
     ) {
         self.state = state
         self.commandPath = commandPath
         self.commandTargetPath = commandTargetPath
+        self.shadowingManagedInstallPath = shadowingManagedInstallPath
         self.installPath = installPath
         self.bundledCLIPath = bundledCLIPath
     }
@@ -73,27 +77,54 @@ public struct CLIPathInstaller {
     }
 
     public func status() -> CLIPathInstallationStatus {
+        let shadowingManagedInstall = shadowingManagedInstallPath(primaryCommandPath: firstCommandPath())
+
         if let commandPath = firstCommandPath() {
             let targetPath = resolvedTargetPath(for: commandPath)
             switch classification(for: commandPath) {
             case .bundled:
-                return makeStatus(.installed, commandPath: commandPath, commandTargetPath: targetPath)
+                return makeStatus(
+                    .installed,
+                    commandPath: commandPath,
+                    commandTargetPath: targetPath,
+                    shadowingManagedInstallPath: shadowingManagedInstall
+                )
             case .homebrew:
-                return makeStatus(.availableViaHomebrew, commandPath: commandPath, commandTargetPath: targetPath)
+                return makeStatus(
+                    .availableViaHomebrew,
+                    commandPath: commandPath,
+                    commandTargetPath: targetPath,
+                    shadowingManagedInstallPath: shadowingManagedInstall
+                )
             case .foreign:
-                return makeStatus(.availableViaForeign, commandPath: commandPath, commandTargetPath: targetPath)
+                return makeStatus(
+                    .availableViaForeign,
+                    commandPath: commandPath,
+                    commandTargetPath: targetPath,
+                    shadowingManagedInstallPath: shadowingManagedInstall
+                )
             }
         }
 
         if isBrokenManagedSymlink(at: installPath) {
-            return makeStatus(.brokenManagedLink, commandPath: nil, commandTargetPath: resolvedTargetPath(for: installPath))
+            return makeStatus(
+                .brokenManagedLink,
+                commandPath: nil,
+                commandTargetPath: resolvedTargetPath(for: installPath),
+                shadowingManagedInstallPath: shadowingManagedInstall
+            )
         }
 
         if fileManager.fileExists(atPath: installPath) {
-            return makeStatus(.targetBlocked, commandPath: installPath, commandTargetPath: resolvedTargetPath(for: installPath))
+            return makeStatus(
+                .targetBlocked,
+                commandPath: installPath,
+                commandTargetPath: resolvedTargetPath(for: installPath),
+                shadowingManagedInstallPath: shadowingManagedInstall
+            )
         }
 
-        return makeStatus(.notInstalled, commandPath: nil, commandTargetPath: nil)
+        return makeStatus(.notInstalled, commandPath: nil, commandTargetPath: nil, shadowingManagedInstallPath: shadowingManagedInstall)
     }
 
     public func install() throws {
@@ -260,15 +291,26 @@ public struct CLIPathInstaller {
             .path
     }
 
+    private func shadowingManagedInstallPath(primaryCommandPath: String?) -> String? {
+        guard fileManager.fileExists(atPath: installPath) else { return nil }
+        guard classification(for: installPath) == .bundled || isBrokenManagedSymlink(at: installPath) else {
+            return nil
+        }
+        guard primaryCommandPath != installPath else { return nil }
+        return installPath
+    }
+
     private func makeStatus(
         _ state: CLIPathInstallationState,
         commandPath: String?,
-        commandTargetPath: String?
+        commandTargetPath: String?,
+        shadowingManagedInstallPath: String? = nil
     ) -> CLIPathInstallationStatus {
         CLIPathInstallationStatus(
             state: state,
             commandPath: commandPath,
             commandTargetPath: commandTargetPath,
+            shadowingManagedInstallPath: shadowingManagedInstallPath,
             installPath: installPath,
             bundledCLIPath: bundledCLIPath
         )
