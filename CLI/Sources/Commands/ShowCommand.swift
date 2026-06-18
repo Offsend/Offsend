@@ -27,9 +27,14 @@ struct Show: ParsableCommand {
             fileURLWithPath: path ?? FileManager.default.currentDirectoryPath
         ).standardizedFileURL
 
-        let report = OffsendShowService(context: context).run(directoryURL: directoryURL)
+        let report = CLISpinner(message: "Inspecting...").runWhile {
+            OffsendShowService(context: context).run(directoryURL: directoryURL)
+        }
 
-        let output = ShowReporter().render(report, format: outputFormat)
+        let useColor = outputFormat == .text
+            && ProcessInfo.processInfo.environment["NO_COLOR"] == nil
+            && isatty(STDOUT_FILENO) != 0
+        let output = ShowReporter().render(report, format: outputFormat, useColor: useColor)
         if !output.isEmpty {
             print(output)
         }

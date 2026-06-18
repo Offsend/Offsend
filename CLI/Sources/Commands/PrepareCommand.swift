@@ -33,11 +33,13 @@ struct Prepare: ParsableCommand {
             fileURLWithPath: path ?? FileManager.default.currentDirectoryPath
         ).standardizedFileURL
 
-        let report = OffsendPrepareService(context: context).run(
-            directoryURL: directoryURL,
-            dryRun: dryRun,
-            syncPatterns: syncPatterns
-        )
+        let report = CLISpinner(message: "Preparing...").runWhile {
+            OffsendPrepareService(context: context).run(
+                directoryURL: directoryURL,
+                dryRun: dryRun,
+                syncPatterns: syncPatterns
+            )
+        }
 
         let output = PrepareReporter().render(report, format: outputFormat)
         if !output.isEmpty {

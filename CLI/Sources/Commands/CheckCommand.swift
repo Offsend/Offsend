@@ -25,6 +25,9 @@ struct Check: AsyncParsableCommand {
     @Flag(name: .long, help: "Only print findings and errors.")
     var quiet = false
 
+    @Flag(name: .long, help: "List every finding and skipped file individually instead of a summary.")
+    var verbose = false
+
     @Option(name: .long, help: "Working directory used for relative paths.")
     var workingDirectory: String?
 
@@ -117,19 +120,23 @@ struct Check: AsyncParsableCommand {
         }
 
         let service = OffsendCheckService(context: context)
-        let report = await service.run(
-            OffsendCheckRequest(
-                fileURLs: fileURLs,
-                policyDirectoryURL: policyDirectoryURL,
-                failPolicy: resolved.failPolicy,
-                workingDirectory: scanRoot,
-                excludePatterns: resolved.excludePatterns,
-                disabledDetectors: resolved.disabledDetectors,
-                customDictionaries: resolved.customDictionaries
-            )
+        let request = OffsendCheckRequest(
+            fileURLs: fileURLs,
+            policyDirectoryURL: policyDirectoryURL,
+            failPolicy: resolved.failPolicy,
+            workingDirectory: scanRoot,
+            excludePatterns: resolved.excludePatterns,
+            disabledDetectors: resolved.disabledDetectors,
+            customDictionaries: resolved.customDictionaries
         )
+        let report = await CLISpinner(message: "Scanning...").runWhile {
+            await service.run(request)
+        }
 
-        let output = CheckReporter().render(report, format: outputFormat, quiet: quiet)
+        let useColor = outputFormat == .text
+            && ProcessInfo.processInfo.environment["NO_COLOR"] == nil
+            && isatty(STDOUT_FILENO) != 0
+        let output = CheckReporter().render(report, format: outputFormat, quiet: quiet, verbose: verbose, useColor: useColor)
         if !output.isEmpty {
             print(output)
         }

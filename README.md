@@ -186,6 +186,8 @@ Use JSON output in automation:
 offsend check --staged --format json --quiet
 ```
 
+By default the text output is a summary: findings are grouped per file and skipped files are reported as a count. Add `--verbose` to list every finding (with line numbers) and every skipped file individually.
+
 ### Show files exposed to AI tools
 
 `offsend show` lists the sensitive files that would be sent to AI tools because no ignore file covers them — secrets, `.env` files, private keys, credentials, and similar — grouped by data type. It mirrors the macOS app's directory exposure audit and uses the same rules, ignore patterns, and custom template configured there. Like all directory checks, it reads ignore-file contents only, never the matched files themselves.

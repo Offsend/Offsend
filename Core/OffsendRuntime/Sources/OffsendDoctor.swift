@@ -87,7 +87,10 @@ public struct OffsendDoctor: Sendable {
             checks.append(
                 DoctorCheck(
                     name: "terminal-command",
-                    status: doctorStatus(for: terminalStatus.state),
+                    status: doctorStatus(
+                        for: terminalStatus.state,
+                        shadowingManagedInstallPath: terminalStatus.shadowingManagedInstallPath
+                    ),
                     message: terminalCommandMessage(for: terminalStatus)
                 )
             )
@@ -181,7 +184,11 @@ public struct OffsendDoctor: Sendable {
         return candidates.first { fileManager.isExecutableFile(atPath: $0) }
     }
 
-    private func doctorStatus(for state: CLIPathInstallationState) -> DoctorCheckStatus {
+    private func doctorStatus(for state: CLIPathInstallationState, shadowingManagedInstallPath: String?) -> DoctorCheckStatus {
+        if shadowingManagedInstallPath != nil {
+            return .warn
+        }
+
         switch state {
         case .installed, .availableViaHomebrew:
             return .ok
@@ -191,6 +198,10 @@ public struct OffsendDoctor: Sendable {
     }
 
     private func terminalCommandMessage(for status: CLIPathInstallationStatus) -> String {
+        if let shadowingPath = status.shadowingManagedInstallPath {
+            return "An older Offsend-managed install at \(shadowingPath) may shadow \(status.commandPath ?? "offsend") in terminals."
+        }
+
         switch status.state {
         case .installed:
             return status.commandPath ?? status.installPath

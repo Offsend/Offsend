@@ -360,6 +360,36 @@ struct SettingsHooksPanel: View {
 
             OFSettingsGroupDivider()
 
+            if let shadowingPath = pathStatus.shadowingManagedInstallPath {
+                OFSettingsRow(
+                    label: OffsendStrings.settingsHooksCliPathShadowingLabel,
+                    hint: OffsendStrings.settingsHooksCliPathShadowingHint(
+                        shadowingPath,
+                        pathStatus.commandPath ?? OffsendStrings.settingsHooksCliMissingPath
+                    ),
+                    alignTop: true
+                ) {
+                    VStack(alignment: .trailing, spacing: 7) {
+                        shadowingManagedInstallBadge
+                        Text(shadowingPath)
+                            .font(.system(size: 10.5, design: .monospaced))
+                            .foregroundColor(palette.textMuted)
+                            .lineLimit(2)
+                            .textSelection(.enabled)
+                        OFCompactButton(
+                            title: OffsendStrings.settingsHooksCliPathShadowingRemove,
+                            icon: "trash",
+                            variant: .outline
+                        ) {
+                            coordinator.uninstallCLICommandFromPath()
+                        }
+                    }
+                    .frame(maxWidth: 360, alignment: .trailing)
+                }
+
+                OFSettingsGroupDivider()
+            }
+
             HStack(spacing: 8) {
                 switch pathStatus.state {
                 case .installed:
@@ -415,6 +445,17 @@ struct SettingsHooksPanel: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
         }
+    }
+
+    private var shadowingManagedInstallBadge: some View {
+        Text(OffsendStrings.settingsHooksCliPathShadowingStatus)
+            .font(.system(size: 9, weight: .bold, design: .monospaced))
+            .tracking(0.5)
+            .foregroundColor(palette.amberText)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(palette.amberDim)
+            .cornerRadius(4)
     }
 
     private func cliPathStatusBadge(_ state: CLIPathInstallationState) -> some View {
