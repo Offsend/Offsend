@@ -4,7 +4,7 @@ import Foundation
 /// ignore rules. Reads ignore-file contents only; never inspects matched file bodies.
 public final class SensitivePathExposureChecker {
     public static let builtInSkippedDirectoryNames: Set<String> = [
-        ".git", "node_modules", ".build", "DerivedData"
+        ".git", "node_modules", ".build", "build", "DerivedData"
     ]
 
     private let fileManager: FileManager

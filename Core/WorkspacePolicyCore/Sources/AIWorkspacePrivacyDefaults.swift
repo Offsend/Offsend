@@ -229,6 +229,7 @@ public extension AIWorkspaceSensitivePattern {
             title: "Environment files",
             acceptedPatterns: [".env", ".env.*", ".env*", "**/.env", "**/.env.*", "**/.env*"],
             severity: .required,
+            category: .secret,
             remediation: "Ignore .env and .env.* files."
         ),
         AIWorkspaceSensitivePattern(
@@ -236,6 +237,7 @@ public extension AIWorkspaceSensitivePattern {
             title: "PEM keys",
             acceptedPatterns: ["*.pem", "**/*.pem"],
             severity: .required,
+            category: .secret,
             remediation: "Ignore PEM key files."
         ),
         AIWorkspaceSensitivePattern(
@@ -243,6 +245,7 @@ public extension AIWorkspaceSensitivePattern {
             title: "Key files",
             acceptedPatterns: ["*.key", "**/*.key"],
             severity: .required,
+            category: .secret,
             remediation: "Ignore private key files."
         ),
         AIWorkspaceSensitivePattern(
@@ -250,6 +253,7 @@ public extension AIWorkspaceSensitivePattern {
             title: "SSH material",
             acceptedPatterns: [".ssh/", "**/.ssh/", "id_rsa", "**/id_rsa", "**/.ssh/id_rsa"],
             severity: .recommended,
+            category: .secret,
             remediation: "Ignore SSH directories and id_rsa files."
         ),
         AIWorkspaceSensitivePattern(
@@ -257,6 +261,7 @@ public extension AIWorkspaceSensitivePattern {
             title: "AWS credentials",
             acceptedPatterns: [".aws/", "**/.aws/", ".aws/credentials", "**/.aws/credentials"],
             severity: .recommended,
+            category: .cloud,
             remediation: "Ignore AWS credential directories and files."
         ),
         AIWorkspaceSensitivePattern(
@@ -264,6 +269,7 @@ public extension AIWorkspaceSensitivePattern {
             title: "credentials.json",
             acceptedPatterns: ["credentials.json", "**/credentials.json"],
             severity: .required,
+            category: .secret,
             remediation: "Ignore credentials.json files."
         ),
         AIWorkspaceSensitivePattern(
@@ -271,6 +277,7 @@ public extension AIWorkspaceSensitivePattern {
             title: "secrets.json",
             acceptedPatterns: ["secrets.json", "**/secrets.json"],
             severity: .required,
+            category: .secret,
             remediation: "Ignore secrets.json files."
         ),
         AIWorkspaceSensitivePattern(
@@ -283,6 +290,7 @@ public extension AIWorkspaceSensitivePattern {
                 "**/gcp-credentials*.json"
             ],
             severity: .recommended,
+            category: .cloud,
             remediation: "Ignore GCP service account JSON keys."
         ),
         AIWorkspaceSensitivePattern(
@@ -295,6 +303,7 @@ public extension AIWorkspaceSensitivePattern {
                 "**/azureauth.json"
             ],
             severity: .recommended,
+            category: .cloud,
             remediation: "Ignore Azure CLI credentials and tokens."
         ),
         AIWorkspaceSensitivePattern(
@@ -309,6 +318,7 @@ public extension AIWorkspaceSensitivePattern {
                 "**/.kube/"
             ],
             severity: .required,
+            category: .cloud,
             remediation: "Ignore kubeconfig files that grant cluster access."
         ),
         AIWorkspaceSensitivePattern(
@@ -321,6 +331,7 @@ public extension AIWorkspaceSensitivePattern {
                 "**/*.tfstate.*"
             ],
             severity: .recommended,
+            category: .cloud,
             remediation: "Ignore Terraform state files that often embed secrets."
         ),
         AIWorkspaceSensitivePattern(
@@ -328,6 +339,7 @@ public extension AIWorkspaceSensitivePattern {
             title: "Terraform variables",
             acceptedPatterns: ["*.tfvars", "**/*.tfvars"],
             severity: .recommended,
+            category: .cloud,
             remediation: "Ignore Terraform tfvars files that may hold credentials."
         ),
         AIWorkspaceSensitivePattern(
@@ -335,6 +347,7 @@ public extension AIWorkspaceSensitivePattern {
             title: "PKCS#12 (.p12) certificates",
             acceptedPatterns: ["*.p12", "**/*.p12"],
             severity: .recommended,
+            category: .signing,
             remediation: "Ignore .p12 certificate bundles that contain private keys."
         ),
         AIWorkspaceSensitivePattern(
@@ -342,6 +355,7 @@ public extension AIWorkspaceSensitivePattern {
             title: "PKCS#12 (.pfx) certificates",
             acceptedPatterns: ["*.pfx", "**/*.pfx"],
             severity: .recommended,
+            category: .signing,
             remediation: "Ignore .pfx certificate bundles that contain private keys."
         ),
         AIWorkspaceSensitivePattern(
@@ -354,6 +368,7 @@ public extension AIWorkspaceSensitivePattern {
                 "**/secring.*"
             ],
             severity: .recommended,
+            category: .secret,
             remediation: "Ignore PGP/GnuPG private keyrings."
         ),
         AIWorkspaceSensitivePattern(
@@ -366,6 +381,7 @@ public extension AIWorkspaceSensitivePattern {
                 "**/_netrc"
             ],
             severity: .recommended,
+            category: .secret,
             remediation: "Ignore .netrc / _netrc files that store HTTP credentials."
         ),
         AIWorkspaceSensitivePattern(
@@ -373,6 +389,7 @@ public extension AIWorkspaceSensitivePattern {
             title: ".npmrc",
             acceptedPatterns: [".npmrc", "**/.npmrc"],
             severity: .recommended,
+            category: .secret,
             remediation: "Ignore .npmrc — it commonly contains npm auth tokens."
         ),
         AIWorkspaceSensitivePattern(
@@ -380,6 +397,7 @@ public extension AIWorkspaceSensitivePattern {
             title: ".pypirc",
             acceptedPatterns: [".pypirc", "**/.pypirc"],
             severity: .recommended,
+            category: .secret,
             remediation: "Ignore .pypirc — it commonly contains PyPI upload tokens."
         ),
         AIWorkspaceSensitivePattern(
@@ -387,6 +405,7 @@ public extension AIWorkspaceSensitivePattern {
             title: ".htpasswd",
             acceptedPatterns: [".htpasswd", "**/.htpasswd"],
             severity: .recommended,
+            category: .secret,
             remediation: "Ignore .htpasswd files containing hashed credentials."
         ),
         AIWorkspaceSensitivePattern(
@@ -399,6 +418,7 @@ public extension AIWorkspaceSensitivePattern {
                 "**/.dockerconfigjson"
             ],
             severity: .recommended,
+            category: .secret,
             remediation: "Ignore Docker config that stores registry auth tokens."
         ),
         AIWorkspaceSensitivePattern(
@@ -411,7 +431,128 @@ public extension AIWorkspaceSensitivePattern {
                 "**/firebase-adminsdk-*.json"
             ],
             severity: .required,
+            category: .cloud,
             remediation: "Ignore Firebase Admin SDK JSON keys."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "git-credentials",
+            title: "Git credentials",
+            acceptedPatterns: [".git-credentials", "**/.git-credentials"],
+            severity: .required,
+            category: .secret,
+            remediation: "Ignore .git-credentials — it stores plaintext Git tokens."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "pgpass-files",
+            title: ".pgpass",
+            acceptedPatterns: [".pgpass", "**/.pgpass"],
+            severity: .recommended,
+            category: .secret,
+            remediation: "Ignore .pgpass — it stores PostgreSQL connection passwords."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "mysql-client-config",
+            title: ".my.cnf",
+            acceptedPatterns: [".my.cnf", "**/.my.cnf"],
+            severity: .recommended,
+            category: .secret,
+            remediation: "Ignore .my.cnf — it commonly stores MySQL client passwords."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "yarn-config",
+            title: ".yarnrc.yml",
+            acceptedPatterns: [".yarnrc.yml", "**/.yarnrc.yml"],
+            severity: .recommended,
+            category: .secret,
+            remediation: "Ignore .yarnrc.yml — it can contain npmAuthToken values."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "terraform-rc",
+            title: "Terraform CLI config",
+            acceptedPatterns: [".terraformrc", "**/.terraformrc", "terraform.rc", "**/terraform.rc"],
+            severity: .recommended,
+            category: .cloud,
+            remediation: "Ignore .terraformrc / terraform.rc — they can hold cloud tokens."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "apple-p8-keys",
+            title: "Apple .p8 keys",
+            acceptedPatterns: ["*.p8", "**/*.p8"],
+            severity: .recommended,
+            category: .signing,
+            remediation: "Ignore .p8 keys (App Store Connect / APNs private keys)."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "android-keystore",
+            title: "Android keystore",
+            acceptedPatterns: ["*.keystore", "**/*.keystore", "*.jks", "**/*.jks"],
+            severity: .recommended,
+            category: .signing,
+            remediation: "Ignore Android signing keystores (.keystore / .jks)."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "apple-provisioning",
+            title: "Apple provisioning profiles",
+            acceptedPatterns: ["*.mobileprovision", "**/*.mobileprovision"],
+            severity: .recommended,
+            category: .signing,
+            remediation: "Ignore .mobileprovision provisioning profiles."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "local-databases",
+            title: "Local databases",
+            acceptedPatterns: [
+                "*.sqlite",
+                "**/*.sqlite",
+                "*.sqlite3",
+                "**/*.sqlite3"
+            ],
+            severity: .informational,
+            category: .pii,
+            remediation: "Consider ignoring local SQLite databases (.sqlite/.sqlite3) which often hold PII."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "log-files",
+            title: "Log files",
+            acceptedPatterns: ["*.log", "**/*.log", "logs/", "**/logs/"],
+            severity: .informational,
+            category: .pii,
+            remediation: "Consider ignoring logs/ and *.log which can leak tokens and PII."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "data-exports",
+            title: "Data exports & dumps",
+            acceptedPatterns: ["dumps/", "**/dumps/", "exports/", "**/exports/"],
+            severity: .informational,
+            category: .pii,
+            remediation: "Consider ignoring dumps/ and exports/ which often contain PII."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "backup-files",
+            title: "Backup files",
+            acceptedPatterns: ["*.bak", "**/*.bak", "*.backup", "**/*.backup"],
+            severity: .informational,
+            category: .pii,
+            remediation: "Consider ignoring *.bak / *.backup files that may contain sensitive snapshots."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "shell-history",
+            title: "Shell & REPL history",
+            acceptedPatterns: [
+                ".bash_history",
+                "**/.bash_history",
+                ".zsh_history",
+                "**/.zsh_history",
+                ".psql_history",
+                "**/.psql_history",
+                ".mysql_history",
+                "**/.mysql_history",
+                ".python_history",
+                "**/.python_history"
+            ],
+            severity: .informational,
+            category: .history,
+            remediation: "Consider ignoring shell/REPL history files that can capture secrets."
         ),
         AIWorkspaceSensitivePattern(
             id: "db-dumps",
@@ -423,6 +564,7 @@ public extension AIWorkspaceSensitivePattern {
                 "**/*.dump"
             ],
             severity: .informational,
+            category: .pii,
             remediation: "Consider ignoring database dumps which often contain PII."
         )
     ]

@@ -70,11 +70,23 @@ public enum AIWorkspacePrivacyRuleSeverity: String, Equatable, Sendable {
     case informational
 }
 
+/// Coarse grouping used to roll sensitive patterns up into report-friendly classes
+/// (e.g. "% of repos exposing any secret vs. any PII").
+public enum AIWorkspaceSensitiveCategory: String, Equatable, Sendable {
+    case secret
+    case cloud
+    case signing
+    case pii
+    case history
+    case other
+}
+
 public struct AIWorkspaceSensitivePattern: Equatable, Identifiable, Sendable {
     public let id: String
     public let title: String
     public let acceptedPatterns: [String]
     public let severity: AIWorkspacePrivacyRuleSeverity
+    public let category: AIWorkspaceSensitiveCategory
     public let remediation: String
 
     public init(
@@ -82,6 +94,7 @@ public struct AIWorkspaceSensitivePattern: Equatable, Identifiable, Sendable {
         title: String,
         acceptedPatterns: [String],
         severity: AIWorkspacePrivacyRuleSeverity = .recommended,
+        category: AIWorkspaceSensitiveCategory = .other,
         remediation: String
     ) {
         precondition(
@@ -92,6 +105,7 @@ public struct AIWorkspaceSensitivePattern: Equatable, Identifiable, Sendable {
         self.title = title
         self.acceptedPatterns = acceptedPatterns
         self.severity = severity
+        self.category = category
         self.remediation = remediation
     }
 

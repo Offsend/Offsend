@@ -29,3 +29,4 @@ serviceAccountKey.json
 firebase-adminsdk-*.json
 *.sql.gz
 *.dump
+*.sqlite
