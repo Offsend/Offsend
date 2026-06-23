@@ -30,7 +30,7 @@ let externalPackages: [Package] = [
     // Pin below 0.16.0: that release ships a broken SPM manifest where the
     // `SwiftToolchainCSQLiteDynamic` product references a removed target, which
     // fails `xcodebuild` package resolution on CI.
-    .remote(url: "https://github.com/stephencelis/SQLite.swift", requirement: .upToNextMinor(from: "0.15.5")),
+    .remote(url: "https://github.com/stephencelis/SQLite.swift", requirement: .exact("0.15.4")),
     .remote(url: "https://github.com/sparkle-project/Sparkle", requirement: .exact("2.7.1")),
     .remote(url: "https://github.com/TelemetryDeck/SwiftSDK", requirement: .upToNextMajor(from: "2.0.0")),
     .remote(
