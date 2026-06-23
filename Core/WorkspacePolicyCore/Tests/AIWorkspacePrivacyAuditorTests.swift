@@ -749,6 +749,35 @@ final class AIWorkspacePrivacyAuditorTests: XCTestCase {
         XCTAssertEqual(pattern.canonicalIgnoreLine, "**/*.pem")
     }
 
+    func testBuildOutputDirectoryIsSkipped() throws {
+        let directoryURL = try makeTemporaryDirectory()
+        try writeFile("build/cache/app.sqlite", in: directoryURL, contents: "db")
+        try writeFile("data/app.sqlite", in: directoryURL, contents: "db")
+
+        let result = auditor.audit(directoryURL: directoryURL)
+        let exposed = result.missingSensitivePatterns
+            .first { $0.pattern.id == "local-databases" }?
+            .exposedRelativePaths ?? []
+
+        XCTAssertTrue(exposed.contains("data/app.sqlite"))
+        XCTAssertFalse(
+            exposed.contains { $0.hasPrefix("build/") },
+            "build/ output artifacts must be skipped, got \(exposed)"
+        )
+    }
+
+    func testDotDbFilesAreNotFlaggedAsLocalDatabases() throws {
+        let directoryURL = try makeTemporaryDirectory()
+        try writeFile("data/metadata.db", in: directoryURL, contents: "db")
+
+        let result = auditor.audit(directoryURL: directoryURL)
+
+        XCTAssertFalse(
+            result.missingSensitivePatterns.contains { $0.pattern.id == "local-databases" },
+            "*.db is too ambiguous (e.g. Xcode build.db) and must not be flagged."
+        )
+    }
+
     private func makeTemporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("AIWorkspacePrivacyAuditorTests-\(UUID().uuidString)", isDirectory: true)

@@ -2,8 +2,8 @@ import Foundation
 
 /// Animates a brand-themed spinner on stderr while work is in progress (interactive TTY only).
 final class CLISpinner: @unchecked Sendable {
-    private static let frames = ["   }   ", "∗  }   ", " ∗ }   ", "  ∗}   ", "∗  }·  ", " ∗ }·  ", "  ∗}·  ", "∗  }·· ", " ∗ }·· ", "  ∗}·· ", "   }···", "   } ··", "   }  ·"]
-
+    private static let frames = ["   }   ", "＊  }   ", " ＊ }   ", "  ＊}   ", "＊  }·  ", " ＊ }·  ", "  ＊}·  ", "＊  }·· ", " ＊ }·· ", "  ＊}·· ", "   }···", "   } ··", "   }  ·"]
+    
     private let message: String
     private let enabled: Bool
     private var animationTask: Task<Void, Never>?
