@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Offsend Repository Scan</title>
+  <style>
+    body { font-family: ui-sans-serif, system-ui, sans-serif; background: #0b0d10; color: #e8eaed; margin: 0; }
+    main { max-width: 720px; margin: 48px auto; padding: 0 20px; }
+    input, button { font: inherit; }
+    input { width: 100%; box-sizing: border-box; padding: 12px; border-radius: 10px; border: 1px solid #2a3140; background: #151922; color: inherit; }
+    button { margin-top: 12px; padding: 12px 16px; border: 0; border-radius: 10px; background: #5b8cff; color: white; cursor: pointer; }
+    .muted { color: #9aa4b2; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Scan a public repository</h1>
+    <p class="muted">Anonymous AI privacy report — aggregated counts only, no file paths.</p>
+    <form id="scan-form">
+      <label for="url">Repository URL</label>
+      <input id="url" name="url" placeholder="https://github.com/org/repo" required>
+      <button type="submit">Scan</button>
+    </form>
+    <p id="status" class="muted"></p>
+  </main>
+  <script>
+    const form = document.getElementById('scan-form');
+    const status = document.getElementById('status');
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      status.textContent = 'Starting scan…';
+      const url = document.getElementById('url').value;
+      const response = await fetch('/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url })
+      });
+      if (!response.ok) {
+        status.textContent = 'Could not start scan.';
+        return;
+      }
+      const payload = await response.json();
+      window.location.href = '/scan/' + payload.jobID + '/page';
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,36 @@
+# Deploy from repository root:
+#   fly deploy --config Server/fly.toml
+# or:
+#   bash Scripts/deploy_scan_api.sh
+
+app = "offsend-scan"
+primary_region = "fra"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  HOST = "0.0.0.0"
+  JOB_WORKERS = "2"
+  CLONE_TIMEOUT_SECONDS = "120"
+  REPORT_TTL_SECONDS = "172800"
+  SCAN_WORK_DIR = "/tmp/offsend-scan"
+  REPORT_STORAGE_DIR = "/data/reports"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+
+[mounts]
+  source = "offsend_scan_data"
+  destination = "/data"
+  processes = ["app"]

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{title}}</title>
+  <style>
+    :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
+    body { margin: 0; background: #0b0d10; color: #e8eaed; }
+    main { max-width: 880px; margin: 0 auto; padding: 32px 20px 64px; }
+    .card { background: #151922; border: 1px solid #2a3140; border-radius: 16px; padding: 24px; margin-top: 20px; }
+    h1 { font-size: 1.75rem; margin: 0 0 8px; }
+    .muted { color: #9aa4b2; }
+    .score { font-size: 3rem; font-weight: 700; line-height: 1; margin: 12px 0 4px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #2a3140; }
+    .ok { color: #7ddea2; }
+    .bad { color: #ff8e8e; }
+    .warn { color: #ffd27d; }
+    code { background: #0b0d10; padding: 2px 6px; border-radius: 6px; }
+    ul { margin: 8px 0 0; padding-left: 20px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>{{title}}</h1>
+    <p class="muted">Repository: <code>{{repoURL}}</code></p>
+    <p class="muted">Job: <code>{{jobID}}</code> · Generated {{generatedAt}}</p>
+
+    <section class="card">
+      <div class="muted">Privacy score</div>
+      <div class="score">{{score}}</div>
+      <p class="muted">Aggregated exposure report — no file paths included.</p>
+      {{#scanComplete}}
+      <p>Scan completed.</p>
+      {{/scanComplete}}
+      {{^scanComplete}}
+      <p><span class="warn">Scan incomplete — exclude from statistics.</span></p>
+      {{/scanComplete}}
+    </section>
+
+    <section class="card">
+      <h2>AI ignore files</h2>
+      <table>
+        <thead><tr><th>Rule</th><th>Present</th></tr></thead>
+        <tbody>
+          {{#ignoreFiles}}
+          <tr><td><code>{{name}}</code></td><td class="{{cssClass}}">{{label}}</td></tr>
+          {{/ignoreFiles}}
+          {{^ignoreFiles}}
+          <tr><td colspan="2">No data</td></tr>
+          {{/ignoreFiles}}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>Exposed pattern types</h2>
+      <table>
+        <thead><tr><th>Pattern</th><th>Severity</th><th>Category</th><th>Count</th></tr></thead>
+        <tbody>
+          {{#patterns}}
+          <tr>
+            <td><code>{{id}}</code></td>
+            <td>{{severity}}</td>
+            <td>{{category}}</td>
+            <td>{{count}}</td>
+          </tr>
+          {{/patterns}}
+          {{^patterns}}
+          <tr><td colspan="4" class="ok">No exposed sensitive pattern types detected.</td></tr>
+          {{/patterns}}
+        </tbody>
+      </table>
+    </section>
+
+    {{#errors}}
+    <section class="card">
+      <h2>Errors</h2>
+      <ul>
+        {{#.}}
+        <li><code>{{.}}</code></li>
+        {{/.}}
+      </ul>
+    </section>
+    {{/errors}}
+  </main>
+</body>
+</html>
