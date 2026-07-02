@@ -3,10 +3,13 @@ import AppKit
 import SwiftUI
 
 @MainActor
-final class ClipboardStatusPanelController {
+final class ClipboardStatusPanelController: NSObject, NSPopoverDelegate {
     private let popover = NSPopover()
+    private var onClose: ((ClipboardStatusPanelController) -> Void)?
 
-    init(title: String, message: String, score: Int, onClose: @escaping () -> Void) {
+    init(title: String, message: String, score: Int, onClose: @escaping (ClipboardStatusPanelController) -> Void) {
+        self.onClose = onClose
+        super.init()
         let popover = self.popover
         popover.behavior = .transient
         popover.contentSize = NSSize(width: 320, height: 190)
@@ -17,10 +20,15 @@ final class ClipboardStatusPanelController {
                 score: score,
                 close: { [weak popover] in
                     popover?.performClose(nil)
-                    onClose()
                 }
             )
         )
+        popover.delegate = self
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        onClose?(self)
+        onClose = nil
     }
 
     func show(from statusItem: NSStatusItem) {
@@ -31,6 +39,10 @@ final class ClipboardStatusPanelController {
         if let button = statusItem.button {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .maxY)
         }
+    }
+
+    func close() {
+        popover.performClose(nil)
     }
 }
 

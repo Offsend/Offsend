@@ -4,7 +4,7 @@ public struct WatchedDirectory: Codable, Equatable, Identifiable, Sendable {
     public var id: UUID
     /// Display name; defaults to the root folder name when nil.
     public var displayName: String?
-    /// Security-scoped bookmark for sandbox-friendly access.
+    /// Bookmark that tracks the directory across moves/renames (see `WatchedDirectoryBookmark`).
     public var bookmarkData: Data
     /// Cached path for UI; updated on bookmark resolve (may be stale).
     public var resolvedPath: String?
@@ -60,19 +60,16 @@ public struct WatchedDirectoryBookmarkResolution: Sendable {
     }
 }
 
+/// Bookmarks track user-selected directories across moves/renames. The app is not sandboxed,
+/// so security-scoped access (`start/stopAccessingSecurityScopedResource`) is intentionally not used;
+/// `.withSecurityScope` is kept only so bookmark data persisted by earlier builds keeps resolving.
 public enum WatchedDirectoryBookmark {
     public enum Error: Swift.Error {
         case accessDenied
     }
 
     public static func make(from url: URL) throws -> Data {
-        let accessed = url.startAccessingSecurityScopedResource()
-        defer {
-            if accessed {
-                url.stopAccessingSecurityScopedResource()
-            }
-        }
-        return try url.bookmarkData(
+        try url.bookmarkData(
             options: .withSecurityScope,
             includingResourceValuesForKeys: nil,
             relativeTo: nil
@@ -87,13 +84,9 @@ public enum WatchedDirectoryBookmark {
             relativeTo: nil,
             bookmarkDataIsStale: &isStale
         )
-        guard url.startAccessingSecurityScopedResource() else {
-            throw Error.accessDenied
-        }
         return WatchedDirectoryBookmarkResolution(url: url, bookmarkWasStale: isStale)
     }
 
-    /// Refreshes bookmark bytes while security-scoped access is already active on `url`.
     public static func refreshBookmark(for url: URL) throws -> Data {
         try url.bookmarkData(
             options: .withSecurityScope,

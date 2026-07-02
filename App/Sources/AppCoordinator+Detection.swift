@@ -19,11 +19,13 @@ extension AppCoordinator {
 
     func runClipboardAssessment(for text: String, onComplete: @escaping @MainActor (DetectionResult, RiskAssessment) -> Void) {
         clipboardScanTask?.cancel()
+        clipboardScanGeneration += 1
+        let generation = clipboardScanGeneration
         clipboardScanTask = Task { [weak self] in
             guard let self else { return }
             isClipboardScanInProgress = true
             defer {
-                if !Task.isCancelled {
+                if clipboardScanGeneration == generation {
                     isClipboardScanInProgress = false
                 }
             }
