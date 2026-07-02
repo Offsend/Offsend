@@ -1,89 +1,381 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  {{>partial-head}}
   <title>{{title}}</title>
-  <style>
-    :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
-    body { margin: 0; background: #0b0d10; color: #e8eaed; }
-    main { max-width: 880px; margin: 0 auto; padding: 32px 20px 64px; }
-    .card { background: #151922; border: 1px solid #2a3140; border-radius: 16px; padding: 24px; margin-top: 20px; }
-    h1 { font-size: 1.75rem; margin: 0 0 8px; }
-    .muted { color: #9aa4b2; }
-    .score { font-size: 3rem; font-weight: 700; line-height: 1; margin: 12px 0 4px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #2a3140; }
-    .ok { color: #7ddea2; }
-    .bad { color: #ff8e8e; }
-    .warn { color: #ffd27d; }
-    code { background: #0b0d10; padding: 2px 6px; border-radius: 6px; }
-    ul { margin: 8px 0 0; padding-left: 20px; }
-  </style>
 </head>
-<body>
+<body class="page-report">
+  <div class="gridfx" aria-hidden="true"></div>
+  {{>partial-nav}}
+
   <main>
-    <h1>{{title}}</h1>
-    <p class="muted">Repository: <code>{{repoURL}}</code></p>
-    <p class="muted">Job: <code>{{jobID}}</code> · Generated {{generatedAt}}</p>
+    <div class="container">
+      <header class="page-header">
+        <div class="page-header-row">
+          <h1>{{title}}</h1>
+          <div class="page-header-actions">
+            <button type="button" class="btn btn-icon report-print" id="report-print" aria-label="Save to PDF" title="Save to PDF">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V2h12v7"></path><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+            </button>
+          </div>
+        </div>
+        <p>Repository: <code>{{repoURL}}</code> · Job <code>{{jobID}}</code> · Generated {{generatedAt}}</p>
+      </header>
 
-    <section class="card">
-      <div class="muted">Privacy score</div>
-      <div class="score">{{score}}</div>
-      <p class="muted">Aggregated exposure report — no file paths included.</p>
-      {{#scanComplete}}
-      <p>Scan completed.</p>
-      {{/scanComplete}}
-      {{^scanComplete}}
-      <p><span class="warn">Scan incomplete — exclude from statistics.</span></p>
-      {{/scanComplete}}
-    </section>
+      <div class="report-expiry" role="status" data-expires-at="{{expiresAtISO}}">
+        <span class="report-expiry-icon" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+        </span>
+        <span class="report-expiry-text">Checking availability…</span>
+      </div>
 
-    <section class="card">
-      <h2>AI ignore files</h2>
-      <table>
-        <thead><tr><th>Rule</th><th>Present</th></tr></thead>
-        <tbody>
-          {{#ignoreFiles}}
-          <tr><td><code>{{name}}</code></td><td class="{{cssClass}}">{{label}}</td></tr>
-          {{/ignoreFiles}}
-          {{^ignoreFiles}}
-          <tr><td colspan="2">No data</td></tr>
-          {{/ignoreFiles}}
-        </tbody>
-      </table>
-    </section>
+      <section class="card card-featured score-card">
+        <div class="muted">Privacy score</div>
+        <div class="score">{{score}}</div>
+        <div class="score-meter" aria-hidden="true"><div class="score-meter-fill"></div></div>
+        {{#scoreSummary}}
+        <p class="muted">{{scoreSummary}}</p>
+        {{/scoreSummary}}
+        <p class="muted">Aggregated exposure report — no file paths included.</p>
+        {{#scanComplete}}
+        <p>Scan completed.</p>
+        {{/scanComplete}}
+        {{^scanComplete}}
+        <p><span class="warn">Scan incomplete — treat this score as a lower bound; a full scan could find more issues.</span></p>
+        {{/scanComplete}}
+      </section>
 
-    <section class="card">
-      <h2>Exposed pattern types</h2>
-      <table>
-        <thead><tr><th>Pattern</th><th>Severity</th><th>Category</th><th>Count</th></tr></thead>
-        <tbody>
-          {{#patterns}}
-          <tr>
-            <td><code>{{id}}</code></td>
-            <td>{{severity}}</td>
-            <td>{{category}}</td>
-            <td>{{count}}</td>
-          </tr>
-          {{/patterns}}
-          {{^patterns}}
-          <tr><td colspan="4" class="ok">No exposed sensitive pattern types detected.</td></tr>
-          {{/patterns}}
-        </tbody>
-      </table>
-    </section>
+      <section class="card">
+        <div class="card-header-row">
+          <h2>How to fix</h2>
+          {{#hasFixes}}
+          <button type="button" class="btn btn-primary btn-sm fix-open" id="fix-open" aria-haspopup="dialog">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2-2 2.6-2.6z"></path></svg>
+            Fix it
+          </button>
+          {{/hasFixes}}
+        </div>
+        <div class="fix-list">
+          {{#fixes}}
+          <div class="fix-item">
+            <span class="badge badge-{{severityClass}}">{{severityLabel}}</span>
+            <div class="fix-item-body">
+              <div class="fix-item-title">{{title}}</div>
+              <p class="fix-item-detail">{{detail}}</p>
+            </div>
+          </div>
+          {{/fixes}}
+          {{^fixes}}
+          <p class="ok">No privacy issues found — nice work!</p>
+          {{/fixes}}
+        </div>
+      </section>
 
-    {{#errors}}
-    <section class="card">
-      <h2>Errors</h2>
-      <ul>
-        {{#.}}
-        <li><code>{{.}}</code></li>
-        {{/.}}
-      </ul>
-    </section>
-    {{/errors}}
+      <section class="card">
+        <h2>AI ignore &amp; exclude files</h2>
+        <p class="muted">These files stop AI tools and agents from reading matching paths. Missing entries here affect the privacy score above.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Tool</th><th>File</th><th>Severity</th><th>Present</th></tr></thead>
+            <tbody>
+              {{#protectionFiles}}
+              <tr>
+                <td>{{toolName}}</td>
+                <td><code>{{name}}</code></td>
+                <td><span class="badge badge-{{severityClass}}">{{severityLabel}}</span></td>
+                <td class="{{cssClass}}">{{label}}</td>
+              </tr>
+              {{/protectionFiles}}
+              {{^protectionFiles}}
+              <tr><td colspan="4">No data</td></tr>
+              {{/protectionFiles}}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Other AI context files</h2>
+        <p class="muted">Informational files that help AI tools understand your project. They don't block access on their own and don't affect the score.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Tool</th><th>File</th><th>Present</th></tr></thead>
+            <tbody>
+              {{#contextFiles}}
+              <tr>
+                <td>{{toolName}}</td>
+                <td><code>{{name}}</code></td>
+                <td class="{{cssClass}}">{{label}}</td>
+              </tr>
+              {{/contextFiles}}
+              {{^contextFiles}}
+              <tr><td colspan="3">No data</td></tr>
+              {{/contextFiles}}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Exposed pattern types</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Pattern</th><th>Severity</th><th>Category</th><th>Count</th></tr></thead>
+            <tbody>
+              {{#patterns}}
+              <tr>
+                <td>{{title}} <code>{{id}}</code></td>
+                <td><span class="badge badge-{{severityClass}}">{{severityLabel}}</span></td>
+                <td>{{category}}</td>
+                <td>{{count}}</td>
+              </tr>
+              {{/patterns}}
+              {{^patterns}}
+              <tr><td colspan="4" class="ok">No exposed sensitive pattern types detected.</td></tr>
+              {{/patterns}}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {{#errors}}
+      <section class="card">
+        <h2>Errors</h2>
+        <ul>
+          {{#.}}
+          <li><code>{{.}}</code></li>
+          {{/.}}
+        </ul>
+      </section>
+      {{/errors}}
+    </div>
   </main>
+
+  {{#hasFixes}}
+  <script type="application/json" id="fix-files-data">{{{fixFilesJSON}}}</script>
+  <div class="fix-modal" id="fix-modal" hidden>
+    <button type="button" class="fix-modal-backdrop" id="fix-modal-backdrop" aria-label="Close"></button>
+    <div class="fix-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="fix-modal-title">
+      <div class="fix-modal-head">
+        <h2 id="fix-modal-title">Fix it</h2>
+        <button type="button" class="fix-modal-close" id="fix-modal-close" aria-label="Close">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+      <p class="fix-modal-lead">Pick your platform, then run the command from the root of your repository. It creates the files needed to fix the issues found in this scan.</p>
+      <div class="fix-platforms" role="tablist" aria-label="Platform">
+        <button type="button" class="fix-platform" role="tab" data-platform="macos" aria-selected="true">macOS</button>
+        <button type="button" class="fix-platform" role="tab" data-platform="linux" aria-selected="false">Linux</button>
+        <button type="button" class="fix-platform" role="tab" data-platform="windows" aria-selected="false">Windows</button>
+      </div>
+      <div class="fix-command-wrap">
+        <button type="button" class="btn btn-sm fix-copy" id="fix-copy">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+          <span class="fix-copy-label">Copy</span>
+        </button>
+        <pre class="fix-command"><code id="fix-command-code"></code></pre>
+      </div>
+      <p class="fix-modal-hint" id="fix-shell-hint"></p>
+    </div>
+  </div>
+  {{/hasFixes}}
+
+  {{>partial-footer}}
+  {{>partial-scripts}}
+  <script>
+    (function () {
+      const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      // Save to PDF via the browser print dialog.
+      const printBtn = document.getElementById('report-print');
+      if (printBtn) {
+        printBtn.addEventListener('click', () => window.print());
+      }
+
+      // Animated privacy score + meter fill, colored by result.
+      const scoreEl = document.querySelector('.score');
+      const meterFill = document.querySelector('.score-meter-fill');
+      const match = scoreEl && scoreEl.textContent.trim().match(/^(\d+)\s*\/\s*(\d+)/);
+      if (scoreEl && match) {
+        const target = parseInt(match[1], 10);
+        const max = parseInt(match[2], 10) || 100;
+        const suffix = '/' + max;
+        const pct = Math.max(0, Math.min(100, (target / max) * 100));
+        const tone = pct >= 80 ? 'is-good' : pct >= 50 ? 'is-mid' : 'is-bad';
+        scoreEl.classList.add(tone);
+        if (meterFill) meterFill.classList.add(tone);
+
+        const setValue = (v) => { scoreEl.textContent = v + suffix; };
+
+        if (reduceMotion) {
+          setValue(target);
+          if (meterFill) meterFill.style.width = pct + '%';
+        } else {
+          setValue(0);
+          requestAnimationFrame(() => { if (meterFill) meterFill.style.width = pct + '%'; });
+          const duration = 1100;
+          const start = performance.now();
+          const ease = (t) => 1 - Math.pow(1 - t, 3);
+          const tick = (now) => {
+            const t = Math.min(1, (now - start) / duration);
+            setValue(Math.round(ease(t) * target));
+            if (t < 1) requestAnimationFrame(tick);
+            else setValue(target);
+          };
+          requestAnimationFrame(tick);
+        }
+      } else if (meterFill) {
+        meterFill.parentElement.hidden = true;
+      }
+
+      // Countdown until the report is purged and stops being reachable.
+      const expiryEl = document.querySelector('.report-expiry');
+      const textEl = expiryEl && expiryEl.querySelector('.report-expiry-text');
+      const iso = expiryEl && expiryEl.getAttribute('data-expires-at');
+      const expiresAt = iso ? Date.parse(iso) : NaN;
+      if (expiryEl && textEl && !isNaN(expiresAt)) {
+        const fmt = (ms) => {
+          const s = Math.floor(ms / 1000);
+          const d = Math.floor(s / 86400);
+          const h = Math.floor((s % 86400) / 3600);
+          const m = Math.floor((s % 3600) / 60);
+          const sec = s % 60;
+          const parts = [];
+          if (d) parts.push(d + 'd');
+          if (d || h) parts.push(h + 'h');
+          parts.push(m + 'm');
+          parts.push(sec + 's');
+          return parts.join(' ');
+        };
+        let timer;
+        const update = () => {
+          const remaining = expiresAt - Date.now();
+          if (remaining <= 0) {
+            expiryEl.classList.add('is-expired');
+            textEl.innerHTML = 'This report is no longer available — <a class="link" href="/">run a new scan</a>.';
+            if (timer) clearInterval(timer);
+            return;
+          }
+          textEl.innerHTML = 'Available for <strong>' + fmt(remaining) + '</strong>';
+        };
+        update();
+        timer = setInterval(update, 1000);
+      } else if (expiryEl) {
+        expiryEl.hidden = true;
+      }
+
+      // "Fix it": show a per-platform command that recreates the missing/incomplete
+      // AI ignore files locally, built from the fix files embedded in the page.
+      const fixOpen = document.getElementById('fix-open');
+      const fixModal = document.getElementById('fix-modal');
+      const fixDataEl = document.getElementById('fix-files-data');
+      if (fixOpen && fixModal && fixDataEl) {
+        let files = [];
+        try { files = JSON.parse(fixDataEl.textContent || '[]'); } catch (e) { files = []; }
+
+        const codeEl = document.getElementById('fix-command-code');
+        const hintEl = document.getElementById('fix-shell-hint');
+        const copyBtn = document.getElementById('fix-copy');
+        const copyLabel = copyBtn && copyBtn.querySelector('.fix-copy-label');
+        const platformBtns = Array.from(fixModal.querySelectorAll('.fix-platform'));
+
+        const hints = {
+          macos: 'Run in Terminal (bash or zsh).',
+          linux: 'Run in your shell (bash or sh).',
+          windows: 'Run in PowerShell.',
+        };
+
+        // POSIX heredoc: quoted delimiter keeps contents literal (no expansion).
+        const posixCommand = (list) =>
+          list
+            .map((f) => {
+              const dir = f.path.includes('/') ? f.path.replace(/\/[^/]*$/, '') : '';
+              const mkdir = dir ? "mkdir -p '" + dir + "'\n" : '';
+              const body = (f.contents || '').replace(/\n$/, '');
+              return mkdir + "cat > '" + f.path + "' <<'OFFSEND_EOF'\n" + body + "\nOFFSEND_EOF";
+            })
+            .join('\n\n');
+
+        // PowerShell here-string: literal @' ... '@ block, closing marker at column 0.
+        const powershellCommand = (list) =>
+          list
+            .map((f) => {
+              const dir = f.path.includes('/') ? f.path.replace(/\/[^/]*$/, '') : '';
+              const mkdir = dir
+                ? 'New-Item -ItemType Directory -Force -Path "' + dir + '" | Out-Null\n'
+                : '';
+              const body = (f.contents || '').replace(/\n$/, '');
+              return (
+                mkdir +
+                "Set-Content -NoNewline -Path '" +
+                f.path +
+                "' -Value @'\n" +
+                body +
+                "\n'@"
+              );
+            })
+            .join('\n\n');
+
+        const commandFor = (platform) =>
+          platform === 'windows' ? powershellCommand(files) : posixCommand(files);
+
+        let current = 'macos';
+        const selectPlatform = (platform) => {
+          current = platform;
+          platformBtns.forEach((btn) => {
+            const active = btn.dataset.platform === platform;
+            btn.setAttribute('aria-selected', active ? 'true' : 'false');
+            btn.classList.toggle('is-active', active);
+          });
+          if (codeEl) codeEl.textContent = commandFor(platform);
+          if (hintEl) hintEl.textContent = hints[platform] || '';
+          if (copyLabel) copyLabel.textContent = 'Copy';
+        };
+
+        platformBtns.forEach((btn) => {
+          btn.addEventListener('click', () => selectPlatform(btn.dataset.platform));
+        });
+
+        const openModal = () => {
+          selectPlatform(current);
+          fixModal.hidden = false;
+          document.body.style.overflow = 'hidden';
+        };
+        const closeModal = () => {
+          fixModal.hidden = true;
+          document.body.style.overflow = '';
+          fixOpen.focus();
+        };
+
+        fixOpen.addEventListener('click', openModal);
+        document.getElementById('fix-modal-close').addEventListener('click', closeModal);
+        document.getElementById('fix-modal-backdrop').addEventListener('click', closeModal);
+        document.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape' && !fixModal.hidden) closeModal();
+        });
+
+        if (copyBtn) {
+          copyBtn.addEventListener('click', async () => {
+            const text = codeEl ? codeEl.textContent : '';
+            try {
+              await navigator.clipboard.writeText(text);
+            } catch (e) {
+              const range = document.createRange();
+              range.selectNodeContents(codeEl);
+              const sel = window.getSelection();
+              sel.removeAllRanges();
+              sel.addRange(range);
+              document.execCommand('copy');
+              sel.removeAllRanges();
+            }
+            if (copyLabel) {
+              copyLabel.textContent = 'Copied';
+              setTimeout(() => { copyLabel.textContent = 'Copy'; }, 1600);
+            }
+          });
+        }
+      }
+    })();
+  </script>
 </body>
 </html>

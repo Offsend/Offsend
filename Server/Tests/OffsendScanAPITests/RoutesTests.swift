@@ -37,8 +37,40 @@ final class RoutesTests: XCTestCase {
                 XCTAssertEqual(response.status, .ok)
                 XCTAssertEqual(response.headers[.contentType], "text/html; charset=utf-8")
                 let body = String(buffer: response.body)
-                XCTAssertTrue(body.contains("Scan a public repository"))
+                XCTAssertTrue(body.contains("See what AI can read while you build | Offsend Check"))
+                XCTAssertTrue(body.contains("name=\"description\""))
+                XCTAssertTrue(body.contains("rel=\"canonical\""))
+                XCTAssertTrue(body.contains("property=\"og:title\""))
+                XCTAssertTrue(body.contains("application/ld+json"))
+                XCTAssertTrue(body.contains("See what AI can read"))
                 XCTAssertTrue(body.contains("fetch('/scan'"))
+                XCTAssertTrue(body.contains("topnav"))
+                XCTAssertTrue(body.contains("/assets/site.css"))
+            }
+        }
+    }
+
+    func testRobotsTxtDisallowsScanAndReportPaths() async throws {
+        let app = makeApp()
+        try await app.test(.router) { client in
+            try await client.execute(uri: "/robots.txt", method: .get) { response in
+                XCTAssertEqual(response.status, .ok)
+                XCTAssertEqual(response.headers[.contentType], "text/plain; charset=utf-8")
+                let body = String(buffer: response.body)
+                XCTAssertTrue(body.contains("Disallow: /r/"))
+                XCTAssertTrue(body.contains("Disallow: /scan/"))
+            }
+        }
+    }
+
+    func testStaticAssetsServeCSS() async throws {
+        let app = makeApp()
+        try await app.test(.router) { client in
+            try await client.execute(uri: "/assets/site.css", method: .get) { response in
+                XCTAssertEqual(response.status, .ok)
+                XCTAssertEqual(response.headers[.contentType], "text/css; charset=utf-8")
+                let body = String(buffer: response.body)
+                XCTAssertTrue(body.contains("--brand-blue"))
             }
         }
     }
@@ -162,10 +194,27 @@ final class RoutesTests: XCTestCase {
                 XCTAssertEqual(response.headers[.contentType], "text/html; charset=utf-8")
                 let body = String(buffer: response.body)
                 XCTAssertTrue(body.contains("job-abc"))
-                XCTAssertTrue(body.contains("Scan in progress"))
+                XCTAssertTrue(body.contains("Scanning…"))
+                XCTAssertTrue(body.contains("noindex, nofollow"))
             }
         }
     }
+
+    #if DEBUG
+    func testPollingPreviewPageReturnsHTML() async throws {
+        let app = makeApp()
+        try await app.test(.router) { client in
+            try await client.execute(uri: "/scan/page", method: .get) { response in
+                XCTAssertEqual(response.status, .ok)
+                XCTAssertEqual(response.headers[.contentType], "text/html; charset=utf-8")
+                let body = String(buffer: response.body)
+                XCTAssertTrue(body.contains("Scanning…"))
+                XCTAssertTrue(body.contains("previewStatuses"))
+                XCTAssertFalse(body.contains("fetch('/scan/'"))
+            }
+        }
+    }
+    #endif
 
     func testReportReturnsHTMLForCompletedJob() async throws {
         let jobStore = JobStore(ttl: .seconds(3600))
@@ -214,6 +263,72 @@ final class RoutesTests: XCTestCase {
         let app = makeApp()
         try await app.test(.router) { client in
             try await client.execute(uri: "/r/missing", method: .get) { response in
+                XCTAssertEqual(response.status, .notFound)
+            }
+        }
+    }
+
+    func testFixArchiveReturnsZipForCompletedJob() async throws {
+        let jobStore = JobStore(ttl: .seconds(3600))
+        _ = await jobStore.create(id: "job-1", repoURL: "https://github.com/org/repo")
+        await jobStore.markCompleted(
+            "job-1",
+            reportJSON: TestSupport.sampleReportJSON(ignoreFiles: ["cursor-ignore": false]),
+            reportHTMLKey: "reports/job-1.html"
+        )
+        let app = makeApp(jobStore: jobStore)
+
+        try await app.test(.router) { client in
+            try await client.execute(uri: "/r/job-1/fix", method: .get) { response in
+                XCTAssertEqual(response.status, .ok)
+                XCTAssertEqual(response.headers[.contentType], "application/zip")
+                XCTAssertEqual(
+                    response.headers[.contentDisposition],
+                    "attachment; filename=\"offsend-fix.zip\""
+                )
+                let bytes = [UInt8](buffer: response.body)
+                XCTAssertEqual(Array(bytes.prefix(4)), [0x50, 0x4b, 0x03, 0x04])
+            }
+        }
+    }
+
+    func testFixArchiveReturns404WhenNothingToFix() async throws {
+        let jobStore = JobStore(ttl: .seconds(3600))
+        _ = await jobStore.create(id: "job-1", repoURL: "https://github.com/org/repo")
+        await jobStore.markCompleted(
+            "job-1",
+            reportJSON: TestSupport.sampleReportJSON(
+                ignoreFiles: ["cursor-ignore": true],
+                exposedPatterns: [],
+                exposedFiles: 0
+            ),
+            reportHTMLKey: "reports/job-1.html"
+        )
+        let app = makeApp(jobStore: jobStore)
+
+        try await app.test(.router) { client in
+            try await client.execute(uri: "/r/job-1/fix", method: .get) { response in
+                XCTAssertEqual(response.status, .notFound)
+            }
+        }
+    }
+
+    func testFixArchiveReturns409WhenJobNotCompleted() async throws {
+        let jobStore = JobStore(ttl: .seconds(3600))
+        _ = await jobStore.create(id: "job-1", repoURL: "https://github.com/org/repo")
+        let app = makeApp(jobStore: jobStore)
+
+        try await app.test(.router) { client in
+            try await client.execute(uri: "/r/job-1/fix", method: .get) { response in
+                XCTAssertEqual(response.status, .conflict)
+            }
+        }
+    }
+
+    func testFixArchiveReturns404ForMissingJob() async throws {
+        let app = makeApp()
+        try await app.test(.router) { client in
+            try await client.execute(uri: "/r/missing/fix", method: .get) { response in
                 XCTAssertEqual(response.status, .notFound)
             }
         }

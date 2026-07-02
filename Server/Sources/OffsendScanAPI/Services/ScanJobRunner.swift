@@ -17,6 +17,7 @@ struct ScanServices: @unchecked Sendable {
     let workDirectory: URL
     let toolVersion: String
     let logger: Logger
+    var reportTTL: Duration = .seconds(172_800)
 }
 
 /// Type-erased report storage so job handlers stay Sendable.
@@ -54,7 +55,8 @@ enum ScanJobRunner {
                 jobID: parameters.jobID,
                 repoURL: normalized.absoluteString,
                 reportJSON: reportJSON,
-                generatedAt: Date()
+                generatedAt: Date(),
+                reportTTL: services.reportTTL
             )
             let storageKey = try await services.reportStorage.storeHTML(jobID: parameters.jobID, html: html)
             await services.jobStore.markCompleted(parameters.jobID, reportJSON: reportJSON, reportHTMLKey: storageKey)

@@ -37,7 +37,8 @@ enum ApplicationBuilder {
             htmlTemplates: htmlTemplates,
             workDirectory: config.scanWorkDirectory,
             toolVersion: config.toolVersion,
-            logger: logger
+            logger: logger,
+            reportTTL: config.reportTTL
         )
 
         let (pushScanJob, processorService) = try await makeJobQueue(

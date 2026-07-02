@@ -1,7 +1,6 @@
 .DS_Store
 Derived/
 Tuist/.build/
-Server/.build/
 Tuist/Dependencies/
 *.xcodeproj
 *.xcworkspace

@@ -12,19 +12,64 @@ final class ReportHTMLRendererTests: XCTestCase {
     func testRendersHTMLFromReportJSON() throws {
         let json = TestSupport.sampleReportJSON()
         let html = try render(json: json)
+        XCTAssertTrue(html.contains("noindex, nofollow"))
         XCTAssertTrue(html.contains("env-files"))
-        XCTAssertTrue(html.contains("cursor-ignore"))
+        XCTAssertTrue(html.contains(".cursorignore"))
         XCTAssertTrue(html.contains("Privacy score"))
+        XCTAssertTrue(html.contains("How to fix"))
     }
 
     func testRendersPrivacyScore() throws {
+        // cursor-ignore present (required, no penalty), claude-ignore missing (recommended
+        // gating rule, -3), one required-severity exposed pattern (-25). 100 - 3 - 25 = 72.
         let json = TestSupport.sampleReportJSON(
-            ignoreFiles: ["cursor-ignore": true, "claude-ignore": false],
-            exposedFiles: 2
+            ignoreFiles: ["cursor-ignore": true, "claude-ignore": false]
         )
         let html = try render(json: json)
-        // ignoreRatio=0.5 -> 35, exposure penalty=2 -> ~29.4, total ~64
-        XCTAssertTrue(html.contains("64/100"))
+        XCTAssertTrue(html.contains("72/100"))
+    }
+
+    func testScorePenalizesExposedSecretsRegardlessOfIgnoreFiles() throws {
+        // Even with every gating ignore file present, a required-severity exposed secret
+        // must still cost real points — the score can't be "checkbox-only".
+        let allPresent = Dictionary(
+            uniqueKeysWithValues: ["cursor-ignore", "claude-ignore", "copilot-exclude"].map { ($0, true) }
+        )
+        let json = TestSupport.sampleReportJSON(ignoreFiles: allPresent)
+        let html = try render(json: json)
+        XCTAssertTrue(html.contains("75/100"), "expected 100 - 25 (required exposed pattern) = 75")
+    }
+
+    func testScoreIs100WhenNoIssues() throws {
+        let json = TestSupport.sampleReportJSON(
+            ignoreFiles: ["cursor-ignore": true],
+            exposedPatterns: [],
+            exposedFiles: 0
+        )
+        let html = try render(json: json)
+        XCTAssertTrue(html.contains("100/100"))
+        XCTAssertTrue(html.contains("No privacy issues found"))
+    }
+
+    func testShowsFixItButtonWithEmbeddedFilesWhenFixesExist() throws {
+        let json = TestSupport.sampleReportJSON(ignoreFiles: ["cursor-ignore": false])
+        let html = try render(json: json)
+        XCTAssertTrue(html.contains("Fix it"))
+        XCTAssertTrue(html.contains("id=\"fix-open\""))
+        // The command modal builds itself from the fix files embedded in the page.
+        XCTAssertTrue(html.contains("id=\"fix-files-data\""))
+        XCTAssertTrue(html.contains(".cursorignore"))
+    }
+
+    func testHidesFixItButtonWhenNoFixes() throws {
+        let json = TestSupport.sampleReportJSON(
+            ignoreFiles: ["cursor-ignore": true],
+            exposedPatterns: [],
+            exposedFiles: 0
+        )
+        let html = try render(json: json)
+        XCTAssertFalse(html.contains("id=\"fix-open\""))
+        XCTAssertFalse(html.contains("id=\"fix-files-data\""))
     }
 
     func testRendersQuestionMarkScoreForInvalidJSON() throws {
@@ -86,6 +131,31 @@ final class ReportHTMLRendererTests: XCTestCase {
         XCTAssertTrue(html.contains(">missing<"))
         XCTAssertTrue(html.contains("class=\"ok\""))
         XCTAssertTrue(html.contains("class=\"bad\""))
+    }
+
+    func testSplitsGatingAndContextIgnoreFiles() throws {
+        let json = TestSupport.sampleReportJSON(
+            ignoreFiles: ["cursor-ignore": true, "git-ignore": true]
+        )
+        let html = try render(json: json)
+        XCTAssertTrue(html.contains("AI ignore"))
+        XCTAssertTrue(html.contains("exclude files"))
+        XCTAssertTrue(html.contains("Other AI context files"))
+        XCTAssertTrue(html.contains(".cursorignore"))
+        XCTAssertTrue(html.contains(".gitignore"))
+    }
+
+    func testHowToFixSurfacesRemediationText() throws {
+        let json = TestSupport.sampleReportJSON(
+            ignoreFiles: ["cursor-ignore": false],
+            exposedPatterns: [
+                ["id": "env-files", "severity": "required", "category": "secret", "count": 2],
+            ]
+        )
+        let html = try render(json: json)
+        XCTAssertTrue(html.contains("Environment files exposed"))
+        XCTAssertTrue(html.contains("Ignore .env and .env.* files."))
+        XCTAssertTrue(html.contains("Add .cursorignore for Cursor"))
     }
 
     func testIncludesJobAndRepositoryMetadata() throws {

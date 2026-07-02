@@ -15,13 +15,14 @@ struct HTMLTemplateRenderer: Sendable {
         }
         var library = MustacheLibrary()
         var loadedCount = 0
-        let files = try FileManager.default.contentsOfDirectory(
+        let enumerator = FileManager.default.enumerator(
             at: baseURL,
-            includingPropertiesForKeys: nil
+            includingPropertiesForKeys: [.isRegularFileKey]
         )
-        for file in files where file.pathExtension == "mustache" {
-            let name = file.deletingPathExtension().lastPathComponent
-            let contents = try String(contentsOf: file, encoding: .utf8)
+        while let fileURL = enumerator?.nextObject() as? URL {
+            guard fileURL.pathExtension == "mustache" else { continue }
+            let name = fileURL.deletingPathExtension().lastPathComponent
+            let contents = try String(contentsOf: fileURL, encoding: .utf8)
             try library.register(contents, named: name)
             loadedCount += 1
         }
@@ -31,27 +32,52 @@ struct HTMLTemplateRenderer: Sendable {
         return HTMLTemplateRenderer(library: library)
     }
 
-    func landingPage() throws -> String {
-        try render(named: "landing", context: [:] as [String: String])
+    func landingPage(siteURL: String) throws -> String {
+        var context = pageContext()
+        for (key, value) in PageMetadata.landingContext(siteURL: siteURL) {
+            context[key] = value
+        }
+        return try render(named: "landing", context: context)
     }
 
     func pollingPage(jobID: String) throws -> String {
-        try render(named: "polling", context: ["jobID": jobID])
+        try render(named: "polling", context: pageContext(["jobID": jobID], noindex: true))
+    }
+
+    func pollingPreviewPage() throws -> String {
+        try render(named: "polling", context: pageContext(noindex: true, debug: true))
     }
 
     func report(
         jobID: String,
         repoURL: String,
         reportJSON: String,
-        generatedAt: Date
+        generatedAt: Date,
+        reportTTL: Duration = .seconds(172_800)
     ) throws -> String {
-        let context = ReportHTMLRenderer.makeContext(
+        var context = ReportHTMLRenderer.makeContext(
             jobID: jobID,
             repoURL: repoURL,
             reportJSON: reportJSON,
-            generatedAt: generatedAt
+            generatedAt: generatedAt,
+            reportTTL: reportTTL
         )
+        context.navScanActive = true
         return try render(named: "report", context: context)
+    }
+
+    private func pageContext(_ values: [String: String] = [:], noindex: Bool = false, debug: Bool = false) -> [String: Any] {
+        var context: [String: Any] = ["navScanActive": true]
+        if noindex {
+            context["noindex"] = true
+        }
+        if debug {
+            context["debug"] = true
+        }
+        for (key, value) in values where !value.isEmpty {
+            context[key] = value
+        }
+        return context
     }
 
     private func render(named template: String, context: Any) throws -> String {

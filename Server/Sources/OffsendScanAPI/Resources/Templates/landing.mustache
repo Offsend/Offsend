@@ -1,32 +1,114 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Offsend Repository Scan</title>
-  <style>
-    body { font-family: ui-sans-serif, system-ui, sans-serif; background: #0b0d10; color: #e8eaed; margin: 0; }
-    main { max-width: 720px; margin: 48px auto; padding: 0 20px; }
-    input, button { font: inherit; }
-    input { width: 100%; box-sizing: border-box; padding: 12px; border-radius: 10px; border: 1px solid #2a3140; background: #151922; color: inherit; }
-    button { margin-top: 12px; padding: 12px 16px; border: 0; border-radius: 10px; background: #5b8cff; color: white; cursor: pointer; }
-    .muted { color: #9aa4b2; }
-  </style>
+  {{>partial-head}}
+  <title>{{ogTitle}}</title>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebApplication",
+        "name": "Offsend Repository Scan",
+        "description": "{{metaDescription}}",
+        "url": "{{canonicalURL}}",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Any",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
+        "provider": {
+          "@type": "Organization",
+          "name": "Offsend",
+          "url": "https://offsend.io/"
+        }
+      },
+      {
+        "@type": "Organization",
+        "name": "Offsend",
+        "url": "https://offsend.io/",
+        "sameAs": [
+          "https://github.com/Offsend"
+        ]
+      }
+    ]
+  }
+  </script>
 </head>
-<body>
+<body class="page-landing">
+  <div class="gridfx" aria-hidden="true"></div>
+  {{>partial-nav}}
+
   <main>
-    <h1>Scan a public repository</h1>
-    <p class="muted">Anonymous AI privacy report — aggregated counts only, no file paths.</p>
-    <form id="scan-form">
-      <label for="url">Repository URL</label>
-      <input id="url" name="url" placeholder="https://github.com/org/repo" required>
-      <button type="submit">Scan</button>
-    </form>
-    <p id="status" class="muted"></p>
+    <section class="hero hero--scan">
+      <div class="hero-orb" aria-hidden="true"></div>
+      <div class="container">
+        <h1 class="headline">See what AI can read<br/>while you build.</h1>
+        <p class="lede">Scan a GitHub repository for exposed secrets, configs,<br/>and missing AI ignore rules.</p>
+
+        <form id="scan-form" class="scan-form">
+          <div class="scan-form-combo">
+            <input id="url" name="url" type="url" placeholder="https://github.com/org/repo" required aria-label="Repository URL">
+            <button type="submit" class="btn btn-primary" disabled>Check</button>
+          </div>
+        </form>
+
+        <ul class="hero-trust" aria-label="Scan guarantees">
+          <li class="hero-trust-item">
+            <span class="hero-trust-icon" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                <polyline points="22 4 12 14.01 9 11.01"/>
+              </svg>
+            </span>
+            Free scan
+          </li>
+          <li class="hero-trust-item">
+            <span class="hero-trust-icon" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                <circle cx="9" cy="7" r="4"/>
+                <line x1="17" y1="8" x2="22" y2="13"/>
+                <line x1="22" y1="8" x2="17" y2="13"/>
+              </svg>
+            </span>
+            No signup
+          </li>
+          <li class="hero-trust-item">
+            <span class="hero-trust-icon" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+                <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+                <line x1="1" y1="1" x2="23" y2="23"/>
+              </svg>
+            </span>
+            Full file paths stay hidden
+          </li>
+        </ul>
+
+        <p id="status" class="status-text"></p>
+
+      </div>
+    </section>
   </main>
+
+  {{>partial-footer}}
+  {{>partial-scripts}}
   <script>
     const form = document.getElementById('scan-form');
     const status = document.getElementById('status');
+    const urlInput = document.getElementById('url');
+    const submitButton = form.querySelector('button[type="submit"]');
+
+    const syncSubmitState = () => {
+      submitButton.disabled = urlInput.value.trim() === '';
+    };
+
+    urlInput.addEventListener('input', syncSubmitState);
+    syncSubmitState();
+
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
       status.textContent = 'Starting scan…';

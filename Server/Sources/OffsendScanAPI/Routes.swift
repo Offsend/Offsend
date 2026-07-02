@@ -10,8 +10,35 @@ enum Routes {
             "ok"
         }
 
-        router.get("/") { _, _ in
-            let html = try templates.landingPage()
+        router.get("/robots.txt") { _, _ in
+            Response(
+                status: .ok,
+                headers: [.contentType: "text/plain; charset=utf-8"],
+                body: .init(byteBuffer: .init(string: PageMetadata.robotsTXT))
+            )
+        }
+
+        router.get("/favicon.ico") { _, _ in
+            do {
+                return try StaticAssets.response(for: "favicon.ico")
+            } catch StaticAssets.LoadError.notFound {
+                throw HTTPError(.notFound)
+            }
+        }
+
+        router.get("/assets/:filename") { _, context in
+            guard let filename = context.parameters.get("filename") else {
+                throw HTTPError(.badRequest)
+            }
+            do {
+                return try StaticAssets.response(for: filename)
+            } catch StaticAssets.LoadError.notFound {
+                throw HTTPError(.notFound)
+            }
+        }
+
+        router.get("/") { request, _ in
+            let html = try templates.landingPage(siteURL: PageMetadata.siteURL(from: request))
             return Response(
                 status: .ok,
                 headers: [.contentType: "text/html; charset=utf-8"],
@@ -73,6 +100,17 @@ enum Routes {
                 body: .init(byteBuffer: buffer)
             )
         }
+
+        #if DEBUG
+        router.get("/scan/page") { _, _ in
+            let html = try templates.pollingPreviewPage()
+            return Response(
+                status: .ok,
+                headers: [.contentType: "text/html; charset=utf-8"],
+                body: .init(byteBuffer: .init(string: html))
+            )
+        }
+        #endif
 
         router.get("/scan/:id/page") { _, context in
             guard let id = context.parameters.get("id") else {
