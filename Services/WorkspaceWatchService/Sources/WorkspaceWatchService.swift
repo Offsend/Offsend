@@ -77,7 +77,6 @@ public final class WorkspaceWatchService {
     private func stopWatchingOnQueue() {
         for (id, ctx) in contexts {
             tearDownStream(ctx)
-            ctx.url.stopAccessingSecurityScopedResource()
             contexts.removeValue(forKey: id)
         }
         rootsByID.removeAll()
@@ -86,7 +85,6 @@ public final class WorkspaceWatchService {
     }
 
     private func startStreamOnQueue(id: UUID, url: URL) {
-        _ = url.startAccessingSecurityScopedResource()
         let watchURL = url.standardizedFileURL.resolvingSymlinksInPath()
 
         let callbackContext = StreamCallbackContext(service: self, watchID: id)

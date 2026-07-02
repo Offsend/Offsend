@@ -3,7 +3,7 @@ import Foundation
 public struct HookedRepository: Codable, Equatable, Identifiable, Sendable {
     public var id: UUID
     public var displayName: String?
-    /// Security-scoped bookmark for the git repository root.
+    /// Bookmark that tracks the git repository root across moves/renames (see `WatchedDirectoryBookmark`).
     public var bookmarkData: Data
     /// Cached path for UI; updated on bookmark resolve (may be stale).
     public var resolvedPath: String?

@@ -161,6 +161,8 @@ final class AppCoordinator: ObservableObject {
     private var lastAppliedDirectoryWatchSnapshot: DirectoryWatchSettingsSnapshot
     var aiModelDownloadTask: Task<Void, Never>?
     var clipboardScanTask: Task<Void, Never>?
+    /// Identifies the latest clipboard scan so stale (cancelled) scans never clear `isClipboardScanInProgress` for a newer one.
+    var clipboardScanGeneration = 0
 
     init() {
         var store: LocalStoring
@@ -348,8 +350,7 @@ final class AppCoordinator: ObservableObject {
                 usedCachedScan: false
             ))
             handleSafePaste(
-                snapshot: ClipboardAssessmentSnapshot(text: text, detection: detection, assessment: assessment),
-                showsPopupForNewRisk: true
+                snapshot: ClipboardAssessmentSnapshot(text: text, detection: detection, assessment: assessment)
             )
         }
     }
@@ -438,11 +439,13 @@ final class AppCoordinator: ObservableObject {
         let result = maskingEngine.mask(text: originalText, entities: entities, ttl: effectiveMappingTTL)
         do {
             try store.saveMapping(result)
-            try refreshMappingSummaries()
-            analytics.track(.maskApplied)
         } catch {
+            // Without a persisted mapping the placeholders can never be restored, so abort instead of pasting.
             lastStatusMessage = OffsendStrings.statusCouldNotSaveMapping(error.localizedDescription)
+            return
         }
+        try? refreshMappingSummaries()
+        analytics.track(.maskApplied)
 
         if pasteService.canPasteIntoActiveApp {
             pasteText(result.maskedText)
@@ -474,7 +477,13 @@ final class AppCoordinator: ObservableObject {
 
     func copySafeVersion(originalText: String, entities: [SensitiveEntity]) {
         let result = maskingEngine.mask(text: originalText, entities: entities, ttl: effectiveMappingTTL)
-        try? store.saveMapping(result)
+        do {
+            try store.saveMapping(result)
+        } catch {
+            // Without a persisted mapping the placeholders can never be restored, so abort instead of copying.
+            lastStatusMessage = OffsendStrings.statusCouldNotSaveMapping(error.localizedDescription)
+            return
+        }
         try? refreshMappingSummaries()
         clipboardService.writeString(result.maskedText)
         analytics.track(.maskApplied)
@@ -1050,7 +1059,7 @@ final class AppCoordinator: ObservableObject {
         return snapshot
     }
 
-    private func handleSafePaste(snapshot: ClipboardAssessmentSnapshot, showsPopupForNewRisk: Bool = false) {
+    private func handleSafePaste(snapshot: ClipboardAssessmentSnapshot) {
         guard snapshot.hasRisk else {
             clipboardAssessmentStatus = .safe
             if let statusOverride = handleNoRiskClipboardText(snapshot.text) {
@@ -1063,18 +1072,13 @@ final class AppCoordinator: ObservableObject {
 
         clipboardAssessmentStatus = resolvedClipboardAssessmentStatus(for: snapshot.detection, assessment: snapshot.assessment)
 
-        guard !showsPopupForNewRisk else {
-            showSafePastePopup(
-                originalText: snapshot.detection.scannedText,
-                entities: snapshot.detection.entities,
-                assessment: snapshot.assessment,
-                wasTruncated: snapshot.detection.wasTruncated
-            )
-            return
-        }
-
-        safePastePanel?.close()
-        maskAndPaste(originalText: snapshot.detection.scannedText, entities: snapshot.detection.entities)
+        // Always confirm through the popup so per-type masking toggles apply on the cached path too.
+        showSafePastePopup(
+            originalText: snapshot.detection.scannedText,
+            entities: snapshot.detection.entities,
+            assessment: snapshot.assessment,
+            wasTruncated: snapshot.detection.wasTruncated
+        )
     }
 
     private func frontmostExcludedClipboardApplicationName() -> String? {
@@ -1094,27 +1098,35 @@ final class AppCoordinator: ObservableObject {
         assessment: RiskAssessment,
         wasTruncated: Bool
     ) {
+        safePastePanel?.close()
         safePastePanel = SafePastePanelController(
             originalText: originalText,
             entities: entities,
             assessment: assessment,
             wasTruncated: wasTruncated,
-            onMaskAndPaste: { [weak self] in self?.maskAndPaste(originalText: originalText, entities: entities) },
-            onCopySafeVersion: { [weak self] in self?.copySafeVersion(originalText: originalText, entities: entities) },
+            onMaskAndPaste: { [weak self] enabledEntities in self?.maskAndPaste(originalText: originalText, entities: enabledEntities) },
+            onCopySafeVersion: { [weak self] enabledEntities in self?.copySafeVersion(originalText: originalText, entities: enabledEntities) },
             onPasteOriginal: { [weak self] in self?.pasteOriginal(originalText: originalText, assessment: assessment) },
             onCancel: { [weak self] in self?.lastStatusMessage = OffsendStrings.statusSafePasteCancelled },
-            onClose: { [weak self] in self?.safePastePanel = nil }
+            onClose: { [weak self] panel in
+                guard let self, self.safePastePanel === panel else { return }
+                self.safePastePanel = nil
+            }
         )
         safePastePanel?.show(from: menuBarStatusItemController.statusItem)
         refreshMenuBarStatusItem()
     }
 
     private func showClipboardStatusPopup(assessment: RiskAssessment, wasTruncated: Bool) {
+        clipboardStatusPanel?.close()
         clipboardStatusPanel = ClipboardStatusPanelController(
             title: OffsendStrings.clipboardStatusSafeTitle,
             message: wasTruncated ? OffsendStrings.clipboardStatusSafeMessageScanned : OffsendStrings.clipboardStatusSafeMessage,
             score: min(assessment.score, 100),
-            onClose: { [weak self] in self?.clipboardStatusPanel = nil }
+            onClose: { [weak self] panel in
+                guard let self, self.clipboardStatusPanel === panel else { return }
+                self.clipboardStatusPanel = nil
+            }
         )
         clipboardStatusPanel?.show(from: menuBarStatusItemController.statusItem)
         refreshMenuBarStatusItem()
@@ -1175,6 +1187,7 @@ final class AppCoordinator: ObservableObject {
                 self?.handleMonitoredClipboardText(text)
             }
         }
+        syncClipboardAssessmentFromCurrentPasteboard()
     }
 
     private func applyLaunchAtLoginPreference() throws {
@@ -1266,7 +1279,7 @@ extension AppCoordinator {
         case .pro:
             do {
                 _ = try licenseService.deviceId()
-                try licenseService.persistVerifiedLicense(token: Self.debugSyntheticLicenseJWT)
+                try licenseService.persistVerifiedLicense(token: Self.debugSyntheticLicenseJWT) // offsend:ignore
                 var state = licenseState
                 let farFuture = Date().addingTimeInterval(365 * 24 * 60 * 60)
                 state.plan = .pro

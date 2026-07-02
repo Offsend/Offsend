@@ -2,9 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- The app deliberately runs without the App Sandbox (Developer ID distribution).
+	     File access relies on regular POSIX permissions; security-scoped bookmarks are not used. -->
 	<key>com.apple.security.app-sandbox</key>
 	<false/>
-	<key>com.apple.security.files.user-selected.read-only</key>
-	<true/>
 </dict>
 </plist>

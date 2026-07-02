@@ -151,7 +151,7 @@
 "settings.tab.masking" = "Masking";
 "settings.tab.privacy" = "Privacy";
 "settings.tab.directoryCheck" = "Directory Check";
-"settings.tab.hooks" = "Hooks";
+"settings.tab.hooks" = "CLI & Hooks";
 "settings.tab.license" = "License";
 "settings.tab.developer" = "Developer";
 "settings.subtitle.general" = "Startup, behavior, and appearance.";
@@ -775,6 +775,7 @@
 "safePaste.section.detectedEntities" = "DETECTED ENTITIES";
 "safePaste.critical.credentialWarning" = "Pasting credentials into AI tools can expose your account.";
 "safePaste.action.copySafeVersion" = "Copy Safe Version";
+"safePaste.action.copyEditedVersion" = "Copy Edited Version";
 "safePaste.action.maskAndPaste" = "Mask & Paste";
 "safePaste.action.cancel" = "Cancel";
 "safePaste.action.pasteOriginal" = "Paste Original";

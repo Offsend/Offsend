@@ -19,8 +19,6 @@ final class WatchedDirectoryBookmarkTests: XCTestCase {
             WatchedDirectoryPathMatcher.standardizedPath(for: resolution.url),
             WatchedDirectoryPathMatcher.standardizedPath(for: directory)
         )
-
-        resolution.url.stopAccessingSecurityScopedResource()
     }
 
     func testPathMatcherTreatsSymlinkTargetsAsSameDirectory() throws {

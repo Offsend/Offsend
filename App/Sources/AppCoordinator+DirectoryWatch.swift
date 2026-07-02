@@ -77,13 +77,6 @@ extension AppCoordinator {
             return true
         }
 
-        let accessed = standardized.startAccessingSecurityScopedResource()
-        defer {
-            if accessed {
-                standardized.stopAccessingSecurityScopedResource()
-            }
-        }
-
         do {
             let bookmark = try WatchedDirectoryBookmark.make(from: standardized)
             let entry = WatchedDirectory(
@@ -135,13 +128,6 @@ extension AppCoordinator {
             matching: standardized
         ), settings.watchedDirectories[duplicateIndex].id != id {
             return false
-        }
-
-        let accessed = standardized.startAccessingSecurityScopedResource()
-        defer {
-            if accessed {
-                standardized.stopAccessingSecurityScopedResource()
-            }
         }
 
         do {
