@@ -8,18 +8,18 @@ import SwiftUI
 @MainActor
 final class SafePastePanelController: NSObject, NSPopoverDelegate {
     private let popover = NSPopover()
-    private var onClose: (() -> Void)?
+    private var onClose: ((SafePastePanelController) -> Void)?
 
     init(
         originalText: String,
         entities: [SensitiveEntity],
         assessment: RiskAssessment,
         wasTruncated: Bool,
-        onMaskAndPaste: @escaping () -> Void,
-        onCopySafeVersion: @escaping () -> Void,
+        onMaskAndPaste: @escaping ([SensitiveEntity]) -> Void,
+        onCopySafeVersion: @escaping ([SensitiveEntity]) -> Void,
         onPasteOriginal: @escaping () -> Void,
         onCancel: @escaping () -> Void,
-        onClose: @escaping () -> Void
+        onClose: @escaping (SafePastePanelController) -> Void
     ) {
         self.onClose = onClose
         super.init()
@@ -31,10 +31,10 @@ final class SafePastePanelController: NSObject, NSPopoverDelegate {
             close: { [weak self] action in
                 self?.popover.performClose(nil)
                 switch action {
-                case .maskAndPaste:
-                    onMaskAndPaste()
-                case .copySafeVersion:
-                    onCopySafeVersion()
+                case .maskAndPaste(let enabledEntities):
+                    onMaskAndPaste(enabledEntities)
+                case .copySafeVersion(let enabledEntities):
+                    onCopySafeVersion(enabledEntities)
                 case .pasteOriginal:
                     onPasteOriginal()
                 case .cancel:
@@ -50,7 +50,7 @@ final class SafePastePanelController: NSObject, NSPopoverDelegate {
     }
 
     func popoverDidClose(_ notification: Notification) {
-        onClose?()
+        onClose?(self)
         onClose = nil
     }
 
@@ -70,8 +70,8 @@ final class SafePastePanelController: NSObject, NSPopoverDelegate {
 }
 
 private enum SafePastePopupAction {
-    case maskAndPaste
-    case copySafeVersion
+    case maskAndPaste([SensitiveEntity])
+    case copySafeVersion([SensitiveEntity])
     case pasteOriginal
     case cancel
 }
@@ -84,6 +84,22 @@ private struct SafePastePopupView: View {
     let close: (SafePastePopupAction) -> Void
 
     @State private var safePasteHotkey = HotkeyDisplay.safePaste
+    @State private var maskedTypes: Set<SensitiveEntityType>
+
+    init(
+        originalText: String,
+        entities: [SensitiveEntity],
+        assessment: RiskAssessment,
+        wasTruncated: Bool,
+        close: @escaping (SafePastePopupAction) -> Void
+    ) {
+        self.originalText = originalText
+        self.entities = entities
+        self.assessment = assessment
+        self.wasTruncated = wasTruncated
+        self.close = close
+        _maskedTypes = State(initialValue: Set(entities.map(\.type)))
+    }
 
     private var counts: [(SensitiveEntityType, Int)] {
         Dictionary(grouping: entities, by: \.type)
@@ -191,33 +207,8 @@ private struct SafePastePopupView: View {
 
     private var criticalBody: some View {
         VStack(alignment: .leading, spacing: OFSpacing.md) {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "key.fill")
-                    .font(.system(size: 18))
-                    .foregroundColor(.ofRedText)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(secretTitle)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.ofRedText)
-
-                    Text(maskedSecretValue)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(.ofTextSub)
-                        .lineLimit(1)
-
-                    Text(OffsendStrings.safePasteCriticalCredentialWarning)
-                        .font(.system(size: 11))
-                        .foregroundColor(.ofTextSub)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 2)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .padding(OFSpacing.xl)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.ofRedDim)
-            .cornerRadius(OFRadius.sm)
+            entityList
 
             maskedPreviewCard
         }
@@ -249,8 +240,17 @@ private struct SafePastePopupView: View {
             sectionTitle(OffsendStrings.safePasteSectionDetectedEntities)
                 .padding(.bottom, 6)
 
-            ForEach(detectedEntities) { entity in
-                OFCategoryRow(entity: entity)
+            ForEach(counts, id: \.0) { type, count in
+                OFCategoryRow(
+                    entity: OFDetectedEntity(
+                        icon: type.isSecret ? "key.fill" : icon(for: type),
+                        label: displayName(type, count: count),
+                        count: count,
+                        severity: severity(for: type),
+                        values: previewValues(for: type)
+                    ),
+                    isOn: binding(for: type)
+                )
             }
         }
     }
@@ -258,12 +258,12 @@ private struct SafePastePopupView: View {
     private var actionsSection: some View {
         VStack(spacing: 8) {
             OFButton(
-                title: assessment.hasCriticalSecret ? OffsendStrings.safePasteActionCopySafeVersion : OffsendStrings.safePasteActionMaskAndPaste,
+                title: primaryActionTitle,
                 variant: .primary,
-                icon: assessment.hasCriticalSecret ? "shield.fill" : "shield.lefthalf.filled",
+                icon: primaryActionIcon,
                 fillsWidth: true
             ) {
-                close(assessment.hasCriticalSecret ? .copySafeVersion : .maskAndPaste)
+                close(assessment.hasCriticalSecret ? .copySafeVersion(enabledEntities) : .maskAndPaste(enabledEntities))
             }
             .keyboardShortcut(.defaultAction)
 
@@ -306,19 +306,25 @@ private struct SafePastePopupView: View {
         return OffsendStrings.safePasteRecommendationMask
     }
 
-    private var detectedEntities: [OFDetectedEntity] {
-        counts.map { type, count in
-            OFDetectedEntity(
-                icon: type.isSecret ? "key.fill" : icon(for: type),
-                label: displayName(type, count: count),
-                count: count,
-                severity: severity(for: type)
-            )
-        }
+    private func binding(for type: SensitiveEntityType) -> Binding<Bool> {
+        Binding(
+            get: { maskedTypes.contains(type) },
+            set: { isOn in
+                if isOn {
+                    maskedTypes.insert(type)
+                } else {
+                    maskedTypes.remove(type)
+                }
+            }
+        )
+    }
+
+    private var enabledEntities: [SensitiveEntity] {
+        entities.filter { maskedTypes.contains($0.type) }
     }
 
     private var maskedPreview: String {
-        let sortedEntities = entities.sorted { $0.range.lowerBound < $1.range.lowerBound }
+        let sortedEntities = enabledEntities.sorted { $0.range.lowerBound < $1.range.lowerBound }
         var counters: [SensitiveEntityType: Int] = [:]
         var replacements: [(range: Range<String.Index>, placeholder: String)] = []
 
@@ -336,24 +342,41 @@ private struct SafePastePopupView: View {
         return output
     }
 
-    private var secretTitle: String {
-        guard let secret = entities.first(where: { $0.type.isSecret }) else {
-            return OffsendStrings.safePasteSecretFound
-        }
-        return displayName(secret.type, count: 1)
+    private var allTypesMasked: Bool {
+        maskedTypes == Set(entities.map(\.type))
     }
 
-    private var maskedSecretValue: String {
-        guard let secret = entities.first(where: { $0.type.isSecret }) else {
-            return "••••••••••••••••"
+    private var primaryActionTitle: String {
+        if assessment.hasCriticalSecret {
+            return allTypesMasked ? OffsendStrings.safePasteActionCopySafeVersion : OffsendStrings.safePasteActionCopyEditedVersion
+        }
+        return OffsendStrings.safePasteActionMaskAndPaste
+    }
+
+    private var primaryActionIcon: String {
+        if assessment.hasCriticalSecret {
+            return allTypesMasked ? "shield.fill" : "square.and.pencil"
+        }
+        return "shield.lefthalf.filled"
+    }
+
+    private func previewValues(for type: SensitiveEntityType) -> [String] {
+        entities
+            .filter { $0.type == type }
+            .map { previewValue(for: $0) }
+    }
+
+    private func previewValue(for entity: SensitiveEntity) -> String {
+        guard entity.type.isSecret else {
+            return entity.value
         }
 
-        let value = secret.value
+        let value = entity.value
         guard value.count > 8 else {
-            return "••••••••"
+            return String(repeating: "•", count: max(value.count, 4))
         }
 
-        return "\(value.prefix(4))••••••••••••\(value.suffix(4))"
+        return "\(value.prefix(4))••••\(value.suffix(4))"
     }
 
     private func sectionTitle(_ text: String) -> some View {

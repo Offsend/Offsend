@@ -720,14 +720,6 @@ private extension DocumentSanitizeViewModel {
 
     func loadPdfDataFromDisk(from fileURL: URL) async -> Data? {
         guard fileURL.pathExtension.lowercased() == "pdf" else { return nil }
-
-        let accessed = fileURL.startAccessingSecurityScopedResource()
-        defer {
-            if accessed {
-                fileURL.stopAccessingSecurityScopedResource()
-            }
-        }
-
         return try? Data(contentsOf: fileURL)
     }
 

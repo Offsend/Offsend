@@ -63,13 +63,6 @@ extension AppCoordinator {
             return true
         }
 
-        let accessed = standardized.startAccessingSecurityScopedResource()
-        defer {
-            if accessed {
-                standardized.stopAccessingSecurityScopedResource()
-            }
-        }
-
         do {
             let bookmark = try WatchedDirectoryBookmark.make(from: standardized)
             let projectConfig = try? ProjectConfigLoader().load(from: standardized)
@@ -253,9 +246,7 @@ extension AppCoordinator {
     }
 
     private func resolveHookedRepositoryURL(_ entry: HookedRepository) throws -> URL {
-        let resolution = try WatchedDirectoryBookmark.resolve(entry.bookmarkData)
-        defer { resolution.url.stopAccessingSecurityScopedResource() }
-        return resolution.url.standardizedFileURL
+        try WatchedDirectoryBookmark.resolve(entry.bookmarkData).url.standardizedFileURL
     }
 
     private func resolveHookedRepositoryURL(id: UUID) throws -> URL {
