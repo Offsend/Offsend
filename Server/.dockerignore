@@ -1,0 +1,14 @@
+.git
+.build
+.swiftpm
+DerivedData
+*.xcodeproj
+*.xcworkspace
+App/
+AppUIKit/
+CLI/
+Services/
+Tuist/
+Scripts/
+.github/
+**/.DS_Store

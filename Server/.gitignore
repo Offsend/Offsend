@@ -1,0 +1,4 @@
+Vendor/WorkspacePolicyCore/
+Vendor/OffsendReportCore/ReportReporter.swift
+!Vendor/OffsendReportCore/ScanReportService.swift
+.build/

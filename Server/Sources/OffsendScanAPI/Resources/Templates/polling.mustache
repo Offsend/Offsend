@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  {{>partial-head}}
+  <title>Scanning… · Offsend</title>
+</head>
+<body class="page-polling" data-job-id="{{jobID}}"{{#debug}} data-debug="1"{{/debug}}>
+  <div class="gridfx" aria-hidden="true"></div>
+  {{>partial-nav}}
+
+  <main>
+    <section class="hero hero--scan">
+      <div class="hero-orb" aria-hidden="true"></div>
+      <div class="container">
+        <h1 class="headline">Scanning…</h1>
+        <p class="lede">Running a privacy audit on your repository.<br/>This usually takes a minute.</p>
+
+        <div class="scan-progress" id="scan-progress" aria-live="polite" aria-busy="true">
+          <div class="spinner" id="spinner" aria-hidden="true"></div>
+          <p id="status" class="status-text">Starting…</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  {{>partial-footer}}
+  {{>partial-scripts}}
+  <script src="/assets/polling.js" defer></script>
+</body>
+</html>
