@@ -167,9 +167,8 @@ public final class AIWorkspacePrivacyFixer {
                 withIntermediateDirectories: true
             )
             let fileExists = fileManager.fileExists(atPath: url.path)
-            let options: NSFileCoordinator.WritingOptions = fileExists ? .forMerging : []
 
-            return try coordinateFileWrite(at: url, options: options) { coordinatedURL in
+            return try coordinateFileWrite(at: url, mergeExisting: fileExists) { coordinatedURL in
                 let existingContents: String
                 let didCreateFile: Bool
                 if fileManager.fileExists(atPath: coordinatedURL.path) {
@@ -233,12 +232,14 @@ public final class AIWorkspacePrivacyFixer {
 
     private func coordinateFileWrite<T>(
         at url: URL,
-        options: NSFileCoordinator.WritingOptions = [],
+        mergeExisting: Bool = false,
         _ work: (URL) throws -> T
     ) throws -> T {
+#if os(macOS) || os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
         let coordinator = NSFileCoordinator()
         var coordinationError: NSError?
         var capturedResult: Result<T, Error>?
+        let options: NSFileCoordinator.WritingOptions = mergeExisting ? .forMerging : []
 
         coordinator.coordinate(
             writingItemAt: url,
@@ -259,6 +260,10 @@ public final class AIWorkspacePrivacyFixer {
             )
         }
         return try capturedResult.get()
+#else
+        _ = mergeExisting
+        return try work(url)
+#endif
     }
 
     private func isWritableDirectory(_ url: URL) -> Bool {
