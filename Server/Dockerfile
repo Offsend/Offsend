@@ -1,6 +1,6 @@
 # Build from repository root:
 #   docker build -f Server/Dockerfile -t offsend-scan .
-FROM swift:6.0-jammy AS build
+FROM swift:6.2-jammy AS build
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
