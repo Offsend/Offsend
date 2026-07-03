@@ -90,6 +90,7 @@
 
     const codeEl = document.getElementById('fix-command-code');
     const hintEl = document.getElementById('fix-shell-hint');
+    const macosAltEl = document.getElementById('fix-macos-alt');
     const copyBtn = document.getElementById('fix-copy');
     const copyLabel = copyBtn && copyBtn.querySelector('.fix-copy-label');
     const platformBtns = Array.from(fixModal.querySelectorAll('.fix-platform'));
@@ -144,6 +145,7 @@
       });
       if (codeEl) codeEl.textContent = commandFor(platform);
       if (hintEl) hintEl.textContent = hints[platform] || '';
+      if (macosAltEl) macosAltEl.hidden = platform !== 'macos';
       if (copyLabel) copyLabel.textContent = 'Copy';
     };
 

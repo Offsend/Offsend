@@ -1913,6 +1913,55 @@ body.page-report .page-header-actions {
 	font-size: 0.82rem;
 }
 
+.fix-macos-apps {
+	margin-bottom: 0.75rem;
+	padding: 0.85rem 1rem;
+	background: var(--bg-2);
+	border: 1px solid var(--border-2);
+	border-radius: var(--r);
+}
+
+.fix-macos-script-lead {
+	margin: 0 0 0.75rem;
+	color: var(--text);
+	font-size: 0.88rem;
+	font-weight: 600;
+}
+
+.fix-macos-apps-label {
+	margin: 0 0 0.65rem;
+	color: var(--text);
+	font-size: 0.88rem;
+	font-weight: 600;
+}
+
+.fix-macos-apps-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+}
+
+.fix-macos-apps-actions .btn {
+	flex: 1 1 9rem;
+	min-width: 9rem;
+	padding: 11px 18px;
+	font-size: 14px;
+	font-weight: 600;
+	text-decoration: none;
+}
+
+.fix-macos-apps-btn {
+	border-color: var(--border-2);
+	background: oklch(100% 0 0 / 0.92);
+	box-shadow: 0 1px 2px oklch(0% 0 0 / 0.06);
+}
+
+.fix-macos-apps-btn:hover {
+	border-color: var(--text-dim);
+	background: oklch(100% 0 0);
+	color: var(--text);
+}
+
 @media (max-width: 560px) {
 	.fix-platforms {
 		display: flex;
@@ -1921,6 +1970,15 @@ body.page-report .page-header-actions {
 
 	.fix-platform {
 		flex: 1;
+	}
+
+	.fix-macos-apps-actions {
+		flex-direction: column;
+	}
+
+	.fix-macos-apps-actions .btn {
+		flex: 1 1 auto;
+		width: 100%;
 	}
 }
 

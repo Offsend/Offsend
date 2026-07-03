@@ -59,6 +59,11 @@ final class ReportHTMLRendererTests: XCTestCase {
         // The command modal builds itself from the fix files embedded in the page.
         XCTAssertTrue(html.contains("id=\"fix-files-data\""))
         XCTAssertTrue(html.contains(".cursorignore"))
+        XCTAssertTrue(html.contains("id=\"fix-macos-alt\""))
+        XCTAssertTrue(html.contains("Install CLI"))
+        XCTAssertTrue(html.contains("Install Desktop"))
+        XCTAssertTrue(html.contains("Or run script for hotfix"))
+        XCTAssertTrue(html.contains("https://offsend.io/desktop"))
     }
 
     func testHidesFixItButtonWhenNoFixes() throws {
