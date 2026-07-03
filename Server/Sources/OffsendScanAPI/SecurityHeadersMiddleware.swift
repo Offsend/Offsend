@@ -1,18 +1,17 @@
 import HTTPTypes
 import Hummingbird
 
-/// Adds standard security headers to every response. All page scripts are
-/// served from /assets, so script-src stays strict; inline styles and Google
-/// Fonts are the only relaxations.
+/// Adds standard security headers to every response. Page scripts are served
+/// from /assets; Google Analytics and Google Fonts require additional sources.
 struct SecurityHeadersMiddleware<Context: RequestContext>: RouterMiddleware {
     private static var contentSecurityPolicy: String {
         [
             "default-src 'self'",
-            "script-src 'self'",
+            "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com",
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
             "font-src https://fonts.gstatic.com",
             "img-src 'self' data:",
-            "connect-src 'self'",
+            "connect-src 'self' https://www.google-analytics.com https://analytics.google.com https://*.google-analytics.com",
             "object-src 'none'",
             "frame-ancestors 'none'",
             "base-uri 'self'",
