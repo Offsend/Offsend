@@ -1,6 +1,7 @@
 import Foundation
 import Logging
 import NIOCore
+import ServiceLifecycle
 import SotoCore
 import SotoS3
 
@@ -73,14 +74,28 @@ struct R2ReportStorage: ReportStorage, @unchecked Sendable {
     }
 }
 
+/// Shuts the AWS client down on graceful shutdown; soto requires an explicit
+/// shutdown() before the client is released.
+struct AWSClientService: Service {
+    let client: AWSClient
+
+    func run() async throws {
+        try? await gracefulShutdown()
+        try await client.shutdown()
+    }
+}
+
 enum ReportStorageFactory {
-    static func make(config: AppConfiguration, logger: Logger) async throws -> any ReportStorage {
+    static func make(
+        config: AppConfiguration,
+        logger: Logger
+    ) async throws -> (storage: any ReportStorage, services: [any Service]) {
         try FileManager.default.createDirectory(at: config.reportStorageDirectory, withIntermediateDirectories: true)
         let local = LocalReportStorage(directory: config.reportStorageDirectory)
 
         guard let r2 = config.r2 else {
             logger.info("Report storage: local filesystem")
-            return local
+            return (local, [])
         }
 
         let client = AWSClient(
@@ -92,7 +107,7 @@ enum ReportStorageFactory {
         let endpoint = "https://\(r2.accountID).r2.cloudflarestorage.com"
         let s3 = S3(client: client, region: .euwest1, endpoint: endpoint)
         logger.info("Report storage: Cloudflare R2", metadata: ["bucket": .string(r2.bucket)])
-        return R2ReportStorage(
+        let storage = R2ReportStorage(
             bucket: r2.bucket,
             keyPrefix: "reports",
             publicBaseURL: r2.publicBaseURL,
@@ -100,5 +115,6 @@ enum ReportStorageFactory {
             localFallback: local,
             logger: logger
         )
+        return (storage, [AWSClientService(client: client)])
     }
 }

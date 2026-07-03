@@ -18,27 +18,41 @@ enum TestSupport {
             .appendingPathComponent("offsend-scan-tests-\(UUID().uuidString)", isDirectory: true)
     }
 
+    static func makeConfiguration(
+        reportDirectory: URL,
+        scanReuseWindow: Duration = .seconds(0)
+    ) -> AppConfiguration {
+        AppConfiguration(
+            host: "127.0.0.1",
+            port: 8080,
+            gitPath: "/usr/bin/git",
+            cloneTimeout: .seconds(120),
+            scanTimeout: .seconds(180),
+            maxRepoSizeMB: 500,
+            scanWorkDirectory: reportDirectory.deletingLastPathComponent().appendingPathComponent("work", isDirectory: true),
+            reportStorageDirectory: reportDirectory,
+            jobStoreDirectory: reportDirectory.appendingPathComponent("jobs", isDirectory: true),
+            reportTTL: .seconds(3600),
+            scanReuseWindow: scanReuseWindow,
+            jobWorkers: 1,
+            valkeyHost: nil,
+            valkeyPort: 6379,
+            valkeyQueueName: "test",
+            r2: nil,
+            toolVersion: "test-1.0.0",
+            publicBaseURL: nil,
+            scanRateLimitPerMinute: 1000,
+            maxPendingScans: 32
+        )
+    }
+
     static func makeDependencies(
         jobStore: JobStore = JobStore(ttl: .seconds(3600)),
         reportDirectory: URL,
         pushTracker: JobPushTracker? = nil
     ) throws -> AppDependencies {
         let storage = LocalReportStorage(directory: reportDirectory)
-        let config = AppConfiguration(
-            host: "127.0.0.1",
-            port: 8080,
-            gitPath: "/usr/bin/git",
-            cloneTimeout: .seconds(120),
-            scanWorkDirectory: reportDirectory.deletingLastPathComponent().appendingPathComponent("work", isDirectory: true),
-            reportStorageDirectory: reportDirectory,
-            reportTTL: .seconds(3600),
-            jobWorkers: 1,
-            valkeyHost: nil,
-            valkeyPort: 6379,
-            valkeyQueueName: "test",
-            r2: nil,
-            toolVersion: "test-1.0.0"
-        )
+        let config = makeConfiguration(reportDirectory: reportDirectory)
         let pushScanJob: @Sendable (ScanRepositoryJobParameters) async throws -> Void = { parameters in
             if let pushTracker {
                 await pushTracker.track(parameters)
@@ -50,6 +64,7 @@ enum TestSupport {
             jobStore: jobStore,
             reportStorage: ReportStorageBox(storage),
             htmlTemplates: htmlTemplates,
+            rateLimiter: ScanRateLimiter(maxRequestsPerWindow: 1000),
             pushScanJob: pushScanJob
         )
     }

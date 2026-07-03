@@ -11,6 +11,7 @@ struct AppDependencies: Sendable {
     let jobStore: JobStore
     let reportStorage: ReportStorageBox
     let htmlTemplates: HTMLTemplateRenderer
+    let rateLimiter: ScanRateLimiter
     let pushScanJob: @Sendable (ScanRepositoryJobParameters) async throws -> Void
 }
 
@@ -26,8 +27,10 @@ enum ApplicationBuilder {
     static func build(config: AppConfiguration, logger: Logger) async throws -> Application<Router<AppRequestContext>.Responder> {
         try FileManager.default.createDirectory(at: config.scanWorkDirectory, withIntermediateDirectories: true)
 
-        let jobStore = JobStore(ttl: config.reportTTL)
-        let reportStorage = ReportStorageBox(try await ReportStorageFactory.make(config: config, logger: logger))
+        try FileManager.default.createDirectory(at: config.jobStoreDirectory, withIntermediateDirectories: true)
+        let jobStore = JobStore(ttl: config.reportTTL, directory: config.jobStoreDirectory)
+        let (storage, storageServices) = try await ReportStorageFactory.make(config: config, logger: logger)
+        let reportStorage = ReportStorageBox(storage)
         let htmlTemplates = try HTMLTemplateRenderer.load()
         let scanServices = ScanServices(
             jobStore: jobStore,
@@ -38,10 +41,12 @@ enum ApplicationBuilder {
             workDirectory: config.scanWorkDirectory,
             toolVersion: config.toolVersion,
             logger: logger,
-            reportTTL: config.reportTTL
+            reportTTL: config.reportTTL,
+            scanTimeout: config.scanTimeout,
+            maxRepoSizeBytes: Int64(config.maxRepoSizeMB) * 1024 * 1024
         )
 
-        let (pushScanJob, processorService) = try await makeJobQueue(
+        let (pushScanJob, jobServices) = try await makeJobQueue(
             config: config,
             logger: logger,
             scanServices: scanServices
@@ -52,16 +57,24 @@ enum ApplicationBuilder {
             jobStore: jobStore,
             reportStorage: reportStorage,
             htmlTemplates: htmlTemplates,
+            rateLimiter: ScanRateLimiter(maxRequestsPerWindow: config.scanRateLimitPerMinute),
             pushScanJob: pushScanJob
         )
 
         let router = Routes.buildRouter(dependencies: dependencies)
         let address = BindAddress.hostname(config.host, port: config.port)
 
+        let maintenance = MaintenanceService(
+            jobStore: jobStore,
+            reportDirectory: config.reportStorageDirectory,
+            ttl: config.reportTTL,
+            logger: logger
+        )
+
         return Application(
             router: router,
             configuration: .init(address: address, serverName: "OffsendScanAPI"),
-            services: [processorService],
+            services: storageServices + jobServices + [maintenance],
             logger: logger
         )
     }
@@ -70,7 +83,7 @@ enum ApplicationBuilder {
         config: AppConfiguration,
         logger: Logger,
         scanServices: ScanServices
-    ) async throws -> (@Sendable (ScanRepositoryJobParameters) async throws -> Void, any Service) {
+    ) async throws -> (@Sendable (ScanRepositoryJobParameters) async throws -> Void, [any Service]) {
         if let valkeyHost = config.valkeyHost {
             logger.info("Job queue: Valkey", metadata: ["host": .string(valkeyHost)])
             let valkey = ValkeyClient(.hostname(valkeyHost, port: config.valkeyPort), logger: logger)
@@ -80,12 +93,16 @@ enum ApplicationBuilder {
                 logger: logger
             )
             let queue = JobQueue(driver, logger: logger)
-            return registerScanJob(on: queue, config: config, scanServices: scanServices)
+            let (push, processor) = registerScanJob(on: queue, config: config, scanServices: scanServices)
+            // The Valkey client is itself a service; without running it the
+            // connection pool never starts and queue operations stall.
+            return (push, [valkey, processor])
         }
 
         logger.info("Job queue: in-memory")
         let queue = JobQueue(.memory, logger: logger)
-        return registerScanJob(on: queue, config: config, scanServices: scanServices)
+        let (push, processor) = registerScanJob(on: queue, config: config, scanServices: scanServices)
+        return (push, [processor])
     }
 
     private static func registerScanJob<D: JobQueueDriver>(

@@ -1,9 +1,14 @@
 import Foundation
+import HTTPTypes
 import Hummingbird
 
 enum Routes {
+    private static let flyClientIP = HTTPField.Name("Fly-Client-IP")!
+    private static let xForwardedFor = HTTPField.Name("X-Forwarded-For")!
+
     static func buildRouter(dependencies: AppDependencies) -> Router<AppRequestContext> {
         let router = Router(context: AppRequestContext.self)
+        router.add(middleware: SecurityHeadersMiddleware())
         let templates = dependencies.htmlTemplates
 
         router.get("/health") { _, _ in
@@ -38,7 +43,8 @@ enum Routes {
         }
 
         router.get("/") { request, _ in
-            let html = try templates.landingPage(siteURL: PageMetadata.siteURL(from: request))
+            let siteURL = dependencies.config.publicBaseURL ?? PageMetadata.siteURL(from: request)
+            let html = try templates.landingPage(siteURL: siteURL)
             return Response(
                 status: .ok,
                 headers: [.contentType: "text/html; charset=utf-8"],
@@ -47,35 +53,45 @@ enum Routes {
         }
 
         router.post("/scan") { request, context in
+            guard await dependencies.rateLimiter.allow(clientKey(for: request)) else {
+                throw HTTPError(.tooManyRequests, message: "Too many scan requests. Try again in a minute.")
+            }
+
             let payload = try await request.decode(as: CreateScanRequest.self, context: context)
             let normalized = try RepositoryURLValidator.normalize(payload.url)
-            let jobID = UUID().uuidString.lowercased()
 
+            // Reuse an in-flight or recently completed scan of the same repo
+            // instead of queueing duplicate work.
+            if let existing = await dependencies.jobStore.reusableJob(
+                repoURL: normalized.absoluteString,
+                completedWithin: dependencies.config.scanReuseWindow
+            ) {
+                return try jsonResponse(
+                    scanCreatedResponse(jobID: existing.id),
+                    status: .accepted,
+                    location: "/scan/\(existing.id)"
+                )
+            }
+
+            guard await dependencies.jobStore.pendingCount() < dependencies.config.maxPendingScans else {
+                throw HTTPError(.serviceUnavailable, message: "Scanner is at capacity. Try again shortly.")
+            }
+
+            let jobID = UUID().uuidString.lowercased()
             _ = await dependencies.jobStore.create(id: jobID, repoURL: normalized.absoluteString)
             try await dependencies.pushScanJob(
                 ScanRepositoryJobParameters(jobID: jobID, repoURL: normalized.absoluteString)
             )
 
-            let response = CreateScanResponse(
-                jobID: jobID,
-                statusURL: "/scan/\(jobID)",
-                reportURL: "/r/\(jobID)",
-                pollIntervalMs: 2000
-            )
-            let data = try JSONEncoder().encode(response)
-            var buffer = ByteBuffer()
-            buffer.writeBytes(data)
-            return Response(
+            return try jsonResponse(
+                scanCreatedResponse(jobID: jobID),
                 status: .accepted,
-                headers: [.contentType: "application/json", .location: "/scan/\(jobID)"],
-                body: .init(byteBuffer: buffer)
+                location: "/scan/\(jobID)"
             )
         }
 
         router.get("/scan/:id") { _, context in
-            guard let id = context.parameters.get("id") else {
-                throw HTTPError(.badRequest)
-            }
+            let id = try jobID(from: context)
             guard let record = await dependencies.jobStore.get(id) else {
                 throw HTTPError(.notFound)
             }
@@ -91,14 +107,7 @@ enum Routes {
                 errorMessage: record.errorMessage,
                 report: reportPayload
             )
-            let data = try JSONEncoder().encode(response)
-            var buffer = ByteBuffer()
-            buffer.writeBytes(data)
-            return Response(
-                status: .ok,
-                headers: [.contentType: "application/json"],
-                body: .init(byteBuffer: buffer)
-            )
+            return try jsonResponse(response)
         }
 
         #if DEBUG
@@ -113,9 +122,7 @@ enum Routes {
         #endif
 
         router.get("/scan/:id/page") { _, context in
-            guard let id = context.parameters.get("id") else {
-                throw HTTPError(.badRequest)
-            }
+            let id = try jobID(from: context)
             let html = try templates.pollingPage(jobID: id)
             return Response(
                 status: .ok,
@@ -125,13 +132,11 @@ enum Routes {
         }
 
         router.get("/r/:id") { _, context in
-            guard let id = context.parameters.get("id") else {
-                throw HTTPError(.badRequest)
-            }
-            guard let record = await dependencies.jobStore.get(id) else {
-                throw HTTPError(.notFound)
-            }
-            guard record.status == .completed else {
+            let id = try jobID(from: context)
+            // A record in a non-completed state means the scan is still in flight.
+            // A missing record can also mean the server restarted after the scan
+            // finished, so fall through to storage, which is the source of truth.
+            if let record = await dependencies.jobStore.get(id), record.status != .completed {
                 throw HTTPError(.conflict)
             }
 
@@ -146,5 +151,52 @@ enum Routes {
         }
 
         return router
+    }
+
+    /// Job IDs are server-generated UUIDs; restricting the charset keeps raw path
+    /// input away from filesystem paths and storage keys.
+    private static func jobID(from context: AppRequestContext) throws -> String {
+        guard let id = context.parameters.get("id"),
+              !id.isEmpty,
+              id.count <= 64,
+              id.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") }) else {
+            throw HTTPError(.notFound)
+        }
+        return id
+    }
+
+    private static func scanCreatedResponse(jobID: String) -> CreateScanResponse {
+        CreateScanResponse(
+            jobID: jobID,
+            statusURL: "/scan/\(jobID)",
+            reportURL: "/r/\(jobID)",
+            pollIntervalMs: 2000
+        )
+    }
+
+    private static func jsonResponse(
+        _ value: some Encodable,
+        status: HTTPResponse.Status = .ok,
+        location: String? = nil
+    ) throws -> Response {
+        let data = try JSONEncoder().encode(value)
+        var buffer = ByteBuffer()
+        buffer.writeBytes(data)
+        var headers: HTTPFields = [.contentType: "application/json"]
+        if let location {
+            headers[.location] = location
+        }
+        return Response(status: status, headers: headers, body: .init(byteBuffer: buffer))
+    }
+
+    private static func clientKey(for request: Request) -> String {
+        if let ip = request.headers[flyClientIP] {
+            return ip
+        }
+        if let forwarded = request.headers[xForwardedFor],
+           let first = forwarded.split(separator: ",").first {
+            return first.trimmingCharacters(in: .whitespaces)
+        }
+        return "unknown"
     }
 }

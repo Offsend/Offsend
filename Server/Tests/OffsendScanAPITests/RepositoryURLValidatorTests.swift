@@ -118,6 +118,13 @@ final class RepositoryURLValidatorTests: XCTestCase {
         )
     }
 
+    func testRejectsNonStandardPort() {
+        assertThrowsRepositoryError(
+            try RepositoryURLValidator.normalize("https://github.com:8443/org/repo"),
+            expected: .invalidURL("https://github.com:8443/org/repo")
+        )
+    }
+
     func testRejectsDotSegment() {
         assertThrowsRepositoryError(
             try RepositoryURLValidator.normalize("https://github.com/./repo"),

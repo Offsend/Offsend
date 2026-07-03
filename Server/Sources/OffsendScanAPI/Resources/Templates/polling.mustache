@@ -4,7 +4,7 @@
   {{>partial-head}}
   <title>Scanning… · Offsend</title>
 </head>
-<body class="page-polling">
+<body class="page-polling" data-job-id="{{jobID}}"{{#debug}} data-debug="1"{{/debug}}>
   <div class="gridfx" aria-hidden="true"></div>
   {{>partial-nav}}
 
@@ -25,52 +25,6 @@
 
   {{>partial-footer}}
   {{>partial-scripts}}
-  <script>
-    const statusEl = document.getElementById('status');
-    const spinnerEl = document.getElementById('spinner');
-    const progressEl = document.getElementById('scan-progress');
-
-    function setIdle(message) {
-      spinnerEl.hidden = true;
-      progressEl.removeAttribute('aria-busy');
-      statusEl.textContent = message;
-    }
-
-    {{#debug}}
-    const previewStatuses = ['Starting…', 'Waiting to start…', 'Analyzing repository…'];
-    let previewIndex = 0;
-    setInterval(() => {
-      statusEl.textContent = previewStatuses[previewIndex % previewStatuses.length];
-      previewIndex += 1;
-    }, 2000);
-    {{/debug}}
-    {{^debug}}
-    const jobID = '{{jobID}}';
-    const statusLabels = {
-      queued: 'Waiting to start…',
-      running: 'Analyzing repository…',
-    };
-
-    async function poll() {
-      const response = await fetch('/scan/' + jobID);
-      if (!response.ok) {
-        setIdle('Scan not found.');
-        return;
-      }
-      const payload = await response.json();
-      if (payload.status === 'completed') {
-        window.location.href = '/r/' + jobID;
-        return;
-      }
-      if (payload.status === 'failed') {
-        setIdle('Scan failed: ' + (payload.errorMessage || 'unknown error'));
-        return;
-      }
-      statusEl.textContent = statusLabels[payload.status] || 'Working…';
-      setTimeout(poll, 2000);
-    }
-    poll();
-    {{/debug}}
-  </script>
+  <script src="/assets/polling.js" defer></script>
 </body>
 </html>

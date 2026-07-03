@@ -14,9 +14,13 @@ primary_region = "fra"
   HOST = "0.0.0.0"
   JOB_WORKERS = "2"
   CLONE_TIMEOUT_SECONDS = "120"
+  SCAN_TIMEOUT_SECONDS = "180"
+  MAX_REPO_SIZE_MB = "500"
   REPORT_TTL_SECONDS = "172800"
   SCAN_WORK_DIR = "/tmp/offsend-scan"
   REPORT_STORAGE_DIR = "/data/reports"
+  # Update when the app is served from a custom domain.
+  PUBLIC_BASE_URL = "https://check.offsend.io"
 
 [http_service]
   internal_port = 8080

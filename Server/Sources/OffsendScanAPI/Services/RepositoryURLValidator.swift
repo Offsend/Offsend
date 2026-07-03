@@ -50,6 +50,7 @@ enum RepositoryURLValidator {
               scheme == "https",
               let host = components.host?.lowercased(),
               allowedHosts.contains(host),
+              components.port == nil,
               let url = components.url else {
             throw RepositoryURLError.invalidURL(trimmed)
         }

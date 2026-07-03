@@ -16,7 +16,6 @@ enum ReportHTMLRenderer {
         let patterns: [PatternRow]
         let fixes: [FixRow]
         let hasFixes: Bool
-        let fixArchiveURL: String
         /// JSON array of `{ path, contents }` for the files that resolve the findings,
         /// embedded verbatim so the "Fix it" modal can build platform-specific commands.
         let fixFilesJSON: String
@@ -95,7 +94,6 @@ enum ReportHTMLRenderer {
             patterns: exposedPatternRows(from: payload),
             fixes: fixes,
             hasFixes: !fixes.isEmpty,
-            fixArchiveURL: "/r/\(jobID)/fix",
             fixFilesJSON: fixFilesJSON(reportJSON: reportJSON),
             errors: payload?.errors ?? []
         )

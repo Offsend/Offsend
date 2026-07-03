@@ -43,7 +43,7 @@ final class RoutesTests: XCTestCase {
                 XCTAssertTrue(body.contains("property=\"og:title\""))
                 XCTAssertTrue(body.contains("application/ld+json"))
                 XCTAssertTrue(body.contains("See what AI can read"))
-                XCTAssertTrue(body.contains("fetch('/scan'"))
+                XCTAssertTrue(body.contains("/assets/landing.js"))
                 XCTAssertTrue(body.contains("topnav"))
                 XCTAssertTrue(body.contains("/assets/site.css"))
             }
@@ -193,7 +193,7 @@ final class RoutesTests: XCTestCase {
                 XCTAssertEqual(response.status, .ok)
                 XCTAssertEqual(response.headers[.contentType], "text/html; charset=utf-8")
                 let body = String(buffer: response.body)
-                XCTAssertTrue(body.contains("job-abc"))
+                XCTAssertTrue(body.contains("data-job-id=\"job-abc\""))
                 XCTAssertTrue(body.contains("Scanning…"))
                 XCTAssertTrue(body.contains("noindex, nofollow"))
             }
@@ -209,8 +209,8 @@ final class RoutesTests: XCTestCase {
                 XCTAssertEqual(response.headers[.contentType], "text/html; charset=utf-8")
                 let body = String(buffer: response.body)
                 XCTAssertTrue(body.contains("Scanning…"))
-                XCTAssertTrue(body.contains("previewStatuses"))
-                XCTAssertFalse(body.contains("fetch('/scan/'"))
+                XCTAssertTrue(body.contains("data-debug=\"1\""))
+                XCTAssertTrue(body.contains("/assets/polling.js"))
             }
         }
     }
@@ -268,68 +268,121 @@ final class RoutesTests: XCTestCase {
         }
     }
 
-    func testFixArchiveReturnsZipForCompletedJob() async throws {
-        let jobStore = JobStore(ttl: .seconds(3600))
-        _ = await jobStore.create(id: "job-1", repoURL: "https://github.com/org/repo")
-        await jobStore.markCompleted(
-            "job-1",
-            reportJSON: TestSupport.sampleReportJSON(ignoreFiles: ["cursor-ignore": false]),
-            reportHTMLKey: "reports/job-1.html"
-        )
-        let app = makeApp(jobStore: jobStore)
+    func testCreateScanReturns429WhenRateLimited() async throws {
+        let app = makeApp(rateLimiter: ScanRateLimiter(maxRequestsPerWindow: 1))
+        try await app.test(.router) { client in
+            let body = ByteBuffer(string: #"{"url":"https://github.com/offsend/macos"}"#)
+            try await client.execute(
+                uri: "/scan",
+                method: .post,
+                headers: [.contentType: "application/json"],
+                body: body
+            ) { response in
+                XCTAssertEqual(response.status, .accepted)
+            }
+            try await client.execute(
+                uri: "/scan",
+                method: .post,
+                headers: [.contentType: "application/json"],
+                body: body
+            ) { response in
+                XCTAssertEqual(response.status, .tooManyRequests)
+            }
+        }
+    }
+
+    func testReportFallsBackToStorageWhenJobRecordMissing() async throws {
+        // Simulates a server restart: the in-memory job record is gone but the
+        // stored HTML still exists.
+        let storage = LocalReportStorage(directory: reportDirectory)
+        _ = try await storage.storeHTML(jobID: "job-1", html: "<html>persisted</html>")
+        let app = makeApp(storage: storage)
 
         try await app.test(.router) { client in
-            try await client.execute(uri: "/r/job-1/fix", method: .get) { response in
+            try await client.execute(uri: "/r/job-1", method: .get) { response in
                 XCTAssertEqual(response.status, .ok)
-                XCTAssertEqual(response.headers[.contentType], "application/zip")
-                XCTAssertEqual(
-                    response.headers[.contentDisposition],
-                    "attachment; filename=\"offsend-fix.zip\""
-                )
-                let bytes = [UInt8](buffer: response.body)
-                XCTAssertEqual(Array(bytes.prefix(4)), [0x50, 0x4b, 0x03, 0x04])
+                XCTAssertEqual(String(buffer: response.body), "<html>persisted</html>")
             }
         }
     }
 
-    func testFixArchiveReturns404WhenNothingToFix() async throws {
-        let jobStore = JobStore(ttl: .seconds(3600))
-        _ = await jobStore.create(id: "job-1", repoURL: "https://github.com/org/repo")
-        await jobStore.markCompleted(
-            "job-1",
-            reportJSON: TestSupport.sampleReportJSON(
-                ignoreFiles: ["cursor-ignore": true],
-                exposedPatterns: [],
-                exposedFiles: 0
-            ),
-            reportHTMLKey: "reports/job-1.html"
-        )
-        let app = makeApp(jobStore: jobStore)
+    func testReportRejectsJobIDWithUnsafeCharacters() async throws {
+        let storage = LocalReportStorage(directory: reportDirectory)
+        _ = try await storage.storeHTML(jobID: "job-1", html: "<html>persisted</html>")
+        let app = makeApp(storage: storage)
 
         try await app.test(.router) { client in
-            try await client.execute(uri: "/r/job-1/fix", method: .get) { response in
-                XCTAssertEqual(response.status, .notFound)
+            for uri in ["/r/..%2Fjob-1", "/r/job.1", "/scan/%3Cscript%3E/page"] {
+                try await client.execute(uri: uri, method: .get) { response in
+                    XCTAssertEqual(response.status, .notFound, "expected 404 for \(uri)")
+                }
             }
         }
     }
 
-    func testFixArchiveReturns409WhenJobNotCompleted() async throws {
+    func testCreateScanReusesInFlightJobForSameRepo() async throws {
+        let tracker = JobPushTracker()
         let jobStore = JobStore(ttl: .seconds(3600))
-        _ = await jobStore.create(id: "job-1", repoURL: "https://github.com/org/repo")
-        let app = makeApp(jobStore: jobStore)
+        let app = makeApp(jobStore: jobStore, tracker: tracker, scanReuseWindow: .seconds(900))
 
         try await app.test(.router) { client in
-            try await client.execute(uri: "/r/job-1/fix", method: .get) { response in
-                XCTAssertEqual(response.status, .conflict)
+            let body = ByteBuffer(string: #"{"url":"https://github.com/offsend/macos"}"#)
+            var firstJobID = ""
+            try await client.execute(
+                uri: "/scan",
+                method: .post,
+                headers: [.contentType: "application/json"],
+                body: body
+            ) { response in
+                let payload = try JSONDecoder().decode(CreateScanResponse.self, from: Data(buffer: response.body))
+                firstJobID = payload.jobID
+            }
+            try await client.execute(
+                uri: "/scan",
+                method: .post,
+                headers: [.contentType: "application/json"],
+                body: body
+            ) { response in
+                XCTAssertEqual(response.status, .accepted)
+                let payload = try JSONDecoder().decode(CreateScanResponse.self, from: Data(buffer: response.body))
+                XCTAssertEqual(payload.jobID, firstJobID)
             }
         }
+
+        let pushed = await tracker.jobs
+        XCTAssertEqual(pushed.count, 1)
     }
 
-    func testFixArchiveReturns404ForMissingJob() async throws {
+    func testCreateScanQueuesNewJobForDifferentRepo() async throws {
+        let tracker = JobPushTracker()
+        let app = makeApp(tracker: tracker, scanReuseWindow: .seconds(900))
+
+        try await app.test(.router) { client in
+            for repo in ["https://github.com/offsend/macos", "https://github.com/offsend/other"] {
+                let body = ByteBuffer(string: "{\"url\":\"\(repo)\"}")
+                try await client.execute(
+                    uri: "/scan",
+                    method: .post,
+                    headers: [.contentType: "application/json"],
+                    body: body
+                ) { response in
+                    XCTAssertEqual(response.status, .accepted)
+                }
+            }
+        }
+
+        let pushed = await tracker.jobs
+        XCTAssertEqual(pushed.count, 2)
+    }
+
+    func testResponsesIncludeSecurityHeaders() async throws {
         let app = makeApp()
         try await app.test(.router) { client in
-            try await client.execute(uri: "/r/missing/fix", method: .get) { response in
-                XCTAssertEqual(response.status, .notFound)
+            try await client.execute(uri: "/", method: .get) { response in
+                XCTAssertNotNil(response.headers[.init("Content-Security-Policy")!])
+                XCTAssertEqual(response.headers[.init("X-Content-Type-Options")!], "nosniff")
+                XCTAssertEqual(response.headers[.init("X-Frame-Options")!], "DENY")
+                XCTAssertNotNil(response.headers[.init("Referrer-Policy")!])
             }
         }
     }
@@ -337,23 +390,14 @@ final class RoutesTests: XCTestCase {
     private func makeApp(
         jobStore: JobStore = JobStore(ttl: .seconds(3600)),
         tracker: JobPushTracker? = nil,
-        storage: LocalReportStorage? = nil
+        storage: LocalReportStorage? = nil,
+        rateLimiter: ScanRateLimiter = ScanRateLimiter(maxRequestsPerWindow: 1000),
+        scanReuseWindow: Duration = .seconds(0)
     ) -> Application<Router<AppRequestContext>.Responder> {
         let storage = storage ?? LocalReportStorage(directory: reportDirectory)
-        let config = AppConfiguration(
-            host: "127.0.0.1",
-            port: 8080,
-            gitPath: "/usr/bin/git",
-            cloneTimeout: .seconds(120),
-            scanWorkDirectory: reportDirectory.deletingLastPathComponent().appendingPathComponent("work", isDirectory: true),
-            reportStorageDirectory: reportDirectory,
-            reportTTL: .seconds(3600),
-            jobWorkers: 1,
-            valkeyHost: nil,
-            valkeyPort: 6379,
-            valkeyQueueName: "test",
-            r2: nil,
-            toolVersion: "test-1.0.0"
+        let config = TestSupport.makeConfiguration(
+            reportDirectory: reportDirectory,
+            scanReuseWindow: scanReuseWindow
         )
         let pushScanJob: @Sendable (ScanRepositoryJobParameters) async throws -> Void = { parameters in
             if let tracker {
@@ -365,6 +409,7 @@ final class RoutesTests: XCTestCase {
             jobStore: jobStore,
             reportStorage: ReportStorageBox(storage),
             htmlTemplates: htmlTemplates,
+            rateLimiter: rateLimiter,
             pushScanJob: pushScanJob
         )
         return TestSupport.makeTestApplication(dependencies: dependencies)

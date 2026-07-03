@@ -18,6 +18,13 @@ struct ScanServices: @unchecked Sendable {
     let toolVersion: String
     let logger: Logger
     var reportTTL: Duration = .seconds(172_800)
+    var scanTimeout: Duration = .seconds(180)
+    var maxRepoSizeBytes: Int64 = 500 * 1024 * 1024
+}
+
+enum ScanJobError: Error, Sendable {
+    case repositoryTooLarge
+    case scanTimedOut
 }
 
 /// Type-erased report storage so job handlers stay Sendable.
@@ -48,7 +55,15 @@ enum ScanJobRunner {
             let normalized = try RepositoryURLValidator.normalize(parameters.repoURL)
             try await services.cloner.clone(repositoryURL: normalized, into: cloneDestination)
 
-            let report = services.scanner.scan(directoryURL: cloneDestination)
+            let cloneSize = directorySize(at: cloneDestination)
+            guard cloneSize <= services.maxRepoSizeBytes else {
+                throw ScanJobError.repositoryTooLarge
+            }
+
+            let scanner = services.scanner
+            let report = try await withDeadline(services.scanTimeout) {
+                scanner.scan(directoryURL: cloneDestination)
+            }
             let reportJSON = services.scanner.renderJSON(report, toolVersion: services.toolVersion)
             let html = try ReportHTMLRenderer.render(
                 templates: services.htmlTemplates,
@@ -70,10 +85,75 @@ enum ScanJobRunner {
                 services.logger.info("Scan completed", metadata: ["jobID": .string(parameters.jobID)])
             }
         } catch {
-            await services.jobStore.markFailed(parameters.jobID, message: error.localizedDescription)
-            services.logger.error("Scan failed", metadata: ["jobID": .string(parameters.jobID), "error": .string(error.localizedDescription)])
+            await services.jobStore.markFailed(parameters.jobID, message: publicFailureMessage(for: error))
+            services.logger.error(
+                "Scan failed",
+                metadata: ["jobID": .string(parameters.jobID), "error": .string(String(describing: error))]
+            )
         }
 
         services.cloner.removeClone(at: cloneDestination)
+    }
+
+    /// User-facing failure text. Raw git stderr can leak server paths and
+    /// environment details, so it stays in the logs only.
+    private static func publicFailureMessage(for error: Error) -> String {
+        switch error {
+        case let urlError as RepositoryURLError:
+            return urlError.errorDescription ?? "Invalid repository URL."
+        case RepositoryCloneError.timedOut:
+            return "Repository clone timed out."
+        case RepositoryCloneError.failed:
+            return "Repository clone failed. Check that the repository exists and is publicly accessible."
+        case RepositoryCloneError.gitUnavailable:
+            return "The scanner is temporarily unavailable. Try again later."
+        case ScanJobError.repositoryTooLarge:
+            return "Repository is too large to scan."
+        case ScanJobError.scanTimedOut:
+            return "Scan timed out."
+        default:
+            return "Scan failed due to an internal error."
+        }
+    }
+
+    private static func directorySize(at url: URL) -> Int64 {
+        guard let enumerator = FileManager.default.enumerator(
+            at: url,
+            includingPropertiesForKeys: [.totalFileAllocatedSizeKey, .fileSizeKey]
+        ) else { return 0 }
+
+        var total: Int64 = 0
+        while let fileURL = enumerator.nextObject() as? URL {
+            guard let values = try? fileURL.resourceValues(forKeys: [.totalFileAllocatedSizeKey, .fileSizeKey]) else {
+                continue
+            }
+            total += Int64(values.totalFileAllocatedSize ?? values.fileSize ?? 0)
+        }
+        return total
+    }
+
+    /// Runs synchronous scan work off the current task and abandons it when the
+    /// deadline passes. The abandoned work finishes in the background and its
+    /// result is discarded — the scanner has no cooperative cancellation.
+    private static func withDeadline<T: Sendable>(
+        _ timeout: Duration,
+        operation: @escaping @Sendable () -> T
+    ) async throws -> T {
+        let work = Task.detached { operation() }
+        let result: T? = await withTaskGroup(of: T?.self) { group in
+            group.addTask { await work.value }
+            group.addTask {
+                try? await Task.sleep(for: timeout)
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+        guard let result else {
+            work.cancel()
+            throw ScanJobError.scanTimedOut
+        }
+        return result
     }
 }

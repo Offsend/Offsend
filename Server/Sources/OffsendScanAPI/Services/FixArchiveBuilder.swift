@@ -1,17 +1,11 @@
 import Foundation
 import WorkspacePolicyCore
 
-/// Turns an anonymized scan report into a downloadable "fix pack": ready-to-use
-/// AI ignore files with full coverage of the sensitive patterns, so dropping the
-/// archive into a repository root makes it pass the scan. Ships the files a repo
-/// is missing, and — when sensitive files are still exposed — refreshes the
-/// existing gating ignore files too (they are present but incomplete).
+/// Derives ready-to-use AI ignore files from an anonymized scan report. Used by the
+/// "Fix it" modal to build platform-specific copy-paste commands.
 enum FixArchiveBuilder {
-    static let fileName = "offsend-fix.zip"
-
     /// One file the user should create to resolve findings: its repo-relative path
-    /// and full ready-to-use contents. Used to build both the zip and the copy-paste
-    /// "Fix it" commands shown on the report page.
+    /// and full ready-to-use contents.
     struct FixFile: Sendable, Equatable, Encodable {
         let path: String
         let contents: String
@@ -34,37 +28,8 @@ enum FixArchiveBuilder {
         uniqueKeysWithValues: AIWorkspaceSensitivePattern.defaultPatterns.map { ($0.id, $0) }
     )
 
-    /// Whether the report has any fixable finding worth generating an archive for.
-    static func hasFixes(reportJSON: String) -> Bool {
-        guard let payload = decode(reportJSON) else { return false }
-        return !missingIgnoreRules(from: payload).isEmpty || !exposedPatterns(from: payload).isEmpty
-    }
-
-    /// The zip bytes, or `nil` when there is nothing to fix.
-    static func makeArchive(reportJSON: String, repoURL: String) -> Data? {
-        guard let payload = decode(reportJSON) else { return nil }
-        let missing = missingIgnoreRules(from: payload)
-        let patterns = exposedPatterns(from: payload)
-        guard !missing.isEmpty || !patterns.isEmpty else { return nil }
-
-        // Exposed patterns mean at least one existing gating ignore file is
-        // incomplete, so refresh present files with full-coverage content too.
-        let refreshed = patterns.isEmpty ? [] : presentIgnoreRules(from: payload)
-
-        var entries = fixFiles(missing: missing, refreshed: refreshed).map {
-            ZIPArchive.Entry(path: $0.path, contents: $0.contents)
-        }
-        entries.append(
-            ZIPArchive.Entry(
-                path: "README.md",
-                contents: readme(repoURL: repoURL, missing: missing, refreshed: refreshed, patterns: patterns)
-            )
-        )
-        return ZIPArchive.archive(entries: entries)
-    }
-
     /// The files a user should create to pass the scan, or an empty array when there
-    /// is nothing to fix. Same content as the zip, minus the README.
+    /// is nothing to fix.
     static func fixFiles(reportJSON: String) -> [FixFile] {
         guard let payload = decode(reportJSON) else { return [] }
         let missing = missingIgnoreRules(from: payload)
@@ -116,59 +81,5 @@ enum FixArchiveBuilder {
             guard seen.insert(exposed.id).inserted else { return nil }
             return patternsByID[exposed.id]
         }
-    }
-
-    private static func readme(
-        repoURL: String,
-        missing: [AIWorkspacePrivacyRule],
-        refreshed: [AIWorkspacePrivacyRule],
-        patterns: [AIWorkspaceSensitivePattern]
-    ) -> String {
-        var lines: [String] = [
-            "# Offsend fix pack",
-            "",
-            "Repository: \(repoURL)",
-            "",
-            "This archive contains ready-to-use AI ignore files with full coverage of the",
-            "sensitive patterns found in your scan. They stop AI tools and agents from reading",
-            "secrets, credentials, and other sensitive files.",
-            "",
-            "## How to apply",
-            "",
-            "1. Unzip this archive into the root of your repository.",
-            "2. Commit the files.",
-        ]
-
-        if !refreshed.isEmpty {
-            lines.append(
-                "3. These files replace existing ignore files with a complete Offsend-recommended"
-            )
-            lines.append(
-                "   version. If you had custom rules, merge them back in after unzipping."
-            )
-        }
-
-        if !missing.isEmpty {
-            lines.append("")
-            lines.append("## New ignore files")
-            lines.append("")
-            for rule in missing {
-                guard let path = rule.fix?.relativePath else { continue }
-                lines.append("- `\(path)` — \(rule.toolName)")
-            }
-        }
-
-        if !refreshed.isEmpty {
-            lines.append("")
-            lines.append("## Updated ignore files (existing but incomplete)")
-            lines.append("")
-            for rule in refreshed {
-                guard let path = rule.fix?.relativePath else { continue }
-                lines.append("- `\(path)` — \(rule.toolName)")
-            }
-        }
-
-        lines.append("")
-        return lines.joined(separator: "\n")
     }
 }

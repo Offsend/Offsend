@@ -60,6 +60,7 @@ struct ScanStatusResponse: Codable, Sendable {
 enum JSONValue: Codable, Sendable, Equatable {
     case string(String)
     case int(Int)
+    case double(Double)
     case bool(Bool)
     case object([String: JSONValue])
     case array([JSONValue])
@@ -73,6 +74,8 @@ enum JSONValue: Codable, Sendable, Equatable {
             self = .bool(value)
         } else if let value = try? container.decode(Int.self) {
             self = .int(value)
+        } else if let value = try? container.decode(Double.self) {
+            self = .double(value)
         } else if let value = try? container.decode(String.self) {
             self = .string(value)
         } else if let value = try? container.decode([String: JSONValue].self) {
@@ -90,6 +93,8 @@ enum JSONValue: Codable, Sendable, Equatable {
         case let .string(value):
             try container.encode(value)
         case let .int(value):
+            try container.encode(value)
+        case let .double(value):
             try container.encode(value)
         case let .bool(value):
             try container.encode(value)
