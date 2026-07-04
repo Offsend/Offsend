@@ -17,9 +17,6 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: Server
     steps:
       - uses: actions/checkout@v4
       - uses: swift-actions/setup-swift@v2
@@ -30,6 +27,7 @@ jobs:
       - name: Sync shared scan sources
         run: bash Scripts/sync_scan_vendor.sh
       - name: Test
+        working-directory: Server
         run: swift test
 
   deploy:
