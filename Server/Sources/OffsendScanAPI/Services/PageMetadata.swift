@@ -39,7 +39,7 @@ enum PageMetadata {
             "canonicalURL": canonical,
             "ogTitle": landingTitle,
             "ogDescription": landingDescription,
-            "ogImageURL": "\(siteURL)/assets/logo.svg",
+            "ogImageURL": "\(siteURL)/assets/og.jpg",
         ]
     }
 }

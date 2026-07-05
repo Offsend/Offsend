@@ -41,6 +41,7 @@ final class RoutesTests: XCTestCase {
                 XCTAssertTrue(body.contains("name=\"description\""))
                 XCTAssertTrue(body.contains("rel=\"canonical\""))
                 XCTAssertTrue(body.contains("property=\"og:title\""))
+                XCTAssertTrue(body.contains("/assets/og.jpg"))
                 XCTAssertTrue(body.contains("application/ld+json"))
                 XCTAssertTrue(body.contains("See what AI can read"))
                 XCTAssertTrue(body.contains("/assets/landing.js"))
@@ -71,6 +72,17 @@ final class RoutesTests: XCTestCase {
                 XCTAssertEqual(response.headers[.contentType], "text/css; charset=utf-8")
                 let body = String(buffer: response.body)
                 XCTAssertTrue(body.contains("--brand-blue"))
+            }
+        }
+    }
+
+    func testStaticAssetsServeOGImage() async throws {
+        let app = makeApp()
+        try await app.test(.router) { client in
+            try await client.execute(uri: "/assets/og.jpg", method: .get) { response in
+                XCTAssertEqual(response.status, .ok)
+                XCTAssertEqual(response.headers[.contentType], "image/jpeg")
+                XCTAssertFalse(response.body.readableBytes == 0)
             }
         }
     }
