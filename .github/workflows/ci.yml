@@ -30,3 +30,21 @@ jobs:
             build
       - name: Run CLI E2E smoke
         run: bash Scripts/ci_cli_e2e.sh build/DerivedData/Build/Products/Debug/offsend
+
+  linux-cli:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Swift
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: "6.0.3"
+      - name: Build offsend CLI
+        run: swift build --product offsend -c release
+      - name: Run SPM tests
+        run: swift test
+      - name: Run CLI E2E smoke
+        run: bash Scripts/ci_cli_e2e.sh .build/release/offsend
+
+      - name: Verify CLI Docker image builds
+        run: docker build -f CLI/Dockerfile -t offsend-cli:ci .

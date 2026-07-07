@@ -1,0 +1,12 @@
+.git
+.build
+Packages
+**/Derived
+**/.DS_Store
+App
+AppUIKit
+Server
+Tuist
+*.xcworkspace
+*.xcodeproj
+assets

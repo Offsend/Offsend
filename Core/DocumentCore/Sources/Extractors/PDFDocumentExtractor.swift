@@ -1,3 +1,4 @@
+#if canImport(PDFKit)
 import Foundation
 import PDFKit
 
@@ -40,3 +41,4 @@ public struct PDFDocumentExtractor: DocumentTextExtracting {
         return DocumentTextExtractionResult(format: .pdf, plainText: plainText, pdfData: request.data)
     }
 }
+#endif

@@ -4,6 +4,7 @@ public protocol PDFRedactionExporting: Sendable {
     func export(session: PDFRedactionSession, to destinationURL: URL) throws -> PDFRedactionResult
 }
 
+#if canImport(PDFKit)
 public struct PDFRedactionExporter: PDFRedactionExporting {
     private let planBuilder: PDFRedactionPlanBuilding
     private let redactionEngine: PDFRedactionApplying
@@ -44,3 +45,4 @@ public struct PDFRedactionExporter: PDFRedactionExporting {
         return PDFRedactionResult(plan: plan, redactedData: redactedData, warnings: warnings)
     }
 }
+#endif

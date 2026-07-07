@@ -1,3 +1,4 @@
+#if os(macOS)
 import Foundation
 
 public enum CLIPathInstallationState: String, Sendable, Equatable {
@@ -352,3 +353,4 @@ public struct CLIPathInstaller {
             + "\""
     }
 }
+#endif

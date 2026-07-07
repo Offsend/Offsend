@@ -1,65 +1,45 @@
+#if canImport(Security)
 import CryptoKit
 import DetectionCore
 import Foundation
 import MaskingCore
 import Security
 
-public protocol LocalStoring {
-    func loadSettings() throws -> AppSettings
-    func saveSettings(_ settings: AppSettings) throws
-    func loadCustomDictionaries() throws -> [CustomDictionaryItem]
-    func saveCustomDictionaries(_ items: [CustomDictionaryItem]) throws
-    func saveMapping(_ result: MaskingResult) throws
-    func restore(text: String) throws -> String?
-    func mappingSummaries() throws -> [StoredMappingSummary]
-    func deleteMapping(id: UUID) throws
-    func clearMappings() throws
-    func cleanupExpiredMappings() throws
-    func appendEvent(_ event: LocalEvent) throws
-    func loadEvents() throws -> [LocalEvent]
-    func clearEvents() throws
-    func loadLicenseState() throws -> LicenseState
-    func saveLicenseState(_ state: LicenseState) throws
-}
-
 public final class SecureLocalStore: LocalStoring {
     private let directory: URL
-    private let encoder = JSONEncoder()
-    private let decoder = JSONDecoder()
+    private let codec = LocalStoreJSONCodec()
     private let keyProvider: KeychainKeyProvider
 
     public init(directory: URL? = nil, keyProvider: KeychainKeyProvider = KeychainKeyProvider()) throws {
-        self.directory = directory ?? Self.defaultDirectory()
+        self.directory = directory ?? LocalStoreDirectory.defaultURL()
         self.keyProvider = keyProvider
-        encoder.dateEncodingStrategy = .iso8601
-        decoder.dateDecodingStrategy = .iso8601
         try FileManager.default.createDirectory(at: self.directory, withIntermediateDirectories: true)
     }
 
     public func loadSettings() throws -> AppSettings {
-        try load(AppSettings.self, from: files.settings) ?? .default
+        try codec.load(AppSettings.self, from: files.settings) ?? .default
     }
 
     public func saveSettings(_ settings: AppSettings) throws {
-        try save(settings, to: files.settings)
+        try codec.save(settings, to: files.settings)
     }
 
     public func loadCustomDictionaries() throws -> [CustomDictionaryItem] {
-        try load([CustomDictionaryItem].self, from: files.customDictionaries) ?? []
+        try codec.load([CustomDictionaryItem].self, from: files.customDictionaries) ?? []
     }
 
     public func saveCustomDictionaries(_ items: [CustomDictionaryItem]) throws {
-        try save(items, to: files.customDictionaries)
+        try codec.save(items, to: files.customDictionaries)
     }
 
     public func saveMapping(_ result: MaskingResult) throws {
         guard result.shouldPersist else { return }
         var mappings = try loadStoredMappings()
-        let payload = try encoder.encode(result.mapping)
+        let payload = try codec.encoder.encode(result.mapping)
         let encrypted = try encrypt(payload)
         mappings.removeAll { $0.id == result.id }
         mappings.append(StoredMapping(id: result.id, createdAt: result.createdAt, expiresAt: result.expiresAt, encryptedPayload: encrypted))
-        try save(mappings, to: files.mappings)
+        try codec.save(mappings, to: files.mappings)
     }
 
     public func restore(text: String) throws -> String? {
@@ -67,7 +47,7 @@ public final class SecureLocalStore: LocalStoring {
         let engine = MaskingEngine()
         for mapping in try loadStoredMappings().sorted(by: { $0.createdAt > $1.createdAt }) {
             let decrypted = try decrypt(mapping.encryptedPayload)
-            let dictionary = try decoder.decode([String: String].self, from: decrypted)
+            let dictionary = try codec.decoder.decode([String: String].self, from: decrypted)
             guard dictionary.keys.contains(where: { text.contains($0) }) else { continue }
             return engine.restore(text: text, mapping: dictionary)
         }
@@ -78,7 +58,7 @@ public final class SecureLocalStore: LocalStoring {
         try cleanupExpiredMappings()
         return try loadStoredMappings().map { mapping in
             let decrypted = try decrypt(mapping.encryptedPayload)
-            let dictionary = try decoder.decode([String: String].self, from: decrypted)
+            let dictionary = try codec.decoder.decode([String: String].self, from: decrypted)
             return StoredMappingSummary(id: mapping.id, createdAt: mapping.createdAt, expiresAt: mapping.expiresAt, placeholderCount: dictionary.count)
         }
         .sorted { $0.createdAt > $1.createdAt }
@@ -87,11 +67,11 @@ public final class SecureLocalStore: LocalStoring {
     public func deleteMapping(id: UUID) throws {
         var mappings = try loadStoredMappings()
         mappings.removeAll { $0.id == id }
-        try save(mappings, to: files.mappings)
+        try codec.save(mappings, to: files.mappings)
     }
 
     public func clearMappings() throws {
-        try save([StoredMapping](), to: files.mappings)
+        try codec.save([StoredMapping](), to: files.mappings)
     }
 
     public func cleanupExpiredMappings() throws {
@@ -101,37 +81,37 @@ public final class SecureLocalStore: LocalStoring {
             guard let expiresAt = mapping.expiresAt else { return false }
             return expiresAt <= now
         }
-        try save(mappings, to: files.mappings)
+        try codec.save(mappings, to: files.mappings)
     }
 
     public func appendEvent(_ event: LocalEvent) throws {
         var events = try loadEvents()
         events.append(event)
-        try save(events.suffix(2_000), to: files.events)
+        try codec.save(Array(events.suffix(2_000)), to: files.events)
     }
 
     public func loadEvents() throws -> [LocalEvent] {
-        try load([LocalEvent].self, from: files.events) ?? []
+        try codec.load([LocalEvent].self, from: files.events) ?? []
     }
 
     public func clearEvents() throws {
-        try save([LocalEvent](), to: files.events)
+        try codec.save([LocalEvent](), to: files.events)
     }
 
     public func loadLicenseState() throws -> LicenseState {
-        try load(LicenseState.self, from: files.license) ?? LicenseState()
+        try codec.load(LicenseState.self, from: files.license) ?? LicenseState()
     }
 
     public func saveLicenseState(_ state: LicenseState) throws {
-        try save(state, to: files.license)
+        try codec.save(state, to: files.license)
     }
 
-    private var files: StoreFiles {
-        StoreFiles(directory: directory)
+    private var files: LocalStoreFiles {
+        LocalStoreFiles(directory: directory)
     }
 
     private func loadStoredMappings() throws -> [StoredMapping] {
-        try load([StoredMapping].self, from: files.mappings) ?? []
+        try codec.load([StoredMapping].self, from: files.mappings) ?? []
     }
 
     private func encrypt(_ data: Data) throws -> Data {
@@ -144,31 +124,6 @@ public final class SecureLocalStore: LocalStoring {
         let box = try AES.GCM.SealedBox(combined: data)
         return try AES.GCM.open(box, using: key)
     }
-
-    private func load<T: Decodable>(_ type: T.Type, from url: URL) throws -> T? {
-        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-        return try decoder.decode(T.self, from: Data(contentsOf: url))
-    }
-
-    private func save<T: Encodable>(_ value: T, to url: URL) throws {
-        let data = try encoder.encode(value)
-        try data.write(to: url, options: [.atomic])
-    }
-
-    private static func defaultDirectory() -> URL {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        return support.appendingPathComponent("Offsend", isDirectory: true)
-    }
-}
-
-private struct StoreFiles {
-    let directory: URL
-
-    var settings: URL { directory.appendingPathComponent("settings.json") }
-    var customDictionaries: URL { directory.appendingPathComponent("custom_dictionaries.json") }
-    var mappings: URL { directory.appendingPathComponent("mappings.sqlite.json") }
-    var events: URL { directory.appendingPathComponent("local_events.json") }
-    var license: URL { directory.appendingPathComponent("license.json") }
 }
 
 private struct StoredMapping: Codable, Equatable {
@@ -247,3 +202,4 @@ public enum StorageError: LocalizedError {
         }
     }
 }
+#endif

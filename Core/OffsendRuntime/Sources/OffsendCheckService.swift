@@ -39,7 +39,7 @@ public struct OffsendCheckService: Sendable {
 
     public init(
         context: OffsendRuntimeContext,
-        pipeline: DocumentProcessingPipeline = DocumentProcessingPipeline(),
+        pipeline: DocumentProcessingPipeline = DocumentProcessingPipeline.forRuntime(),
         auditor: AIWorkspacePrivacyAuditor = AIWorkspacePrivacyAuditor()
     ) {
         self.context = context

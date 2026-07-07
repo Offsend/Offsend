@@ -10,6 +10,7 @@
   <a href="https://github.com/Offsend/Offsend/releases"><img src="https://img.shields.io/github/v/release/Offsend/Offsend?label=release" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License"></a>
   <a href="https://www.apple.com/macos/"><img src="https://img.shields.io/badge/platform-macOS%2013%2B-000000?logo=apple&logoColor=white" alt="Platform"></a>
+  <img src="https://img.shields.io/badge/Linux-CLI%20(x86_64%20%7C%20arm64)-FCC624?logo=linux&logoColor=black" alt="Linux CLI">
   <img src="https://img.shields.io/badge/Swift-5.9-F05138?logo=swift&logoColor=white" alt="Swift 5.9">
   <img src="https://img.shields.io/badge/local--first-yes-2ea44f" alt="Local-first">
   <a href="https://radar.offsend.io/participants/"><img src="https://radar.offsend.io/badge.svg" alt="AI Context Reviewed" height="20"></a>
@@ -122,16 +123,65 @@ The app gives you the full menu bar workflow: Safe Paste hotkeys, drag-and-drop 
 
 To make the bundled CLI available as `offsend` in terminals, open **Settings → Hooks → CLI** and install the terminal command. Offsend creates `/usr/local/bin/offsend` as a symlink to the CLI inside `Offsend.app` and does not overwrite an existing Homebrew or third-party `offsend` command.
 
-### Free CLI only
+### Free CLI (macOS + Linux)
 
-Use the standalone CLI for free when you need terminal, git hook, or CI checks without installing the full app:
+Use the standalone CLI for free when you need terminal, git hook, or CI checks without installing the full app.
+
+**Install script (recommended)**
+
+```bash
+curl -fsSL https://install.offsend.io/cli | bash
+```
+
+Until `install.offsend.io` is wired up, use the script from the repository:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Offsend/Offsend/main/Scripts/install.sh | bash
+```
+
+Pin a release with `OFFSEND_VERSION=0.0.6`, or install without root:
+
+```bash
+OFFSEND_INSTALL_DIR=$HOME/.local/bin OFFSEND_PREFIX=$HOME/.local/lib/offsend/cli \
+  curl -fsSL https://install.offsend.io/cli | bash
+```
+
+**Homebrew**
+
+macOS (Cask — signed binary + frameworks):
 
 ```bash
 brew install --cask offsend/tap/offsend-cli
 offsend doctor
 ```
 
-### Build from source
+Linux (Formula):
+
+```bash
+brew install offsend/tap/offsend-cli
+offsend doctor
+```
+
+**Docker (Linux/macOS with Docker)**
+
+```bash
+docker build -f CLI/Dockerfile -t offsend/cli .
+docker run --rm -v "$PWD:/work" -w /work offsend/cli check README.md
+```
+
+**Build from source**
+
+Requirements: Swift 6.0+, git.
+
+```bash
+OFFSEND_CLI_VERSION=0.0.0 bash Scripts/build_linux_cli.sh   # Linux release build
+swift build --product offsend -c release                     # any supported host
+.build/release/offsend doctor
+```
+
+On Linux, config lives under `$XDG_CONFIG_HOME/offsend` (typically `~/.config/offsend`). On macOS CLI, settings use Application Support / Keychain like the app.
+
+### Build from source (macOS app)
 
 ```bash
 brew install tuist
@@ -147,15 +197,17 @@ macOS may ask for Accessibility (to paste into the front app) and folder access 
 
 ## App vs CLI
 
-| | **macOS app** | **CLI** |
-| --- | --- | --- |
-| Best for | Daily interactive work | Free terminal, git hook, and CI checks |
-| Safe Paste | Yes: scan, mask, paste, restore | No |
-| File preparation | Drag-and-drop UI, review, copy/save | Path-based scans |
-| Project checks | UI checks, ignore files, watched folders | `offsend check`, `--staged`, `--policy`, `offsend show`, `offsend prepare` |
-| Git hooks | Install/manage in Settings → Hooks | `offsend hook install/status/uninstall` |
-| AI models | Download, import, select, and manage models | Not used by the CLI |
-| Automation | Background watcher and notifications | Scriptable text/json output |
+| | **macOS app** | **CLI (macOS)** | **CLI (Linux)** |
+| --- | --- | --- | --- |
+| Best for | Daily interactive work | Free terminal, git hook, and CI checks | Free terminal, git hook, and CI checks |
+| Safe Paste | Yes: scan, mask, paste, restore | No | No |
+| File preparation | Drag-and-drop UI, review, copy/save | Path-based scans | Plain-text path scans only |
+| Document formats | Plain text, PDF, RTF, Word | Plain text, PDF, RTF, Word | Plain text only |
+| Project checks | UI checks, ignore files, watched folders | `offsend check`, `--staged`, `--policy`, `offsend show`, `offsend prepare` | Same |
+| Git hooks | Install/manage in Settings → Hooks | `offsend hook install/status/uninstall` | Same |
+| AI models | Download, import, select, and manage models | Not used by the CLI | Not used by the CLI |
+| Settings storage | Keychain + Application Support | Keychain + Application Support | Plain JSON in `~/.config/offsend` |
+| Automation | Background watcher and notifications | Scriptable text/json output | Scriptable text/json output |
 
 The macOS app already includes the CLI helper at:
 
@@ -301,14 +353,30 @@ Supported `check.detectors.disable` IDs:
 
 `email`, `phone`, `money`, `url`, `ipAddress`, `internalDomain`, `contractId`, `invoiceId`, `orderId`, `apiKeyGeneric`, `openAIAPIKey`, `awsAccessKeyId`, `githubToken`, `slackToken`, `stripeKey`, `jwt`, `privateKey`, `sshPrivateKey`, `databaseURLWithPassword`, `bearerToken`, `highEntropyString`, `creditCardLike`, `iban`, `customClient`, `customCompany`, `customProject`, `customSensitiveTerm`, `customInternalDomain`, `personName`, `streetAddress`, `governmentId`.
 
-### CI snippet
+### CI snippet (macOS + Linux)
 
 ```yaml
 - name: Install Offsend CLI
-  run: brew install --cask offsend/tap/offsend-cli
+  run: curl -fsSL https://install.offsend.io/cli | bash
 
 - name: Check staged changes for secrets
   run: offsend check --staged
+```
+
+Fallback before `install.offsend.io` is live:
+
+```yaml
+- run: curl -fsSL https://raw.githubusercontent.com/Offsend/Offsend/main/Scripts/install.sh | bash
+```
+
+Build from source in the same job (no GitHub release required):
+
+```yaml
+- uses: swift-actions/setup-swift@v2
+  with:
+    swift-version: "6.0.3"
+- run: swift build --product offsend -c release
+- run: .build/release/offsend check --staged
 ```
 
 Other useful commands: `offsend check`, `offsend show`, `offsend prepare`, `offsend hook status`, `offsend hook uninstall`.

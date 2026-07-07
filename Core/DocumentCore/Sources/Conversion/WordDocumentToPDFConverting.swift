@@ -1,3 +1,4 @@
+#if canImport(AppKit)
 import AppKit
 import CoreText
 import Foundation
@@ -83,3 +84,4 @@ public struct AppKitWordDocumentToPDFConverter: WordDocumentToPDFConverting {
         return pdfData as Data
     }
 }
+#endif

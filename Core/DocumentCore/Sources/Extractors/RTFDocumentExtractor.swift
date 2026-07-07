@@ -1,3 +1,4 @@
+#if canImport(AppKit)
 import AppKit
 import Foundation
 
@@ -26,3 +27,4 @@ public struct RTFDocumentExtractor: DocumentTextExtracting {
         return DocumentTextExtractionResult(format: .plainText, plainText: attributed.string)
     }
 }
+#endif

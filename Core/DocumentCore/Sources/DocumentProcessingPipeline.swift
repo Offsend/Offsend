@@ -29,13 +29,35 @@ public final class DocumentProcessingPipeline: DocumentProcessing, Sendable {
         detector: SensitiveDataDetecting = DetectionEngine(),
         riskScorer: RiskScoring = RiskScoringEngine(),
         maskingEngine: TextMasking = MaskingEngine(),
-        pdfRedactionPlanBuilder: PDFRedactionPlanBuilding = PDFRedactionPlanBuilder()
+        pdfRedactionPlanBuilder: PDFRedactionPlanBuilding? = nil
     ) {
         self.textExtractor = textExtractor
         self.detector = detector
         self.riskScorer = riskScorer
         self.maskingEngine = maskingEngine
-        self.pdfRedactionPlanBuilder = pdfRedactionPlanBuilder
+        self.pdfRedactionPlanBuilder = pdfRedactionPlanBuilder ?? Self.makeDefaultPDFRedactionPlanBuilder()
+    }
+
+    /// Plain-text extraction pipeline for cross-platform CLI and CI.
+    public static func forCLI() -> DocumentProcessingPipeline {
+        DocumentProcessingPipeline(textExtractor: .forCLI())
+    }
+
+    /// Runtime default: full document support on Apple platforms, plain text on Linux.
+    public static func forRuntime() -> DocumentProcessingPipeline {
+        #if os(Linux)
+        return forCLI()
+        #else
+        return DocumentProcessingPipeline()
+        #endif
+    }
+
+    static func makeDefaultPDFRedactionPlanBuilder() -> PDFRedactionPlanBuilding {
+        #if canImport(PDFKit)
+        return PDFRedactionPlanBuilder()
+        #else
+        return UnavailablePDFRedactionPlanBuilder()
+        #endif
     }
 
     public func analyze(_ request: DocumentProcessingRequest) async throws -> DocumentAnalysisResult {
