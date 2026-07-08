@@ -1,3 +1,4 @@
+#if canImport(Security)
 import Foundation
 
 public enum StorageCoreStrings: Sendable {
@@ -13,3 +14,4 @@ public enum StorageCoreStrings: Sendable {
         "Failed to store encryption key in Keychain: \(status)"
     }
 }
+#endif
