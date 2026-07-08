@@ -44,9 +44,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Swift
-        uses: swift-actions/setup-swift@v2
-        with:
-          swift-version: "6.0.3"
+        env:
+          SWIFT_VERSION: "6.0.3"
+        run: bash Scripts/install_swift_linux_ci.sh
       - name: Build offsend CLI
         run: swift build --product offsend -c release
       - name: Run SPM tests
