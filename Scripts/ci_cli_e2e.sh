@@ -67,4 +67,32 @@ git -C "$repo" add .offsend.yml secrets.env
 
 "$CLI_PATH" check --staged --working-directory "$repo" --fail-on block --quiet
 
+printf '%s\n' '%PDF-1.4 fake' > "$repo/scan.pdf"
+git -C "$repo" add scan.pdf
+
+set +e
+check_pdf_output="$("$CLI_PATH" check --staged --working-directory "$repo" --verbose 2>&1)"
+check_pdf_status="$?"
+set -e
+
+if [[ "$check_pdf_status" -ne 0 ]]; then
+  echo "Expected check on PDF to exit 0 (skipped file), got exit code $check_pdf_status" >&2
+  echo "$check_pdf_output" >&2
+  exit 1
+fi
+
+if [[ "$(uname -s)" == "Linux" ]]; then
+  if ! echo "$check_pdf_output" | grep -q "Unsupported format (.pdf)"; then
+    echo "Expected Linux check to report unsupported PDF format" >&2
+    echo "$check_pdf_output" >&2
+    exit 1
+  fi
+else
+  if ! echo "$check_pdf_output" | grep -qE "Invalid PDF|Unsupported format"; then
+    echo "Expected macOS check to skip PDF with Invalid PDF or Unsupported format" >&2
+    echo "$check_pdf_output" >&2
+    exit 1
+  fi
+fi
+
 echo "CLI E2E smoke passed."

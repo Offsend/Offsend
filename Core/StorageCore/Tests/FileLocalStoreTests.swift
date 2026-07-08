@@ -102,4 +102,15 @@ final class LocalStoreDirectoryTests: XCTestCase {
         XCTAssertEqual(url.path, base.appendingPathComponent("offsend", isDirectory: true).path)
         #endif
     }
+
+    func testDefaultURLUsesDotConfigOffsendWhenXDGConfigHomeUnset() {
+        #if os(Linux)
+        unsetenv("XDG_CONFIG_HOME")
+        let fileManager = FileManager.default
+        let url = LocalStoreDirectory.defaultURL(fileManager: fileManager)
+        let expected = fileManager.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/offsend", isDirectory: true)
+        XCTAssertEqual(url.path, expected.path)
+        #endif
+    }
 }

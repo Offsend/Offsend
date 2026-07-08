@@ -32,7 +32,15 @@ jobs:
         run: bash Scripts/ci_cli_e2e.sh build/DerivedData/Build/Products/Debug/offsend
 
   linux-cli:
-    runs-on: ubuntu-22.04
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            arch: x86_64
+          - runner: ubuntu-24.04-arm64
+            arch: aarch64
     steps:
       - uses: actions/checkout@v4
       - name: Install Swift
@@ -48,3 +56,8 @@ jobs:
 
       - name: Verify CLI Docker image builds
         run: docker build -f CLI/Dockerfile -t offsend-cli:ci .
+
+      - name: Docker smoke test
+        run: |
+          docker run --rm offsend-cli:ci --version
+          docker run --rm offsend-cli:ci check --help
