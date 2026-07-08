@@ -1,6 +1,6 @@
 import Foundation
 
-public final class AIWorkspacePrivacyFixer {
+public final class AIWorkspacePrivacyFixer: @unchecked Sendable {
     private let fileManager: FileManager
 
     public init(fileManager: FileManager = .default) {

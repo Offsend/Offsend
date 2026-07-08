@@ -2,7 +2,7 @@ import Foundation
 
 /// Detects on-disk files whose paths look sensitive and are not covered by effective
 /// ignore rules. Reads ignore-file contents only; never inspects matched file bodies.
-public final class SensitivePathExposureChecker {
+public final class SensitivePathExposureChecker: @unchecked Sendable {
     public static let builtInSkippedDirectoryNames: Set<String> = [
         ".git", "node_modules", ".build", "build", "DerivedData"
     ]

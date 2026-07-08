@@ -1,13 +1,24 @@
 import ArgumentParser
 import Foundation
 import OffsendRuntime
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 
 enum CLIError {
     static func exit(_ code: OffsendExitCode, message: String? = nil) -> Never {
         if let message {
             fputs("error: \(message)\n", stderr)
         }
+        #if canImport(Darwin)
         Darwin.exit(code.rawValue)
+        #elseif canImport(Glibc)
+        Glibc.exit(code.rawValue)
+        #else
+        fatalError("Unsupported platform")
+        #endif
     }
 
     static func exit(for error: HookManagerError) -> Never {
