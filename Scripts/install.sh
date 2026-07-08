@@ -27,12 +27,120 @@ require_command() {
   }
 }
 
+using_default_install_paths() {
+  [[ "$INSTALL_DIR" == "/usr/local/bin" && "$PREFIX" == "/opt/offsend/cli" ]]
+}
+
+using_default_linux_install_path() {
+  [[ "$INSTALL_DIR" == "/usr/local/bin" ]]
+}
+
+brew_command() {
+  command -v brew >/dev/null 2>&1
+}
+
+print_existing_macos_install_help() {
+  local found=0
+  local offsend_path
+
+  if brew_command && brew list --cask --versions offsend >/dev/null 2>&1; then
+    found=1
+  fi
+  if brew_command && brew list --cask --versions offsend-cli >/dev/null 2>&1; then
+    found=1
+  fi
+  if [[ -d /Applications/Offsend.app ]]; then
+    found=1
+  fi
+  if command -v offsend >/dev/null 2>&1; then
+    offsend_path="$(command -v offsend)"
+    case "$offsend_path" in
+      */homebrew/*|*/Cellar/*|*/Caskroom/*|/opt/offsend/cli/*|/Applications/Offsend.app/*)
+        found=1
+        ;;
+    esac
+  fi
+  if [[ -d "$PREFIX" ]] && using_default_install_paths; then
+    found=1
+  fi
+
+  if [[ "$found" -eq 0 ]]; then
+    return 1
+  fi
+
+  echo "Offsend is already installed on this Mac:" >&2
+  if brew_command && brew list --cask --versions offsend >/dev/null 2>&1; then
+    echo "  - Offsend app (Homebrew cask offsend/tap/offsend)" >&2
+  fi
+  if brew_command && brew list --cask --versions offsend-cli >/dev/null 2>&1; then
+    echo "  - Offsend CLI (Homebrew cask offsend/tap/offsend-cli)" >&2
+  fi
+  if [[ -d /Applications/Offsend.app ]]; then
+    echo "  - Offsend.app in /Applications" >&2
+  fi
+  if command -v offsend >/dev/null 2>&1; then
+    offsend_path="$(command -v offsend)"
+    case "$offsend_path" in
+      */homebrew/*|*/Cellar/*|*/Caskroom/*|/opt/offsend/cli/*|/Applications/Offsend.app/*)
+        echo "  - offsend command at ${offsend_path}" >&2
+        ;;
+    esac
+  fi
+  if [[ -d "$PREFIX" ]] && using_default_install_paths; then
+    echo "  - previous CLI install at ${PREFIX}" >&2
+  fi
+  echo "" >&2
+  echo "This install script is for a fresh system-wide install. To update what you already have:" >&2
+  echo "  brew upgrade --cask offsend/tap/offsend-cli   # standalone CLI" >&2
+  echo "  brew upgrade --cask offsend/tap/offsend         # macOS app" >&2
+  echo "" >&2
+  echo "To reinstall with this script instead, remove the existing install first:" >&2
+  echo "  brew uninstall --cask offsend-cli" >&2
+  echo "  brew uninstall --cask offsend" >&2
+  echo "  sudo rm -rf /opt/offsend/cli /usr/local/bin/offsend" >&2
+  echo "" >&2
+  echo "Or install to your home directory without sudo:" >&2
+  echo "  OFFSEND_INSTALL_DIR=\$HOME/.local/bin OFFSEND_PREFIX=\$HOME/.local/lib/offsend/cli \\" >&2
+  echo "    curl -fsSL https://install.offsend.io/cli | bash" >&2
+  return 0
+}
+
+print_existing_linux_install_help() {
+  if ! brew_command || ! brew list --formula --versions offsend-cli >/dev/null 2>&1; then
+    return 1
+  fi
+
+  echo "Offsend is already installed on this system:" >&2
+  echo "  - Offsend CLI (Homebrew formula offsend/tap/offsend-cli)" >&2
+  if command -v offsend >/dev/null 2>&1; then
+    echo "  - offsend command at $(command -v offsend)" >&2
+  fi
+  echo "" >&2
+  echo "This install script is for a fresh system-wide install. To update what you already have:" >&2
+  echo "  brew upgrade offsend/tap/offsend-cli" >&2
+  echo "" >&2
+  echo "To reinstall with this script instead, remove the existing install first:" >&2
+  echo "  brew uninstall offsend-cli" >&2
+  echo "  sudo rm -f /usr/local/bin/offsend" >&2
+  echo "" >&2
+  echo "Or install to your home directory without sudo:" >&2
+  echo "  OFFSEND_INSTALL_DIR=\$HOME/.local/bin \\" >&2
+  echo "    curl -fsSL https://install.offsend.io/cli | bash" >&2
+  return 0
+}
+
 ensure_directory() {
   local dir="$1"
   if mkdir -p "$dir" 2>/dev/null; then
     return 0
   fi
   echo "Cannot create or write to ${dir}." >&2
+  if [[ "$(uname -s)" == "Darwin" ]] && using_default_install_paths && print_existing_macos_install_help; then
+    exit 1
+  fi
+  if [[ "$(uname -s)" == "Linux" ]] && using_default_linux_install_path && print_existing_linux_install_help; then
+    exit 1
+  fi
   echo "Set OFFSEND_INSTALL_DIR / OFFSEND_PREFIX to a writable location, or re-run with sufficient permissions." >&2
   exit 1
 }
@@ -69,6 +177,14 @@ install_linux() {
   local arch="$1"
   local tarball url workdir
 
+  if using_default_linux_install_path && print_existing_linux_install_help; then
+    exit 1
+  fi
+
+  if command -v offsend >/dev/null 2>&1 && using_default_linux_install_path; then
+    echo "Updating existing offsend install at $(command -v offsend)..."
+  fi
+
   tarball="offsend-cli-${VERSION}-linux-${arch}.tar.gz"
   url="$(release_base_url "$VERSION")/${tarball}"
 
@@ -89,6 +205,10 @@ install_linux() {
 
 install_macos() {
   local archive url workdir install_root
+
+  if using_default_install_paths && print_existing_macos_install_help; then
+    exit 1
+  fi
 
   require_command unzip
 
