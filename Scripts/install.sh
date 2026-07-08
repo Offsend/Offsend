@@ -41,7 +41,8 @@ resolve_latest_version() {
   local response tag
   response="$(curl -fsSL -H "Accept: application/vnd.github+json" \
     "https://api.github.com/repos/${REPO}/releases/latest")"
-  tag="$(printf '%s' "$response" | tr -d '\n' | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"v\?\([^"]*\)".*/\1/p' | head -1)"
+  tag="$(printf '%s' "$response" | tr -d '\n' | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+  tag="${tag#v}"
   if [[ -z "$tag" ]]; then
     echo "Could not resolve latest release for ${REPO}" >&2
     exit 1
