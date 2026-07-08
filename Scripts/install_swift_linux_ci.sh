@@ -20,28 +20,29 @@ if [[ -f /etc/os-release ]]; then
 fi
 
 case "${VERSION_ID:-}" in
-  22.04)
-    UBUNTU_RELEASE="2204"
-    UBUNTU_VERSION="22.04"
-    ;;
-  24.04)
-    UBUNTU_RELEASE="2404"
-    UBUNTU_VERSION="24.04"
-    ;;
+  22.04) UBUNTU_VERSION="22.04" ;;
+  24.04) UBUNTU_VERSION="24.04" ;;
   *)
     echo "Unsupported Ubuntu version: ${VERSION_ID:-unknown}" >&2
     exit 1
     ;;
 esac
 
-if [[ "$SWIFT_ARCH" == "x86_64" ]]; then
-  TARBALL="swift-${SWIFT_VERSION}-RELEASE-ubuntu${UBUNTU_VERSION}.tar.gz"
+SWIFT_BRANCH="swift-${SWIFT_VERSION}-release"
+SWIFT_RELEASE="swift-${SWIFT_VERSION}-RELEASE"
+SWIFT_PLATFORM="ubuntu${UBUNTU_VERSION}"
+
+if [[ "$SWIFT_ARCH" == "aarch64" ]]; then
+  PLATFORM_DIR="$(echo "$SWIFT_PLATFORM" | tr -d '.')-aarch64"
+  ARCH_SUFFIX="-aarch64"
 else
-  TARBALL="swift-${SWIFT_VERSION}-RELEASE-ubuntu${UBUNTU_VERSION}-${SWIFT_ARCH}.tar.gz"
+  PLATFORM_DIR="$(echo "$SWIFT_PLATFORM" | tr -d '.')"
+  ARCH_SUFFIX=""
 fi
 
-URL="https://download.swift.org/swift-${SWIFT_VERSION}-release/ubuntu${UBUNTU_RELEASE}/${SWIFT_ARCH}/${TARBALL}"
-TOOL_ROOT="${RUNNER_TOOL_CACHE:-/opt/hostedtoolcache}/swift/${SWIFT_VERSION}/ubuntu${UBUNTU_RELEASE}/${SWIFT_ARCH}"
+TARBALL="${SWIFT_RELEASE}-${SWIFT_PLATFORM}${ARCH_SUFFIX}.tar.gz"
+URL="https://download.swift.org/${SWIFT_BRANCH}/${PLATFORM_DIR}/${SWIFT_RELEASE}/${TARBALL}"
+TOOL_ROOT="${RUNNER_TOOL_CACHE:-/opt/hostedtoolcache}/swift/${SWIFT_VERSION}/${PLATFORM_DIR}"
 SWIFT_BIN="${TOOL_ROOT}/usr/bin/swift"
 
 if [[ ! -x "$SWIFT_BIN" ]]; then
@@ -50,9 +51,7 @@ if [[ ! -x "$SWIFT_BIN" ]]; then
   trap 'rm -rf "$tmpdir"' EXIT
   curl -fsSL "$URL" -o "${tmpdir}/swift.tar.gz"
   mkdir -p "$TOOL_ROOT"
-  tar xzf "${tmpdir}/swift.tar.gz" -C "$tmpdir"
-  shopt -s dotglob nullglob
-  mv "${tmpdir}"/swift-*/* "$TOOL_ROOT/"
+  tar xzf "${tmpdir}/swift.tar.gz" -C "$TOOL_ROOT" --strip-components=1
 fi
 
 if [[ -n "${GITHUB_PATH:-}" ]]; then
