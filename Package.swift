@@ -42,6 +42,7 @@ let package = Package(
             name: "MaskingCore",
             dependencies: ["DetectionCore"],
             path: "Core/MaskingCore",
+            exclude: ["Tests"],
             sources: ["Sources", "SPM"],
             resources: [.process("Resources")],
             swiftSettings: [.swiftLanguageMode(.v5)]
@@ -64,6 +65,7 @@ let package = Package(
             name: "StorageCore",
             dependencies: ["DetectionCore", "MaskingCore"],
             path: "Core/StorageCore",
+            exclude: ["Tests"],
             sources: ["Sources", "SPM"],
             resources: [.process("Resources")],
             swiftSettings: [.swiftLanguageMode(.v5)]

@@ -37,6 +37,7 @@ enum DetectionDebugLogger {
 }
 
 #if DEBUG
+#if canImport(os)
 import os
 
 private enum DetectionDebugLogging {
@@ -141,4 +142,18 @@ private func debugLogAIDetectionError(_ message: String) {
 private func debugLogFilteredOut(_ removed: [SensitiveEntity], in text: String) {
     DetectionDebugLogging.logFilteredOut(removed, in: text)
 }
+#else
+private func debugLogScanStart(
+    characterCount: Int,
+    wasTruncated: Bool,
+    aiEnabled: Bool,
+    selectedAIModelID: String?
+) {}
+
+private func debugLogPhase(_ phase: String, entities: [SensitiveEntity], in text: String) {}
+
+private func debugLogAIDetectionError(_ message: String) {}
+
+private func debugLogFilteredOut(_ removed: [SensitiveEntity], in text: String) {}
+#endif
 #endif
