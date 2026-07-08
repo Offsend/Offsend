@@ -1,4 +1,3 @@
-import CoreGraphics
 import DetectionCore
 import Foundation
 

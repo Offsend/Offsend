@@ -16,4 +16,12 @@ public struct PDFRedactionDocumentExporter: PDFRedactionDocumentExporting {
         try exporter.export(session: session, to: destinationURL)
     }
 }
+#else
+public struct PDFRedactionDocumentExporter: PDFRedactionDocumentExporting {
+    public init() {}
+
+    public func export(session: PDFRedactionSession, to destinationURL: URL) throws -> PDFRedactionResult {
+        throw PDFRedactionError.unsupportedFormat
+    }
+}
 #endif
