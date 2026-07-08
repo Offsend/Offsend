@@ -590,16 +590,18 @@ final class AIWorkspacePrivacyAuditorTests: XCTestCase {
 
         let group = DispatchGroup()
         let queue = DispatchQueue(label: "AIWorkspacePrivacyFixerRaceTests", attributes: .concurrent)
-        var errors: [AIWorkspacePrivacyFixResult] = []
+        let errorCollector = FixErrorCollector()
+        let auditor = auditor
+        let fixer = fixer
 
         for _ in 0..<20 {
             group.enter()
             queue.async {
                 defer { group.leave() }
-                let result = self.auditor.audit(directoryURL: directoryURL)
-                let fixResult = self.fixer.fix(result: result)
+                let result = auditor.audit(directoryURL: directoryURL)
+                let fixResult = fixer.fix(result: result)
                 if !fixResult.errors.isEmpty {
-                    errors.append(fixResult)
+                    errorCollector.append(fixResult)
                 }
             }
         }
@@ -607,7 +609,7 @@ final class AIWorkspacePrivacyAuditorTests: XCTestCase {
 
         let contents = try readFile(".cursorignore", in: directoryURL)
 
-        XCTAssertTrue(errors.isEmpty, "\(errors.flatMap(\.errors))")
+        XCTAssertTrue(errorCollector.results.isEmpty, "\(errorCollector.results.flatMap(\.errors))")
         XCTAssertTrue(contents.contains("# user rule"))
         XCTAssertTrue(contents.contains(".custom/**"))
         XCTAssertTrue(contents.contains("*.pem"))
@@ -1242,5 +1244,16 @@ final class AIWorkspacePrivacyAuditorTests: XCTestCase {
             FileManager.default.fileExists(atPath: outsideURL.appendingPathComponent("secret.txt").path),
             "A symlinked subdirectory must not let the fixer write outside the selected directory."
         )
+    }
+}
+
+private final class FixErrorCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private(set) var results: [AIWorkspacePrivacyFixResult] = []
+
+    func append(_ result: AIWorkspacePrivacyFixResult) {
+        lock.lock()
+        defer { lock.unlock() }
+        results.append(result)
     }
 }
