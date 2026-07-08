@@ -1,15 +1,7 @@
 import DetectionCore
 import Foundation
 
-public protocol PDFRedactionPlanBuilding: Sendable {
-    func buildPlan(
-        analysis: DocumentAnalysisResult,
-        pdfData: Data,
-        selectedEntityIDs: Set<UUID>,
-        manualRegions: [PDFRedactionRegion]
-    ) throws -> PDFRedactionPlan
-}
-
+#if canImport(PDFKit)
 public struct PDFRedactionPlanBuilder: PDFRedactionPlanBuilding {
     private let regionResolver: PDFRedactionRegionResolving
 
@@ -97,3 +89,4 @@ public struct PDFRedactionPlanBuilder: PDFRedactionPlanBuilding {
         }
     }
 }
+#endif

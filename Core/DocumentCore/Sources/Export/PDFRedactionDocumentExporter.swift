@@ -4,6 +4,7 @@ public protocol PDFRedactionDocumentExporting: Sendable {
     func export(session: PDFRedactionSession, to destinationURL: URL) throws -> PDFRedactionResult
 }
 
+#if canImport(PDFKit)
 public struct PDFRedactionDocumentExporter: PDFRedactionDocumentExporting {
     private let exporter: PDFRedactionExporting
 
@@ -15,3 +16,12 @@ public struct PDFRedactionDocumentExporter: PDFRedactionDocumentExporting {
         try exporter.export(session: session, to: destinationURL)
     }
 }
+#else
+public struct PDFRedactionDocumentExporter: PDFRedactionDocumentExporting {
+    public init() {}
+
+    public func export(session: PDFRedactionSession, to destinationURL: URL) throws -> PDFRedactionResult {
+        throw PDFRedactionError.unsupportedFormat
+    }
+}
+#endif

@@ -1,4 +1,3 @@
-import CoreGraphics
 import DetectionCore
 import Foundation
 
@@ -82,6 +81,22 @@ public enum PDFRedactionApplyMode: Sendable {
     case permanent
 }
 
+public protocol PDFRedactionApplying: Sendable {
+    func apply(
+        plan: PDFRedactionPlan,
+        to pdfData: Data,
+        mode: PDFRedactionApplyMode
+    ) throws -> Data
+}
+
+public protocol PDFRedactionRegionResolving: Sendable {
+    func resolveRegions(
+        in pdfData: Data,
+        entities: [SensitiveEntity],
+        padding: CGFloat
+    ) throws -> [PDFRedactionRegion]
+}
+
 public enum PDFRedactionError: Error, Equatable {
     case invalidPDF
     case encryptedPDF
@@ -90,6 +105,28 @@ public enum PDFRedactionError: Error, Equatable {
     case emptyPlan
     case unresolvedValues([String])
     case exportFailed(message: String)
+}
+
+public protocol PDFRedactionPlanBuilding: Sendable {
+    func buildPlan(
+        analysis: DocumentAnalysisResult,
+        pdfData: Data,
+        selectedEntityIDs: Set<UUID>,
+        manualRegions: [PDFRedactionRegion]
+    ) throws -> PDFRedactionPlan
+}
+
+public struct UnavailablePDFRedactionPlanBuilder: PDFRedactionPlanBuilding {
+    public init() {}
+
+    public func buildPlan(
+        analysis: DocumentAnalysisResult,
+        pdfData: Data,
+        selectedEntityIDs: Set<UUID>,
+        manualRegions: [PDFRedactionRegion]
+    ) throws -> PDFRedactionPlan {
+        throw PDFRedactionError.unsupportedFormat
+    }
 }
 
 public enum PDFRedactionDefaults {

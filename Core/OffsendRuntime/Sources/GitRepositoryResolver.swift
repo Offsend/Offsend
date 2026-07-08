@@ -10,9 +10,12 @@ public struct GitRepositoryResolver: Sendable {
     private let fileManager: FileManager
     private let gitExecutable: String
 
-    public init(fileManager: FileManager = .default, gitExecutable: String = "/usr/bin/git") {
+    public init(
+        fileManager: FileManager = .default,
+        gitExecutable: String? = nil
+    ) {
         self.fileManager = fileManager
-        self.gitExecutable = gitExecutable
+        self.gitExecutable = gitExecutable ?? ExecutableLocator.defaultGitExecutable(fileManager: fileManager)
     }
 
     public func repositoryRoot(startingAt path: URL) throws -> URL {

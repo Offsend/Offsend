@@ -30,3 +30,34 @@ jobs:
             build
       - name: Run CLI E2E smoke
         run: bash Scripts/ci_cli_e2e.sh build/DerivedData/Build/Products/Debug/offsend
+
+  linux-cli:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Swift
+        env:
+          SWIFT_VERSION: "6.0.3"
+        run: bash Scripts/install_swift_linux_ci.sh
+      - name: Build offsend CLI
+        run: swift build --product offsend -c release
+      - name: Run SPM tests
+        run: swift test
+      - name: Run CLI E2E smoke
+        run: bash Scripts/ci_cli_e2e.sh .build/release/offsend
+
+      - name: Verify CLI Docker image builds
+        run: docker build -f CLI/Dockerfile -t offsend-cli:ci .
+
+      - name: Docker smoke test
+        run: |
+          docker run --rm offsend-cli:ci --version
+          docker run --rm offsend-cli:ci check --help

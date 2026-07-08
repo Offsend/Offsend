@@ -14,10 +14,11 @@ public struct OffsendRuntimeContext: Sendable {
         self.customDictionaries = customDictionaries
     }
 
-    public static func load(store: LocalStoring = try! SecureLocalStore()) throws -> OffsendRuntimeContext {
-        OffsendRuntimeContext(
-            settings: try store.loadSettings(),
-            customDictionaries: try store.loadCustomDictionaries()
+    public static func load(store: (any LocalStoring)? = nil) throws -> OffsendRuntimeContext {
+        let resolvedStore = try store ?? LocalStoreFactory.makeDefaultStore()
+        return OffsendRuntimeContext(
+            settings: try resolvedStore.loadSettings(),
+            customDictionaries: try resolvedStore.loadCustomDictionaries()
         )
     }
 }

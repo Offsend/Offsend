@@ -37,10 +37,10 @@ public struct OffsendDoctor: Sendable {
 
     public init(
         fileManager: FileManager = .default,
-        gitExecutable: String = "/usr/bin/git"
+        gitExecutable: String? = nil
     ) {
         self.fileManager = fileManager
-        self.gitExecutable = gitExecutable
+        self.gitExecutable = gitExecutable ?? ExecutableLocator.defaultGitExecutable(fileManager: fileManager)
     }
 
     public func run(context: OffsendRuntimeContext? = try? OffsendRuntimeContext.load()) -> DoctorReport {
@@ -59,7 +59,7 @@ public struct OffsendDoctor: Sendable {
                 DoctorCheck(
                     name: "settings",
                     status: .fail,
-                    message: "Could not load Offsend settings from Application Support."
+                    message: "Could not load Offsend settings from \(LocalStoreDirectory.defaultURL().path)."
                 )
             )
         }
@@ -77,11 +77,12 @@ public struct OffsendDoctor: Sendable {
                 DoctorCheck(
                     name: "cli",
                     status: .fail,
-                    message: "offsend executable not found in PATH or Offsend.app Contents/Helpers."
+                    message: "offsend executable not found in PATH\(Self.cliPathSuffix)."
                 )
             )
         }
 
+        #if os(macOS)
         if let bundledCLIPath = bundledAppCLIPath() {
             let terminalStatus = CLIPathInstaller(bundledCLIPath: bundledCLIPath, fileManager: fileManager).status()
             checks.append(
@@ -95,6 +96,7 @@ public struct OffsendDoctor: Sendable {
                 )
             )
         }
+        #endif
 
         if fileManager.isExecutableFile(atPath: gitExecutable) {
             checks.append(
@@ -175,6 +177,15 @@ public struct OffsendDoctor: Sendable {
         }
     }
 
+    private static var cliPathSuffix: String {
+        #if os(macOS)
+        return " or Offsend.app Contents/Helpers."
+        #else
+        return "."
+        #endif
+    }
+
+    #if os(macOS)
     private func bundledAppCLIPath() -> String? {
         let candidates = [
             Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/offsend").path,
@@ -217,6 +228,7 @@ public struct OffsendDoctor: Sendable {
             return "offsend is not installed in PATH. Install it from Settings → Hooks → CLI."
         }
     }
+    #endif
 }
 
 public struct DoctorReporter: Sendable {

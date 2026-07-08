@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Install Offsend CLI</title>
+    <meta
+      name="description"
+      content="Install the Offsend CLI on macOS and Linux for local secret scanning, git hooks, and CI."
+    />
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+        line-height: 1.5;
+      }
+      body {
+        max-width: 42rem;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      pre {
+        overflow-x: auto;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        background: rgba(127, 127, 127, 0.15);
+      }
+      a {
+        color: inherit;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Install Offsend CLI</h1>
+    <p>
+      Local-first secret scanning for terminals, git hooks, and CI on macOS and Linux.
+    </p>
+    <h2>Quick install</h2>
+    <pre><code>curl -fsSL https://install.offsend.io/cli | bash</code></pre>
+    <h2>Options</h2>
+    <ul>
+      <li><code>OFFSEND_VERSION=0.0.6</code> — pin a release</li>
+      <li><code>OFFSEND_INSTALL_DIR=$HOME/.local/bin</code> — user-local install</li>
+      <li>
+        <code>OFFSEND_PREFIX=$HOME/.local/lib/offsend/cli</code> — macOS runtime directory
+      </li>
+    </ul>
+    <p>
+      Homebrew:
+      <code>brew install --cask offsend/tap/offsend-cli</code> (macOS) or
+      <code>brew install offsend/tap/offsend-cli</code> (Linux).
+    </p>
+    <p>
+      <a href="https://github.com/Offsend/Offsend">Offsend on GitHub</a> ·
+      <a href="https://offsend.io">offsend.io</a>
+    </p>
+    <!-- synced from SYNC_SOURCE -->
+  </body>
+</html>

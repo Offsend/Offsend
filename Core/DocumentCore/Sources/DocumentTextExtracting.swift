@@ -44,23 +44,24 @@ public protocol DocumentTextExtractorSelecting: Sendable {
 }
 
 public struct DocumentTextExtractorRegistry: DocumentTextExtractorSelecting {
-    private static let defaultExtractors: [any DocumentTextExtracting] = [
-        RTFDocumentExtractor(),
-        WordDocumentExtractor(),
-        PDFDocumentExtractor(),
-        PlainTextDocumentExtractor()
-    ]
-
     private let extractors: [any DocumentTextExtracting]
 
     public init(extractors: [any DocumentTextExtracting]) {
         self.extractors = extractors
     }
 
-    public static let `default` = DocumentTextExtractorRegistry(extractors: defaultExtractors)
+    /// Full registry for the macOS app: RTF, Word, PDF (when available), and plain text.
+    public static var `default`: DocumentTextExtractorRegistry {
+        DocumentTextExtractorRegistry(extractors: builtInExtractors())
+    }
+
+    /// Plain-text-only registry for cross-platform CLI and CI.
+    public static let cliDefault = DocumentTextExtractorRegistry(extractors: [
+        PlainTextDocumentExtractor()
+    ])
 
     public static var supportedFileExtensions: Set<String> {
-        defaultExtractors.reduce(into: Set()) { extensions, extractor in
+        builtInExtractors().reduce(into: Set()) { extensions, extractor in
             extensions.formUnion(extractor.supportedFileExtensions)
         }
     }
@@ -83,6 +84,19 @@ public struct DocumentTextExtractorRegistry: DocumentTextExtractorSelecting {
     public func extractor(for source: DocumentSource) -> (any DocumentTextExtracting)? {
         extractors.first { $0.canExtract(source: source) }
     }
+
+    private static func builtInExtractors() -> [any DocumentTextExtracting] {
+        var extractors: [any DocumentTextExtracting] = []
+        #if canImport(AppKit)
+        extractors.append(RTFDocumentExtractor())
+        extractors.append(WordDocumentExtractor())
+        #endif
+        #if canImport(PDFKit)
+        extractors.append(PDFDocumentExtractor())
+        #endif
+        extractors.append(PlainTextDocumentExtractor())
+        return extractors
+    }
 }
 
 public struct DocumentTextExtractor: Sendable {
@@ -90,6 +104,10 @@ public struct DocumentTextExtractor: Sendable {
 
     public init(registry: DocumentTextExtractorSelecting = DocumentTextExtractorRegistry.default) {
         self.registry = registry
+    }
+
+    public static func forCLI() -> DocumentTextExtractor {
+        DocumentTextExtractor(registry: DocumentTextExtractorRegistry.cliDefault)
     }
 
     public func extract(_ request: DocumentProcessingRequest) throws -> ExtractedDocument {

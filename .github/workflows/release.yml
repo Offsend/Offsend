@@ -13,6 +13,47 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  build-linux-cli:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Swift
+        env:
+          SWIFT_VERSION: "6.0.3"
+        run: bash Scripts/install_swift_linux_ci.sh
+
+      - name: Install git
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends git
+
+      - name: Build Linux CLI
+        env:
+          OFFSEND_CLI_VERSION: ${{ github.event.inputs.marketing_version }}
+        run: bash Scripts/build_linux_cli.sh
+
+      - name: Package Linux CLI
+        env:
+          VERSION: ${{ github.event.inputs.marketing_version }}
+          ARCH: ${{ matrix.arch }}
+        run: bash Scripts/package_linux_cli.sh "$VERSION" "$ARCH"
+
+      - name: Upload Linux CLI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: offsend-cli-linux-${{ matrix.arch }}
+          path: build/offsend-cli-${{ github.event.inputs.marketing_version }}-linux-${{ matrix.arch }}.tar.gz
+
   build-notarize:
     runs-on: macos-15
     permissions:
@@ -273,6 +314,26 @@ jobs:
               --latest
           fi
 
+      - name: Download Linux CLI artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: offsend-cli-linux-*
+          path: build/linux-cli
+          merge-multiple: true
+
+      - name: Upload Linux CLI to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.app_version.outputs.version }}
+        run: |
+          set -euo pipefail
+          TAG="v${VERSION}"
+          REPO="${{ github.repository }}"
+          shopt -s nullglob
+          assets=(build/linux-cli/offsend-cli-"${VERSION}"-linux-*.tar.gz)
+          test "${#assets[@]}" -gt 0
+          gh release upload "$TAG" "${assets[@]}" --repo "$REPO" --clobber
+
       - name: Update Homebrew tap
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -282,7 +343,9 @@ jobs:
           bash Scripts/update_homebrew_tap.sh \
             "$VERSION" \
             "build/Offsend-${VERSION}.dmg" \
-            "build/offsend-cli-${VERSION}.zip"
+            "build/offsend-cli-${VERSION}.zip" \
+            "build/linux-cli/offsend-cli-${VERSION}-linux-x86_64.tar.gz" \
+            "build/linux-cli/offsend-cli-${VERSION}-linux-aarch64.tar.gz"
 
       - name: Rebuild website
         env:

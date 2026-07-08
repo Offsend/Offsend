@@ -1,14 +1,7 @@
+#if canImport(AppKit) && canImport(PDFKit)
 import AppKit
 import Foundation
 import PDFKit
-
-public protocol PDFRedactionApplying: Sendable {
-    func apply(
-        plan: PDFRedactionPlan,
-        to pdfData: Data,
-        mode: PDFRedactionApplyMode
-    ) throws -> Data
-}
 
 public struct PDFRedactionEngine: PDFRedactionApplying {
     private static let rasterizationScale: CGFloat = 2
@@ -152,3 +145,4 @@ public struct PDFRedactionEngine: PDFRedactionApplying {
         return page
     }
 }
+#endif

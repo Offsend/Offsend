@@ -120,9 +120,16 @@ struct Edit: ParsableCommand {
             process.executableURL = URL(fileURLWithPath: "/bin/sh")
             process.arguments = ["-c", "\(editor) \"$1\"", "sh", configURL.path]
         } else {
+            #if os(macOS)
             // Fall back to the default GUI text editor.
             process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
             process.arguments = ["-t", configURL.path]
+            #else
+            CLIError.exit(
+                .error,
+                message: "Set $EDITOR or $VISUAL to edit \(ProjectConfigLoader.filename)."
+            )
+            #endif
         }
 
         do {

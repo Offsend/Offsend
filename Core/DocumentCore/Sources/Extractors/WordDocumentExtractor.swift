@@ -1,3 +1,4 @@
+#if canImport(AppKit) && canImport(PDFKit)
 import Foundation
 
 public struct WordDocumentExtractor: DocumentTextExtracting {
@@ -43,3 +44,4 @@ public struct WordDocumentExtractor: DocumentTextExtracting {
         )
     }
 }
+#endif

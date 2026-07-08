@@ -1,3 +1,4 @@
+#if canImport(AppKit) && canImport(PDFKit)
 import AppKit
 import CoreText
 import Foundation
@@ -66,3 +67,4 @@ enum PDFTestFixtures {
         CTFrameDraw(frame, context)
     }
 }
+#endif

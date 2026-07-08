@@ -1,0 +1,30 @@
+name: Sync install.offsend.io
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - Scripts/install.sh
+      - Scripts/install-site/**
+      - Scripts/sync_install_repo.sh
+      - .github/workflows/sync-install-site.yml
+  workflow_dispatch:
+
+concurrency:
+  group: sync-install-site
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Publish to Offsend/install
+        env:
+          INSTALL_REPO_TOKEN: ${{ secrets.INSTALL_REPO_TOKEN }}
+          SOURCE_SHA: ${{ github.sha }}
+          SOURCE_REF: ${{ github.ref_name }}
+        run: bash Scripts/sync_install_repo.sh

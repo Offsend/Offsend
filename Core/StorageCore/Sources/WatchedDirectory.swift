@@ -69,14 +69,22 @@ public enum WatchedDirectoryBookmark {
     }
 
     public static func make(from url: URL) throws -> Data {
+        #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
         try url.bookmarkData(
             options: .withSecurityScope,
             includingResourceValuesForKeys: nil,
             relativeTo: nil
         )
+        #else
+        guard let data = WatchedDirectoryPathMatcher.standardizedPath(for: url).data(using: .utf8) else {
+            throw Error.accessDenied
+        }
+        return data
+        #endif
     }
 
     public static func resolve(_ data: Data) throws -> WatchedDirectoryBookmarkResolution {
+        #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
         var isStale = false
         let url = try URL(
             resolvingBookmarkData: data,
@@ -85,14 +93,19 @@ public enum WatchedDirectoryBookmark {
             bookmarkDataIsStale: &isStale
         )
         return WatchedDirectoryBookmarkResolution(url: url, bookmarkWasStale: isStale)
+        #else
+        guard let path = String(data: data, encoding: .utf8), !path.isEmpty else {
+            throw Error.accessDenied
+        }
+        return WatchedDirectoryBookmarkResolution(
+            url: URL(fileURLWithPath: path, isDirectory: true),
+            bookmarkWasStale: false
+        )
+        #endif
     }
 
     public static func refreshBookmark(for url: URL) throws -> Data {
-        try url.bookmarkData(
-            options: .withSecurityScope,
-            includingResourceValuesForKeys: nil,
-            relativeTo: nil
-        )
+        try make(from: url)
     }
 }
 

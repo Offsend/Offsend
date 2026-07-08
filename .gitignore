@@ -5,6 +5,7 @@ Tuist/Dependencies/
 *.xcodeproj
 *.xcworkspace
 build/
+.build/
 *.xcarchive
 *.dmg
 

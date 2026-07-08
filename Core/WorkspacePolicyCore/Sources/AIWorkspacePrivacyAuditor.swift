@@ -7,7 +7,7 @@ import Foundation
 /// pattern findings are exposure-based: a pattern is reported only when matching
 /// files exist on disk and are not ignored. Reading file contents is limited to
 /// ignore policy files, not matched sensitive paths.
-public final class AIWorkspacePrivacyAuditor {
+public final class AIWorkspacePrivacyAuditor: @unchecked Sendable {
     private let fileManager: FileManager
     private let exposureChecker: SensitivePathExposureChecker
 

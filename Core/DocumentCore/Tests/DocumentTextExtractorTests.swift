@@ -32,21 +32,6 @@ final class DocumentTextExtractorTests: XCTestCase {
         })
     }
 
-    func testExtractsDocxThroughDefaultRegistry() throws {
-        let docxData = try WordTestFixtures.makeDocx(containing: "Contact ivan@acme.com")
-        let request = DocumentProcessingRequest(
-            data: docxData,
-            source: DocumentSource(fileName: "notes.docx")
-        )
-
-        let extracted = try extractor.extract(request)
-
-        XCTAssertEqual(extracted.extractorID, "word")
-        XCTAssertEqual(extracted.format, .pdf)
-        XCTAssertNotNil(extracted.pdfData)
-        XCTAssertTrue(extracted.plainText.contains("ivan@acme.com"))
-    }
-
     func testRejectsOversizedFile() {
         let request = DocumentProcessingRequest(
             data: Data(repeating: 0x41, count: 20),
@@ -60,6 +45,7 @@ final class DocumentTextExtractorTests: XCTestCase {
     }
 
     func testExtractsPDFThroughDefaultRegistry() throws {
+        #if canImport(PDFKit)
         let pdfData = PDFTestFixtures.makePDF(containing: "PDF via registry")
         let request = DocumentProcessingRequest(
             data: pdfData,
@@ -71,9 +57,11 @@ final class DocumentTextExtractorTests: XCTestCase {
         XCTAssertEqual(extracted.extractorID, "pdf")
         XCTAssertEqual(extracted.format, DocumentFormat.pdf)
         XCTAssertTrue(extracted.plainText.contains("PDF via registry"))
+        #endif
     }
 
     func testRejectsInvalidPDFThroughDefaultRegistry() {
+        #if canImport(PDFKit)
         let request = DocumentProcessingRequest(
             data: Data("not-a-pdf".utf8),
             source: DocumentSource(fileName: "broken.pdf")
@@ -85,9 +73,11 @@ final class DocumentTextExtractorTests: XCTestCase {
                 .invalidPDF
             )
         }
+        #endif
     }
 
     func testExtractsEmptyPDFThroughDefaultRegistry() throws {
+        #if canImport(PDFKit)
         let request = DocumentProcessingRequest(
             data: PDFTestFixtures.makeEmptyPDF(),
             source: DocumentSource(fileName: "blank.pdf")
@@ -97,9 +87,11 @@ final class DocumentTextExtractorTests: XCTestCase {
 
         XCTAssertEqual(extracted.format, DocumentFormat.pdf)
         XCTAssertTrue(extracted.plainText.isEmpty)
+        #endif
     }
 
     func testTruncatesLongExtractedPDFText() throws {
+        #if canImport(PDFKit)
         let text = String(repeating: "a", count: 50)
         let request = DocumentProcessingRequest(
             data: PDFTestFixtures.makePDF(containing: text),
@@ -111,6 +103,7 @@ final class DocumentTextExtractorTests: XCTestCase {
 
         XCTAssertEqual(extracted.plainText.count, 20)
         XCTAssertTrue(extracted.wasTruncated)
+        #endif
     }
 
 }

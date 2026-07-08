@@ -1,3 +1,4 @@
+#if os(macOS)
 import XCTest
 @testable import OffsendRuntime
 
@@ -169,3 +170,4 @@ final class CLIPathInstallerTests: XCTestCase {
 private final class ScriptCapture: @unchecked Sendable {
     var value: String?
 }
+#endif

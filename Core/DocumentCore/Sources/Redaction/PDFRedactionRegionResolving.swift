@@ -1,15 +1,8 @@
+#if canImport(PDFKit)
 import CoreGraphics
 import DetectionCore
 import Foundation
 import PDFKit
-
-public protocol PDFRedactionRegionResolving: Sendable {
-    func resolveRegions(
-        in pdfData: Data,
-        entities: [SensitiveEntity],
-        padding: CGFloat
-    ) throws -> [PDFRedactionRegion]
-}
 
 public struct PDFRedactionRegionResolver: PDFRedactionRegionResolving {
     public init() {}
@@ -70,3 +63,4 @@ public struct PDFRedactionRegionResolver: PDFRedactionRegionResolving {
         return regions
     }
 }
+#endif

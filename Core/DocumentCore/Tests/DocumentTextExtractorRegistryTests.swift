@@ -13,42 +13,56 @@ final class DocumentTextExtractorRegistryTests: XCTestCase {
     }
 
     func testDefaultRegistrySupportsPDF() {
+        #if canImport(PDFKit)
         let registry = DocumentTextExtractorRegistry.default
 
         XCTAssertEqual(registry.extractor(for: DocumentSource(fileName: "scan.pdf"))?.id, "pdf")
+        #endif
     }
 
     func testDefaultRegistrySupportedFileExtensionsIncludePDF() {
+        #if canImport(PDFKit)
         XCTAssertTrue(DocumentTextExtractorRegistry.supportedFileExtensions.contains("pdf"))
+        #endif
         XCTAssertTrue(DocumentTextExtractorRegistry.supportedFileExtensions.contains("txt"))
     }
 
     func testDefaultRegistrySupportedFileExtensionsMatchesExtractors() {
-        let expected = PlainTextDocumentExtractor.supportedExtensions
-            .union(RTFDocumentExtractor.supportedExtensions)
-            .union(WordDocumentExtractor.supportedExtensions)
-            .union(PDFDocumentExtractor.supportedExtensions)
+        var expected = PlainTextDocumentExtractor.supportedExtensions
+        #if canImport(AppKit)
+        expected.formUnion(RTFDocumentExtractor.supportedExtensions)
+        expected.formUnion(WordDocumentExtractor.supportedExtensions)
+        #endif
+        #if canImport(PDFKit)
+        expected.formUnion(PDFDocumentExtractor.supportedExtensions)
+        #endif
 
         XCTAssertEqual(DocumentTextExtractorRegistry.supportedFileExtensions, expected)
     }
 
     func testDefaultRegistrySelectsWordExtractor() {
+        #if canImport(AppKit)
         let registry = DocumentTextExtractorRegistry.default
 
         XCTAssertEqual(registry.extractor(for: DocumentSource(fileName: "memo.docx"))?.id, "word")
         XCTAssertEqual(registry.extractor(for: DocumentSource(fileName: "legacy.doc"))?.id, "word")
+        #endif
     }
 
     func testDefaultRegistrySelectsRTFExtractor() {
+        #if canImport(AppKit)
         let registry = DocumentTextExtractorRegistry.default
 
         XCTAssertEqual(registry.extractor(for: DocumentSource(fileName: "memo.rtf"))?.id, "rtf")
+        #endif
     }
 
     func testMatchesUppercaseFileExtension() {
+        #if canImport(PDFKit)
         let registry = DocumentTextExtractorRegistry.default
 
         XCTAssertEqual(registry.extractor(for: DocumentSource(fileName: "INVOICE.PDF"))?.id, "pdf")
+        #endif
     }
 
     func testReturnsNilForUnsupportedExtension() {
