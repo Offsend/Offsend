@@ -37,7 +37,8 @@ let externalPackages: [Package] = [
         url: "https://github.com/microsoft/onnxruntime-swift-package-manager",
         requirement: .upToNextMajor(from: "1.24.2")
     ),
-    .remote(url: "https://github.com/apple/swift-crypto", requirement: .upToNextMajor(from: "3.0.0")),
+    // swift-crypto stays in root Package.swift for Linux CLI only.
+    // macOS Tuist builds use CryptoKit so we never ship Crypto_*_PackageProduct.framework.
 ]
 
 let coreTargets: [Target] = [
@@ -83,7 +84,6 @@ let coreTargets: [Target] = [
         resources: ["Core/MaskingCore/Resources/**"],
         dependencies: [
             .target(name: "DetectionCore"),
-            .package(product: "Crypto"),
         ],
         settings: developerIDReleaseSigning
     ),
@@ -135,7 +135,6 @@ let coreTargets: [Target] = [
             .target(name: "WorkspacePolicyCore"),
             .target(name: "RiskScoringCore"),
             .target(name: "StorageCore"),
-            .package(product: "Crypto"),
             .package(product: "Yams")
         ],
         settings: developerIDReleaseSigning
