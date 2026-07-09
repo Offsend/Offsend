@@ -57,7 +57,10 @@ public enum AIModelFileStore {
             } else {
                 relativePath = itemURL.lastPathComponent
             }
-            guard let targetURL = resolvedFileURL(forRelativePath: relativePath, in: destination) else {
+            guard let targetURL = RelativePathResolver.resolvedFileURL(
+                forRelativePath: relativePath,
+                in: destination
+            ) else {
                 throw AIModelCatalogError.importFailed("Refusing to write outside the model directory: \(relativePath)")
             }
             if values.isDirectory == true {
@@ -72,42 +75,8 @@ public enum AIModelFileStore {
         }
     }
 
-    /// Resolves `relativePath` under `directory` and returns nil if it would escape
-    /// (absolute paths, `..` segments, or symlink-assisted breakouts).
+    /// Resolves `relativePath` under `directory` and returns nil if it would escape.
     public static func resolvedFileURL(forRelativePath relativePath: String, in directory: URL) -> URL? {
-        let trimmed = relativePath.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        if trimmed.hasPrefix("/") || trimmed.hasPrefix("~") { return nil }
-        if trimmed.contains("\0") { return nil }
-
-        let components = (trimmed as NSString).pathComponents
-        if components.contains("..") || components.contains("~") { return nil }
-
-        let root = directory.standardizedFileURL
-        let candidate = root.appendingPathComponent(trimmed).standardizedFileURL
-        let rootPath = root.path
-        guard candidate.path == rootPath || candidate.path.hasPrefix(rootPath + "/") else {
-            return nil
-        }
-
-        let resolvedRootPath = root.resolvingSymlinksInPath().path
-        let resolvedAncestorPath = nearestExistingAncestor(of: candidate).resolvingSymlinksInPath().path
-        guard resolvedAncestorPath == resolvedRootPath
-            || resolvedAncestorPath.hasPrefix(resolvedRootPath + "/")
-        else {
-            return nil
-        }
-        return candidate
-    }
-
-    private static func nearestExistingAncestor(of url: URL) -> URL {
-        var current = url.standardizedFileURL
-        let fileManager = FileManager.default
-        while !fileManager.fileExists(atPath: current.path) {
-            let parent = current.deletingLastPathComponent()
-            guard parent.path != current.path else { break }
-            current = parent
-        }
-        return current
+        RelativePathResolver.resolvedFileURL(forRelativePath: relativePath, in: directory)
     }
 }

@@ -191,8 +191,8 @@ extension AppCoordinator {
 
     private func importAIModel(reference: AIModelImportReference) {
         if case let .ollama(endpoint, modelName) = reference,
-           let url = try? OllamaClient.normalizedLocalEndpoint(endpoint) {
-            let modelID = OllamaModelImporter.modelID(endpoint: url, modelName: modelName)
+           let url = try? OllamaClient.normalizedLocalEndpoint(endpoint),
+           let modelID = try? OllamaModelImporter.modelID(endpoint: url, modelName: modelName) {
             if installedAIModels.contains(where: { $0.id == modelID }) {
                 reportAIModelImportFailure(.alreadyInstalled(modelName))
                 return
@@ -222,8 +222,9 @@ extension AppCoordinator {
             case .manifest(let url):
                 return url.deletingPathExtension().lastPathComponent
             case .ollama(let endpoint, let modelName):
-                if let url = try? OllamaClient.normalizedLocalEndpoint(endpoint) {
-                    return OllamaModelImporter.modelID(endpoint: url, modelName: modelName)
+                if let url = try? OllamaClient.normalizedLocalEndpoint(endpoint),
+                   let modelID = try? OllamaModelImporter.modelID(endpoint: url, modelName: modelName) {
+                    return modelID
                 }
                 return modelName
             case .ggufFile(let url):

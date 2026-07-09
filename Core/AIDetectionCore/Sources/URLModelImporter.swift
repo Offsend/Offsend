@@ -44,10 +44,16 @@ public final class URLModelImporter: AIModelImporting, @unchecked Sendable {
         let fileName = url.lastPathComponent
         let lowercased = fileName.lowercased()
         if lowercased.hasSuffix(".zip") {
-            try extractZip(from: tempURL, into: directory)
+            try AIModelZipExtractor.extract(from: tempURL, into: directory)
         } else {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            let destination = directory.appendingPathComponent(fileName.isEmpty ? "model.onnx" : fileName)
+            let safeName = fileName.isEmpty ? "model.onnx" : (fileName as NSString).lastPathComponent
+            guard let destination = RelativePathResolver.resolvedFileURL(
+                forRelativePath: safeName,
+                in: directory
+            ) else {
+                throw AIModelCatalogError.importFailed("Refusing to write outside the model directory: \(safeName)")
+            }
             if FileManager.default.fileExists(atPath: destination.path) {
                 try FileManager.default.removeItem(at: destination)
             }
@@ -76,17 +82,5 @@ public final class URLModelImporter: AIModelImporting, @unchecked Sendable {
             totalByteSize: byteSize
         )
         return AIModelImportResult(model: model)
-    }
-
-    private func extractZip(from archiveURL: URL, into directory: URL) throws {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
-        process.arguments = ["-o", archiveURL.path, "-d", directory.path]
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try process.run()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
-            throw AIModelCatalogError.importFailed("Could not extract ZIP archive.")
-        }
     }
 }

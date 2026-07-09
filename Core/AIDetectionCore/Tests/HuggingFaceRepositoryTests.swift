@@ -36,4 +36,10 @@ final class HuggingFaceRepositoryTests: XCTestCase {
             "exdsgift__NerGuard-0.3B"
         )
     }
+
+    func testRejectsTraversalComponents() {
+        XCTAssertNil(HuggingFaceRepository.parseRepositoryID("../evil/model"))
+        XCTAssertNil(HuggingFaceRepository.parseRepositoryID("author/../model"))
+        XCTAssertNil(HuggingFaceRepository.parseRepositoryID("author/mod*el"))
+    }
 }

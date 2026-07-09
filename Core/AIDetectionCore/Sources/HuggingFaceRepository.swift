@@ -15,17 +15,28 @@ public enum HuggingFaceRepository {
             if components[0] == "datasets" || components[0] == "spaces" {
                 return nil
             }
-            return "\(components[0])/\(components[1])"
+            return sanitizedRepositoryID(author: components[0], model: components[1])
         }
 
         let normalized = trimmed.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let parts = normalized.split(separator: "/").map(String.init)
         guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
-        return "\(parts[0])/\(parts[1])"
+        return sanitizedRepositoryID(author: parts[0], model: parts[1])
     }
 
     public static func directoryName(for repositoryID: String) -> String {
         repositoryID.replacingOccurrences(of: "/", with: "__")
+    }
+
+    private static func sanitizedRepositoryID(author: String, model: String) -> String? {
+        guard isSafeRepositoryComponent(author), isSafeRepositoryComponent(model) else { return nil }
+        return "\(author)/\(model)"
+    }
+
+    private static func isSafeRepositoryComponent(_ value: String) -> Bool {
+        guard !value.isEmpty, value != ".", value != "..", !value.contains("..") else { return false }
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "._-"))
+        return value.unicodeScalars.allSatisfy { allowed.contains($0) }
     }
 
     public static func resolveURL(

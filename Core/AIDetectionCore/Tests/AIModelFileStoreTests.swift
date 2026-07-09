@@ -57,4 +57,20 @@ final class AIModelFileStoreTests: XCTestCase {
             AIModelFileStore.resolvedFileURL(forRelativePath: "", in: tempDirectory)
         )
     }
+
+    func testResolvedFileURLAllowsSafePathsWhenRootDoesNotExistYet() throws {
+        let missingRoot = tempDirectory.appendingPathComponent("missing-models", isDirectory: true)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: missingRoot.path))
+
+        let url = try XCTUnwrap(
+            AIModelFileStore.resolvedFileURL(forRelativePath: "model.onnx", in: missingRoot)
+        )
+        XCTAssertEqual(
+            url.standardizedFileURL.path,
+            missingRoot.appendingPathComponent("model.onnx").standardizedFileURL.path
+        )
+        XCTAssertNil(
+            AIModelFileStore.resolvedFileURL(forRelativePath: "../escape.txt", in: missingRoot)
+        )
+    }
 }

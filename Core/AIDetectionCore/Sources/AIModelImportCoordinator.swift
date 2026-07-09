@@ -65,8 +65,9 @@ public final class AIModelImportCoordinator: Sendable {
             let name = url.deletingPathExtension().lastPathComponent
             return name.isEmpty ? UUID().uuidString : name.replacingOccurrences(of: "/", with: "__")
         case .ollama(let endpoint, let modelName):
-            if let url = try? OllamaClient.normalizedLocalEndpoint(endpoint) {
-                return OllamaModelImporter.modelID(endpoint: url, modelName: modelName)
+            if let url = try? OllamaClient.normalizedLocalEndpoint(endpoint),
+               let modelID = try? OllamaModelImporter.modelID(endpoint: url, modelName: modelName) {
+                return modelID
             }
             return UUID().uuidString
         }

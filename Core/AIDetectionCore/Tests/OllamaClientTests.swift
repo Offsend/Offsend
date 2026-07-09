@@ -22,6 +22,25 @@ final class OllamaClientTests: XCTestCase {
         )
     }
 
+    func testOllamaModelIDAcceptsCommonNames() throws {
+        let endpoint = try OllamaClient.normalizedLocalEndpoint("127.0.0.1:11434")
+        XCTAssertEqual(
+            try OllamaModelImporter.modelID(endpoint: endpoint, modelName: "llama3.2:latest"),
+            "ollama-127.0.0.1-11434-llama3.2-latest"
+        )
+        XCTAssertEqual(
+            try OllamaModelImporter.modelID(endpoint: endpoint, modelName: "library/phi3:mini"),
+            "ollama-127.0.0.1-11434-library-phi3-mini"
+        )
+    }
+
+    func testOllamaModelIDRejectsUnsafeNames() throws {
+        let endpoint = try OllamaClient.normalizedLocalEndpoint("127.0.0.1:11434")
+        XCTAssertThrowsError(try OllamaModelImporter.modelID(endpoint: endpoint, modelName: "../evil"))
+        XCTAssertThrowsError(try OllamaModelImporter.modelID(endpoint: endpoint, modelName: "name;rm"))
+        XCTAssertFalse(OllamaModelImporter.isSafeModelName("a b"))
+    }
+
     func testCreateModelUploadsBlobThenCreatesWithFilesMapping() async throws {
         let ggufURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)

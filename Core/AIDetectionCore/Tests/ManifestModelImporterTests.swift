@@ -55,7 +55,12 @@ final class ManifestModelImporterTests: XCTestCase {
             guard case .importFailed(let message) = error else {
                 return XCTFail("Unexpected error: \(error)")
             }
-            XCTAssertTrue(message.contains("escapes the model directory"), message)
+            XCTAssertTrue(
+                message.contains("escapes the model directory"),
+                "Unexpected failure message: \(message)"
+            )
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
         }
 
         XCTAssertFalse(
@@ -103,7 +108,12 @@ final class ManifestModelImporterTests: XCTestCase {
             guard case .importFailed(let message) = error else {
                 return XCTFail("Unexpected error: \(error)")
             }
-            XCTAssertTrue(message.contains("safe directory name"), message)
+            XCTAssertTrue(
+                message.contains("safe directory name"),
+                "Unexpected failure message: \(message)"
+            )
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
         }
 
         XCTAssertFalse(

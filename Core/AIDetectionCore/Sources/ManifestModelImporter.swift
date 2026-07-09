@@ -152,10 +152,8 @@ public final class ManifestModelImporter: AIModelImporting, @unchecked Sendable 
             throw AIModelCatalogError.importFailed("Manifest model id is not a safe directory name.")
         }
         let name = trimmed.replacingOccurrences(of: "/", with: "__")
-        guard AIModelFileStore.resolvedFileURL(
-            forRelativePath: name,
-            in: AIModelFileStore.modelsDirectory()
-        ) != nil else {
+        let components = (name as NSString).pathComponents
+        guard components.count == 1, components[0] != ".", components[0] != ".." else {
             throw AIModelCatalogError.importFailed("Manifest model id is not a safe directory name.")
         }
         return name

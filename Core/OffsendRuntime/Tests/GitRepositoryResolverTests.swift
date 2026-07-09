@@ -91,6 +91,29 @@ final class GitRepositoryResolverTests: XCTestCase {
         )
     }
 
+    func testExportStagedFilesRejectsUnsafeRelativePaths() throws {
+        let destination = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: destination) }
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+
+        let resolver = GitRepositoryResolver()
+        XCTAssertThrowsError(
+            try resolver.resolvedExportDestination(for: "../../escape.txt", in: destination)
+        ) { error in
+            guard case .unsafeRelativePath(let path) = error as? GitRepositoryError else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+            XCTAssertEqual(path, "../../escape.txt")
+        }
+
+        let safe = try resolver.resolvedExportDestination(for: "src/secrets.env", in: destination)
+        XCTAssertEqual(
+            safe.standardizedFileURL.path,
+            destination.appendingPathComponent("src/secrets.env").standardizedFileURL.path
+        )
+    }
+
     private func makeGitRepository() throws -> URL {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

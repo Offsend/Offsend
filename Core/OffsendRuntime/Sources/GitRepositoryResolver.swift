@@ -1,9 +1,11 @@
 import Foundation
+import DetectionCore
 
 public enum GitRepositoryError: Error, Equatable, Sendable {
     case gitNotFound
     case notARepository(path: String)
     case commandFailed(command: String, output: String)
+    case unsafeRelativePath(String)
 }
 
 public struct GitRepositoryResolver: Sendable {
@@ -75,8 +77,8 @@ public struct GitRepositoryResolver: Sendable {
         exported.reserveCapacity(relativePaths.count)
 
         for relativePath in relativePaths {
+            let fileURL = try resolvedExportDestination(for: relativePath, in: destination)
             let data = try stagedFileData(relativePath: relativePath, in: repositoryRoot)
-            let fileURL = destination.appendingPathComponent(relativePath)
             try fileManager.createDirectory(
                 at: fileURL.deletingLastPathComponent(),
                 withIntermediateDirectories: true
@@ -85,6 +87,17 @@ public struct GitRepositoryResolver: Sendable {
             exported.append(fileURL)
         }
         return exported
+    }
+
+    /// Shared by export and tests: reject any staged path that would escape `destination`.
+    func resolvedExportDestination(for relativePath: String, in destination: URL) throws -> URL {
+        guard let fileURL = RelativePathResolver.resolvedFileURL(
+            forRelativePath: relativePath,
+            in: destination
+        ) else {
+            throw GitRepositoryError.unsafeRelativePath(relativePath)
+        }
+        return fileURL
     }
 
     /// Resolves the hooks directory, honoring `core.hooksPath`, worktrees, and submodules.

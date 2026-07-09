@@ -55,6 +55,8 @@ enum CLIError {
             exit(.error, message: "Not a git repository: \(path)")
         case .commandFailed(let command, let output):
             exit(.error, message: "git command failed: \(command)\n\(output)")
+        case .unsafeRelativePath(let path):
+            exit(.error, message: "Refusing unsafe staged path: \(path)")
         }
     }
 }
