@@ -204,6 +204,7 @@ macOS may ask for Accessibility (to paste into the front app) and folder access 
 | File preparation | Drag-and-drop UI, review, copy/save | Path-based scans | Plain-text path scans only |
 | Document formats | Plain text, PDF, RTF, Word | Plain text, PDF, RTF, Word | Plain text only |
 | Project checks | UI checks, ignore files, watched folders | `offsend check`, `--staged`, `--policy`, `offsend show`, `offsend prepare` | Same |
+| Seal / unseal | Not in the app UI yet | `offsend seal`, `offsend unseal`, `offsend keygen` | Same |
 | Git hooks | Install/manage in Settings → Hooks | `offsend hook install/status/uninstall` | Same |
 | AI models | Download, import, select, and manage models | Not used by the CLI | Not used by the CLI |
 | Settings storage | Keychain + Application Support | Keychain + Application Support | Plain JSON in `~/.config/offsend` |
@@ -219,7 +220,7 @@ Install the command from **Settings → Hooks → CLI** if you want the app-bund
 
 ## Git Hooks & CLI
 
-Offsend ships a free command-line tool for local checks, git hooks, and CI. The main command is `offsend check`.
+Offsend ships a free command-line tool for local checks, git hooks, CI, and reversible seal/unseal of sensitive values. The main command is `offsend check`.
 
 Scan files or folders:
 
@@ -294,6 +295,58 @@ Options:
 - `--format` — output format, `text` (default) or `json`.
 
 Only missing files are created; existing ignore files are never overwritten, and informational suggestions (`.gitignore`, `AGENTS.md`, `.cursorindexingignore`) are left for you to add manually. Exit code is `0` on success and `2` if the directory is unavailable or a file could not be written.
+
+### Seal and unseal sensitive values
+
+`offsend seal` finds sensitive values in plain text and replaces them with reversible tokens such as `{{EMAIL:v1.…}}`. Unlike Safe Paste placeholders (`{{EMAIL_1}}`), the original value is encrypted inside the token with AES-256-GCM, so you can restore it later with the same key — no local mapping store required. Works on macOS and Linux.
+
+Generate a 32-byte key (base64 on stdout):
+
+```bash
+offsend keygen
+```
+
+Write a key file (permissions `0600`) and seal a file:
+
+```bash
+offsend keygen -o ./seal.key
+offsend seal notes.txt --key-file ./seal.key -o notes.sealed.txt
+```
+
+Seal from stdin and restore:
+
+```bash
+export OFFSEND_SEAL_KEY="$(offsend keygen)"
+echo "Contact leaked@example.com" | offsend seal
+offsend unseal notes.sealed.txt --key "$OFFSEND_SEAL_KEY"
+```
+
+Key sources (first match wins; `--key` and `--key-file` are mutually exclusive):
+
+1. `--key` — base64-encoded 32-byte key
+2. `--key-file` — 32 raw bytes, or a base64 string of 32 bytes
+3. `OFFSEND_SEAL_KEY` — base64-encoded 32-byte key in the environment
+
+`offsend keygen` options:
+
+- `-o, --output` — write the key to a file instead of stdout
+- `--raw` — write 32 raw bytes (requires `--output`; refuses to print binary to a terminal)
+
+`offsend seal` / `offsend unseal` options:
+
+- `[path]` — text file to process. Omit to read from stdin (pipe required when stdin is a TTY)
+- `--key` / `--key-file` — seal key (see above)
+- `-o, --output` — write result to a file instead of stdout
+- `--max-plaintext-bytes` — (`seal` only) reject any detected value larger than this many UTF-8 bytes (default: 65536). Seal fails closed and writes no output.
+- `--quiet` — (`seal` only) suppress sealed count on stderr
+- `--working-directory` — base directory for relative paths
+
+Notes:
+
+- Tokens are deterministic for the same key, type, and value, so identical emails become identical tokens.
+- If any detected value exceeds `--max-plaintext-bytes`, `seal` exits with an error and does not write partial output.
+- Tokens are portable across macOS and Linux when you use the same key.
+- This is separate from Safe Paste masking (`{{EMAIL_1}}` + local restore mapping) in the macOS app.
 
 ### Install a pre-commit hook
 
@@ -379,7 +432,7 @@ Build from source in the same job (no GitHub release required):
 - run: .build/release/offsend check --staged
 ```
 
-Other useful commands: `offsend check`, `offsend show`, `offsend prepare`, `offsend hook status`, `offsend hook uninstall`.
+Other useful commands: `offsend check`, `offsend show`, `offsend prepare`, `offsend seal`, `offsend unseal`, `offsend keygen`, `offsend hook status`, `offsend hook uninstall`.
 
 ---
 
