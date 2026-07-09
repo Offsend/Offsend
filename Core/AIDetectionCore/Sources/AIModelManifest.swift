@@ -59,7 +59,13 @@ public enum AIModelChecksumValidator {
     ) -> [String] {
         var warnings: [String] = []
         for (relativePath, expectedHash) in expected {
-            let fileURL = directory.appendingPathComponent(relativePath)
+            guard let fileURL = AIModelFileStore.resolvedFileURL(
+                forRelativePath: relativePath,
+                in: directory
+            ) else {
+                warnings.append("Invalid checksum path: \(relativePath)")
+                continue
+            }
             guard FileManager.default.fileExists(atPath: fileURL.path) else {
                 warnings.append("Missing file for checksum: \(relativePath)")
                 continue

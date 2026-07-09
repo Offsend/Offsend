@@ -42,17 +42,35 @@ public final class ManifestModelImporter: AIModelImporting, @unchecked Sendable 
         }
 
         let manifest = try AIModelManifestParser.parse(data: manifestData)
+        let localDirectoryName = try Self.sanitizedLocalDirectoryName(from: manifest.id)
+
+        // Resolve every destination before writing anything so a traversal path
+        // cannot land files outside the model directory and then fail validation.
+        var destinations: [URL] = []
+        destinations.reserveCapacity(manifest.files.count)
+        for file in manifest.files {
+            guard file.url.scheme?.lowercased() == "https" || file.url.isFileURL else {
+                throw AIModelCatalogError.importFailed("Manifest file URLs must use HTTPS or file://.")
+            }
+            guard let destination = AIModelFileStore.resolvedFileURL(
+                forRelativePath: file.path,
+                in: directory
+            ) else {
+                throw AIModelCatalogError.importFailed(
+                    "Manifest file path escapes the model directory: \(file.path)"
+                )
+            }
+            destinations.append(destination)
+        }
+
         let totalFiles = manifest.files.count
         var completed = 0
         var downloadedBytes: Int64 = 0
 
         progress(AIModelDownloadProgress(modelID: manifest.id, totalFiles: totalFiles))
 
-        for file in manifest.files {
+        for (file, destination) in zip(manifest.files, destinations) {
             try Task.checkCancellation()
-            guard file.url.scheme?.lowercased() == "https" || file.url.isFileURL else {
-                throw AIModelCatalogError.importFailed("Manifest file URLs must use HTTPS or file://.")
-            }
 
             progress(
                 AIModelDownloadProgress(
@@ -63,7 +81,6 @@ public final class ManifestModelImporter: AIModelImporting, @unchecked Sendable 
                 )
             )
 
-            let destination = directory.appendingPathComponent(file.path)
             try FileManager.default.createDirectory(
                 at: destination.deletingLastPathComponent(),
                 withIntermediateDirectories: true
@@ -120,9 +137,27 @@ public final class ManifestModelImporter: AIModelImporting, @unchecked Sendable 
             displayName: manifest.displayName,
             source: .manifest(manifestURL: manifestURL),
             format: validation.format,
-            localDirectoryName: manifest.id.replacingOccurrences(of: "/", with: "__"),
+            localDirectoryName: localDirectoryName,
             totalByteSize: byteSize
         )
         return AIModelImportResult(model: model, checksumWarnings: checksumWarnings)
+    }
+
+    private static func sanitizedLocalDirectoryName(from modelID: String) throws -> String {
+        let trimmed = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw AIModelCatalogError.importFailed("Manifest model id is not a safe directory name.")
+        }
+        if trimmed.contains("..") || trimmed.hasPrefix("/") || trimmed.hasPrefix("~") || trimmed.contains("\0") {
+            throw AIModelCatalogError.importFailed("Manifest model id is not a safe directory name.")
+        }
+        let name = trimmed.replacingOccurrences(of: "/", with: "__")
+        guard AIModelFileStore.resolvedFileURL(
+            forRelativePath: name,
+            in: AIModelFileStore.modelsDirectory()
+        ) != nil else {
+            throw AIModelCatalogError.importFailed("Manifest model id is not a safe directory name.")
+        }
+        return name
     }
 }

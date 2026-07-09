@@ -56,7 +56,14 @@ public final class HuggingFaceModelDownloader: HuggingFaceModelDownloading, @unc
 
         for file in files {
             try Task.checkCancellation()
-            let destination = directory.appendingPathComponent(file.path)
+            guard let destination = AIModelFileStore.resolvedFileURL(
+                forRelativePath: file.path,
+                in: directory
+            ) else {
+                throw AIModelCatalogError.downloadFailed(
+                    "Refusing to write outside the model directory: \(file.path)"
+                )
+            }
             try FileManager.default.createDirectory(
                 at: destination.deletingLastPathComponent(),
                 withIntermediateDirectories: true
