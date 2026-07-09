@@ -37,6 +37,7 @@ let externalPackages: [Package] = [
         url: "https://github.com/microsoft/onnxruntime-swift-package-manager",
         requirement: .upToNextMajor(from: "1.24.2")
     ),
+    .remote(url: "https://github.com/apple/swift-crypto", requirement: .upToNextMajor(from: "3.0.0")),
 ]
 
 let coreTargets: [Target] = [
@@ -80,7 +81,10 @@ let coreTargets: [Target] = [
         deploymentTargets: macOSDeploymentTarget,
         sources: ["Core/MaskingCore/Sources/**"],
         resources: ["Core/MaskingCore/Resources/**"],
-        dependencies: [.target(name: "DetectionCore")],
+        dependencies: [
+            .target(name: "DetectionCore"),
+            .package(product: "Crypto"),
+        ],
         settings: developerIDReleaseSigning
     ),
     .target(
@@ -127,9 +131,11 @@ let coreTargets: [Target] = [
         dependencies: [
             .target(name: "DetectionCore"),
             .target(name: "DocumentCore"),
+            .target(name: "MaskingCore"),
             .target(name: "WorkspacePolicyCore"),
             .target(name: "RiskScoringCore"),
             .target(name: "StorageCore"),
+            .package(product: "Crypto"),
             .package(product: "Yams")
         ],
         settings: developerIDReleaseSigning

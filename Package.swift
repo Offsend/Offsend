@@ -30,6 +30,7 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/jpsim/Yams.git", from: "5.1.0"),
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.3.0"),
+        .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"),
     ],
     targets: [
         .target(
@@ -40,7 +41,10 @@ let package = Package(
 
         .target(
             name: "MaskingCore",
-            dependencies: ["DetectionCore"],
+            dependencies: [
+                "DetectionCore",
+                .product(name: "Crypto", package: "swift-crypto"),
+            ],
             path: "Core/MaskingCore",
             exclude: ["Tests"],
             sources: ["Sources", "SPM"],
@@ -90,9 +94,11 @@ let package = Package(
             dependencies: [
                 "DetectionCore",
                 "DocumentCore",
+                "MaskingCore",
                 "WorkspacePolicyCore",
                 "RiskScoringCore",
                 "StorageCore",
+                .product(name: "Crypto", package: "swift-crypto"),
                 .product(name: "Yams", package: "Yams"),
             ],
             path: "Core/OffsendRuntime/Sources",

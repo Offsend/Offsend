@@ -1,10 +1,29 @@
 import ArgumentParser
 import Foundation
+import MaskingCore
 import OffsendRuntime
 
 /// Shared validation helpers for CLI options. Invalid values terminate the
 /// process with `OffsendExitCode.error` instead of being silently defaulted.
 enum CLIParse {
+    static func sealKey(key: String?, keyFile: String?) -> Data {
+        do {
+            return try SealKeyResolver.resolve(key: key, keyFilePath: keyFile).data
+        } catch let error as SealError {
+            CLIError.exit(.error, message: error.localizedDescription)
+        } catch {
+            CLIError.exit(.error, message: error.localizedDescription)
+        }
+    }
+
+    static func maxPlaintextBytes(_ value: Int?) -> Int {
+        guard let value else { return SealEngine.defaultMaxPlaintextBytes }
+        guard value > 0 else {
+            CLIError.exit(.error, message: "--max-plaintext-bytes must be a positive integer.")
+        }
+        return value
+    }
+
     static func outputFormat(_ rawValue: String) -> CheckOutputFormat {
         guard let format = CheckOutputFormat(rawValue: rawValue) else {
             CLIError.exit(.error, message: "Invalid --format value: \(rawValue). Expected one of: \(allValues(CheckOutputFormat.self)).")
