@@ -11,6 +11,9 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      - uses: Offsend/ai-hygiene@v1
+        with:
+          fail-on: block
       - name: Install Tuist
         uses: jdx/mise-action@v2
         with:
