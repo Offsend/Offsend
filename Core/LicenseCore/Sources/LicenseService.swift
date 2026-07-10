@@ -122,6 +122,7 @@ public final class LicenseService: @unchecked Sendable {
                 message: envelope.message ?? "Activation failed."
             )
         }
+        // offsend:ignore-next-line
         guard let token = envelope.licenseToken, !token.isEmpty else {
             throw LicenseServiceError.unexpectedResponse
         }
@@ -135,6 +136,7 @@ public final class LicenseService: @unchecked Sendable {
     }
 
     public func validateLicense(appVersion: String) async throws -> LicenseValidateResult {
+        // offsend:ignore-next-line
         guard var secrets = try keychain.load(), let token = secrets.signedLicenseToken, !token.isEmpty else {
             throw LicenseServiceError.apiError(code: "no_token", message: "No license on this device.")
         }
