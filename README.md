@@ -2,7 +2,7 @@
 
 <p align="center">
   See and fix what AI tools can read.<br>
-  Local-first privacy checks for terminals, CI, and macOS — before ChatGPT, Claude, Cursor, Copilot, or Gemini see your context.
+  Local-first privacy checks for terminals, CI, and macOS — before Claude Code, Codex, Cursor, or Windsurf see your context.
 </p>
 
 <p align="center">
@@ -56,7 +56,7 @@ Offsend helps review that context locally before it leaves your control.
 | **macOS app** | Safe Paste, drag-and-drop prep, watched folders | [Desktop](#macos-app) |
 | **Check** | Free online scan of a public GitHub repo | [check.offsend.io](https://check.offsend.io) |
 | **GitHub Action** | Same CLI checks on every PR / push | [ai-hygiene](https://offsend.io/github-action) |
-| **Browser Extension** | Mask secrets in ChatGPT, Claude, Gemini, … | [Extension](https://offsend.io/extension) |
+| **Browser Extension** | Mask secrets in ChatGPT, Claude, Gemini, Grok, Perplexity, DeepSeek | [Extension](https://offsend.io/extension) |
 | **Radar** | Research AI-context exposure across public repos | [radar.offsend.io](https://radar.offsend.io) |
 
 **Use the CLI** if you need repository checks, git hooks, CI, or scripts.  
@@ -467,7 +467,7 @@ No. It evaluates file paths and ignore rules. Content scanning is performed sepa
 macOS app: macOS 13+. CLI: macOS and Linux (x86_64 and arm64). GitHub Action: Linux and macOS runners.
 
 **Which AI tools are supported?**  
-Any tool that respects common AI ignore files, plus browser chats covered by the extension (ChatGPT, Claude, Gemini, and others). The CLI and app are tool-agnostic.
+Coding assistants such as Claude Code, Codex, Cursor, and Windsurf (via AI ignore files and local checks). Browser chats covered by the extension: ChatGPT, Claude, Gemini, Grok, Perplexity, and DeepSeek. The CLI and app are otherwise tool-agnostic.
 
 ---
 
