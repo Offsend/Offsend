@@ -1,142 +1,91 @@
 <h1 align="center"><code>*}• Offsend</code></h1>
 
 <p align="center">
-  Prepare code, files, clipboard text, and git changes before you share them with AI tools.<br>
-  Local-first privacy checks for ChatGPT, Claude, Cursor, Copilot, and CI.
+  See and fix what AI tools can read.<br>
+  Local-first privacy checks for terminals, CI, and macOS — before ChatGPT, Claude, Cursor, Copilot, or Gemini see your context.
 </p>
 
 <p align="center">
   <a href="https://github.com/Offsend/Offsend/actions/workflows/ci.yml"><img src="https://github.com/Offsend/Offsend/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/Offsend/Offsend/releases"><img src="https://img.shields.io/github/v/release/Offsend/Offsend?label=release" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License"></a>
-  <a href="https://www.apple.com/macos/"><img src="https://img.shields.io/badge/platform-macOS%2013%2B-000000?logo=apple&logoColor=white" alt="Platform"></a>
   <img src="https://img.shields.io/badge/Linux-CLI%20(x86_64%20%7C%20arm64)-FCC624?logo=linux&logoColor=black" alt="Linux CLI">
+  <a href="https://www.apple.com/macos/"><img src="https://img.shields.io/badge/platform-macOS%2013%2B-000000?logo=apple&logoColor=white" alt="Platform"></a>
   <img src="https://img.shields.io/badge/Swift-5.9-F05138?logo=swift&logoColor=white" alt="Swift 5.9">
   <img src="https://img.shields.io/badge/local--first-yes-2ea44f" alt="Local-first">
   <a href="https://radar.offsend.io/participants/"><img src="https://radar.offsend.io/badge.svg" alt="AI Context Reviewed" height="20"></a>
 </p>
 
-<p align="center">
-  <img src="assets/demo.gif" alt="Drop a file or folder into Prepare for AI">
-</p>
-
 ---
 
-Offsend is a local-first macOS app for developers who share code with AI tools.
+`.gitignore` protects Git. It does not define what AI tools should ignore.
 
-It helps you catch secrets, client data, internal paths, and other sensitive details before they leave your Mac. Use it from the menu bar while you work, from the included CLI in a terminal, or from git hooks before every commit.
+Offsend helps you catch secrets, client data, internal paths, and other sensitive details before they become AI context — in the terminal, in CI, or from the macOS menu bar.
 
-> No cloud account. No server-side scanning. No “trust us” privacy model.
+> No cloud account. No server-side scanning of your local files or prompts. No “trust us” privacy model.
 
 ## Why Offsend
 
-AI coding tools are useful, but they make it easy to paste the wrong thing: an API key in a diff, a customer name in a document, a private endpoint in a config file, or a token from your clipboard.
+AI coding tools need context. Sometimes that context includes things you never intended to share:
 
-Offsend adds a local review step without changing your workflow:
+- `.env` files and API keys
+- certificates and private keys
+- internal configs and logs
+- customer names and IDs
 
-- **Safe Paste** scans clipboard text, masks sensitive values, and pastes the prepared version.
-- **Prepare** lets you drop files or folders, review findings, and copy or save an AI-ready result.
-- **Project checks** inspect ignore rules and sensitive paths before a repository is used with AI tools.
-- **Git hooks** run Offsend before commits, with hook setup and status managed from the macOS GUI.
-- **CLI checks are free** and scriptable for terminals, hooks, and CI.
+Offsend adds a local review step without changing how you work.
 
----
+**What you can do**
 
-## What You Can Do
-
-### 1. Prepare a project
-
-Check whether a folder is ready for AI coding tools: ignore files, sensitive paths, one-click fixes.
-
-Works with `.cursorignore`, `.copilotignore`, `.claudeignore`, `.aiexclude`, and similar rules. Can watch folders in the background and notify you when something changes.
-
-Directory checks use paths and ignore rules only — not file contents.
-
-### 2. Prepare files
-
-Drop a file in **Prepare**, review findings, mask or redact sensitive items, then copy or save an AI-ready version.
-
-**Supported formats**
-
-- **Plain text** — common extensions like `.txt`, `.md`, `.csv`, `.json`, `.log`, `.xml`, `.yaml`, plus any other text file (e.g. `.swift`, `.html`)
-- **Documents** — `.pdf`, `.rtf`, `.doc`, `.docx`
-
-### 3. Prepare clipboard text with Safe Paste
-
-`⌘⇧V` — scan the clipboard, mask sensitive values, paste or copy the prepared text.
-
-`⌘⇧R` — restore masked values when you need the originals back.
-
-Mappings are encrypted on disk; the key lives in Keychain. Hotkeys are remappable in Settings.
-
-### 4. Protect commits with hooks
-
-The macOS app includes hook management in **Settings → Hooks**. Add a repository, install a pre-commit hook, and see its status without editing shell scripts by hand.
-
-The hook runs the Offsend CLI against staged changes before each commit and blocks commits that contain sensitive data such as API keys, tokens, private keys, or similar patterns.
-
-### 5. Use the free CLI
-
-The app bundle already includes the `offsend` CLI helper, so the GUI can run local checks and manage hooks out of the box.
-
-You can also install the standalone `offsend-cli` for free when you want `offsend` on `PATH` for terminal workflows, git hooks, CI, or scripts.
+- Scan projects for AI-context risks
+- Show what AI tools can read
+- Generate AI ignore files (`.cursorignore`, `.claudeignore`, …)
+- Check staged changes and block risky commits
+- Prepare files and clipboard text before sharing with AI
+- Protect browser prompts before you hit send
 
 ---
 
-## Detection
+## Pick your workflow
 
-Built-in detectors cover emails, phone numbers, IDs, amounts, URLs, IPs, API keys, tokens, private keys, and similar patterns. Turn individual detectors on or off in **Settings → Detection**.
-
-You can also add **custom dictionaries** in **Settings → Detection** to flag your own client names, companies, projects, internal domains, sensitive terms, or custom regular-expression patterns. Custom dictionaries are available to everyone and also work in the CLI via `.offsend.yml`.
-
-### Local AI detection
-
-Offsend can also run local AI models alongside the built-in pattern detectors. This is useful for NER/PII cases that are harder to catch with regular expressions, such as names, addresses, organization names, and contextual personal data.
-
-AI detection is optional and managed in the macOS app. Download or import a model in **Settings → AI**, select it, then enable **AI detection**. Supported sources include curated Hugging Face models, compatible Hugging Face model IDs or URLs, local folders, direct HTTPS model links, manifests, GGUF files, and local Ollama models.
-
-Supported model formats include ONNX token classification, Core ML, Hugging Face Transformers assets, GGUF, and Ollama API models. Hugging Face access tokens for gated or private models are stored in Keychain. Model files and inference stay on your Mac; Offsend does not upload scanned content for AI detection.
+| Tool | Purpose | Link |
+| --- | --- | --- |
+| **CLI** | Terminal, git hooks, and CI on **Linux & macOS** (free) | [Install below](#cli) |
+| **macOS app** | Safe Paste, drag-and-drop prep, watched folders | [Desktop](#macos-app) |
+| **Check** | Free online scan of a public GitHub repo | [check.offsend.io](https://check.offsend.io) |
+| **GitHub Action** | Same CLI checks on every PR / push | [ai-hygiene](https://offsend.io/github-action) |
+| **Browser Extension** | Mask secrets in ChatGPT, Claude, Gemini, … | [Extension](https://offsend.io/extension) |
+| **Radar** | Research AI-context exposure across public repos | [radar.offsend.io](https://radar.offsend.io) |
 
 ---
 
-## Privacy
+## CLI
 
-Everything runs on your Mac — directory checks, monitoring, clipboard detection, file preparation, masking, and restore.
+Free for local checks, git hooks, and CI. Runs on **macOS and Linux** (x86_64 and arm64).
 
-Offsend does not upload content for scanning and does not store prompts, clipboard payloads, file bodies, or detected values.
-
-Security issues: see [SECURITY.md](SECURITY.md).
-
----
-
-## Install
-
-### macOS app
-
-```bash
-brew install --cask offsend/tap/offsend
-```
-
-Or download the latest `.dmg` from [Releases](../../releases).
-
-The app gives you the full menu bar workflow: Safe Paste hotkeys, drag-and-drop file preparation, project checks, watched folders, settings, local AI model management, hook management UI, and the bundled CLI helper used by local checks and hooks.
-
-To make the bundled CLI available as `offsend` in terminals, open **Settings → Hooks → CLI** and install the terminal command. Offsend creates `/usr/local/bin/offsend` as a symlink to the CLI inside `Offsend.app` and does not overwrite an existing Homebrew or third-party `offsend` command.
-
-### Free CLI (macOS + Linux)
-
-Use the standalone CLI for free when you need terminal, git hook, or CI checks without installing the full app.
-
-**Install script (recommended)**
+### Install
 
 ```bash
 curl -fsSL https://install.offsend.io/cli | bash
+offsend doctor
 ```
 
 Until `install.offsend.io` is wired up, use the script from the repository:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Offsend/Offsend/main/Scripts/install.sh | bash
+```
+
+**Homebrew**
+
+```bash
+# macOS (signed binary + frameworks)
+brew install --cask offsend/tap/offsend-cli
+
+# Linux
+brew install offsend/tap/offsend-cli
+
+offsend doctor
 ```
 
 Pin a release with `OFFSEND_VERSION=0.0.6`, or install without root:
@@ -146,32 +95,14 @@ OFFSEND_INSTALL_DIR=$HOME/.local/bin OFFSEND_PREFIX=$HOME/.local/lib/offsend/cli
   curl -fsSL https://install.offsend.io/cli | bash
 ```
 
-**Homebrew**
-
-macOS (Cask — signed binary + frameworks):
-
-```bash
-brew install --cask offsend/tap/offsend-cli
-offsend doctor
-```
-
-Linux (Formula):
-
-```bash
-brew install offsend/tap/offsend-cli
-offsend doctor
-```
-
-**Docker (Linux/macOS with Docker)**
+**Docker**
 
 ```bash
 docker build -f CLI/Dockerfile -t offsend/cli .
 docker run --rm -v "$PWD:/work" -w /work offsend/cli check README.md
 ```
 
-**Build from source**
-
-Requirements: Swift 6.0+, git.
+**Build from source** — Swift 6.0+, git:
 
 ```bash
 OFFSEND_CLI_VERSION=0.0.0 bash Scripts/build_linux_cli.sh   # Linux release build
@@ -179,190 +110,134 @@ swift build --product offsend -c release                     # any supported hos
 .build/release/offsend doctor
 ```
 
-On Linux, config lives under `$XDG_CONFIG_HOME/offsend` (typically `~/.config/offsend`). On macOS CLI, settings use Application Support / Keychain like the app.
+<p align="center">
+  <img src="assets/cli.png" alt="Offsend CLI in the terminal" width="720">
+</p>
 
-### Build from source (macOS app)
-
-```bash
-brew install tuist
-./Scripts/bootstrap.sh
-open Offsend.xcworkspace
-```
-
-Requirements: macOS 13+, Xcode 16, Tuist.
-
-macOS may ask for Accessibility (to paste into the front app) and folder access (to audit and monitor directories).
-
----
-
-## App vs CLI
-
-| | **macOS app** | **CLI (macOS)** | **CLI (Linux)** |
-| --- | --- | --- | --- |
-| Best for | Daily interactive work | Free terminal, git hook, and CI checks | Free terminal, git hook, and CI checks |
-| Safe Paste | Yes: scan, mask, paste, restore | No | No |
-| File preparation | Drag-and-drop UI, review, copy/save | Path-based scans | Plain-text path scans only |
-| Document formats | Plain text, PDF, RTF, Word | Plain text, PDF, RTF, Word | Plain text only |
-| Project checks | UI checks, ignore files, watched folders | `offsend check`, `--staged`, `--policy`, `offsend show`, `offsend prepare` | Same |
-| Seal / unseal | Not in the app UI yet | `offsend seal`, `offsend unseal`, `offsend keygen` | Same |
-| Git hooks | Install/manage in Settings → Hooks | `offsend hook install/status/uninstall` | Same |
-| AI models | Download, import, select, and manage models | Not used by the CLI | Not used by the CLI |
-| Settings storage | Keychain + Application Support | Keychain + Application Support | Plain JSON in `~/.config/offsend` |
-| Automation | Background watcher and notifications | Scriptable text/json output | Scriptable text/json output |
-
-The macOS app already includes the CLI helper at:
-
-`Offsend.app/Contents/Helpers/offsend`
-
-Install the command from **Settings → Hooks → CLI** if you want the app-bundled CLI available as `offsend` on `PATH`. Install the free `offsend-cli` cask separately for CI or standalone terminal-only setups.
-
----
-
-## Git Hooks & CLI
-
-Offsend ships a free command-line tool for local checks, git hooks, CI, and reversible seal/unseal of sensitive values. The main command is `offsend check`.
-
-Scan files or folders:
+### Try it in under a minute
 
 ```bash
-offsend check README.md Sources/
-```
-
-Scan staged git changes before a commit:
-
-```bash
-offsend check --staged
-```
-
-Use JSON output in automation:
-
-```bash
-offsend check --staged --format json --quiet
-```
-
-By default the text output is a summary: findings are grouped per file and skipped files are reported as a count. Add `--verbose` to list every finding (with line numbers) and every skipped file individually.
-
-### Show files exposed to AI tools
-
-`offsend show` lists the sensitive files that would be sent to AI tools because no ignore file covers them — secrets, `.env` files, private keys, credentials, and similar — grouped by data type. It mirrors the macOS app's directory exposure audit and uses the same rules, ignore patterns, and custom template configured there. Like all directory checks, it reads ignore-file contents only, never the matched files themselves.
-
-List exposed files in the current directory:
-
-```bash
+cd your-repo
 offsend show
 ```
 
-Use JSON output in automation:
+Example outcome:
 
-```bash
-offsend show --format json
+```text
+✓ 18 files visible to AI tools
+
+⚠ .env
+⚠ certs/private.pem
+⚠ .npmrc
+
+Run:
+  offsend prepare
 ```
 
-Options:
-
-- `[path]` — directory to inspect. Defaults to the current directory.
-- `--format` — output format, `text` (default) or `json`.
-
-`offsend show` is read-only and informational: it exits `0` even when files are exposed, and `2` only if the directory is unavailable. When it surfaces exposed files, run `offsend prepare` to create the missing ignore files that cover them.
-
-### Prepare AI ignore files
-
-`offsend prepare` creates the AI ignore files a project is missing (`.cursorignore`, `.claudeignore`, `.aiexclude`, `.geminiignore`, and similar), so AI tools respect your privacy boundaries. It mirrors the macOS app's one-click directory fix and uses the same rules and custom ignore template configured there.
-
-Create the missing ignore files in the current directory:
+Then fix ignore gaps and protect commits:
 
 ```bash
 offsend prepare
+offsend hook install
+offsend check --staged
 ```
 
-Preview what would change without writing anything:
+### Typical workflow
+
+```text
+Clone repository
+        ↓
+offsend show          → what can AI tools read?
+        ↓
+offsend prepare       → create missing AI ignore files
+        ↓
+offsend hook install  → block secrets before commit
+        ↓
+Continue working
+```
+
+### Main use cases
+
+**1. See what AI tools can read**
+
+`offsend show` lists sensitive files that would be sent to AI tools because no ignore file covers them — secrets, `.env`, private keys, credentials — grouped by data type. It reads ignore-file contents and paths only, never the matched files themselves.
 
 ```bash
+offsend show
+offsend show --format json
+```
+
+Exits `0` even when files are exposed (`2` only if the directory is unavailable). When it surfaces exposed files, run `offsend prepare`.
+
+**2. Generate AI ignore files**
+
+`offsend prepare` creates missing ignore files (`.cursorignore`, `.claudeignore`, `.aiexclude`, `.geminiignore`, and similar). Existing files are never overwritten.
+
+```bash
+offsend prepare
 offsend prepare --dry-run
+offsend prepare --sync-patterns   # also append missing sensitive-data patterns
 ```
 
-Also append missing sensitive-data patterns (such as `secrets.json` or `*.pem`) to ignore files that already exist:
+**3. Scan files and staged changes**
 
 ```bash
-offsend prepare --sync-patterns
+offsend check README.md Sources/
+offsend check --staged
+offsend check --staged --format json --quiet
 ```
 
-Options:
+By default the text output is a summary. Add `--verbose` to list every finding and skipped file.
 
-- `[path]` — directory to prepare. Defaults to the current directory.
-- `--dry-run` — show which files would be created or updated without writing them.
-- `--sync-patterns` — also append missing sensitive-data patterns to ignore files that already exist. Without it, existing files are left untouched.
-- `--format` — output format, `text` (default) or `json`.
-
-Only missing files are created; existing ignore files are never overwritten, and informational suggestions (`.gitignore`, `AGENTS.md`, `.cursorindexingignore`) are left for you to add manually. Exit code is `0` on success and `2` if the directory is unavailable or a file could not be written.
-
-### Seal and unseal sensitive values
-
-`offsend seal` finds sensitive values in plain text and replaces them with reversible tokens such as `{{EMAIL:v1.…}}`. Unlike Safe Paste placeholders (`{{EMAIL_1}}`), the original value is encrypted inside the token with AES-256-GCM, so you can restore it later with the same key — no local mapping store required. Works on macOS and Linux.
-
-Generate a 32-byte key (base64 on stdout):
-
-```bash
-offsend keygen
-```
-
-Write a key file (permissions `0600`) and seal a file:
-
-```bash
-offsend keygen -o ./seal.key
-offsend seal notes.txt --key-file ./seal.key -o notes.sealed.txt
-```
-
-Seal from stdin and restore:
-
-```bash
-export OFFSEND_SEAL_KEY="$(offsend keygen)"
-echo "Contact leaked@example.com" | offsend seal
-offsend unseal notes.sealed.txt --key "$OFFSEND_SEAL_KEY"
-```
-
-Key sources (first match wins; `--key` and `--key-file` are mutually exclusive):
-
-1. `--key` — base64-encoded 32-byte key
-2. `--key-file` — 32 raw bytes, or a base64 string of 32 bytes
-3. `OFFSEND_SEAL_KEY` — base64-encoded 32-byte key in the environment
-
-`offsend keygen` options:
-
-- `-o, --output` — write the key to a file instead of stdout
-- `--raw` — write 32 raw bytes (requires `--output`; refuses to print binary to a terminal)
-
-`offsend seal` / `offsend unseal` options:
-
-- `[path]` — text file to process. Omit to read from stdin (pipe required when stdin is a TTY)
-- `--key` / `--key-file` — seal key (see above)
-- `-o, --output` — write result to a file instead of stdout
-- `--max-plaintext-bytes` — (`seal` only) reject any detected value larger than this many UTF-8 bytes (default: 65536). Seal fails closed and writes no output.
-- `--quiet` — (`seal` only) suppress sealed count on stderr
-- `--working-directory` — base directory for relative paths
-
-Notes:
-
-- Tokens are deterministic for the same key, type, and value, so identical emails become identical tokens.
-- If any detected value exceeds `--max-plaintext-bytes`, `seal` exits with an error and does not write partial output.
-- Tokens are portable across macOS and Linux when you use the same key.
-- This is separate from Safe Paste masking (`{{EMAIL_1}}` + local restore mapping) in the macOS app.
-
-### Install a pre-commit hook
-
-Recommended: open **Settings → Hooks** in the macOS app, add a repository, and click **Install Hook**. The GUI also shows hook status and lets you remove hooks later.
-
-From the terminal:
+**4. Protect commits with a hook**
 
 ```bash
 offsend hook install --path /path/to/your/repo
+offsend hook status
+offsend hook uninstall
 ```
 
-The hook runs `offsend check --staged` before each commit and blocks commits that contain sensitive data (API keys, tokens, private keys, and similar patterns).
+The hook runs `offsend check --staged` and blocks commits that contain API keys, tokens, private keys, and similar patterns.
 
-### Project config (`.offsend.yml`)
+**5. CI**
 
-Commit a [`.offsend.yml.example`](.offsend.yml.example) as `.offsend.yml` in your repo to tune check behavior:
+```yaml
+- name: Install Offsend CLI
+  run: curl -fsSL https://install.offsend.io/cli | bash
+
+- name: Check for secrets
+  run: offsend check --staged
+```
+
+Or use the packaged action:
+
+```yaml
+- uses: actions/checkout@v4
+- uses: Offsend/ai-hygiene@v1
+  with:
+    fail-on: block
+```
+
+### Commands
+
+| Command | Description |
+| --- | --- |
+| `offsend show` | Show what AI tools can read |
+| `offsend prepare` | Generate missing AI ignore files |
+| `offsend check` | Scan files or staged changes |
+| `offsend hook install` | Install a pre-commit hook |
+| `offsend doctor` | Verify installation |
+| `offsend init` | Create a starter `.offsend.yml` |
+
+Also available: `offsend seal` / `unseal` (reversible masking tokens), `offsend report`, `offsend keygen`.
+
+### Configuration
+
+Tune detectors, exclusions, and hook policy with a committed `.offsend.yml`:
+
+```bash
+offsend init
+```
 
 ```yaml
 version: 1
@@ -379,8 +254,6 @@ check:
   dictionaries:
     - kind: project
       value: "Project Apollo"
-    - kind: regex
-      value: "ACME-\\d{4,}"
 
 hooks:
   type: pre-commit
@@ -388,75 +261,162 @@ hooks:
   policy: false
 ```
 
-Supported settings:
-
-- `version` — config schema version. Use `1`; other versions are rejected.
-- `check.fail_on` — exit policy for `offsend check`. `block` fails only on blocking findings such as critical secrets or failed policy checks. `warn` also fails on warning/mask findings. `none` reports findings but exits successfully.
-- `check.policy` — when `true`, `offsend check` also runs workspace policy checks for ignore files and exposed sensitive paths. When `false`, it scans file contents only.
-- `check.exclude` — repository-relative glob patterns skipped by file scanning. Plain file globs such as `*.lock` match file names, path globs such as `build/**` match directories recursively, and slash patterns are matched against repository-relative paths.
-- `check.detectors.disable` — detector IDs to turn off for this project. Unknown IDs are ignored.
-- `check.dictionaries` — extra custom-dictionary entries matched alongside the built-in detectors. Each entry has a `kind` (`client`, `company`, `project`, `sensitiveTerm`, `internalDomain`, or `regex`) and a `value`. For every kind except `regex`, `value` is matched literally (with word boundaries); for `regex`, `value` is used as a regular-expression pattern. Invalid patterns and unknown kinds are ignored. Entries merge with dictionaries configured in the app.
-- `hooks.type` — git hook type to install. Currently supported: `pre-commit`.
-- `hooks.fail_on` — exit policy used by installed hooks. If omitted, it falls back to `check.fail_on`, then `block`.
-- `hooks.policy` — whether installed hooks include workspace policy checks. If omitted, it falls back to `check.policy`, then `false`. For faster commits that check only staged files, keep this `false`.
-
-CLI flags override config values when they are provided explicitly. For example, `offsend check --policy` enables policy checks even if `check.policy` is `false`.
-
-Supported `check.detectors.disable` IDs:
-
-`email`, `phone`, `money`, `url`, `ipAddress`, `internalDomain`, `contractId`, `invoiceId`, `orderId`, `apiKeyGeneric`, `openAIAPIKey`, `awsAccessKeyId`, `githubToken`, `slackToken`, `stripeKey`, `jwt`, `privateKey`, `sshPrivateKey`, `databaseURLWithPassword`, `bearerToken`, `highEntropyString`, `creditCardLike`, `iban`, `customClient`, `customCompany`, `customProject`, `customSensitiveTerm`, `customInternalDomain`, `personName`, `streetAddress`, `governmentId`.
-
-### CI snippet (macOS + Linux)
-
-```yaml
-- name: Install Offsend CLI
-  run: curl -fsSL https://install.offsend.io/cli | bash
-
-- name: Check staged changes for secrets
-  run: offsend check --staged
-```
-
-Fallback before `install.offsend.io` is live:
-
-```yaml
-- run: curl -fsSL https://raw.githubusercontent.com/Offsend/Offsend/main/Scripts/install.sh | bash
-```
-
-Build from source in the same job (no GitHub release required):
-
-```yaml
-- uses: swift-actions/setup-swift@v2
-  with:
-    swift-version: "6.0.3"
-- run: swift build --product offsend -c release
-- run: .build/release/offsend check --staged
-```
-
-Other useful commands: `offsend check`, `offsend show`, `offsend prepare`, `offsend seal`, `offsend unseal`, `offsend keygen`, `offsend hook status`, `offsend hook uninstall`.
+Full settings reference, detector IDs, and dictionary kinds: **[docs/configuration.md](docs/configuration.md)**.
 
 ---
 
-## Free vs Pro
+## macOS App
 
-The CLI is free for local checks, git hooks, and CI. Pro expands the interactive macOS app workflow with longer restore windows and unlimited watched folders.
+Interactive workflow for daily work on Mac: Safe Paste, drag-and-drop file preparation, project audits, watched folders, local AI detection, and hook management UI.
+
+<p align="center">
+  <img src="assets/demo.gif" alt="Drop a file or folder into Prepare for AI">
+</p>
+
+<p align="center">
+  <img src="assets/clipboard.png" alt="Safe Paste" width="360">
+  &nbsp;
+  <img src="assets/projects.png" alt="Project checks" width="360">
+</p>
+
+### Install
+
+```bash
+brew install --cask offsend/tap/offsend
+```
+
+Or download the latest `.dmg` from [Releases](../../releases).
+
+The app bundle includes the CLI helper at `Offsend.app/Contents/Helpers/offsend`. To put it on `PATH` as `offsend`, open **Settings → Hooks → CLI** (does not overwrite an existing Homebrew `offsend`).
+
+**Build from source** — macOS 13+, Xcode 16, Tuist:
+
+```bash
+brew install tuist
+./Scripts/bootstrap.sh
+open Offsend.xcworkspace
+```
+
+macOS may ask for Accessibility (to paste into the front app) and folder access (to audit and monitor directories).
+
+### What you can do
+
+**1. Prepare a project**
+
+Check whether a folder is ready for AI coding tools: ignore files, sensitive paths, one-click fixes. Works with `.cursorignore`, `.copilotignore`, `.claudeignore`, `.aiexclude`, and similar rules. Can watch folders in the background and notify you when something changes.
+
+Directory checks use paths and ignore rules only — not file contents.
+
+**2. Prepare files**
+
+Drop a file in **Prepare**, review findings, mask or redact sensitive items, then copy or save an AI-ready version.
+
+Supported formats:
+
+- **Plain text** — `.txt`, `.md`, `.csv`, `.json`, `.log`, `.xml`, `.yaml`, plus other text files (e.g. `.swift`, `.html`)
+- **Documents** — `.pdf`, `.rtf`, `.doc`, `.docx`
+
+**3. Safe Paste**
+
+- `⌘⇧V` — scan the clipboard, mask sensitive values, paste or copy the prepared text
+- `⌘⇧R` — restore masked values when you need the originals
+
+Mappings are encrypted on disk; the key lives in Keychain. Hotkeys are remappable in Settings.
+
+**4. Git hooks from the UI**
+
+**Settings → Hooks** — add a repository, install a pre-commit hook, and see status without editing shell scripts by hand.
+
+**5. Detection & local AI**
+
+Built-in detectors cover emails, phones, IDs, amounts, URLs, IPs, API keys, tokens, private keys, and similar patterns. Toggle them in **Settings → Detection**. Add **custom dictionaries** (client names, companies, regex patterns) — also available to the CLI via `.offsend.yml`.
+
+Optional local AI models (NER/PII) live in **Settings → AI**. Model files and inference stay on your Mac; Offsend does not upload scanned content for AI detection.
+
+### App vs CLI
+
+| | **CLI (macOS / Linux)** | **macOS app** |
+| --- | --- | --- |
+| Best for | Terminal, hooks, CI | Daily interactive work |
+| Safe Paste | No | Yes |
+| File preparation | Path-based scans | Drag-and-drop UI, review, copy/save |
+| Documents | Plain text (+ PDF/RTF/Word on macOS CLI) | Plain text, PDF, RTF, Word |
+| Project checks | `show`, `prepare`, `check --policy` | UI checks, watched folders |
+| Git hooks | `offsend hook …` | Settings → Hooks |
+| AI models | Not used by the CLI | Download / import / manage |
+| Automation | Scriptable text / JSON | Background watcher + notifications |
+
+### Free vs Pro
+
+The CLI is free. Pro expands the interactive macOS app workflow.
 
 | | **Free** | **Pro** |
 | --- | --- | --- |
 | Safe Paste & built-in detectors | Unlimited | Unlimited |
 | Directory audit & one-click fixes | Full | Full |
-| Free CLI for terminal, hooks & CI | Yes | Yes |
+| CLI for terminal, hooks & CI | Yes | Yes |
 | Hook management UI | Yes | Yes |
-| File size | Unlimited | Unlimited |
 | Custom dictionaries (incl. regex) | Yes | Yes |
 | Watched folders | 1 | Unlimited |
-| Custom ignore templates | Editable | Editable |
 | Mapping TTL | 1 hour | Up to 24 hours |
 
 ---
 
-## Built with
+## More of the Offsend toolkit
 
-Swift macOS app. Built mostly in Cursor; signing, permissions, privacy behavior, and shipping are reviewed by hand.
+Same idea on every surface: see what AI can read, then fix it.
+
+### [Check](https://check.offsend.io) — scan a GitHub repo online
+
+Paste a public GitHub URL. Get exposed secrets, risky configs, and missing AI ignore rules — no signup. Full file paths stay hidden in the report. Start here if you want value before installing anything.
+
+### [GitHub Action](https://offsend.io/github-action) — CI gate
+
+[`Offsend/ai-hygiene`](https://github.com/Offsend/ai-hygiene) installs the CLI and runs `offsend check` on pull requests and pushes. Tune with the same `.offsend.yml` as local runs.
+
+### [Browser Extension](https://offsend.io/extension) — protect prompts
+
+Chrome / Firefox extension that scans ChatGPT, Claude, Gemini, Grok, Perplexity, and DeepSeek prompts locally before send. Mask with placeholders like `{{API_KEY_1}}`, or warn / block. No prompt content uploaded for scanning.
+
+### [Radar](https://radar.offsend.io) — exposure research
+
+Tracks AI-context risk signals across public repositories without reading file contents or publishing exact paths. Useful for understanding how common exposed `.env`, keys, and credentials are in the wild.
+
+---
+
+## Privacy
+
+Everything in the CLI, desktop app, and browser extension runs locally on your machine.
+
+Offsend does not upload content for scanning and does not store prompts, clipboard payloads, file bodies, or detected values.
+
+Security issues: see [SECURITY.md](SECURITY.md).
+
+---
+
+## FAQ
+
+**Does Offsend upload my code?**  
+No. Local tools read paths, ignore rules, and (for content scans) files on your machine. Nothing is sent to Offsend for scanning. Check only analyzes a GitHub repo you choose to scan online.
+
+**Is the CLI free?**  
+Yes — terminal, git hooks, and CI. Pro is optional for the macOS app (longer restore windows, unlimited watched folders).
+
+**How is this different from a secret scanner?**  
+Secret scanners focus on credentials in git history. Offsend also asks what AI tools can *see*: missing AI ignore files, exposed sensitive paths, clipboard/prompt leaks, and file prep before you paste into an assistant.
+
+**Does it replace `.gitignore`?**  
+No. `.gitignore` controls Git. Offsend helps with AI ignore files (`.cursorignore`, `.claudeignore`, …) and content checks before share or commit.
+
+**Which AI tools are supported?**  
+Any tool that respects common AI ignore files, plus browser chats covered by the extension (ChatGPT, Claude, Gemini, and others). The CLI and app are tool-agnostic.
+
+---
+
+## Docs
+
+- [Configuration (`.offsend.yml`)](docs/configuration.md)
+- [Security](SECURITY.md)
 
 ---
 
