@@ -111,7 +111,7 @@ swift build --product offsend -c release                     # any supported hos
 ```
 
 <p align="center">
-  <img src="assets/cli.png" alt="Offsend CLI in the terminal" width="720">
+  <img src="assets/cli.png" alt="Offsend CLI in the terminal" width="100%" style="border-radius: 12px;">
 </p>
 
 ### Try it in under a minute
@@ -270,13 +270,7 @@ Full settings reference, detector IDs, and dictionary kinds: **[docs/configurati
 Interactive workflow for daily work on Mac: Safe Paste, drag-and-drop file preparation, project audits, watched folders, local AI detection, and hook management UI.
 
 <p align="center">
-  <img src="assets/demo.gif" alt="Drop a file or folder into Prepare for AI">
-</p>
-
-<p align="center">
-  <img src="assets/clipboard.png" alt="Safe Paste" width="360">
-  &nbsp;
-  <img src="assets/projects.png" alt="Project checks" width="360">
+  <img src="assets/demo.gif" alt="Drop a file or folder into Prepare for AI" width="100%" style="border-radius: 12px;">
 </p>
 
 ### Install
