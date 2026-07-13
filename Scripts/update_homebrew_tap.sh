@@ -136,10 +136,6 @@ class OffsendCli < Formula
   version "VERSION_PLACEHOLDER"
   license "Apache-2.0"
 
-  on_macos do
-    odie "Install the macOS CLI with: brew install --cask offsend/tap/offsend-cli"
-  end
-
   on_linux do
     on_intel do
       url "https://github.com/Offsend/Offsend/releases/download/v#{version}/offsend-cli-#{version}-linux-x86_64.tar.gz"
@@ -152,6 +148,10 @@ class OffsendCli < Formula
   end
 
   def install
+    # Keep odie out of a top-level on_macos block: that runs on formula load
+    # (brew tap / brew info on macOS), not only during install.
+    odie "Install the macOS CLI with: brew install --cask offsend/tap/offsend-cli" if OS.mac?
+
     bin.install "offsend"
   end
 
