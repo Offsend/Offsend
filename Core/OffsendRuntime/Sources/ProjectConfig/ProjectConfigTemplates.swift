@@ -16,23 +16,23 @@ public enum ProjectConfigTemplateID: String, CaseIterable, Sendable {
     public var summary: String {
         switch self {
         case .common:
-            "Lockfiles, OS junk, dist/build/coverage"
+            "Lockfiles, OS junk, dist/build/coverage, minified/maps, linter caches"
         case .node:
-            "node_modules, Next/Nuxt/Turbo/Vercel caches"
+            "node_modules, lockfiles, bundler/Storybook caches, Next/Nuxt/Turbo/Vercel"
         case .python:
-            "venvs, __pycache__, mypy/pytest/ruff caches, egg-info"
+            "venvs, __pycache__, mypy/pytest/ruff caches, egg-info, Jupyter checkpoints"
         case .go:
-            "vendor/"
+            "vendor/, go.sum"
         case .rust:
             "target/"
         case .ruby:
             "vendor/bundle, .bundle"
         case .java:
-            ".gradle, Maven/IDEA out and target"
+            ".gradle, Maven/IDEA out and target, class/jar"
         case .android:
-            "NDK/CXX build dirs, APK/AAB/DEX artifacts"
+            "NDK/CXX build dirs, APK/AAB/DEX/class/jar artifacts"
         case .swift:
-            "DerivedData, SPM .build, Pods, Carthage, xcuserdata"
+            "DerivedData, SPM .build/Package.resolved, Pods, Carthage, archives"
         case .tuist:
             "Derived/, Tuist build and dependencies"
         }
@@ -44,9 +44,16 @@ public enum ProjectConfigTemplateID: String, CaseIterable, Sendable {
             [
                 "*.lock",
                 ".DS_Store",
+                "Thumbs.db",
+                "Desktop.ini",
                 "**/dist/**",
                 "**/build/**",
                 "**/coverage/**",
+                "*.map",
+                "*.min.js",
+                "*.min.css",
+                ".eslintcache",
+                ".stylelintcache",
             ]
         case .node:
             [
@@ -58,8 +65,18 @@ public enum ProjectConfigTemplateID: String, CaseIterable, Sendable {
                 "**/.vercel/**",
                 "**/bower_components/**",
                 "**/.yarn/cache/**",
+                "**/.yarn/unplugged/**",
                 "**/.pnpm-store/**",
                 "**/.svelte-kit/**",
+                "**/.parcel-cache/**",
+                "**/.vite/**",
+                "**/storybook-static/**",
+                "package-lock.json",
+                "npm-shrinkwrap.json",
+                "pnpm-lock.yaml",
+                "bun.lock",
+                "bun.lockb",
+                "install-state.gz",
                 "*.tsbuildinfo",
             ]
         case .python:
@@ -75,10 +92,14 @@ public enum ProjectConfigTemplateID: String, CaseIterable, Sendable {
                 "**/.eggs/**",
                 "**/.nox/**",
                 "**/htmlcov/**",
+                "**/.ipynb_checkpoints/**",
+                "*.pyc",
+                "*.pyo",
             ]
         case .go:
             [
                 "**/vendor/**",
+                "go.sum",
             ]
         case .rust:
             [
@@ -95,6 +116,8 @@ public enum ProjectConfigTemplateID: String, CaseIterable, Sendable {
                 "**/out/**",
                 "**/.idea/**",
                 "**/target/**",
+                "*.class",
+                "*.jar",
             ]
         case .android:
             [
@@ -103,6 +126,8 @@ public enum ProjectConfigTemplateID: String, CaseIterable, Sendable {
                 "*.apk",
                 "*.aab",
                 "*.dex",
+                "*.class",
+                "*.jar",
             ]
         case .swift:
             [
@@ -113,6 +138,9 @@ public enum ProjectConfigTemplateID: String, CaseIterable, Sendable {
                 "**/xcuserdata/**",
                 "*.xcuserstate",
                 "*.xcarchive/**",
+                "Package.resolved",
+                "*.ipa",
+                "**/*.dSYM/**",
             ]
         case .tuist:
             [

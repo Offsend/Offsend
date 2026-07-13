@@ -31,9 +31,16 @@ check:
   exclude:
     - "*.lock"
     - ".DS_Store"
+    - "Thumbs.db"
+    - "Desktop.ini"
     - "**/dist/**"
     - "**/build/**"
     - "**/coverage/**"
+    - "*.map"
+    - "*.min.js"
+    - "*.min.css"
+    - ".eslintcache"
+    - ".stylelintcache"
     - "**/node_modules/**"
   detectors:
     disable:
@@ -87,15 +94,15 @@ Use `offsend init --template …` to seed a useful exclude list for your stack. 
 
 | Template | Typical excludes |
 | --- | --- |
-| `common` (always) | `*.lock`, `.DS_Store`, `**/dist/**`, `**/build/**`, `**/coverage/**` (optional commented: `**/.cache/**`, `**/tmp/**`, `**/temp/**`) |
-| `node` (aliases: `js`, `ts`) | `**/node_modules/**`, `**/.next/**`, `**/.nuxt/**`, `**/.turbo/**`, `**/.pnpm-store/**`, … |
-| `python` | `**/.venv/**`, `**/venv/**`, `**/__pycache__/**`, `**/*.egg-info/**`, … |
-| `go` | `**/vendor/**` |
+| `common` (always) | `*.lock`, `.DS_Store`, `Thumbs.db`, `Desktop.ini`, `**/dist/**`, `**/build/**`, `**/coverage/**`, `*.map`, `*.min.js`, `*.min.css`, linter caches (optional commented: `**/.cache/**`, `**/tmp/**`, `**/temp/**`) |
+| `node` (aliases: `js`, `ts`) | `**/node_modules/**`, lockfiles (`package-lock.json`, `pnpm-lock.yaml`, …), bundler/Storybook caches, `**/.next/**`, `**/.turbo/**`, … |
+| `python` | `**/.venv/**`, `**/__pycache__/**`, `**/*.egg-info/**`, `**/.ipynb_checkpoints/**`, `*.pyc`, … |
+| `go` | `**/vendor/**`, `go.sum` |
 | `rust` | `**/target/**` |
 | `ruby` | `**/vendor/bundle/**`, `**/.bundle/**` |
-| `java` | `**/.gradle/**`, `**/out/**`, `**/.idea/**`, `**/target/**` |
-| `android` | `**/.cxx/**`, `**/.externalNativeBuild/**`, `*.apk`, `*.aab`, `*.dex` |
-| `swift` (alias: `ios`) | `**/DerivedData/**`, `**/.build/**`, `**/Pods/**`, `**/Carthage/Build/**`, … |
+| `java` | `**/.gradle/**`, `**/out/**`, `**/.idea/**`, `**/target/**`, `*.class`, `*.jar` |
+| `android` | `**/.cxx/**`, `**/.externalNativeBuild/**`, `*.apk`, `*.aab`, `*.dex`, `*.class`, `*.jar` |
+| `swift` (alias: `ios`) | `**/DerivedData/**`, `**/.build/**`, `Package.resolved`, `**/Pods/**`, `*.ipa`, `**/*.dSYM/**`, … |
 | `tuist` | `**/Derived/**`, `**/Tuist/.build/**`, `**/Tuist/Dependencies/**`, `**/.tuist-bin/**` |
 
 Do not exclude secret-bearing files (for example `.env`, `*.pem`) — those should stay in the scan.

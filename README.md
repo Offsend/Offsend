@@ -218,9 +218,16 @@ check:
   exclude:
     - "*.lock"
     - ".DS_Store"
+    - "Thumbs.db"
+    - "Desktop.ini"
     - "**/dist/**"
     - "**/build/**"
     - "**/coverage/**"
+    - "*.map"
+    - "*.min.js"
+    - "*.min.css"
+    - ".eslintcache"
+    - ".stylelintcache"
     - "**/node_modules/**"
   detectors:
     disable:

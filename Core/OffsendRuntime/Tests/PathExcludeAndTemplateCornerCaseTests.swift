@@ -211,15 +211,45 @@ final class ProjectConfigTemplateCornerCaseTests: XCTestCase {
 
     func testEveryTemplatePatternMatchesARepresentativePath() throws {
         let samples: [ProjectConfigTemplateID: [String]] = [
-            .common: ["Cargo.lock", "apps/web/dist/index.js", "module/build/out.bin", ".DS_Store"],
-            .node: ["packages/ui/node_modules/x/index.js", "apps/web/.next/cache", "file.tsbuildinfo"],
-            .python: [".venv/bin/python", "src/__pycache__/a.pyc", "pkg.egg-info/PKG-INFO"],
-            .go: ["vendor/github.com/foo/bar.go"],
+            .common: [
+                "Cargo.lock",
+                "apps/web/dist/index.js",
+                "module/build/out.bin",
+                ".DS_Store",
+                "bundle.min.js",
+                "app.js.map",
+                ".eslintcache",
+            ],
+            .node: [
+                "packages/ui/node_modules/x/index.js",
+                "apps/web/.next/cache",
+                "file.tsbuildinfo",
+                "package-lock.json",
+                "apps/web/pnpm-lock.yaml",
+                "npm-shrinkwrap.json",
+                ".parcel-cache/x",
+                "storybook-static/index.html",
+            ],
+            .python: [
+                ".venv/bin/python",
+                "src/__pycache__/a.pyc",
+                "pkg.egg-info/PKG-INFO",
+                ".ipynb_checkpoints/notebook.ipynb",
+                "module.pyc",
+            ],
+            .go: ["vendor/github.com/foo/bar.go", "go.sum"],
             .rust: ["target/release/app"],
             .ruby: ["vendor/bundle/ruby/3.2.0/gems/x.rb", ".bundle/config"],
-            .java: [".gradle/caches/x", "out/production/main", "target/classes/A.class"],
-            .android: ["app/.cxx/Debug/x", "app-release.apk", "classes.dex"],
-            .swift: ["DerivedData/ModuleCache", ".build/debug/App", "Pods/Alamofire/x.swift"],
+            .java: [".gradle/caches/x", "out/production/main", "target/classes/A.class", "App.class", "lib.jar"],
+            .android: ["app/.cxx/Debug/x", "app-release.apk", "classes.dex", "Foo.class"],
+            .swift: [
+                "DerivedData/ModuleCache",
+                ".build/debug/App",
+                "Pods/Alamofire/x.swift",
+                "Package.resolved",
+                "App.ipa",
+                "App.app.dSYM/Contents/Resources/DWARF/App",
+            ],
             .tuist: ["Derived/Sources/TuistBundle+X.swift", "Tuist/.build/checkouts/A"],
         ]
 

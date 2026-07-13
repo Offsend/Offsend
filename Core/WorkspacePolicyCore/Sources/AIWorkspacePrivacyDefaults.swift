@@ -251,10 +251,22 @@ public extension AIWorkspaceSensitivePattern {
         AIWorkspaceSensitivePattern(
             id: "ssh-files",
             title: "SSH material",
-            acceptedPatterns: [".ssh/", "**/.ssh/", "id_rsa", "**/id_rsa", "**/.ssh/id_rsa"],
+            acceptedPatterns: [
+                ".ssh/",
+                "**/.ssh/",
+                "id_rsa",
+                "**/id_rsa",
+                "**/.ssh/id_rsa",
+                "id_ed25519",
+                "**/id_ed25519",
+                "id_ecdsa",
+                "**/id_ecdsa",
+                "*.ppk",
+                "**/*.ppk"
+            ],
             severity: .recommended,
             category: .secret,
-            remediation: "Ignore SSH directories and id_rsa files."
+            remediation: "Ignore SSH directories and private key files (id_rsa, id_ed25519, id_ecdsa, *.ppk)."
         ),
         AIWorkspaceSensitivePattern(
             id: "aws-files",
@@ -433,6 +445,108 @@ public extension AIWorkspaceSensitivePattern {
             severity: .required,
             category: .cloud,
             remediation: "Ignore Firebase Admin SDK JSON keys."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "firebase-client-config",
+            title: "Firebase client config",
+            acceptedPatterns: [
+                "google-services.json",
+                "**/google-services.json",
+                "GoogleService-Info.plist",
+                "**/GoogleService-Info.plist"
+            ],
+            severity: .recommended,
+            category: .cloud,
+            remediation: "Ignore google-services.json / GoogleService-Info.plist — they embed API keys."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "android-local-properties",
+            title: "Android local.properties",
+            acceptedPatterns: ["local.properties", "**/local.properties"],
+            severity: .recommended,
+            category: .secret,
+            remediation: "Ignore local.properties — it can hold SDK paths and signing secrets."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "xcode-secrets-xcconfig",
+            title: "Xcode Secrets.xcconfig",
+            acceptedPatterns: ["Secrets.xcconfig", "**/Secrets.xcconfig"],
+            severity: .recommended,
+            category: .secret,
+            remediation: "Ignore Secrets.xcconfig files that typically hold API keys."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "spring-local-config",
+            title: "Spring application-local config",
+            acceptedPatterns: [
+                "application-local.*",
+                "**/application-local.*"
+            ],
+            severity: .recommended,
+            category: .secret,
+            remediation: "Ignore application-local.* — local Spring profiles often embed credentials."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "cargo-credentials",
+            title: "Cargo credentials",
+            acceptedPatterns: [
+                ".cargo/credentials",
+                "**/.cargo/credentials",
+                ".cargo/credentials.toml",
+                "**/.cargo/credentials.toml",
+                ".cargo/credentials.json",
+                "**/.cargo/credentials.json",
+                ".cargo/credentials*",
+                "**/.cargo/credentials*"
+            ],
+            severity: .recommended,
+            category: .secret,
+            remediation: "Ignore Cargo credentials files that store crates.io tokens."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "auth-json",
+            title: "auth.json",
+            acceptedPatterns: ["auth.json", "**/auth.json"],
+            severity: .recommended,
+            category: .secret,
+            remediation: "Ignore auth.json (Composer and similar tools store tokens there)."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "aws-root-key-csv",
+            title: "AWS access key CSV",
+            acceptedPatterns: [
+                "accessKeys.csv",
+                "**/accessKeys.csv",
+                "credentials.csv",
+                "**/credentials.csv"
+            ],
+            severity: .required,
+            category: .cloud,
+            remediation: "Ignore AWS access key CSV downloads (accessKeys.csv / credentials.csv)."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "vpn-rdp-configs",
+            title: "VPN / RDP configs",
+            acceptedPatterns: ["*.ovpn", "**/*.ovpn", "*.rdp", "**/*.rdp"],
+            severity: .recommended,
+            category: .secret,
+            remediation: "Ignore .ovpn / .rdp files — they often embed passwords or private keys."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "keepass-databases",
+            title: "KeePass databases",
+            acceptedPatterns: ["*.kdbx", "**/*.kdbx"],
+            severity: .required,
+            category: .secret,
+            remediation: "Ignore KeePass databases (.kdbx)."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "fly-cli-config",
+            title: "Fly.io CLI config",
+            acceptedPatterns: [".fly/", "**/.fly/", ".fly/config.yml", "**/.fly/config.yml"],
+            severity: .recommended,
+            category: .cloud,
+            remediation: "Ignore .fly/ — Fly CLI config can contain access tokens."
         ),
         AIWorkspaceSensitivePattern(
             id: "git-credentials",

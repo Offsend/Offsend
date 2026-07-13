@@ -401,6 +401,73 @@ final class SensitivePathExposureCheckerTests: XCTestCase {
         XCTAssertTrue(afterDelete.sensitiveRelativePaths.isEmpty)
     }
 
+    func testIgnoreTemplateIncludesImportantSecretPatterns() {
+        let patterns = Set(AIWorkspacePrivacyIgnoreTemplate.defaultPatterns)
+        for pattern in [
+            "local.properties",
+            "google-services.json",
+            "GoogleService-Info.plist",
+            "Secrets.xcconfig",
+            "id_ed25519",
+            "id_ecdsa",
+            "*.ppk",
+            ".cargo/credentials*",
+            "auth.json",
+            "*.ovpn",
+            "*.kdbx",
+            "accessKeys.csv",
+            "application-local.*",
+            ".fly/",
+        ] {
+            XCTAssertTrue(patterns.contains(pattern), "Missing ignore pattern: \(pattern)")
+        }
+    }
+
+    func testNewSensitivePathsMatchDefaults() {
+        let patterns = AIWorkspaceSensitivePattern.defaultPatterns
+        XCTAssertTrue(checker.matchesSensitivePattern(relativePath: "android/local.properties", sensitivePatterns: patterns))
+        XCTAssertTrue(checker.matchesSensitivePattern(relativePath: "app/google-services.json", sensitivePatterns: patterns))
+        XCTAssertTrue(checker.matchesSensitivePattern(relativePath: "ios/GoogleService-Info.plist", sensitivePatterns: patterns))
+        XCTAssertTrue(checker.matchesSensitivePattern(relativePath: "Config/Secrets.xcconfig", sensitivePatterns: patterns))
+        XCTAssertTrue(checker.matchesSensitivePattern(relativePath: "id_ed25519", sensitivePatterns: patterns))
+        XCTAssertTrue(checker.matchesSensitivePattern(relativePath: "keys/id_ecdsa", sensitivePatterns: patterns))
+        XCTAssertTrue(checker.matchesSensitivePattern(relativePath: ".cargo/credentials.toml", sensitivePatterns: patterns))
+        XCTAssertTrue(checker.matchesSensitivePattern(relativePath: "auth.json", sensitivePatterns: patterns))
+        XCTAssertTrue(checker.matchesSensitivePattern(relativePath: "vpn/office.ovpn", sensitivePatterns: patterns))
+        XCTAssertTrue(checker.matchesSensitivePattern(relativePath: "vault.kdbx", sensitivePatterns: patterns))
+        XCTAssertTrue(checker.matchesSensitivePattern(relativePath: "accessKeys.csv", sensitivePatterns: patterns))
+        XCTAssertTrue(checker.matchesSensitivePattern(relativePath: "src/main/resources/application-local.yml", sensitivePatterns: patterns))
+        XCTAssertTrue(checker.matchesSensitivePattern(relativePath: ".fly/config.yml", sensitivePatterns: patterns))
+    }
+
+    func testDefaultIgnoreTemplateCoversNewSensitivePaths() {
+        let ignore: [String: Set<String>] = [
+            ".cursorignore": Set(AIWorkspacePrivacyIgnoreTemplate.defaultPatterns)
+        ]
+        let patterns = AIWorkspaceSensitivePattern.defaultPatterns
+        for path in [
+            "local.properties",
+            "google-services.json",
+            "GoogleService-Info.plist",
+            "Secrets.xcconfig",
+            "id_ed25519",
+            "auth.json",
+            "office.ovpn",
+            "vault.kdbx",
+            "accessKeys.csv",
+            "application-local.properties",
+        ] {
+            XCTAssertNil(
+                checker.exposedFinding(
+                    relativePath: path,
+                    sensitivePatterns: patterns,
+                    ignorePatternsByFile: ignore
+                ),
+                "Default ignore template should cover \(path)"
+            )
+        }
+    }
+
     private func makeTemporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("SensitivePathExposureCheckerTests-\(UUID().uuidString)", isDirectory: true)

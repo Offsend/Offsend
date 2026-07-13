@@ -192,6 +192,9 @@ final class ProjectConfigTests: XCTestCase {
         let patterns = ProjectConfigTemplates.excludePatterns(for: [.node])
         XCTAssertTrue(patterns.contains("*.lock"))
         XCTAssertTrue(patterns.contains("**/node_modules/**"))
+        XCTAssertTrue(patterns.contains("package-lock.json"))
+        XCTAssertTrue(patterns.contains("pnpm-lock.yaml"))
+        XCTAssertTrue(patterns.contains("bun.lock"))
         XCTAssertEqual(patterns.first, "*.lock")
     }
 

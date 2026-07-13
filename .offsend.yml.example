@@ -11,9 +11,16 @@ check:
   exclude:
     - "*.lock"
     - ".DS_Store"
+    - "Thumbs.db"
+    - "Desktop.ini"
     - "**/dist/**"
     - "**/build/**"
     - "**/coverage/**"
+    - "*.map"
+    - "*.min.js"
+    - "*.min.css"
+    - ".eslintcache"
+    - ".stylelintcache"
     # Optional — uncomment only if these dirs never hold secrets:
     # - "**/.cache/**"
     # - "**/tmp/**"
