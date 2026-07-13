@@ -60,6 +60,21 @@ final class RoutesTests: XCTestCase {
                 let body = String(buffer: response.body)
                 XCTAssertTrue(body.contains("Disallow: /r/"))
                 XCTAssertTrue(body.contains("Disallow: /scan/"))
+                XCTAssertTrue(body.contains("Sitemap: https://check.offsend.io/sitemap.xml"))
+            }
+        }
+    }
+
+    func testSitemapListsLandingOnly() async throws {
+        let app = makeApp()
+        try await app.test(.router) { client in
+            try await client.execute(uri: "/sitemap.xml", method: .get) { response in
+                XCTAssertEqual(response.status, .ok)
+                XCTAssertEqual(response.headers[.contentType], "application/xml; charset=utf-8")
+                let body = String(buffer: response.body)
+                XCTAssertTrue(body.contains("<loc>https://check.offsend.io/</loc>"))
+                XCTAssertFalse(body.contains("/scan/"))
+                XCTAssertFalse(body.contains("/r/"))
             }
         }
     }

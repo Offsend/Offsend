@@ -23,6 +23,15 @@ enum Routes {
             )
         }
 
+        router.get("/sitemap.xml") { _, _ in
+            let baseURL = dependencies.config.publicBaseURL ?? PageMetadata.defaultPublicBaseURL
+            return Response(
+                status: .ok,
+                headers: [.contentType: "application/xml; charset=utf-8"],
+                body: .init(byteBuffer: .init(string: PageMetadata.sitemapXML(baseURL: baseURL)))
+            )
+        }
+
         router.get("/favicon.ico") { _, _ in
             do {
                 return try StaticAssets.response(for: "favicon.ico")

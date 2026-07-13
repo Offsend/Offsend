@@ -9,13 +9,31 @@ enum PageMetadata {
 
     private static let forwardedProto = HTTPField.Name("X-Forwarded-Proto")!
 
+    static let defaultPublicBaseURL = "https://check.offsend.io"
+
     static let robotsTXT = """
     User-agent: *
     Allow: /
     Disallow: /r/
     Disallow: /scan/
 
+    Sitemap: \(defaultPublicBaseURL)/sitemap.xml
     """
+
+    /// Indexable public pages only — scan jobs and reports stay out of the sitemap.
+    static func sitemapXML(baseURL: String = defaultPublicBaseURL) -> String {
+        let origin = baseURL.hasSuffix("/") ? String(baseURL.dropLast()) : baseURL
+        return """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+          <url>
+            <loc>\(origin)/</loc>
+            <changefreq>weekly</changefreq>
+            <priority>1.0</priority>
+          </url>
+        </urlset>
+        """
+    }
 
     static func siteURL(from request: Request) -> String {
         let host = request.head.authority ?? "localhost"
