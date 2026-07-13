@@ -76,6 +76,41 @@ final class ProjectConfigTests: XCTestCase {
         XCTAssertFalse(PathExcludeMatcher.isExcluded(relativePath: "src/main.swift", patterns: ["vendor/**"]))
     }
 
+    func testPathExcludeMatcherNestedGlobs() {
+        XCTAssertTrue(PathExcludeMatcher.isExcluded(
+            relativePath: "packages/ui/node_modules/lodash/index.js",
+            patterns: ["**/node_modules/**"]
+        ))
+        XCTAssertTrue(PathExcludeMatcher.isExcluded(
+            relativePath: "app/module/build/outputs/app.apk",
+            patterns: ["**/build/**"]
+        ))
+        XCTAssertTrue(PathExcludeMatcher.isExcluded(
+            relativePath: "pkg.egg-info/PKG-INFO",
+            patterns: ["**/*.egg-info/**"]
+        ))
+        XCTAssertTrue(PathExcludeMatcher.isExcluded(
+            relativePath: "src/pkg.egg-info/dependency_links.txt",
+            patterns: ["*.egg-info/**"]
+        ))
+        XCTAssertFalse(PathExcludeMatcher.isExcluded(
+            relativePath: "src/main.swift",
+            patterns: ["**/node_modules/**", "**/build/**"]
+        ))
+    }
+
+    func testPathExcludeMatcherShouldSkipDirectory() {
+        XCTAssertTrue(PathExcludeMatcher.shouldSkipDirectory(
+            relativePath: "packages/ui/node_modules",
+            patterns: ["**/node_modules/**"]
+        ))
+        XCTAssertTrue(PathExcludeMatcher.shouldSkipDirectory(relativePath: ".git", patterns: []))
+        XCTAssertFalse(PathExcludeMatcher.shouldSkipDirectory(
+            relativePath: "src",
+            patterns: ["**/node_modules/**"]
+        ))
+    }
+
     func testDoctorReportFailsWhenSettingsUnavailable() {
         let report = OffsendDoctor().run(context: nil)
         XCTAssertFalse(report.isHealthy)
@@ -125,4 +160,102 @@ final class ProjectConfigTests: XCTestCase {
         let issues = ProjectConfigValidator.validateYAMLStructure(yaml)
         XCTAssertTrue(issues.contains { $0.contains("check.disable is ignored") })
     }
+
+    func testTemplatesResolveAlwaysIncludesCommon() throws {
+        let ids = try ProjectConfigTemplates.resolve(rawValues: [])
+        XCTAssertEqual(ids, [.common])
+
+        let withNode = try ProjectConfigTemplates.resolve(rawValues: ["node"])
+        XCTAssertEqual(withNode, [.common, .node])
+    }
+
+    func testTemplatesResolveCSVAndDedupe() throws {
+        let ids = try ProjectConfigTemplates.resolve(rawValues: ["node,swift", "swift", "tuist"])
+        XCTAssertEqual(ids, [.common, .node, .swift, .tuist])
+    }
+
+    func testTemplatesResolveAliasesAndCaseInsensitive() throws {
+        let ids = try ProjectConfigTemplates.resolve(rawValues: ["JS", "ios", "TypeScript"])
+        XCTAssertEqual(ids, [.common, .node, .swift])
+    }
+
+    func testTemplatesResolveUnknownID() {
+        XCTAssertThrowsError(try ProjectConfigTemplates.resolve(rawValues: ["nodejs"])) { error in
+            guard let templateError = error as? ProjectConfigTemplateError else {
+                return XCTFail("Expected ProjectConfigTemplateError")
+            }
+            XCTAssertEqual(templateError, .unknownTemplate("nodejs"))
+        }
+    }
+
+    func testTemplatesExcludePatternsIncludeNodeModules() {
+        let patterns = ProjectConfigTemplates.excludePatterns(for: [.node])
+        XCTAssertTrue(patterns.contains("*.lock"))
+        XCTAssertTrue(patterns.contains("**/node_modules/**"))
+        XCTAssertEqual(patterns.first, "*.lock")
+    }
+
+    func testTemplatesExcludePatternsUnionDedupe() {
+        let patterns = ProjectConfigTemplates.excludePatterns(for: [.swift, .tuist, .java, .android])
+        XCTAssertTrue(patterns.contains("**/DerivedData/**"))
+        XCTAssertTrue(patterns.contains("**/Tuist/.build/**"))
+        XCTAssertEqual(patterns.filter { $0 == "**/.gradle/**" }.count, 1)
+        XCTAssertEqual(patterns.filter { $0 == "**/build/**" }.count, 1)
+        XCTAssertEqual(Set(patterns).count, patterns.count)
+    }
+
+    func testTemplatesMergeExcludeIntoExistingYAML() throws {
+        let existing = """
+        version: 1
+
+        check:
+          fail_on: block
+          exclude:
+            - "*.lock"
+            - "custom/**"
+          detectors:
+            disable:
+              - email
+
+        hooks:
+          type: pre-commit
+        """
+
+        let result = try ProjectConfigTemplates.mergingExclude(
+            intoYAML: existing,
+            patterns: ["**/node_modules/**", "*.lock", "**/dist/**"]
+        )
+
+        XCTAssertEqual(result.added, ["**/node_modules/**", "**/dist/**"])
+        XCTAssertTrue(result.yaml.contains("custom/**"))
+        XCTAssertTrue(result.yaml.contains("**/node_modules/**"))
+        XCTAssertTrue(result.yaml.contains("detectors:"))
+        XCTAssertTrue(result.yaml.contains("- email"))
+    }
+
+    func testTemplatesRenderYAMLContainsExcludeAndLoads() throws {
+        let yaml = ProjectConfigTemplates.renderYAML(templates: [.node])
+        XCTAssertTrue(yaml.contains("**/node_modules/**"))
+        XCTAssertTrue(yaml.contains("# templates: common, node"))
+
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        try yaml.write(to: root.appendingPathComponent(".offsend.yml"), atomically: true, encoding: .utf8)
+
+        let config = try XCTUnwrap(ProjectConfigLoader().load(from: root))
+        XCTAssertTrue(config.check?.exclude?.contains("**/node_modules/**") == true)
+        XCTAssertTrue(config.check?.exclude?.contains("*.lock") == true)
+    }
+
+    func testTemplatesListTextIncludesAliases() {
+        let text = ProjectConfigTemplates.listTemplatesText()
+        XCTAssertTrue(text.contains("node"))
+        XCTAssertTrue(text.contains("js"))
+        XCTAssertTrue(text.contains("ios"))
+    }
 }
+

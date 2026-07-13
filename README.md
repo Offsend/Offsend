@@ -157,7 +157,7 @@ The macOS app also ships a bundled `offsend` helper (`Offsend.app/Contents/Helpe
 | `offsend hook install` | Install a pre-commit hook |
 | `offsend hook status` | Check hook status |
 | `offsend hook uninstall` | Remove the hook |
-| `offsend init` | Create a starter `.offsend.yml` |
+| `offsend init` | Create a starter `.offsend.yml` (`--template`, `--merge-exclude`, `--list-templates`) |
 
 Also available: `offsend seal` / `unseal`, `offsend report`, `offsend keygen`.
 
@@ -203,7 +203,10 @@ Or install the CLI and run `offsend check --staged` yourself.
 ### Configuration
 
 ```bash
-offsend init
+offsend init --template node
+# aliases: js/ts → node, ios → swift; also: python, go, rust, ruby, java, android, swift, tuist
+# offsend init --list-templates
+# offsend init --template python --merge-exclude
 ```
 
 ```yaml
@@ -214,7 +217,11 @@ check:
   policy: false
   exclude:
     - "*.lock"
-    - "vendor/**"
+    - ".DS_Store"
+    - "**/dist/**"
+    - "**/build/**"
+    - "**/coverage/**"
+    - "**/node_modules/**"
   detectors:
     disable:
       - phone

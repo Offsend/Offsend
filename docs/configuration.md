@@ -6,9 +6,15 @@ Create a starter file:
 
 ```bash
 offsend init
+offsend init --template node
+offsend init --template js,swift
+offsend init --template python --merge-exclude
+offsend init --list-templates
 # or copy the example:
 cp .offsend.yml.example .offsend.yml
 ```
+
+`offsend init` expands exclude presets into a concrete `check.exclude` list (no `preset` field in the YAML). The `common` preset is always included. Template names are case-insensitive; aliases: `js`/`ts` → `node`, `ios` → `swift`. Use `--merge-exclude` to add patterns to an existing file without overwriting the rest.
 
 CLI flags override config values when provided explicitly. For example, `offsend check --policy` enables policy checks even if `check.policy` is `false`.
 
@@ -24,7 +30,11 @@ check:
   policy: false
   exclude:
     - "*.lock"
-    - "vendor/**"
+    - ".DS_Store"
+    - "**/dist/**"
+    - "**/build/**"
+    - "**/coverage/**"
+    - "**/node_modules/**"
   detectors:
     disable:
       - phone
@@ -68,10 +78,27 @@ When `true`, `offsend check` also runs workspace policy checks for ignore files 
 
 Repository-relative glob patterns skipped by file scanning:
 
-- Plain file globs such as `*.lock` match file names
-- Path globs such as `build/**` match directories recursively
-- Slash patterns are matched against repository-relative paths
+- Plain file globs such as `*.lock` match file names anywhere in the tree
+- Path globs such as `build/**` match that directory recursively from the repo root
+- Nested globs such as `**/node_modules/**` or `**/*.egg-info/**` match at any depth
+- During directory scans, matching directories are skipped entirely (not walked then filtered)
 
+Use `offsend init --template …` to seed a useful exclude list for your stack. Presets expand into concrete patterns at init time (`offsend init --list-templates` prints the catalog):
+
+| Template | Typical excludes |
+| --- | --- |
+| `common` (always) | `*.lock`, `.DS_Store`, `**/dist/**`, `**/build/**`, `**/coverage/**` (optional commented: `**/.cache/**`, `**/tmp/**`, `**/temp/**`) |
+| `node` (aliases: `js`, `ts`) | `**/node_modules/**`, `**/.next/**`, `**/.nuxt/**`, `**/.turbo/**`, `**/.pnpm-store/**`, … |
+| `python` | `**/.venv/**`, `**/venv/**`, `**/__pycache__/**`, `**/*.egg-info/**`, … |
+| `go` | `**/vendor/**` |
+| `rust` | `**/target/**` |
+| `ruby` | `**/vendor/bundle/**`, `**/.bundle/**` |
+| `java` | `**/.gradle/**`, `**/out/**`, `**/.idea/**`, `**/target/**` |
+| `android` | `**/.cxx/**`, `**/.externalNativeBuild/**`, `*.apk`, `*.aab`, `*.dex` |
+| `swift` (alias: `ios`) | `**/DerivedData/**`, `**/.build/**`, `**/Pods/**`, `**/Carthage/Build/**`, … |
+| `tuist` | `**/Derived/**`, `**/Tuist/.build/**`, `**/Tuist/Dependencies/**`, `**/.tuist-bin/**` |
+
+Do not exclude secret-bearing files (for example `.env`, `*.pem`) — those should stay in the scan.
 ### `check.detectors.disable`
 
 Detector IDs to turn off for this project. Unknown IDs are ignored.

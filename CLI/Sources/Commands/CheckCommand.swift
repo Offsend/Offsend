@@ -101,7 +101,13 @@ struct Check: AsyncParsableCommand {
                 }
                 if isDirectory.boolValue {
                     directoryURLs.append(url)
-                    fileURLs.append(contentsOf: collectFiles(in: url))
+                    fileURLs.append(
+                        contentsOf: collectFiles(
+                            in: url,
+                            excludePatterns: resolved.excludePatterns,
+                            relativeTo: workingURL
+                        )
+                    )
                 } else {
                     fileURLs.append(url)
                 }
@@ -146,7 +152,11 @@ struct Check: AsyncParsableCommand {
         }
     }
 
-    private func collectFiles(in directory: URL) -> [URL] {
+    private func collectFiles(
+        in directory: URL,
+        excludePatterns: [String],
+        relativeTo workingDirectory: URL
+    ) -> [URL] {
         let keys: Set<URLResourceKey> = [.isRegularFileKey, .isDirectoryKey]
         guard let enumerator = FileManager.default.enumerator(
             at: directory,
@@ -159,7 +169,8 @@ struct Check: AsyncParsableCommand {
         for case let url as URL in enumerator {
             let values = try? url.resourceValues(forKeys: keys)
             if values?.isDirectory == true {
-                if url.lastPathComponent == ".git" {
+                let relative = PathExcludeMatcher.relativePath(of: url, relativeTo: workingDirectory)
+                if PathExcludeMatcher.shouldSkipDirectory(relativePath: relative, patterns: excludePatterns) {
                     enumerator.skipDescendants()
                 }
                 continue

@@ -3,10 +3,21 @@ version: 1
 check:
   fail_on: block
   policy: false
+  # Prefer: offsend init --template node
+  #          offsend init --list-templates
+  #          offsend init --template python --merge-exclude
+  # Known templates: common, node, python, go, rust, ruby, java, android, swift, tuist
+  # Aliases: js/ts→node, ios→swift (`common` is always included.)
   exclude:
     - "*.lock"
-    - "vendor/**"
-    - "DerivedData/**"
+    - ".DS_Store"
+    - "**/dist/**"
+    - "**/build/**"
+    - "**/coverage/**"
+    # Optional — uncomment only if these dirs never hold secrets:
+    # - "**/.cache/**"
+    # - "**/tmp/**"
+    # - "**/temp/**"
   detectors:
     # All detector IDs you can list under `disable:`:
     #   email, phone, money, url, ipAddress, internalDomain, contractId,
