@@ -24,9 +24,12 @@ check:
     - "App/Resources/en.lproj/Localizable.strings"
     - "Core/DetectionCore/Sources/DetectionEngine.swift"
     - "Core/DetectionCore/Tests/**"
+    - "Core/OffsendRuntime/Tests/**"
     - "Core/MaskingCore/Tests/**"
     - "Core/AIDetectionCore/Tests/**"
     - "Services/WorkspaceWatchService/Tests/**"
+    - "Scripts/ci_cli_e2e.sh"
+    - "docs/**"
   detectors:
     disable:
       - email
