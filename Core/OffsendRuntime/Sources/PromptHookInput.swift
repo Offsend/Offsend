@@ -75,7 +75,8 @@ public enum PromptHookInput {
     }
 }
 
-/// Path heuristics for prompt attachments and read-gates (warn/deny only — files are not opened).
+/// Path heuristics for prompt attachments and read-gates (path deny / warn).
+/// Read-gate may also scan file content (hook payload or a bounded disk prefix).
 public enum PromptAttachmentAdvisor {
     /// Basename tokens matched only with an exact name or a separator (`.`, `-`, `_`).
     private static let sensitiveBasenames = [

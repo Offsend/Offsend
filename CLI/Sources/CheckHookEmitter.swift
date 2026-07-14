@@ -1,4 +1,5 @@
 import ArgumentParser
+import DetectionCore
 import Foundation
 import MaskingCore
 import OffsendRuntime
@@ -44,11 +45,14 @@ struct CheckHookEmitter {
         adapter: CheckHookAdapter,
         rawJSON: String,
         started: Date,
-        policy: CheckHookPolicy
-    ) {
-        let decision: PromptReadGateDecision
+        policy: CheckHookPolicy,
+        context: OffsendRuntimeContext,
+        disabledDetectors: Set<SensitiveEntityType> = [],
+        customDictionaries: [CustomDictionaryItem] = []
+    ) async {
+        let input: PromptReadGateInput
         do {
-            decision = try PromptReadGate.evaluate(json: rawJSON, adapter: adapter)
+            input = try PromptReadGate.parse(json: rawJSON, adapter: adapter)
         } catch {
             emitFailOpen(
                 adapter: adapter,
@@ -60,6 +64,26 @@ struct CheckHookEmitter {
             return
         }
 
+        var decision = PromptReadGate.evaluatePath(input.path)
+        var denyReason = decision.allowed ? nil : "read_gate_denied_path"
+
+        if decision.allowed, let content = PromptReadGate.resolveContent(for: input) {
+            let textResult = await OffsendCheckService(context: context).runText(
+                content,
+                failPolicy: .block,
+                disabledDetectors: disabledDetectors,
+                customDictionaries: customDictionaries
+            )
+            if let secretDeny = PromptReadGate.decisionForSecretEntities(
+                path: input.path,
+                entities: textResult.entities,
+                secretsOnly: secretsOnly
+            ) {
+                decision = secretDeny
+                denyReason = "read_gate_denied_secrets"
+            }
+        }
+
         let rendered = PromptReadGateRenderer.render(decision: decision, adapter: adapter)
         writeHookOutput(rendered)
         logDebug(
@@ -68,7 +92,7 @@ struct CheckHookEmitter {
             advice: nil,
             exitCode: rendered.exitCode,
             started: started,
-            error: decision.allowed ? nil : "read_gate_denied"
+            error: denyReason
         )
     }
 

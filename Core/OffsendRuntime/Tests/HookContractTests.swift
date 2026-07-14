@@ -118,6 +118,73 @@ final class HookContractTests: XCTestCase {
         XCTAssertTrue(ordinary.allowed)
     }
 
+    func testReadGateParsesCursorContent() throws {
+        let input = try PromptReadGate.parse(
+            json: loadFixture("cursor/beforeReadFile.indexWithKey.json"),
+            adapter: .cursor
+        )
+        XCTAssertEqual(input.path, "/repo/index.js")
+        XCTAssertTrue(input.content?.contains("sk-abcdefghijklmnopqrstuvwxyzABCDEF123456") == true)
+        XCTAssertTrue(PromptReadGate.evaluatePath(input.path).allowed)
+    }
+
+    func testReadGateDeniesSecretEntitiesInContent() {
+        let key = "sk-abcdefghijklmnopqrstuvwxyzABCDEF123456"
+        let entity = SensitiveEntity(
+            type: .openAIAPIKey,
+            range: key.startIndex..<key.endIndex,
+            value: key,
+            confidence: 0.99,
+            source: .secret
+        )
+        let decision = PromptReadGate.decisionForSecretEntities(
+            path: "/repo/index.js",
+            entities: [entity],
+            secretsOnly: true
+        )
+        XCTAssertEqual(decision?.allowed, false)
+        XCTAssertTrue(decision?.reason.contains("openAIAPIKey") == true)
+        XCTAssertTrue(
+            PromptReadGateRenderer.render(decision: decision!, adapter: .cursor).stdout.contains("deny")
+        )
+    }
+
+    func testReadGateAllowsWhenNoSecretEntities() {
+        let decision = PromptReadGate.decisionForSecretEntities(
+            path: "/repo/index.js",
+            entities: [],
+            secretsOnly: true
+        )
+        XCTAssertNil(decision)
+    }
+
+    func testReadGateIgnoresHighEntropyWhenSecretsOnly() {
+        let value = String(repeating: "Ab1+", count: 20)
+        let entity = SensitiveEntity(
+            type: .highEntropyString,
+            range: value.startIndex..<value.endIndex,
+            value: value,
+            confidence: 0.65,
+            source: .secret
+        )
+        XCTAssertNil(
+            PromptReadGate.decisionForSecretEntities(
+                path: "/repo/noise.js",
+                entities: [entity],
+                secretsOnly: true
+            )
+        )
+    }
+
+    func testReadGateResolveContentPrefersPayloadOverDisk() throws {
+        let input = PromptReadGateInput(
+            path: "/nonexistent/path/that/should/not/be/read.js",
+            content: "const API_KEY = \"sk-abcdefghijklmnopqrstuvwxyzABCDEF123456\";"
+        )
+        let content = PromptReadGate.resolveContent(for: input)
+        XCTAssertEqual(content, input.content)
+    }
+
     func testReadGateFailOpenUsesPermissionAllow() {
         let output = CheckHookResponseRenderer.failOpen(
             adapter: .cursor,

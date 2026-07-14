@@ -50,7 +50,7 @@ struct HookInstall: ParsableCommand {
     @Flag(
         name: [.customLong("read-gate"), .customLong("with-read-gate")],
         inversion: .prefixedNo,
-        help: "File-read path gates (Cursor beforeReadFile / Claude PreToolUse Read). On by default for cursor/claude; disable with --no-read-gate."
+        help: "File-read gates — sensitive paths + secret content scan (Cursor beforeReadFile / Claude PreToolUse Read). On by default for cursor/claude; disable with --no-read-gate."
     )
     var readGate: Bool?
 

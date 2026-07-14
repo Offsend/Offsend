@@ -230,6 +230,7 @@ let cliTargets: [Target] = [
         infoPlist: .file(path: "CLI/Resources/Info.plist"),
         sources: ["CLI/Sources/**"],
         dependencies: [
+            .target(name: "DetectionCore"),
             .target(name: "OffsendRuntime"),
             .package(product: "ArgumentParser")
         ],

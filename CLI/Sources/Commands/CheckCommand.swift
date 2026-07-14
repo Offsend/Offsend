@@ -71,7 +71,7 @@ struct Check: AsyncParsableCommand {
 
     @Flag(
         name: .long,
-        help: "Path denylist gate for editor file-read hooks (requires --adapter cursor|claude)."
+        help: "File-read gate for editor hooks: sensitive paths + secret content scan (requires --adapter cursor|claude)."
     )
     var readGate = false
 
@@ -140,11 +140,25 @@ struct Check: AsyncParsableCommand {
         }
 
         if readGate, let adapter {
-            hookEmitter().emitReadGate(
+            let (context, projectConfig) = loadStdinRuntime(adapter: adapter, started: started)
+            guard let context else { return }
+            let resolved = OptionsResolver.resolveCheckOptions(
+                overrides: CLICheckOverrides(
+                    policySpecified: false,
+                    policyValue: false,
+                    failOn: CLIParse.failPolicy(failOn)
+                ),
+                projectConfig: projectConfig,
+                staged: false
+            )
+            await hookEmitter().emitReadGate(
                 adapter: adapter,
                 rawJSON: rawText,
                 started: started,
-                policy: resolvedHookPolicy(for: adapter)
+                policy: resolvedHookPolicy(for: adapter),
+                context: context,
+                disabledDetectors: resolved.disabledDetectors,
+                customDictionaries: resolved.customDictionaries
             )
             return
         }

@@ -108,6 +108,7 @@ let package = Package(
         .executableTarget(
             name: "OffsendCLI",
             dependencies: [
+                "DetectionCore",
                 "OffsendRuntime",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ],

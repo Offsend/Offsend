@@ -188,7 +188,7 @@ offsend check --adapter claude --read-gate --no-notify   # file-read gate
 | `--notify` / `--no-notify` | on (Darwin) | macOS notification; **off** in installed wrappers |
 | `--seal-copy` | off | Write sealed copy to private temp file + clipboard |
 | `--debug-hook` | off | Append diagnostics to `hook-debug.log` (no secret values) |
-| `--read-gate` | off | Path denylist for Cursor / Claude file-read hooks |
+| `--read-gate` | off | File-read gate for Cursor / Claude: sensitive paths + secret content scan |
 | `--shell-gate` | off | Sensitive-path gate for Cursor / Claude shell hooks (`ask` on findings) |
 | `--key-file PATH` | — | Seal key file for `--seal-copy` / `--hook-policy block` |
 | `--key-name NAME` | — | Named key in `~/.offsend/keys/NAME.key` |
@@ -360,9 +360,14 @@ Offsend checks prompts **before** they reach Cursor, Claude Code, Windsurf, or C
 
 ### Read-gate (on by default)
 
-The read gate adds path denylists for Cursor `beforeReadFile` and Claude `PreToolUse` (Read); it is installed by default for these targets (disable with `--no-read-gate`). Checks **path names only** — does not read file contents. Denies `.env`, `*.pem`, credentials-like names, and files under sensitive directories such as `.ssh`, `.aws`, `.kube`, `.docker`, `.gnupg`, `.azure`, and `.fly`.
+The read gate protects Cursor `beforeReadFile` and Claude `PreToolUse` (Read); it is installed by default for these targets (disable with `--no-read-gate`). It:
 
-Cursor may not always enforce `beforeReadFile` deny (known IDE limitation). Prefer `offsend prepare` / `.cursorignore` for hard blocks; treat read-gate as defense-in-depth.
+1. **Denies sensitive paths** — `.env`, `*.pem`, credentials-like names, and files under `.ssh`, `.aws`, `.kube`, `.docker`, `.gnupg`, `.azure`, `.fly`, …
+2. **Scans file content for secrets** — uses the same secret detectors as the prompt gate (`--secrets-only` by default). Cursor supplies `content` in the hook JSON; Claude’s PreToolUse has no body, so Offsend reads a bounded UTF-8 prefix from disk (up to 50k characters). Binary / unreadable files skip the content step (path rules still apply).
+
+On a secret hit the editor receives deny/block with a short remediation message (detector type names only — no secret values).
+
+Cursor may not always enforce `beforeReadFile` deny (known IDE limitation; open tabs can bypass the hook). Prefer `offsend prepare` / `.cursorignore` for hard blocks; treat read-gate as defense-in-depth.
 
 ### Shell-gate (opt-in)
 

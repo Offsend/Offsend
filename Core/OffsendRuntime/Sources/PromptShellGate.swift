@@ -17,7 +17,7 @@ public struct PromptShellGateDecision: Equatable, Sendable {
 
 /// Best-effort gate for Cursor `beforeShellExecution` / Claude `PreToolUse` (Bash).
 /// Tokenizes the command and flags sensitive path tokens (same heuristics as the
-/// read-gate). Does not parse shell grammar and never reads file contents;
+/// read-gate path heuristics). Does not parse shell grammar and never reads file contents;
 /// findings ask for user confirmation instead of blocking.
 public enum PromptShellGate {
     public static func evaluate(json: String, adapter: CheckHookAdapter) throws -> PromptShellGateDecision {
