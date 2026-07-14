@@ -4,20 +4,6 @@ import XCTest
 
 final class HookContractTests: XCTestCase {
     private func fixtureURL(_ relative: String) throws -> URL {
-        let parts = relative.split(separator: "/").map(String.init)
-        precondition(parts.count == 2)
-        let folder = parts[0]
-        let file = parts[1]
-        let name = URL(fileURLWithPath: file).deletingPathExtension().lastPathComponent
-        if let url = Bundle.module.url(
-            forResource: name,
-            withExtension: "json",
-            subdirectory: "Fixtures/HookInputs/\(folder)"
-        ) {
-            return url
-        }
-
-        // Fallback for source-tree runs without resource bundling.
         let source = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .appendingPathComponent("Fixtures/HookInputs")
