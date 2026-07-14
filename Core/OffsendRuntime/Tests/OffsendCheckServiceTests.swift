@@ -55,4 +55,35 @@ final class OffsendCheckServiceTests: XCTestCase {
         XCTAssertEqual(report.fileFindings[0].relativePath, "notes.txt")
         XCTAssertEqual(report.fileFindings[0].entityType, SensitiveEntityType.email)
     }
+
+    func testRunTextScansPromptBuffer() async {
+        let context = OffsendRuntimeContext(settings: .default, customDictionaries: [])
+        let service = OffsendCheckService(context: context)
+        // Use a realistic AKIA-shaped key; doc sample EXAMPLE keys are filtered.
+        let text = "deploy with AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF"
+        let result = await service.runText(text, failPolicy: .block)
+
+        XCTAssertFalse(result.entities.isEmpty)
+        XCTAssertEqual(result.report.fileFindings.first?.relativePath, "<stdin>")
+        XCTAssertTrue(result.entities.contains { $0.type == .awsAccessKeyId })
+    }
+
+    func testRunTextSeparatesRiskReportFromSecretGateEntities() async {
+        let context = OffsendRuntimeContext(settings: .default, customDictionaries: [])
+        let service = OffsendCheckService(context: context)
+
+        let secret = await service.runText(
+            "deploy with AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF",
+            failPolicy: .block
+        )
+        XCTAssertFalse(secret.entities.filter(\.type.isSecret).isEmpty)
+        let gate = PromptCheckAdviceBuilder.filterEntities(secret.entities, secretsOnly: true)
+        XCTAssertFalse(gate.isEmpty)
+        XCTAssertTrue(gate.contains { $0.type == .awsAccessKeyId })
+
+        // Email-only: adapter secrets-only gate stays empty even if PII appears in entities.
+        let emailOnly = await service.runText("ping user@example.com please", failPolicy: .block)
+        let emailGate = PromptCheckAdviceBuilder.filterEntities(emailOnly.entities, secretsOnly: true)
+        XCTAssertTrue(emailGate.isEmpty)
+    }
 }

@@ -125,6 +125,10 @@ Extra custom-dictionary entries matched alongside the built-in detectors. Each e
 
 Invalid patterns and unknown kinds are ignored. Entries merge with dictionaries configured in the macOS app.
 
+### AI-editor prompt hooks
+
+Separate from git hooks. See [cli.md — AI editor hooks](cli.md#ai-editor-hooks) and [`offsend hook install --target …`](cli.md#hook-install).
+
 ### `hooks.type`
 
 Git hook type to install. Currently supported: `pre-commit`.
@@ -152,5 +156,6 @@ Whether installed hooks include workspace policy checks. If omitted, falls back 
 
 ## Related
 
+- [CLI reference](cli.md) — all commands and AI-editor hooks
 - [README](../README.md) — quick start and workflows
 - [`.offsend.yml.example`](../.offsend.yml.example) — copy-paste starter

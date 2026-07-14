@@ -120,6 +120,142 @@ public struct OffsendDoctor: Sendable {
         let cwd = URL(fileURLWithPath: fileManager.currentDirectoryPath)
         checks.append(projectConfigCheck(loader: configLoader, directory: cwd))
 
+        let installer = AIEditorHookInstaller(fileManager: fileManager)
+        var installedCount = 0
+        var anyAIHookInstalled = false
+        for target in AIEditorHookTarget.allCases {
+            let status = installer.status(target: target, repositoryPath: cwd)
+            // Absent AI hooks are optional — only report when present (ok) or broken (warn).
+            if status.broken {
+                var details: [String] = []
+                let promptURL = cwd.appendingPathComponent(AIEditorHookInstaller.wrapperRelativePath)
+                let promptIssue = installer.validateWrapper(at: promptURL)
+                if promptIssue != .ok {
+                    details.append(
+                        AIEditorHookInstaller.wrapperValidationMessage(promptIssue, path: promptURL.path)
+                    )
+                }
+                if let contents = try? String(contentsOf: URL(fileURLWithPath: status.configPath), encoding: .utf8),
+                   contents.contains(AIEditorHookInstaller.readWrapperRelativePath) {
+                    let readURL = cwd.appendingPathComponent(AIEditorHookInstaller.readWrapperRelativePath)
+                    let readIssue = installer.validateWrapper(at: readURL)
+                    if readIssue != .ok {
+                        details.append(
+                            AIEditorHookInstaller.wrapperValidationMessage(readIssue, path: readURL.path)
+                        )
+                    }
+                }
+                if details.isEmpty {
+                    details.append("wrapper missing or not executable")
+                }
+                checks.append(
+                    DoctorCheck(
+                        name: "ai-hook-\(target.rawValue)",
+                        status: .warn,
+                        message: "Configured at \(status.configPath) but wrapper invalid: \(details.joined(separator: "; ")). Re-run: offsend hook install --target \(target.rawValue)"
+                    )
+                )
+                installedCount += 1
+                anyAIHookInstalled = true
+            } else if status.installed {
+                checks.append(
+                    DoctorCheck(
+                        name: "ai-hook-\(target.rawValue)",
+                        status: .ok,
+                        message: status.configPath
+                    )
+                )
+                installedCount += 1
+                anyAIHookInstalled = true
+            }
+        }
+
+        if anyAIHookInstalled {
+            let promptURL = cwd.appendingPathComponent(AIEditorHookInstaller.wrapperRelativePath)
+            let promptValidation = installer.validateWrapper(at: promptURL)
+            if promptValidation != .ok {
+                checks.append(
+                    DoctorCheck(
+                        name: "ai-wrapper-prompt",
+                        status: .warn,
+                        message: AIEditorHookInstaller.wrapperValidationMessage(
+                            promptValidation,
+                            path: promptURL.path
+                        )
+                    )
+                )
+            } else {
+                checks.append(
+                    DoctorCheck(
+                        name: "ai-wrapper-prompt",
+                        status: .ok,
+                        message: "\(promptURL.path) (v\(AIEditorHookInstaller.managedVersion))"
+                    )
+                )
+            }
+
+            let readURL = cwd.appendingPathComponent(AIEditorHookInstaller.readWrapperRelativePath)
+            if fileManager.fileExists(atPath: readURL.path) {
+                let readValidation = installer.validateWrapper(at: readURL)
+                if readValidation != .ok {
+                    checks.append(
+                        DoctorCheck(
+                            name: "ai-wrapper-read",
+                            status: .warn,
+                            message: AIEditorHookInstaller.wrapperValidationMessage(
+                                readValidation,
+                                path: readURL.path
+                            )
+                        )
+                    )
+                } else {
+                    checks.append(
+                        DoctorCheck(
+                            name: "ai-wrapper-read",
+                            status: .ok,
+                            message: "\(readURL.path) (v\(AIEditorHookInstaller.managedVersion))"
+                        )
+                    )
+                }
+            }
+        }
+
+        checks.append(
+            DoctorCheck(
+                name: "ai-hooks",
+                status: .ok,
+                message: "\(installedCount)/\(AIEditorHookTarget.allCases.count) installed (optional)"
+            )
+        )
+
+        let sealKeyPath = fileManager.homeDirectoryForCurrentUser
+            .appendingPathComponent(".offsend/seal.key").path
+        if fileManager.fileExists(atPath: sealKeyPath) {
+            checks.append(
+                DoctorCheck(
+                    name: "seal-key",
+                    status: .ok,
+                    message: sealKeyPath
+                )
+            )
+        } else if ProcessInfo.processInfo.environment[SealKeyResolver.environmentVariable] != nil {
+            checks.append(
+                DoctorCheck(
+                    name: "seal-key",
+                    status: .ok,
+                    message: "\(SealKeyResolver.environmentVariable) is set"
+                )
+            )
+        } else {
+            checks.append(
+                DoctorCheck(
+                    name: "seal-key",
+                    status: .warn,
+                    message: "No ~/.offsend/seal.key or \(SealKeyResolver.environmentVariable). Needed for --hook-policy block seal-copy."
+                )
+            )
+        }
+
         return DoctorReport(checks: checks)
     }
 

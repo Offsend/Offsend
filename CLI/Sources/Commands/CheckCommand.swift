@@ -1,10 +1,16 @@
 import ArgumentParser
 import Foundation
+import MaskingCore
 import OffsendRuntime
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 
 struct Check: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Scan files for sensitive data before sharing or committing."
+        abstract: "Scan files or prompt text for sensitive data before sharing or committing."
     )
 
     @Argument(help: "File or directory paths to scan. Directories are scanned recursively.")
@@ -13,14 +19,67 @@ struct Check: AsyncParsableCommand {
     @Flag(name: .long, help: "Scan only staged files in the current git repository.")
     var staged = false
 
+    @Flag(name: .long, help: "Read prompt/text from stdin instead of file paths.")
+    var stdin = false
+
     @Flag(name: .long, help: "Also run workspace policy checks on the repository root.")
     var policy = false
 
     @Option(name: .long, help: "Exit with failure when findings reach this level (block, warn, none).")
     var failOn: String?
 
-    @Option(name: .long, help: "Output format (text, json).")
+    @Option(name: .long, help: "Output format (text, json). Ignored when --adapter is set.")
     var format: String = CheckOutputFormat.text.rawValue
+
+    @Option(
+        name: .long,
+        help: "AI-editor hook adapter (cursor, claude, windsurf, codex). Implies reading hook JSON from stdin."
+    )
+    var adapter: String?
+
+    @Option(
+        name: .long,
+        help: "Hook policy when --adapter is set (advise, soft-block, block). block = soft-block UI plus seal-copy when a key is set."
+    )
+    var hookPolicy: String?
+
+    @Flag(
+        name: .long,
+        inversion: .prefixedNo,
+        help: "Show a macOS notification when --adapter finds issues (default: on for Darwin)."
+    )
+    var notify = true
+
+    @Flag(
+        name: .long,
+        inversion: .prefixedNo,
+        help: "With --adapter, only report secret-shaped findings (default: on)."
+    )
+    var secretsOnly = true
+
+    @Flag(name: .long, help: "With --adapter, write a sealed copy to a private temp file + clipboard.")
+    var sealCopy = false
+
+    @Flag(name: .long, help: "Append adapter diagnostics to the Offsend hook debug log (no secret values).")
+    var debugHook = false
+
+    @Flag(
+        name: .long,
+        help: "With --stdin (no --adapter), print secret-gate JSON instead of the risk report."
+    )
+    var gateSecrets = false
+
+    @Flag(
+        name: .long,
+        help: "Path denylist gate for editor file-read hooks (requires --adapter cursor|claude)."
+    )
+    var readGate = false
+
+    @Option(name: .long, help: "Base64-encoded 32-byte seal key (prefer --key-file / OFFSEND_SEAL_KEY).")
+    var key: String?
+
+    @Option(name: .long, help: "Path to a seal key file (for --seal-copy / --hook-policy block).")
+    var keyFile: String?
 
     @Flag(name: .long, help: "Only print findings and errors.")
     var quiet = false
@@ -32,8 +91,300 @@ struct Check: AsyncParsableCommand {
     var workingDirectory: String?
 
     mutating func run() async throws {
+        let hookAdapter = CLIParse.checkHookAdapter(adapter)
+        let usesStdin = stdin || hookAdapter != nil
+
+        if usesStdin {
+            try await runStdinPath(adapter: hookAdapter)
+            return
+        }
+
+        try await runFilePath()
+    }
+
+    private func runStdinPath(adapter: CheckHookAdapter?) async throws {
+        let started = Date()
+        validateStdinOptions(adapter: adapter)
+
+        if let adapter, let hookPolicy, CheckHookPolicy(rawValue: hookPolicy) == nil {
+            hookEmitter().emitFailOpen(
+                adapter: adapter,
+                reason: .invalidHookPolicy(hookPolicy),
+                started: started,
+                policy: CheckHookPolicy.defaultPolicy(for: adapter),
+                readGate: readGate
+            )
+            return
+        }
+        if key != nil, adapter != nil, !quiet {
+            fputs("warning: prefer --key-file or OFFSEND_SEAL_KEY; --key is visible in process listings.\n", stderr)
+        }
+
+        let rawText: String
+        do {
+            rawText = try CLIStdin.readUTF8()
+        } catch let error as CLIStdin.ReadError {
+            if let adapter {
+                hookEmitter().emitFailOpen(
+                    adapter: adapter,
+                    reason: error.failOpenReason,
+                    started: started,
+                    policy: resolvedHookPolicy(for: adapter),
+                    readGate: readGate
+                )
+                return
+            }
+            CLIError.exit(.error, message: error.message)
+        }
+
+        if readGate, let adapter {
+            hookEmitter().emitReadGate(
+                adapter: adapter,
+                rawJSON: rawText,
+                started: started,
+                policy: resolvedHookPolicy(for: adapter)
+            )
+            return
+        }
+
+        let promptPayload = parsePromptPayload(rawText: rawText, adapter: adapter, started: started)
+        if promptPayload == nil, adapter != nil {
+            return
+        }
+
+        let (context, projectConfig) = loadStdinRuntime(adapter: adapter, started: started)
+        if context == nil {
+            return
+        }
+
+        let validatedFailOn = CLIParse.failPolicy(failOn)
+        let resolved = OptionsResolver.resolveCheckOptions(
+            overrides: CLICheckOverrides(
+                policySpecified: false,
+                policyValue: false,
+                failOn: validatedFailOn
+            ),
+            projectConfig: projectConfig,
+            staged: false
+        )
+
+        let service = OffsendCheckService(context: context!)
+        let textResult = await service.runText(
+            promptPayload?.prompt ?? rawText,
+            failPolicy: resolved.failPolicy,
+            disabledDetectors: resolved.disabledDetectors,
+            customDictionaries: resolved.customDictionaries
+        )
+
+        if let adapter {
+            try await hookEmitter().emitAdapter(
+                adapter: adapter,
+                textResult: textResult,
+                attachmentPaths: promptPayload?.attachmentPaths ?? [],
+                context: context!,
+                started: started,
+                policy: resolvedHookPolicy(for: adapter)
+            )
+            return
+        }
+
+        if gateSecrets {
+            try emitGateSecretsJSON(from: textResult)
+            return
+        }
+
+        try renderStdinReport(textResult)
+    }
+
+    private func validateStdinOptions(adapter: CheckHookAdapter?) {
+        if staged {
+            CLIError.exit(.error, message: "--stdin/--adapter cannot be combined with --staged.")
+        }
+        if !paths.isEmpty {
+            CLIError.exit(.error, message: "--stdin/--adapter cannot be combined with file paths.")
+        }
+        if policy {
+            CLIError.exit(.error, message: "--stdin/--adapter cannot be combined with --policy.")
+        }
+        if hookPolicy != nil, adapter == nil {
+            CLIError.exit(.error, message: "--hook-policy requires --adapter.")
+        }
+        if sealCopy, adapter == nil {
+            CLIError.exit(.error, message: "--seal-copy requires --adapter.")
+        }
+        if debugHook, adapter == nil {
+            CLIError.exit(.error, message: "--debug-hook requires --adapter.")
+        }
+        if gateSecrets, adapter != nil {
+            CLIError.exit(.error, message: "--gate-secrets cannot be combined with --adapter.")
+        }
+        if readGate, adapter == nil {
+            CLIError.exit(.error, message: "--read-gate requires --adapter.")
+        }
+        if readGate, let adapter, adapter != .cursor, adapter != .claude {
+            CLIError.exit(.error, message: "--read-gate supports --adapter cursor or claude.")
+        }
+    }
+
+    private struct ParsedPromptPayload {
+        let prompt: String
+        let attachmentPaths: [String]
+    }
+
+    private func parsePromptPayload(
+        rawText: String,
+        adapter: CheckHookAdapter?,
+        started: Date
+    ) -> ParsedPromptPayload? {
+        guard let adapter else { return nil }
+
+        do {
+            let payload = try PromptHookInput.payload(fromJSON: rawText, adapter: adapter)
+            return ParsedPromptPayload(prompt: payload.prompt, attachmentPaths: payload.attachmentPaths)
+        } catch let error as PromptHookInputError {
+            hookEmitter().emitFailOpen(
+                adapter: adapter,
+                reason: FailOpenReason.fromPromptHookInputError(error),
+                started: started,
+                policy: resolvedHookPolicy(for: adapter),
+                readGate: false
+            )
+            return nil
+        } catch {
+            hookEmitter().emitFailOpen(
+                adapter: adapter,
+                reason: FailOpenReason(code: "invalid_json", debugDetail: error.localizedDescription),
+                started: started,
+                policy: resolvedHookPolicy(for: adapter),
+                readGate: false
+            )
+            return nil
+        }
+    }
+
+    private func loadStdinRuntime(
+        adapter: CheckHookAdapter?,
+        started: Date
+    ) -> (OffsendRuntimeContext?, OffsendProjectConfig?) {
+        let context: OffsendRuntimeContext
+        do {
+            context = try OffsendRuntimeContext.load()
+        } catch {
+            if let adapter {
+                hookEmitter().emitFailOpen(
+                    adapter: adapter,
+                    reason: .settingsUnavailable(error.localizedDescription),
+                    started: started,
+                    policy: resolvedHookPolicy(for: adapter),
+                    readGate: readGate
+                )
+                return (nil, nil)
+            }
+            CLIError.exit(.error, message: "Failed to load Offsend settings: \(error.localizedDescription)")
+        }
+
+        let workingURL = URL(
+            fileURLWithPath: workingDirectory ?? FileManager.default.currentDirectoryPath
+        ).standardizedFileURL
+
+        let projectConfig: OffsendProjectConfig?
+        do {
+            projectConfig = try ProjectConfigLoader().load(from: workingURL)
+        } catch {
+            if let adapter {
+                hookEmitter().emitFailOpen(
+                    adapter: adapter,
+                    reason: .projectConfigInvalid(error.localizedDescription),
+                    started: started,
+                    policy: resolvedHookPolicy(for: adapter),
+                    readGate: readGate
+                )
+                return (nil, nil)
+            }
+            CLIError.exit(
+                .error,
+                message: "Failed to load \(ProjectConfigLoader.filename): \(error.localizedDescription)"
+            )
+        }
+
+        return (context, projectConfig)
+    }
+
+    private func emitGateSecretsJSON(from textResult: OffsendTextCheckResult) throws {
+        let gateEntities = PromptCheckAdviceBuilder.filterEntities(
+            textResult.entities,
+            secretsOnly: secretsOnly
+        )
+        let advice = PromptCheckAdviceBuilder.build(
+            entities: gateEntities,
+            policy: .advise,
+            secretsOnly: secretsOnly
+        )
+        let payload: [String: Any] = [
+            "findingCount": advice.findingCount,
+            "findingTypes": advice.findings.map(\.type.rawValue),
+            "userMessage": advice.userMessage,
+            "hasSecrets": advice.hasFindings,
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+           let string = String(data: data, encoding: .utf8) {
+            print(string)
+        }
+        if advice.hasFindings {
+            throw ExitCode(OffsendExitCode.findings.rawValue)
+        }
+    }
+
+    private func renderStdinReport(_ textResult: OffsendTextCheckResult) throws {
+        let outputFormat = CLIParse.outputFormat(format)
+        let useColor = outputFormat == .text
+            && ProcessInfo.processInfo.environment["NO_COLOR"] == nil
+            && isatty(STDOUT_FILENO) != 0
+        let output = CheckReporter().render(
+            textResult.report,
+            format: outputFormat,
+            quiet: quiet,
+            verbose: verbose,
+            useColor: useColor
+        )
+        if !output.isEmpty {
+            print(output)
+        }
+
+        if textResult.report.shouldFail {
+            throw ExitCode(OffsendExitCode.findings.rawValue)
+        }
+    }
+
+    private func hookEmitter() -> CheckHookEmitter {
+        CheckHookEmitter(
+            quiet: quiet,
+            debugHook: debugHook,
+            notify: notify,
+            secretsOnly: secretsOnly,
+            sealCopy: sealCopy,
+            key: key,
+            keyFile: keyFile
+        )
+    }
+
+    private func resolvedHookPolicy(for adapter: CheckHookAdapter) -> CheckHookPolicy {
+        if let hookPolicy {
+            return CLIParse.checkHookPolicy(hookPolicy)
+        }
+        return CheckHookPolicy.defaultPolicy(for: adapter)
+    }
+
+    private func runFilePath() async throws {
         let outputFormat = CLIParse.outputFormat(format)
         let validatedFailOn = CLIParse.failPolicy(failOn)
+
+        if adapter != nil || hookPolicy != nil || sealCopy || debugHook || gateSecrets || readGate {
+            CLIError.exit(
+                .error,
+                message: "--adapter/--hook-policy/--seal-copy/--debug-hook/--gate-secrets/--read-gate require stdin."
+            )
+        }
 
         if staged, !paths.isEmpty {
             CLIError.exit(.error, message: "--staged cannot be combined with explicit paths.")
@@ -64,7 +415,6 @@ struct Check: AsyncParsableCommand {
         let gitResolver = GitRepositoryResolver()
         var fileURLs: [URL] = []
         var policyDirectoryURL: URL?
-        // Relative paths and exclude patterns are computed against this root.
         var scanRoot = workingURL
         var stagedExportRoot: URL?
         defer {
@@ -75,8 +425,6 @@ struct Check: AsyncParsableCommand {
 
         if staged {
             let repositoryRoot = resolveRepositoryRoot(startingAt: workingURL, gitResolver: gitResolver)
-            // Scan the index content (not the working tree) so that partially
-            // staged changes are checked exactly as they would be committed.
             let exportRoot = FileManager.default.temporaryDirectory
                 .appendingPathComponent("offsend-staged-\(UUID().uuidString)", isDirectory: true)
             stagedExportRoot = exportRoot
@@ -122,7 +470,7 @@ struct Check: AsyncParsableCommand {
         } else if resolved.policy {
             policyDirectoryURL = resolveRepositoryRoot(startingAt: workingURL, gitResolver: gitResolver)
         } else {
-            CLIError.exit(.error, message: "Provide file paths, --staged, or --policy.")
+            CLIError.exit(.error, message: "Provide file paths, --staged, --policy, or --stdin.")
         }
 
         let service = OffsendCheckService(context: context)

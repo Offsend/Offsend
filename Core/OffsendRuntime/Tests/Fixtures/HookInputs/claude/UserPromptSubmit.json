@@ -1,0 +1,4 @@
+{
+  "hook_event_name": "UserPromptSubmit",
+  "prompt": "please review AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF"
+}

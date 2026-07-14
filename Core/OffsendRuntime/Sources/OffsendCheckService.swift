@@ -32,19 +32,37 @@ public struct OffsendCheckRequest: Sendable {
     }
 }
 
+public struct OffsendTextCheckResult: Sendable {
+    public let report: CheckReport
+    public let entities: [SensitiveEntity]
+    public let scannedText: String
+
+    public init(report: CheckReport, entities: [SensitiveEntity], scannedText: String) {
+        self.report = report
+        self.entities = entities
+        self.scannedText = scannedText
+    }
+}
+
 public struct OffsendCheckService: Sendable {
     private let context: OffsendRuntimeContext
     private let pipeline: DocumentProcessingPipeline
     private let auditor: AIWorkspacePrivacyAuditor
+    private let detector: SensitiveDataDetecting
+    private let riskScorer: RiskScoring
 
     public init(
         context: OffsendRuntimeContext,
         pipeline: DocumentProcessingPipeline = DocumentProcessingPipeline.forRuntime(),
-        auditor: AIWorkspacePrivacyAuditor = AIWorkspacePrivacyAuditor()
+        auditor: AIWorkspacePrivacyAuditor = AIWorkspacePrivacyAuditor(),
+        detector: SensitiveDataDetecting = DetectionEngine(),
+        riskScorer: RiskScoring = RiskScoringEngine()
     ) {
         self.context = context
         self.pipeline = pipeline
         self.auditor = auditor
+        self.detector = detector
+        self.riskScorer = riskScorer
     }
 
     public func run(_ request: OffsendCheckRequest) async -> CheckReport {
@@ -79,6 +97,62 @@ public struct OffsendCheckService: Sendable {
             fileIssues: fileIssues,
             policyFindings: policyFindings,
             failPolicy: request.failPolicy
+        )
+    }
+
+    /// Scan a single in-memory prompt/text buffer (CLI `--stdin`).
+    public func runText(
+        _ text: String,
+        failPolicy: CheckFailPolicy = .block,
+        disabledDetectors: Set<SensitiveEntityType> = [],
+        customDictionaries: [CustomDictionaryItem] = []
+    ) async -> OffsendTextCheckResult {
+        var detectionOptions = OffsendConfiguration.detectionOptions(
+            context: context,
+            enableAIDetection: false,
+            disabledDetectors: disabledDetectors,
+            additionalDictionaries: customDictionaries
+        )
+        // Prompt/clipboard-like input is untrusted: never honor inline ignore bypasses.
+        detectionOptions.honorInlineIgnore = false
+
+        let detection = await detector.scan(
+            DetectionRequest(text: text, options: detectionOptions)
+        )
+        let assessment = riskScorer.assess(detection.entities)
+        let findings: [FileCheckFinding]
+        if assessment.recommendedAction == .allow {
+            findings = []
+        } else {
+            findings = detection.entities.map { entity in
+                FileCheckFinding(
+                    relativePath: "<stdin>",
+                    line: lineNumber(for: entity.range, in: detection.scannedText),
+                    entityType: entity.type,
+                    recommendedAction: action(for: entity, assessment: assessment),
+                    hasCriticalSecret: entity.type.countsAsCriticalSecret
+                )
+            }
+        }
+
+        // When risk says allow, only surface secret-shaped entities for hook advice.
+        let adviceEntities: [SensitiveEntity]
+        if assessment.recommendedAction == .allow {
+            adviceEntities = detection.entities.filter(\.type.isSecret)
+        } else {
+            adviceEntities = detection.entities
+        }
+
+        let report = CheckReport(
+            fileFindings: findings,
+            fileIssues: [],
+            policyFindings: [],
+            failPolicy: failPolicy
+        )
+        return OffsendTextCheckResult(
+            report: report,
+            entities: adviceEntities,
+            scannedText: detection.scannedText
         )
     }
 

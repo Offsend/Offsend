@@ -95,4 +95,286 @@ else
   fi
 fi
 
+# Prompt stdin check + adapters.
+set +e
+stdin_json_output="$(printf '%s' 'AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF' | "$CLI_PATH" check --stdin --format json --fail-on none --quiet)"
+stdin_json_status="$?"
+set -e
+if [[ "$stdin_json_status" -ne 0 ]]; then
+  echo "Expected check --stdin --fail-on none to exit 0, got $stdin_json_status" >&2
+  exit 1
+fi
+if ! echo "$stdin_json_output" | grep -q 'awsAccessKeyId\|<stdin>'; then
+  echo "Expected check --stdin JSON to mention the finding" >&2
+  echo "$stdin_json_output" >&2
+  exit 1
+fi
+
+hook_payload='{"prompt":"AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF please deploy"}'
+set +e
+adapter_output="$(printf '%s' "$hook_payload" | "$CLI_PATH" check --adapter cursor --hook-policy advise --no-notify 2>/tmp/offsend-adapter-stderr.$$)"
+adapter_status="$?"
+set -e
+adapter_stderr="$(cat /tmp/offsend-adapter-stderr.$$)"
+rm -f /tmp/offsend-adapter-stderr.$$
+if [[ "$adapter_status" -ne 0 ]]; then
+  echo "Expected check --adapter cursor --hook-policy advise to exit 0, got $adapter_status" >&2
+  echo "$adapter_output" >&2
+  echo "$adapter_stderr" >&2
+  exit 1
+fi
+if ! echo "$adapter_output" | grep -q '"continue"'; then
+  echo "Expected cursor adapter stdout to include continue" >&2
+  echo "$adapter_output" >&2
+  exit 1
+fi
+if ! echo "$adapter_stderr" | grep -qi 'offsend'; then
+  echo "Expected cursor adapter stderr advice" >&2
+  echo "$adapter_stderr" >&2
+  exit 1
+fi
+if echo "$adapter_stderr" | grep -q 'AKIA'; then
+  echo "stderr must not contain secret material" >&2
+  echo "$adapter_stderr" >&2
+  exit 1
+fi
+
+set +e
+soft_block_output="$(printf '%s' "$hook_payload" | "$CLI_PATH" check --adapter cursor --hook-policy soft-block --no-notify 2>/dev/null)"
+soft_block_status="$?"
+set -e
+if [[ "$soft_block_status" -ne 0 ]]; then
+  echo "Expected cursor soft-block to exit 0, got $soft_block_status" >&2
+  exit 1
+fi
+if ! echo "$soft_block_output" | grep -q '"continue":false\|"continue": false'; then
+  echo "Expected cursor soft-block continue:false" >&2
+  echo "$soft_block_output" >&2
+  exit 1
+fi
+
+set +e
+claude_output="$(printf '%s' "$hook_payload" | "$CLI_PATH" check --adapter claude --hook-policy advise --no-notify 2>/dev/null)"
+set -e
+if ! echo "$claude_output" | grep -q 'systemMessage'; then
+  echo "Expected claude advise systemMessage" >&2
+  echo "$claude_output" >&2
+  exit 1
+fi
+
+windsurf_payload='{"agent_action_name":"pre_user_prompt","tool_info":{"user_prompt":"AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF please deploy"}}'
+set +e
+printf '%s' "$windsurf_payload" | "$CLI_PATH" check --adapter windsurf --hook-policy block --no-notify >/dev/null 2>/tmp/offsend-windsurf-stderr.$$
+windsurf_status="$?"
+set -e
+if [[ "$windsurf_status" -ne 2 ]]; then
+  echo "Expected windsurf block to exit 2, got $windsurf_status" >&2
+  cat /tmp/offsend-windsurf-stderr.$$ >&2
+  rm -f /tmp/offsend-windsurf-stderr.$$
+  exit 1
+fi
+rm -f /tmp/offsend-windsurf-stderr.$$
+
+# Fail-open on invalid hook JSON.
+set +e
+fail_open_stderr="$(printf '%s' 'not-json' | "$CLI_PATH" check --adapter cursor --hook-policy soft-block --no-notify 2>&1 >/tmp/offsend-fail-open-out.$$)"
+fail_open_status="$?"
+fail_open_output="$(cat /tmp/offsend-fail-open-out.$$)"
+rm -f /tmp/offsend-fail-open-out.$$
+set -e
+if [[ "$fail_open_status" -ne 0 ]]; then
+  echo "Expected fail-open exit 0, got $fail_open_status" >&2
+  exit 1
+fi
+if ! echo "$fail_open_output" | grep -q '"continue":true\|"continue": true'; then
+  echo "Expected fail-open continue:true" >&2
+  echo "$fail_open_output" >&2
+  exit 1
+fi
+if ! echo "$fail_open_stderr" | grep -q 'invalid_json'; then
+  echo "Expected fail-open stderr code invalid_json" >&2
+  echo "$fail_open_stderr" >&2
+  exit 1
+fi
+if echo "$fail_open_stderr" | grep -qE "/Users/|/home/"; then
+  echo "fail-open stderr must not leak home paths" >&2
+  echo "$fail_open_stderr" >&2
+  exit 1
+fi
+
+# Invalid --hook-policy must fail-open (not exit 2).
+set +e
+invalid_policy_stderr="$(printf '%s' '{"prompt":"hi"}' | "$CLI_PATH" check --adapter cursor --hook-policy hard-block --no-notify 2>&1 >/tmp/offsend-invalid-policy-out.$$)"
+invalid_policy_status="$?"
+invalid_policy_output="$(cat /tmp/offsend-invalid-policy-out.$$)"
+rm -f /tmp/offsend-invalid-policy-out.$$
+set -e
+if [[ "$invalid_policy_status" -ne 0 ]]; then
+  echo "Expected invalid hook-policy fail-open exit 0, got $invalid_policy_status" >&2
+  exit 1
+fi
+if ! echo "$invalid_policy_output" | grep -q '"continue":true\|"continue": true'; then
+  echo "Expected invalid hook-policy fail-open continue:true" >&2
+  echo "$invalid_policy_output" >&2
+  exit 1
+fi
+if ! echo "$invalid_policy_stderr" | grep -q 'invalid_hook_policy'; then
+  echo "Expected invalid hook-policy stderr code invalid_hook_policy" >&2
+  echo "$invalid_policy_stderr" >&2
+  exit 1
+fi
+
+# block without seal key differs from soft-block; with key attempts seal.
+set +e
+block_no_key_out="$(printf '%s' "$hook_payload" | "$CLI_PATH" check --adapter cursor --hook-policy block --no-notify 2>/tmp/offsend-block-stderr.$$)"
+block_no_key_status="$?"
+set -e
+if [[ "$block_no_key_status" -ne 0 ]]; then
+  echo "Expected cursor block exit 0, got $block_no_key_status" >&2
+  exit 1
+fi
+if ! echo "$block_no_key_out" | grep -qi 'seal unavailable\|Blocked'; then
+  echo "Expected block user_message to mention seal unavailable" >&2
+  echo "$block_no_key_out" >&2
+  cat /tmp/offsend-block-stderr.$$ >&2
+  rm -f /tmp/offsend-block-stderr.$$
+  exit 1
+fi
+if ! grep -q 'keygen' /tmp/offsend-block-stderr.$$; then
+  echo "Expected block stderr keygen hint" >&2
+  cat /tmp/offsend-block-stderr.$$ >&2
+  rm -f /tmp/offsend-block-stderr.$$
+  exit 1
+fi
+rm -f /tmp/offsend-block-stderr.$$
+
+seal_key="$repo/.offsend-seal-test.key"
+"$CLI_PATH" keygen -o "$seal_key"
+set +e
+block_with_key_out="$(printf '%s' "$hook_payload" | "$CLI_PATH" check --adapter cursor --hook-policy block --no-notify --key-file "$seal_key" 2>/dev/null)"
+set -e
+if ! echo "$block_with_key_out" | grep -qi 'clipboard\|Sealed'; then
+  echo "Expected block with key to mention sealed clipboard" >&2
+  echo "$block_with_key_out" >&2
+  exit 1
+fi
+
+# --stdin risk report vs --gate-secrets / adapter gate
+email_payload='contact me at user@example.com'
+set +e
+email_gate="$(printf '%s' "$email_payload" | "$CLI_PATH" check --stdin --gate-secrets --no-secrets-only 2>/dev/null)"
+email_gate_status="$?"
+set -e
+if [[ "$email_gate_status" -ne 0 ]]; then
+  echo "Expected email-only gate exit 0, got $email_gate_status" >&2
+  echo "$email_gate" >&2
+  exit 1
+fi
+if ! echo "$email_gate" | grep -q '"hasSecrets":false\|"hasSecrets": false'; then
+  echo "Expected email-only gate hasSecrets:false" >&2
+  echo "$email_gate" >&2
+  exit 1
+fi
+set +e
+akia_gate="$(printf '%s' 'AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF' | "$CLI_PATH" check --stdin --gate-secrets 2>/dev/null)"
+akia_gate_status="$?"
+set -e
+if [[ "$akia_gate_status" -eq 0 ]]; then
+  echo "Expected AKIA gate to exit non-zero" >&2
+  echo "$akia_gate" >&2
+  exit 1
+fi
+if ! echo "$akia_gate" | grep -q '"hasSecrets":true\|"hasSecrets": true'; then
+  echo "Expected AKIA gate hasSecrets:true" >&2
+  echo "$akia_gate" >&2
+  exit 1
+fi
+
+# Read-gate path denylist + fail-open shape
+read_env='{"file_path":"/repo/.env"}'
+read_readme='{"file_path":"/repo/README.md"}'
+set +e
+read_deny="$(printf '%s' "$read_env" | "$CLI_PATH" check --adapter cursor --read-gate --no-notify 2>/dev/null)"
+read_allow="$(printf '%s' "$read_readme" | "$CLI_PATH" check --adapter cursor --read-gate --no-notify 2>/dev/null)"
+read_fail_open="$(printf '%s' 'not-json' | "$CLI_PATH" check --adapter cursor --read-gate --no-notify 2>/dev/null)"
+set -e
+if ! echo "$read_deny" | grep -q 'deny'; then
+  echo "Expected read-gate deny for .env" >&2
+  echo "$read_deny" >&2
+  exit 1
+fi
+if ! echo "$read_allow" | grep -q 'allow'; then
+  echo "Expected read-gate allow for README.md" >&2
+  echo "$read_allow" >&2
+  exit 1
+fi
+if ! echo "$read_fail_open" | grep -q 'permission'; then
+  echo "Expected read-gate fail-open permission:allow (not continue)" >&2
+  echo "$read_fail_open" >&2
+  exit 1
+fi
+if echo "$read_fail_open" | grep -q 'continue'; then
+  echo "read-gate fail-open must not use prompt-submit continue shape" >&2
+  echo "$read_fail_open" >&2
+  exit 1
+fi
+# Preserve a foreign Cursor hook, then merge Offsend.
+mkdir -p "$repo/.cursor"
+printf '%s\n' '{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [ { "command": "./hooks/audit.sh" } ]
+  }
+}' > "$repo/.cursor/hooks.json"
+
+"$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH"
+"$CLI_PATH" hook status --path "$repo" --target cursor
+"$CLI_PATH" hook status --path "$repo" --target all --format json | grep -q '"targets"'
+if ! "$CLI_PATH" hook status --path "$repo" --target all; then
+  echo "hook status --target all should succeed when hooks are healthy" >&2
+  exit 1
+fi
+if ! grep -q "check-prompt.sh" "$repo/.cursor/hooks.json"; then
+  echo "Expected cursor hooks.json to reference wrapper script" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+if ! grep -q "beforeShellExecution" "$repo/.cursor/hooks.json"; then
+  echo "Expected merge to keep foreign beforeShellExecution hook" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+if ! grep -q -- "--no-notify" "$repo/.offsend/hooks/check-prompt.sh"; then
+  echo "Expected wrapper to pass --no-notify" >&2
+  exit 1
+fi
+if grep -q "beforeReadFile" "$repo/.cursor/hooks.json"; then
+  echo "Expected read-gate off by default" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+
+"$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --with-read-gate
+if ! grep -q "beforeReadFile" "$repo/.cursor/hooks.json"; then
+  echo "Expected --with-read-gate to add beforeReadFile" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+if [[ ! -x "$repo/.offsend/hooks/check-read.sh" ]]; then
+  echo "Expected check-read.sh wrapper" >&2
+  exit 1
+fi
+
+"$CLI_PATH" hook uninstall --path "$repo" --target cursor
+if grep -q "check-prompt.sh" "$repo/.cursor/hooks.json" 2>/dev/null; then
+  echo "Expected uninstall to remove Offsend cursor hook entry" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+if ! grep -q "beforeShellExecution" "$repo/.cursor/hooks.json"; then
+  echo "Expected uninstall to keep foreign hooks" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+
 echo "CLI E2E smoke passed."

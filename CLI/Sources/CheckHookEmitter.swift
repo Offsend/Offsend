@@ -1,0 +1,208 @@
+import ArgumentParser
+import Foundation
+import MaskingCore
+import OffsendRuntime
+#if canImport(Darwin)
+import Darwin
+#endif
+
+/// Writes AI-editor hook stdout/stderr, debug log entries, and optional notifications.
+struct CheckHookEmitter {
+    var quiet: Bool
+    var debugHook: Bool
+    var notify: Bool
+    var secretsOnly: Bool
+    var sealCopy: Bool
+    var key: String?
+    var keyFile: String?
+
+    func emitFailOpen(
+        adapter: CheckHookAdapter,
+        reason: FailOpenReason,
+        started: Date,
+        policy: CheckHookPolicy,
+        readGate: Bool
+    ) {
+        let kind: CheckHookResponseRenderer.Kind = readGate ? .readGate : .promptSubmit
+        let rendered = CheckHookResponseRenderer.failOpen(
+            adapter: adapter,
+            reason: reason.code,
+            kind: kind
+        )
+        writeHookOutput(rendered)
+        logDebug(
+            adapter: adapter,
+            policy: policy,
+            advice: nil,
+            exitCode: rendered.exitCode,
+            started: started,
+            error: "\(reason.code): \(reason.debugDetail)"
+        )
+    }
+
+    func emitReadGate(
+        adapter: CheckHookAdapter,
+        rawJSON: String,
+        started: Date,
+        policy: CheckHookPolicy
+    ) {
+        let decision: PromptReadGateDecision
+        do {
+            decision = try PromptReadGate.evaluate(json: rawJSON, adapter: adapter)
+        } catch {
+            emitFailOpen(
+                adapter: adapter,
+                reason: .invalidJSON,
+                started: started,
+                policy: policy,
+                readGate: true
+            )
+            return
+        }
+
+        let rendered = PromptReadGateRenderer.render(decision: decision, adapter: adapter)
+        writeHookOutput(rendered)
+        logDebug(
+            adapter: adapter,
+            policy: policy,
+            advice: nil,
+            exitCode: rendered.exitCode,
+            started: started,
+            error: decision.allowed ? nil : "read_gate_denied"
+        )
+    }
+
+    func emitAdapter(
+        adapter: CheckHookAdapter,
+        textResult: OffsendTextCheckResult,
+        attachmentPaths: [String],
+        context: OffsendRuntimeContext,
+        started: Date,
+        policy: CheckHookPolicy
+    ) async throws {
+        let shouldSeal = sealCopy || policy == .block
+        let gateEntities = PromptCheckAdviceBuilder.filterEntities(
+            textResult.entities,
+            secretsOnly: secretsOnly
+        )
+        let attachmentAdvice = PromptAttachmentAdvisor.adviceLines(for: attachmentPaths)
+
+        var sealedText: String?
+        var sealedCopyPath: String?
+        let sealAttempted = shouldSeal && !gateEntities.isEmpty
+        if sealAttempted {
+            do {
+                let keyData = try SealKeyResolver.resolve(key: key, keyFilePath: keyFile).data
+                let sealed = try await OffsendSealService(context: context).seal(
+                    text: textResult.scannedText,
+                    entities: gateEntities,
+                    keyData: keyData
+                )
+                sealedText = sealed.sealedText
+                let written = try SealCopyStore.write(sealed.sealedText)
+                sealedCopyPath = written.fileURL.path
+                copyToClipboard(sealed.sealedText)
+            } catch {
+                if !quiet {
+                    fputs(
+                        "offsend: seal unavailable; run: offsend keygen -o ~/.offsend/seal.key\n",
+                        stderr
+                    )
+                }
+            }
+        }
+
+        let advice = PromptCheckAdviceBuilder.build(
+            entities: textResult.entities,
+            policy: policy,
+            sealedText: sealedText,
+            sealedCopyPath: sealedCopyPath,
+            secretsOnly: secretsOnly,
+            attachmentAdviceLines: attachmentAdvice,
+            sealAttempted: sealAttempted
+        )
+        let rendered = CheckHookAdapterRenderer.render(result: advice, adapter: adapter)
+
+        if advice.hasFindings, notify {
+            postNotification(body: advice.notificationBody)
+        }
+
+        writeHookOutput(rendered)
+        logDebug(
+            adapter: adapter,
+            policy: policy,
+            advice: advice,
+            exitCode: rendered.exitCode,
+            started: started,
+            error: nil
+        )
+
+        if rendered.exitCode != 0 {
+            throw ExitCode(rendered.exitCode)
+        }
+    }
+
+    private func writeHookOutput(_ rendered: CheckHookAdapterOutput) {
+        if !rendered.stderr.isEmpty, !quiet {
+            fputs(rendered.stderr, stderr)
+        }
+        CLIOutput.writeStdout(rendered.stdout)
+    }
+
+    private func logDebug(
+        adapter: CheckHookAdapter,
+        policy: CheckHookPolicy,
+        advice: PromptCheckAdviceResult?,
+        exitCode: Int32,
+        started: Date,
+        error: String?
+    ) {
+        guard debugHook else { return }
+        let latencyMs = Int(Date().timeIntervalSince(started) * 1000)
+        HookDebugLog.append(
+            HookDebugLog.Entry(
+                adapter: adapter.rawValue,
+                policy: policy.rawValue,
+                findingCount: advice?.findingCount ?? 0,
+                findingTypes: advice?.findings.map(\.type.rawValue) ?? [],
+                exitCode: exitCode,
+                latencyMs: latencyMs,
+                error: error
+            )
+        )
+    }
+
+    private func copyToClipboard(_ text: String) {
+        #if canImport(Darwin)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/pbcopy")
+        let input = Pipe()
+        process.standardInput = input
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            input.fileHandleForWriting.write(Data(text.utf8))
+            try input.fileHandleForWriting.close()
+            process.waitUntilExit()
+        } catch {}
+        #endif
+    }
+
+    private func postNotification(body: String) {
+        #if canImport(Darwin)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        let escaped = body
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        process.arguments = [
+            "-e",
+            "display notification \"\(escaped)\" with title \"Offsend\"",
+        ]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try? process.run()
+        #endif
+    }
+}

@@ -1,0 +1,6 @@
+{
+  "agent_action_name": "pre_user_prompt",
+  "tool_info": {
+    "user_prompt": "cascade: AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF"
+  }
+}

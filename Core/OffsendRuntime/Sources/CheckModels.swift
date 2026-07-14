@@ -14,6 +14,38 @@ public enum CheckOutputFormat: String, Sendable, CaseIterable {
     case json
 }
 
+/// AI-editor hook adapter for `offsend check --stdin --adapter …`.
+public enum CheckHookAdapter: String, Sendable, CaseIterable {
+    case cursor
+    case claude
+    case windsurf
+    case codex
+}
+
+/// Hook response policy. Named separately from workspace `--policy`.
+public enum CheckHookPolicy: String, Sendable, CaseIterable {
+    case advise
+    case softBlock = "soft-block"
+    /// Same editor block as `softBlock`, plus seal-copy to clipboard when a seal key is available.
+    case block
+
+    /// Defaults tuned for UI visibility: Cursor/Windsurf soft-block; Claude/Codex advise.
+    public static func defaultPolicy(for adapter: CheckHookAdapter) -> CheckHookPolicy {
+        switch adapter {
+        case .cursor, .windsurf:
+            return .softBlock
+        case .claude, .codex:
+            return .advise
+        }
+    }
+}
+
+public enum CheckRemediation: String, Sendable, CaseIterable {
+    case moveToEnv = "move_to_env"
+    case addToIgnore = "add_to_ignore"
+    case dontPaste = "dont_paste"
+}
+
 public struct FileCheckFinding: Equatable, Sendable {
     public let relativePath: String
     public let line: Int

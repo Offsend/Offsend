@@ -1,9 +1,5 @@
 import Foundation
-#if canImport(Darwin)
-import Darwin
-#elseif canImport(Glibc)
-import Glibc
-#endif
+import OffsendRuntime
 
 enum SealIO {
     static func readInput(path: String?, workingDirectory: URL) -> String {
@@ -16,24 +12,16 @@ enum SealIO {
             }
         }
 
-        if isatty(STDIN_FILENO) != 0 {
-            CLIError.exit(.error, message: "Provide a file path or pipe text on stdin.")
-        }
-
-        var data = Data()
-        while true {
-            var buffer = [UInt8](repeating: 0, count: 64 * 1024)
-            let count = read(STDIN_FILENO, &buffer, buffer.count)
-            if count < 0 {
-                CLIError.exit(.error, message: "Failed to read stdin.")
+        do {
+            return try CLIStdin.readUTF8()
+        } catch let error as CLIStdin.ReadError {
+            if case .tty = error {
+                CLIError.exit(.error, message: "Provide a file path or pipe text on stdin.")
             }
-            if count == 0 { break }
-            data.append(contentsOf: buffer.prefix(count))
+            CLIError.exit(.error, message: error.message)
+        } catch {
+            CLIError.exit(.error, message: error.localizedDescription)
         }
-        guard let text = String(data: data, encoding: .utf8) else {
-            CLIError.exit(.error, message: "stdin is not valid UTF-8.")
-        }
-        return text
     }
 
     static func writeOutput(_ text: String, to outputPath: String?, workingDirectory: URL) {
@@ -46,11 +34,6 @@ enum SealIO {
             }
             return
         }
-        // Avoid an extra trailing newline when the sealed/unsealed text already ends with one.
-        if text.hasSuffix("\n") {
-            print(text, terminator: "")
-        } else {
-            print(text)
-        }
+        CLIOutput.writeStdout(text)
     }
 }

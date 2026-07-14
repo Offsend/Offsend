@@ -172,6 +172,9 @@ let package = Package(
             path: "Core/OffsendRuntime/Tests",
             exclude: [
                 "CLIPathInstallerTests.swift",
+            ],
+            resources: [
+                .copy("Fixtures")
             ]
         ),
     ]

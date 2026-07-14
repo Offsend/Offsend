@@ -46,6 +46,37 @@ enum CLIParse {
         return hookType
     }
 
+    static func checkHookAdapter(_ rawValue: String?) -> CheckHookAdapter? {
+        guard let rawValue else { return nil }
+        guard let adapter = CheckHookAdapter(rawValue: rawValue) else {
+            CLIError.exit(
+                .error,
+                message: "Invalid --adapter value: \(rawValue). Expected one of: \(allValues(CheckHookAdapter.self))."
+            )
+        }
+        return adapter
+    }
+
+    static func checkHookPolicy(_ rawValue: String) -> CheckHookPolicy {
+        guard let policy = CheckHookPolicy(rawValue: rawValue) else {
+            CLIError.exit(
+                .error,
+                message: "Invalid --hook-policy value: \(rawValue). Expected one of: \(allValues(CheckHookPolicy.self))."
+            )
+        }
+        return policy
+    }
+
+    static func aiEditorHookTarget(_ rawValue: String) -> AIEditorHookTarget {
+        guard let target = AIEditorHookTarget(rawValue: rawValue) else {
+            CLIError.exit(
+                .error,
+                message: "Invalid --target value: \(rawValue). Expected one of: git, all, \(allValues(AIEditorHookTarget.self)) (use install/uninstall --target all for every AI editor)."
+            )
+        }
+        return target
+    }
+
     static func projectConfig(from directory: URL) -> OffsendProjectConfig? {
         do {
             return try ProjectConfigLoader().load(from: directory)

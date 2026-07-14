@@ -8,6 +8,7 @@
 <p align="center">
   <a href="https://offsend.io">Website</a> ·
   <a href="#quick-start">Quick Start</a> ·
+  <a href="docs/cli.md">Docs</a> ·
   <a href="#cli">CLI</a> ·
   <a href="#macos-app">macOS App</a> ·
   <a href="https://check.offsend.io">Check</a> ·
@@ -58,14 +59,14 @@ Offsend helps review that context locally before it leaves your control.
 
 | Tool | Purpose | Link |
 | --- | --- | --- |
-| **CLI** | Terminal, git hooks, and CI on **Linux & macOS** (free) | [Quick Start](#quick-start) |
+| **CLI** | Terminal, git hooks, AI-editor hooks, and CI on **Linux & macOS** (free) | [Quick Start](#quick-start) · [CLI docs](docs/cli.md) |
 | **macOS app** | Safe Paste, drag-and-drop prep, watched folders | [Desktop](#macos-app) |
 | **Check** | Free online scan of a public GitHub repo | [check.offsend.io](https://check.offsend.io) |
 | **GitHub Action** | Same CLI checks on every PR / push | [ai-hygiene](https://offsend.io/github-action) |
 | **Browser Extension** | Mask secrets in ChatGPT, Claude, Gemini, Grok, Perplexity, DeepSeek | [Extension](https://offsend.io/extension) |
 | **Radar** | Research AI-context exposure across public repos | [radar.offsend.io](https://radar.offsend.io) |
 
-**Use the CLI** if you need repository checks, git hooks, CI, or scripts.  
+**Use the CLI** if you need repository checks, git hooks, AI prompt gates (Cursor / Claude / Windsurf / Codex), CI, or scripts.  
 **Use the macOS app** if you regularly prepare files, projects, or clipboard text before sending them to AI.
 
 ---
@@ -105,9 +106,18 @@ Scanned: /path/to/project
 
 ```bash
 offsend prepare
-offsend hook install
+offsend hook install              # git pre-commit → offsend check --staged
 offsend check --staged
 ```
+
+Optional: [AI-editor prompt hooks](docs/cli.md#ai-editor-hooks) before prompts reach Cursor, Claude, Windsurf, or Codex:
+
+```bash
+offsend hook install --target cursor
+offsend hook status --target all
+```
+
+Full command reference: [docs/cli.md](docs/cli.md).
 
 Or skip install and [scan a repo online with Check](https://check.offsend.io).
 
@@ -131,6 +141,8 @@ Or download the latest `.dmg` from [Releases](../../releases). Drop in a file or
 - [Docs](#docs)
 - [Contributing](#contributing)
 
+See also: [CLI reference](docs/cli.md) · [Configuration](docs/configuration.md)
+
 ---
 
 ## CLI
@@ -145,6 +157,8 @@ The macOS app also ships a bundled `offsend` helper (`Offsend.app/Contents/Helpe
 
 **AI-context boundary checks** — `offsend show` and `offsend prepare` inspect paths and AI ignore rules. They do not read the contents of matched files.
 
+**AI prompt gates** — `offsend hook install --target cursor|claude|windsurf|codex` checks prompts via editor hooks before they leave the IDE. See [AI editor hooks](docs/cli.md#ai-editor-hooks).
+
 ### Commands
 
 | Command | What it does |
@@ -154,12 +168,16 @@ The macOS app also ships a bundled `offsend` helper (`Offsend.app/Contents/Helpe
 | `offsend prepare` | Create missing AI ignore files |
 | `offsend check` | Scan files or folders |
 | `offsend check --staged` | Scan staged Git changes |
-| `offsend hook install` | Install a pre-commit hook |
-| `offsend hook status` | Check hook status |
+| `offsend hook install` | Install a pre-commit or AI-editor hook |
+| `offsend hook status` | Check hook status (`--target all` for AI editors) |
 | `offsend hook uninstall` | Remove the hook |
 | `offsend init` | Create a starter `.offsend.yml` (`--template`, `--merge-exclude`, `--list-templates`) |
+| `offsend edit` | Open `.offsend.yml` in your editor |
+| `offsend seal` / `unseal` | Reversible seal tokens for sensitive text |
+| `offsend keygen` | Generate a seal key |
+| `offsend report` | Anonymized JSON hygiene report |
 
-Also available: `offsend seal` / `unseal`, `offsend report`, `offsend keygen`.
+Full command reference: **[docs/cli.md](docs/cli.md)** (includes AI-editor hooks for Cursor, Claude, Windsurf, Codex).
 
 ### Typical repository workflow
 
@@ -167,8 +185,9 @@ Also available: `offsend seal` / `unseal`, `offsend report`, `offsend keygen`.
 offsend show                 # what can AI tools read?
 offsend prepare --dry-run    # preview ignore files
 offsend prepare              # create missing AI ignore files
+offsend init --template node # optional project config — see docs/configuration.md
 offsend check --staged       # scan before commit
-offsend hook install         # automate the staged check
+offsend hook install         # git pre-commit hook
 ```
 
 ### Examples
@@ -183,11 +202,17 @@ offsend prepare --sync-patterns
 offsend check README.md Sources/
 offsend check --staged --format json --quiet   # add --verbose for every finding
 
-# Hooks
+# Git hook
 offsend hook install --path /path/to/your/repo
+
+# AI-editor hooks (prompt + optional read-gate)
+offsend hook install --target cursor
+offsend hook install --target claude --with-read-gate
+offsend hook install --target all
+offsend hook status --target all
 ```
 
-`offsend show` exits `0` even when files are exposed (`2` if the directory is unavailable). `offsend prepare` never overwrites existing ignore files (`.cursorignore`, `.claudeignore`, `.aiexclude`, `.geminiignore`, …). The hook runs `offsend check --staged`.
+`offsend show` exits `0` even when files are exposed (`2` if the directory is unavailable). `offsend prepare` never overwrites existing ignore files (`.cursorignore`, `.claudeignore`, `.aiexclude`, `.geminiignore`, …). The **git** hook runs `offsend check --staged`; **AI** hooks call `offsend check --adapter …` (see [docs/cli.md](docs/cli.md)).
 
 **CI**
 
@@ -314,7 +339,7 @@ macOS may ask for Accessibility (to paste into the front app) and folder access 
   <img src="assets/safe_paste.gif" alt="Safe Paste: scan clipboard, mask secrets, paste" width="100%">
 </p>
 
-**Git hooks** — **Settings → Hooks** to install and manage. From the terminal, use `offsend hook install`.
+**Git hooks** — **Settings → Hooks** to install and manage pre-commit checks. From the terminal: [`offsend hook install`](docs/cli.md#hook-install) (git) or [`--target cursor|claude|…`](docs/cli.md#ai-editor-hooks) for AI-editor hooks.
 
 **Detection & local AI** — toggle built-in detectors and custom dictionaries in **Settings → Detection** (also via `.offsend.yml`). Optional NER/PII models in **Settings → AI** stay on your Mac.
 
@@ -328,6 +353,7 @@ macOS may ask for Accessibility (to paste into the front app) and folder access 
 | Documents | Plain text (+ PDF/RTF/Word on macOS CLI) | Plain text, PDF, RTF, Word |
 | Project checks | `show`, `prepare`, `check --policy` | UI checks, watched folders |
 | Git hooks | `offsend hook …` | Settings → Hooks |
+| AI prompt hooks | `hook install --target …` ([docs](docs/cli.md#ai-editor-hooks)) | — |
 | AI models | Not used by the CLI | Download / import / manage |
 | Automation | Scriptable text / JSON | Background watcher + notifications |
 
@@ -388,7 +414,7 @@ Vulnerability reports: [SECURITY.md](SECURITY.md).
 No. App and CLI scan locally. Check only analyzes a GitHub repo you choose online.
 
 **Is the CLI free?**  
-Yes — terminal, git hooks, scripts, and CI.
+Yes — terminal, git hooks, AI-editor hooks, scripts, and CI.
 
 **Does Offsend replace `.gitignore`?**  
 No. `.gitignore` controls Git. Offsend helps with AI ignore files (`.cursorignore`, `.claudeignore`, …).
@@ -403,14 +429,24 @@ No — paths and ignore rules only. Content scanning is `offsend check`.
 App: macOS 13+. CLI: macOS and Linux (x86_64 / arm64). Action: Linux and macOS runners.
 
 **Which AI tools?**  
-Coding assistants: Claude Code, Codex, Cursor, Windsurf. Extension chats: ChatGPT, Claude, Gemini, Grok, Perplexity, DeepSeek.
+Coding assistants: Claude Code, Codex, Cursor, Windsurf (CLI prompt hooks + ignore files). Extension chats: ChatGPT, Claude, Gemini, Grok, Perplexity, DeepSeek.
+
+**Can Offsend check prompts before they reach an AI editor?**  
+Yes. Install [AI-editor hooks](docs/cli.md#ai-editor-hooks) with `offsend hook install --target cursor` (or `claude`, `windsurf`, `codex`, `all`).
+
+**Where is the full CLI documentation?**  
+[docs/cli.md](docs/cli.md) (commands, flags, exit codes). Project config: [docs/configuration.md](docs/configuration.md).
 
 ---
 
 ## Docs
 
-- [Configuration (`.offsend.yml`)](docs/configuration.md)
-- [Security](SECURITY.md)
+| Doc | Description |
+| --- | --- |
+| [docs/cli.md](docs/cli.md) | Full CLI reference — commands, flags, exit codes, git & AI hooks |
+| [docs/configuration.md](docs/configuration.md) | `.offsend.yml` settings reference |
+| [.offsend.yml.example](.offsend.yml.example) | Annotated config starter (copy-paste) |
+| [SECURITY.md](SECURITY.md) | Vulnerability reporting |
 
 ---
 
