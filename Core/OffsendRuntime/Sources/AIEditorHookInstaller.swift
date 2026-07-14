@@ -228,7 +228,7 @@ public struct AIEditorHookInstaller: Sendable {
         let stillUsed = AIEditorHookTarget.allCases.contains { target in
             let url = configURL(for: target, repositoryPath: root)
             guard let contents = try? String(contentsOf: url, encoding: .utf8) else { return false }
-            return contents.contains(relativePath)
+            return Self.configTextReferences(contents, relativePath: relativePath)
         }
         if !stillUsed {
             let wrapperURL = root.appendingPathComponent(relativePath)
@@ -236,6 +236,14 @@ public struct AIEditorHookInstaller: Sendable {
                 try? fileManager.removeItem(at: wrapperURL)
             }
         }
+    }
+
+    /// True when raw config text references `relativePath`, including JSON `\/` escapes.
+    public static func configTextReferences(_ contents: String, relativePath: String) -> Bool {
+        if contents.contains(relativePath) { return true }
+        // JSONSerialization may escape `/` as `\/` (pre-withoutEscapingSlashes writes).
+        let escaped = relativePath.replacingOccurrences(of: "/", with: "\\/")
+        return contents.contains(escaped)
     }
 
     public func uninstall(
@@ -292,16 +300,16 @@ public struct AIEditorHookInstaller: Sendable {
               let contents = try? String(contentsOf: url, encoding: .utf8) else {
             return (false, url.path, false)
         }
-        let installed = contents.contains(Self.wrapperRelativePath)
-            || contents.contains(Self.readWrapperRelativePath)
-            || contents.contains(Self.shellWrapperRelativePath)
+        let installed = Self.configTextReferences(contents, relativePath: Self.wrapperRelativePath)
+            || Self.configTextReferences(contents, relativePath: Self.readWrapperRelativePath)
+            || Self.configTextReferences(contents, relativePath: Self.shellWrapperRelativePath)
             || contents.contains(Self.managedMarker)
         let promptURL = repositoryPath.appendingPathComponent(Self.wrapperRelativePath)
         let promptOK = validateWrapper(at: promptURL) == .ok
-        let readUsed = contents.contains(Self.readWrapperRelativePath)
+        let readUsed = Self.configTextReferences(contents, relativePath: Self.readWrapperRelativePath)
         let readURL = repositoryPath.appendingPathComponent(Self.readWrapperRelativePath)
         let readOK = !readUsed || validateWrapper(at: readURL) == .ok
-        let shellUsed = contents.contains(Self.shellWrapperRelativePath)
+        let shellUsed = Self.configTextReferences(contents, relativePath: Self.shellWrapperRelativePath)
         let shellURL = repositoryPath.appendingPathComponent(Self.shellWrapperRelativePath)
         let shellOK = !shellUsed || validateWrapper(at: shellURL) == .ok
         return (installed, url.path, installed && (!promptOK || !readOK || !shellOK))
@@ -811,7 +819,10 @@ public struct AIEditorHookInstaller: Sendable {
     private func writeJSON(_ object: [String: Any], to url: URL) throws {
         let data: Data
         do {
-            data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+            data = try JSONSerialization.data(
+                withJSONObject: object,
+                options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+            )
         } catch {
             throw AIEditorHookInstallerError.writeFailed(path: url.path, message: error.localizedDescription)
         }

@@ -588,6 +588,18 @@ if [[ -e "$combined/.windsurf/hooks.json" ]]; then
   echo "Expected default install to skip windsurf (not detected)" >&2
   exit 1
 fi
+# Multi-target install must keep check-read.sh for cursor/claude even after
+# installing gate-unsupported targets (codex) that run cleanup afterward.
+if [[ ! -x "$combined/.offsend/hooks/check-read.sh" ]]; then
+  echo "Expected default install to keep check-read.sh after codex install" >&2
+  ls -la "$combined/.offsend/hooks/" >&2
+  exit 1
+fi
+if ! grep -q "beforeReadFile" "$combined/.cursor/hooks.json"; then
+  echo "Expected default install to keep cursor beforeReadFile" >&2
+  cat "$combined/.cursor/hooks.json" >&2
+  exit 1
+fi
 
 "$CLI_PATH" hook status --path "$combined"
 "$CLI_PATH" hook status --path "$combined" --format json | grep -q '"git"'

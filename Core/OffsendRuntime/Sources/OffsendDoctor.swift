@@ -136,7 +136,10 @@ public struct OffsendDoctor: Sendable {
                     )
                 }
                 if let contents = try? String(contentsOf: URL(fileURLWithPath: status.configPath), encoding: .utf8) {
-                    if contents.contains(AIEditorHookInstaller.readWrapperRelativePath) {
+                    if AIEditorHookInstaller.configTextReferences(
+                        contents,
+                        relativePath: AIEditorHookInstaller.readWrapperRelativePath
+                    ) {
                         let readURL = cwd.appendingPathComponent(AIEditorHookInstaller.readWrapperRelativePath)
                         let readIssue = installer.validateWrapper(at: readURL)
                         if readIssue != .ok {
@@ -145,7 +148,10 @@ public struct OffsendDoctor: Sendable {
                             )
                         }
                     }
-                    if contents.contains(AIEditorHookInstaller.shellWrapperRelativePath) {
+                    if AIEditorHookInstaller.configTextReferences(
+                        contents,
+                        relativePath: AIEditorHookInstaller.shellWrapperRelativePath
+                    ) {
                         let shellURL = cwd.appendingPathComponent(AIEditorHookInstaller.shellWrapperRelativePath)
                         let shellIssue = installer.validateWrapper(at: shellURL)
                         if shellIssue != .ok {

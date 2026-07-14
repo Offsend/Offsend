@@ -497,6 +497,50 @@ final class AIEditorHookInstallerTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: readPath))
     }
 
+    /// Windsurf/codex install must not delete check-read.sh still referenced by cursor
+    /// (JSON `\/` escaping previously made cleanup think the wrapper was unused).
+    func testWindsurfInstallPreservesCursorReadGateWrapper() throws {
+        let installer = AIEditorHookInstaller()
+        _ = try installer.install(
+            target: .cursor,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend",
+            withReadGate: true
+        )
+        let readURL = root.appendingPathComponent(AIEditorHookInstaller.readWrapperRelativePath)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: readURL.path))
+
+        _ = try installer.install(
+            target: .windsurf,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend",
+            withReadGate: true
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: readURL.path),
+            "check-read.sh must survive a subsequent windsurf install"
+        )
+
+        let status = installer.status(target: .cursor, repositoryPath: root)
+        XCTAssertTrue(status.installed)
+        XCTAssertFalse(status.broken)
+    }
+
+    /// Escaped-slash config text must still count as a reference (legacy writes).
+    func testConfigTextReferencesHandlesJSONEscapedSlashes() {
+        let path = AIEditorHookInstaller.readWrapperRelativePath
+        let plain = #"{"command":".offsend/hooks/check-read.sh cursor"}"#
+        let escaped = #"{"command":".offsend\/hooks\/check-read.sh cursor"}"#
+        XCTAssertTrue(AIEditorHookInstaller.configTextReferences(plain, relativePath: path))
+        XCTAssertTrue(AIEditorHookInstaller.configTextReferences(escaped, relativePath: path))
+        XCTAssertFalse(
+            AIEditorHookInstaller.configTextReferences(
+                #"{"command":".offsend/hooks/check-prompt.sh"}"#,
+                relativePath: path
+            )
+        )
+    }
+
     func testWindsurfUsesWorkspaceHooksPath() {
         let url = AIEditorHookInstaller().configURL(for: .windsurf, repositoryPath: root)
         XCTAssertTrue(url.path.hasSuffix(".windsurf/hooks.json"))
