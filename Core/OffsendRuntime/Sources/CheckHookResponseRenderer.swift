@@ -7,6 +7,9 @@ public enum CheckHookResponseRenderer {
         case promptSubmit
         /// Cursor `beforeReadFile` / Claude `PreToolUse` (Read).
         case readGate
+        /// Cursor `beforeShellExecution` / Claude `PreToolUse` (Bash).
+        /// Same permission-shaped fail-open as the read gate.
+        case shellGate
     }
 
     /// Allow through after an infrastructure error. `reason` is a short public code.
@@ -30,7 +33,7 @@ public enum CheckHookResponseRenderer {
             case .windsurf:
                 return CheckHookAdapterOutput(stdout: "", stderr: stderr, exitCode: 0)
             }
-        case .readGate:
+        case .readGate, .shellGate:
             switch adapter {
             case .cursor:
                 return CheckHookAdapterOutput(

@@ -9,6 +9,30 @@ public enum AIEditorHookTarget: String, Sendable, CaseIterable {
     public var adapter: CheckHookAdapter {
         CheckHookAdapter(rawValue: rawValue) ?? .cursor
     }
+
+    /// Targets a default `hook install` run protects: Cursor and Claude always;
+    /// Windsurf/Codex only when there is evidence of use (repo or home config dir).
+    public static func detectedTargets(
+        repositoryPath: URL,
+        homeDirectory: URL,
+        fileManager: FileManager = .default
+    ) -> [AIEditorHookTarget] {
+        func hasDirectory(_ url: URL) -> Bool {
+            var isDirectory: ObjCBool = false
+            return fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory)
+                && isDirectory.boolValue
+        }
+        var targets: [AIEditorHookTarget] = [.cursor, .claude]
+        if hasDirectory(repositoryPath.appendingPathComponent(".windsurf"))
+            || hasDirectory(homeDirectory.appendingPathComponent(".codeium/windsurf")) {
+            targets.append(.windsurf)
+        }
+        if hasDirectory(repositoryPath.appendingPathComponent(".codex"))
+            || hasDirectory(homeDirectory.appendingPathComponent(".codex")) {
+            targets.append(.codex)
+        }
+        return targets
+    }
 }
 
 public enum AIEditorHookInstallerError: Error, Equatable, LocalizedError {
@@ -39,26 +63,32 @@ public struct AIEditorHookInstallResult: Equatable, Sendable {
     public let configPath: String
     public let wrapperPath: String
     public let readWrapperPath: String?
+    public let shellWrapperPath: String?
     public let hookPolicy: CheckHookPolicy
     public let command: String
     public let withReadGate: Bool
+    public let withShellGate: Bool
 
     public init(
         target: AIEditorHookTarget,
         configPath: String,
         wrapperPath: String,
         readWrapperPath: String? = nil,
+        shellWrapperPath: String? = nil,
         hookPolicy: CheckHookPolicy,
         command: String,
-        withReadGate: Bool = false
+        withReadGate: Bool = false,
+        withShellGate: Bool = false
     ) {
         self.target = target
         self.configPath = configPath
         self.wrapperPath = wrapperPath
         self.readWrapperPath = readWrapperPath
+        self.shellWrapperPath = shellWrapperPath
         self.hookPolicy = hookPolicy
         self.command = command
         self.withReadGate = withReadGate
+        self.withShellGate = withShellGate
     }
 }
 
@@ -67,6 +97,7 @@ public struct AIEditorHookInstaller: Sendable {
     public static let managedMarker = "offsend-managed-ai-hook"
     public static let wrapperRelativePath = ".offsend/hooks/check-prompt.sh"
     public static let readWrapperRelativePath = ".offsend/hooks/check-read.sh"
+    public static let shellWrapperRelativePath = ".offsend/hooks/check-shell.sh"
     public static let managedVersion = 1
 
     public enum WrapperValidation: Equatable, Sendable {
@@ -94,7 +125,8 @@ public struct AIEditorHookInstaller: Sendable {
         cliExecutablePath: String,
         hookPolicy: CheckHookPolicy? = nil,
         force: Bool = false,
-        withReadGate: Bool = false
+        withReadGate: Bool = true,
+        withShellGate: Bool = false
     ) throws -> AIEditorHookInstallResult {
         let policy = hookPolicy ?? Self.defaultHookPolicy(for: target)
         let root = repositoryPath.standardizedFileURL
@@ -105,11 +137,16 @@ public struct AIEditorHookInstaller: Sendable {
         }
 
         let wrapperURL = root.appendingPathComponent(Self.wrapperRelativePath)
-        let enableReadGate = withReadGate && (target == .cursor || target == .claude)
+        let gateSupported = target == .cursor || target == .claude
+        let enableReadGate = withReadGate && gateSupported
+        let enableShellGate = withShellGate && gateSupported
         let command = makeCommand(target: target, hookPolicy: policy)
         let configURL = configURL(for: target, repositoryPath: root)
         let readWrapperURL = enableReadGate
             ? root.appendingPathComponent(Self.readWrapperRelativePath)
+            : nil
+        let shellWrapperURL = enableShellGate
+            ? root.appendingPathComponent(Self.shellWrapperRelativePath)
             : nil
 
         // Validate every existing destination before changing any wrapper.
@@ -118,10 +155,16 @@ public struct AIEditorHookInstaller: Sendable {
         if let readWrapperURL {
             try validateWrapperDestination(readWrapperURL, force: force)
         }
+        if let shellWrapperURL {
+            try validateWrapperDestination(shellWrapperURL, force: force)
+        }
 
         try writeWrapper(to: wrapperURL, preferredCLIPath: cliExecutablePath)
         if let readWrapperURL {
             try writeReadWrapper(to: readWrapperURL, preferredCLIPath: cliExecutablePath)
+        }
+        if let shellWrapperURL {
+            try writeShellWrapper(to: shellWrapperURL, preferredCLIPath: cliExecutablePath)
         }
 
         try fileManager.createDirectory(
@@ -134,6 +177,7 @@ public struct AIEditorHookInstaller: Sendable {
             try mergeCursorConfig(
                 command: command,
                 readCommand: enableReadGate ? makeReadCommand(target: target) : nil,
+                shellCommand: enableShellGate ? makeShellCommand(target: target) : nil,
                 at: configURL
             )
         case .windsurf:
@@ -144,6 +188,7 @@ public struct AIEditorHookInstaller: Sendable {
             try mergeClaudeSettings(
                 command: command,
                 readCommand: enableReadGate ? makeReadCommand(target: target) : nil,
+                shellCommand: enableShellGate ? makeShellCommand(target: target) : nil,
                 at: configURL
             )
         }
@@ -151,30 +196,44 @@ public struct AIEditorHookInstaller: Sendable {
         if !enableReadGate {
             cleanupUnusedReadWrapper(repositoryPath: root)
         }
+        if !enableShellGate {
+            cleanupUnusedShellWrapper(repositoryPath: root)
+        }
 
         return AIEditorHookInstallResult(
             target: target,
             configPath: configURL.path,
             wrapperPath: wrapperURL.path,
             readWrapperPath: readWrapperURL?.path,
+            shellWrapperPath: shellWrapperURL?.path,
             hookPolicy: policy,
             command: command,
-            withReadGate: enableReadGate
+            withReadGate: enableReadGate,
+            withShellGate: enableShellGate
         )
     }
 
     /// Removes `.offsend/hooks/check-read.sh` when no target config still references it.
     public func cleanupUnusedReadWrapper(repositoryPath: URL) {
+        cleanupUnusedWrapper(relativePath: Self.readWrapperRelativePath, repositoryPath: repositoryPath)
+    }
+
+    /// Removes `.offsend/hooks/check-shell.sh` when no target config still references it.
+    public func cleanupUnusedShellWrapper(repositoryPath: URL) {
+        cleanupUnusedWrapper(relativePath: Self.shellWrapperRelativePath, repositoryPath: repositoryPath)
+    }
+
+    private func cleanupUnusedWrapper(relativePath: String, repositoryPath: URL) {
         let root = repositoryPath.standardizedFileURL
         let stillUsed = AIEditorHookTarget.allCases.contains { target in
             let url = configURL(for: target, repositoryPath: root)
             guard let contents = try? String(contentsOf: url, encoding: .utf8) else { return false }
-            return contents.contains(Self.readWrapperRelativePath)
+            return contents.contains(relativePath)
         }
         if !stillUsed {
-            let readURL = root.appendingPathComponent(Self.readWrapperRelativePath)
-            if isManagedWrapper(at: readURL) {
-                try? fileManager.removeItem(at: readURL)
+            let wrapperURL = root.appendingPathComponent(relativePath)
+            if isManagedWrapper(at: wrapperURL) {
+                try? fileManager.removeItem(at: wrapperURL)
             }
         }
     }
@@ -194,7 +253,8 @@ public struct AIEditorHookInstaller: Sendable {
         case .cursor:
             let promptRemoved = try removeManagedFromEventArray(at: configURL, event: "beforeSubmitPrompt")
             let readRemoved = try removeManagedFromEventArray(at: configURL, event: "beforeReadFile")
-            removed = promptRemoved || readRemoved
+            let shellRemoved = try removeManagedFromEventArray(at: configURL, event: "beforeShellExecution")
+            removed = promptRemoved || readRemoved || shellRemoved
         case .windsurf:
             removed = try removeManagedFromEventArray(at: configURL, event: "pre_user_prompt")
         case .codex:
@@ -220,6 +280,7 @@ public struct AIEditorHookInstaller: Sendable {
             }
         }
         cleanupUnusedReadWrapper(repositoryPath: root)
+        cleanupUnusedShellWrapper(repositoryPath: root)
     }
 
     public func status(
@@ -233,13 +294,17 @@ public struct AIEditorHookInstaller: Sendable {
         }
         let installed = contents.contains(Self.wrapperRelativePath)
             || contents.contains(Self.readWrapperRelativePath)
+            || contents.contains(Self.shellWrapperRelativePath)
             || contents.contains(Self.managedMarker)
         let promptURL = repositoryPath.appendingPathComponent(Self.wrapperRelativePath)
         let promptOK = validateWrapper(at: promptURL) == .ok
         let readUsed = contents.contains(Self.readWrapperRelativePath)
         let readURL = repositoryPath.appendingPathComponent(Self.readWrapperRelativePath)
         let readOK = !readUsed || validateWrapper(at: readURL) == .ok
-        return (installed, url.path, installed && (!promptOK || !readOK))
+        let shellUsed = contents.contains(Self.shellWrapperRelativePath)
+        let shellURL = repositoryPath.appendingPathComponent(Self.shellWrapperRelativePath)
+        let shellOK = !shellUsed || validateWrapper(at: shellURL) == .ok
+        return (installed, url.path, installed && (!promptOK || !readOK || !shellOK))
     }
 
     /// Validates a repo-local wrapper script (marker, version, executable bit).
@@ -316,6 +381,16 @@ public struct AIEditorHookInstaller: Sendable {
         case .cursor:
             return "\(script) \(target.adapter.rawValue)"
         case .windsurf, .codex:
+            return "\(script) \(target.adapter.rawValue)"
+        }
+    }
+
+    public func makeShellCommand(target: AIEditorHookTarget) -> String {
+        let script = Self.shellWrapperRelativePath
+        switch target {
+        case .claude:
+            return "\"$CLAUDE_PROJECT_DIR\"/\(script) \(target.adapter.rawValue)"
+        case .cursor, .windsurf, .codex:
             return "\(script) \(target.adapter.rawValue)"
         }
     }
@@ -434,9 +509,51 @@ public struct AIEditorHookInstaller: Sendable {
         }
     }
 
+    private func writeShellWrapper(to url: URL, preferredCLIPath: String) throws {
+        try fileManager.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let script = """
+        #!/bin/sh
+        # \(Self.managedMarker) v\(Self.managedVersion) shell-gate
+        set -eu
+        ADAPTER="${1:?adapter required}"
+        PREFERRED_BIN=\(shellQuote(preferredCLIPath))
+        OFFSEND_BIN=""
+        if [ -x "${PREFERRED_BIN}" ]; then
+          OFFSEND_BIN="${PREFERRED_BIN}"
+        fi
+        if [ -z "${OFFSEND_BIN}" ]; then
+          OFFSEND_BIN="$(command -v offsend 2>/dev/null || true)"
+        fi
+        if [ -z "${OFFSEND_BIN}" ] || [ ! -x "${OFFSEND_BIN}" ]; then
+          echo "offsend: executable not found; install CLI or re-run hook install" >&2
+          case "$ADAPTER" in
+            cursor) echo '{"permission":"allow"}' ;;
+            claude) echo '{}' ;;
+            windsurf) : ;;
+          esac
+          exit 0
+        fi
+        exec "${OFFSEND_BIN}" check --adapter "${ADAPTER}" --shell-gate --no-notify
+        """
+        do {
+            try script.write(to: url, atomically: true, encoding: .utf8)
+            try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+        } catch {
+            throw AIEditorHookInstallerError.writeFailed(path: url.path, message: error.localizedDescription)
+        }
+    }
+
     // MARK: - Merge configs
 
-    private func mergeCursorConfig(command: String, readCommand: String?, at url: URL) throws {
+    private func mergeCursorConfig(
+        command: String,
+        readCommand: String?,
+        shellCommand: String?,
+        at url: URL
+    ) throws {
         var root = try loadJSONObject(at: url) ?? ["version": 1]
         var hooks = root["hooks"] as? [String: Any] ?? [:]
         let event = "beforeSubmitPrompt"
@@ -445,26 +562,29 @@ public struct AIEditorHookInstaller: Sendable {
         entries.append(managedCursorEntry(command: command))
         hooks[event] = entries
 
-        let readEvent = "beforeReadFile"
-        if let readCommand {
-            var readEntries = (hooks[readEvent] as? [[String: Any]]) ?? []
-            readEntries.removeAll { isManagedHookObject($0) }
-            readEntries.append(managedCursorEntry(command: readCommand))
-            hooks[readEvent] = readEntries
-        } else {
-            if var readEntries = hooks[readEvent] as? [[String: Any]] {
-                readEntries.removeAll { isManagedHookObject($0) }
-                if readEntries.isEmpty {
-                    hooks.removeValue(forKey: readEvent)
-                } else {
-                    hooks[readEvent] = readEntries
-                }
-            }
-        }
+        setManagedCursorGate(&hooks, event: "beforeReadFile", command: readCommand)
+        setManagedCursorGate(&hooks, event: "beforeShellExecution", command: shellCommand)
 
         root["hooks"] = hooks
         root["_offsend"] = managedMetadata(event: event)
         try writeJSON(root, to: url)
+    }
+
+    /// Adds/refreshes the managed entry for a gate event, or removes it when `command` is nil.
+    private func setManagedCursorGate(_ hooks: inout [String: Any], event: String, command: String?) {
+        if let command {
+            var entries = (hooks[event] as? [[String: Any]]) ?? []
+            entries.removeAll { isManagedHookObject($0) }
+            entries.append(managedCursorEntry(command: command))
+            hooks[event] = entries
+        } else if var entries = hooks[event] as? [[String: Any]] {
+            entries.removeAll { isManagedHookObject($0) }
+            if entries.isEmpty {
+                hooks.removeValue(forKey: event)
+            } else {
+                hooks[event] = entries
+            }
+        }
     }
 
     private func mergeWindsurfConfig(command: String, at url: URL) throws {
@@ -512,19 +632,17 @@ public struct AIEditorHookInstaller: Sendable {
         try writeJSON(root, to: url)
     }
 
-    private func mergeClaudeSettings(command: String, readCommand: String?, at url: URL) throws {
+    private func mergeClaudeSettings(
+        command: String,
+        readCommand: String?,
+        shellCommand: String?,
+        at url: URL
+    ) throws {
         var root = try loadJSONObject(at: url) ?? [:]
         var hooks = root["hooks"] as? [String: Any] ?? [:]
         let event = "UserPromptSubmit"
         var groups = (hooks[event] as? [[String: Any]]) ?? []
-        groups = groups.compactMap { group -> [String: Any]? in
-            guard var nested = group["hooks"] as? [[String: Any]] else { return group }
-            nested.removeAll { isManagedHookObject($0) }
-            guard !nested.isEmpty else { return nil }
-            var copy = group
-            copy["hooks"] = nested
-            return copy
-        }
+        groups = removeManagedFromGroups(groups)
         groups.append([
             "hooks": [
                 [
@@ -536,47 +654,47 @@ public struct AIEditorHookInstaller: Sendable {
         ])
         hooks[event] = groups
 
-        let readEvent = "PreToolUse"
+        let toolEvent = "PreToolUse"
+        var toolGroups = removeManagedFromGroups((hooks[toolEvent] as? [[String: Any]]) ?? [])
         if let readCommand {
-            var readGroups = (hooks[readEvent] as? [[String: Any]]) ?? []
-            readGroups = readGroups.compactMap { group -> [String: Any]? in
-                guard var nested = group["hooks"] as? [[String: Any]] else { return group }
-                nested.removeAll { isManagedHookObject($0) }
-                guard !nested.isEmpty else { return nil }
-                var copy = group
-                copy["hooks"] = nested
-                return copy
-            }
-            readGroups.append([
-                "matcher": "Read",
-                "hooks": [
-                    [
-                        "type": "command",
-                        "command": readCommand,
-                        "timeout": CheckHookLimits.recommendedTimeoutSeconds,
-                    ],
-                ],
-            ])
-            hooks[readEvent] = readGroups
-        } else if var readGroups = hooks[readEvent] as? [[String: Any]] {
-            readGroups = readGroups.compactMap { group -> [String: Any]? in
-                guard var nested = group["hooks"] as? [[String: Any]] else { return group }
-                nested.removeAll { isManagedHookObject($0) }
-                guard !nested.isEmpty else { return nil }
-                var copy = group
-                copy["hooks"] = nested
-                return copy
-            }
-            if readGroups.isEmpty {
-                hooks.removeValue(forKey: readEvent)
-            } else {
-                hooks[readEvent] = readGroups
-            }
+            toolGroups.append(managedClaudeToolGroup(matcher: "Read", command: readCommand))
+        }
+        if let shellCommand {
+            toolGroups.append(managedClaudeToolGroup(matcher: "Bash", command: shellCommand))
+        }
+        if toolGroups.isEmpty {
+            hooks.removeValue(forKey: toolEvent)
+        } else {
+            hooks[toolEvent] = toolGroups
         }
 
         root["hooks"] = hooks
         root["_offsend"] = managedMetadata(event: event)
         try writeJSON(root, to: url)
+    }
+
+    private func removeManagedFromGroups(_ groups: [[String: Any]]) -> [[String: Any]] {
+        groups.compactMap { group -> [String: Any]? in
+            guard var nested = group["hooks"] as? [[String: Any]] else { return group }
+            nested.removeAll { isManagedHookObject($0) }
+            guard !nested.isEmpty else { return nil }
+            var copy = group
+            copy["hooks"] = nested
+            return copy
+        }
+    }
+
+    private func managedClaudeToolGroup(matcher: String, command: String) -> [String: Any] {
+        [
+            "matcher": matcher,
+            "hooks": [
+                [
+                    "type": "command",
+                    "command": command,
+                    "timeout": CheckHookLimits.recommendedTimeoutSeconds,
+                ],
+            ],
+        ]
     }
 
     // MARK: - Remove
@@ -662,6 +780,7 @@ public struct AIEditorHookInstaller: Sendable {
         if let command = object["command"] as? String {
             return command.contains(Self.wrapperRelativePath)
                 || command.contains(Self.readWrapperRelativePath)
+                || command.contains(Self.shellWrapperRelativePath)
                 || command.contains(Self.managedMarker)
         }
         return false

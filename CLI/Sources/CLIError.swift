@@ -21,30 +21,32 @@ enum CLIError {
         #endif
     }
 
-    static func exit(for error: HookManagerError) -> Never {
-        let message: String
-        let code: OffsendExitCode
+    static func message(for error: HookManagerError) -> String {
         switch error {
         case .notARepository(let path):
-            message = "Not a git repository: \(path)"
-            code = .error
+            return "Not a git repository: \(path)"
         case .hookAlreadyInstalled(let path):
-            message = "Hook already exists at \(path). Use --force to overwrite."
-            code = .hookState
+            return "Hook already exists at \(path). Use --force to overwrite."
         case .hookNotInstalled(let path):
-            message = "No hook found at \(path)."
-            code = .hookState
+            return "No hook found at \(path)."
         case .hookModified(let path):
-            message = "Hook at \(path) was modified manually. Use --force to remove it."
-            code = .hookState
+            return "Hook at \(path) was modified manually. Use --force to remove it."
         case .cliNotFound:
-            message = "Could not locate the offsend executable."
-            code = .error
+            return "Could not locate the offsend executable."
         case .writeFailed(let path, let details):
-            message = "Failed to write hook at \(path): \(details)"
-            code = .error
+            return "Failed to write hook at \(path): \(details)"
         }
-        exit(code, message: message)
+    }
+
+    static func exit(for error: HookManagerError) -> Never {
+        let code: OffsendExitCode
+        switch error {
+        case .notARepository, .cliNotFound, .writeFailed:
+            code = .error
+        case .hookAlreadyInstalled, .hookNotInstalled, .hookModified:
+            code = .hookState
+        }
+        exit(code, message: message(for: error))
     }
 
     static func exit(for error: GitRepositoryError) -> Never {

@@ -29,14 +29,10 @@ public enum CheckHookPolicy: String, Sendable, CaseIterable {
     /// Same editor block as `softBlock`, plus seal-copy to clipboard when a seal key is available.
     case block
 
-    /// Defaults tuned for UI visibility: Cursor/Windsurf soft-block; Claude/Codex advise.
+    /// Protective default: block prompts that contain secrets in every editor.
+    /// `soft-block` only blocks when findings exist; clean prompts pass through.
     public static func defaultPolicy(for adapter: CheckHookAdapter) -> CheckHookPolicy {
-        switch adapter {
-        case .cursor, .windsurf:
-            return .softBlock
-        case .claude, .codex:
-            return .advise
-        }
+        .softBlock
     }
 }
 

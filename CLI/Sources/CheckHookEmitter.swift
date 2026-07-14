@@ -22,9 +22,8 @@ struct CheckHookEmitter {
         reason: FailOpenReason,
         started: Date,
         policy: CheckHookPolicy,
-        readGate: Bool
+        kind: CheckHookResponseRenderer.Kind
     ) {
-        let kind: CheckHookResponseRenderer.Kind = readGate ? .readGate : .promptSubmit
         let rendered = CheckHookResponseRenderer.failOpen(
             adapter: adapter,
             reason: reason.code,
@@ -56,7 +55,7 @@ struct CheckHookEmitter {
                 reason: .invalidJSON,
                 started: started,
                 policy: policy,
-                readGate: true
+                kind: .readGate
             )
             return
         }
@@ -70,6 +69,38 @@ struct CheckHookEmitter {
             exitCode: rendered.exitCode,
             started: started,
             error: decision.allowed ? nil : "read_gate_denied"
+        )
+    }
+
+    func emitShellGate(
+        adapter: CheckHookAdapter,
+        rawJSON: String,
+        started: Date,
+        policy: CheckHookPolicy
+    ) {
+        let decision: PromptShellGateDecision
+        do {
+            decision = try PromptShellGate.evaluate(json: rawJSON, adapter: adapter)
+        } catch {
+            emitFailOpen(
+                adapter: adapter,
+                reason: .invalidJSON,
+                started: started,
+                policy: policy,
+                kind: .shellGate
+            )
+            return
+        }
+
+        let rendered = PromptShellGateRenderer.render(decision: decision, adapter: adapter)
+        writeHookOutput(rendered)
+        logDebug(
+            adapter: adapter,
+            policy: policy,
+            advice: nil,
+            exitCode: rendered.exitCode,
+            started: started,
+            error: decision.allowed ? nil : "shell_gate_ask"
         )
     }
 

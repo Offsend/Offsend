@@ -135,14 +135,24 @@ public struct OffsendDoctor: Sendable {
                         AIEditorHookInstaller.wrapperValidationMessage(promptIssue, path: promptURL.path)
                     )
                 }
-                if let contents = try? String(contentsOf: URL(fileURLWithPath: status.configPath), encoding: .utf8),
-                   contents.contains(AIEditorHookInstaller.readWrapperRelativePath) {
-                    let readURL = cwd.appendingPathComponent(AIEditorHookInstaller.readWrapperRelativePath)
-                    let readIssue = installer.validateWrapper(at: readURL)
-                    if readIssue != .ok {
-                        details.append(
-                            AIEditorHookInstaller.wrapperValidationMessage(readIssue, path: readURL.path)
-                        )
+                if let contents = try? String(contentsOf: URL(fileURLWithPath: status.configPath), encoding: .utf8) {
+                    if contents.contains(AIEditorHookInstaller.readWrapperRelativePath) {
+                        let readURL = cwd.appendingPathComponent(AIEditorHookInstaller.readWrapperRelativePath)
+                        let readIssue = installer.validateWrapper(at: readURL)
+                        if readIssue != .ok {
+                            details.append(
+                                AIEditorHookInstaller.wrapperValidationMessage(readIssue, path: readURL.path)
+                            )
+                        }
+                    }
+                    if contents.contains(AIEditorHookInstaller.shellWrapperRelativePath) {
+                        let shellURL = cwd.appendingPathComponent(AIEditorHookInstaller.shellWrapperRelativePath)
+                        let shellIssue = installer.validateWrapper(at: shellURL)
+                        if shellIssue != .ok {
+                            details.append(
+                                AIEditorHookInstaller.wrapperValidationMessage(shellIssue, path: shellURL.path)
+                            )
+                        }
                     }
                 }
                 if details.isEmpty {
@@ -214,6 +224,31 @@ public struct OffsendDoctor: Sendable {
                             name: "ai-wrapper-read",
                             status: .ok,
                             message: "\(readURL.path) (v\(AIEditorHookInstaller.managedVersion))"
+                        )
+                    )
+                }
+            }
+
+            let shellURL = cwd.appendingPathComponent(AIEditorHookInstaller.shellWrapperRelativePath)
+            if fileManager.fileExists(atPath: shellURL.path) {
+                let shellValidation = installer.validateWrapper(at: shellURL)
+                if shellValidation != .ok {
+                    checks.append(
+                        DoctorCheck(
+                            name: "ai-wrapper-shell",
+                            status: .warn,
+                            message: AIEditorHookInstaller.wrapperValidationMessage(
+                                shellValidation,
+                                path: shellURL.path
+                            )
+                        )
+                    )
+                } else {
+                    checks.append(
+                        DoctorCheck(
+                            name: "ai-wrapper-shell",
+                            status: .ok,
+                            message: "\(shellURL.path) (v\(AIEditorHookInstaller.managedVersion))"
                         )
                     )
                 }

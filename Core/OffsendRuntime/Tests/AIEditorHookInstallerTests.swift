@@ -309,11 +309,123 @@ final class AIEditorHookInstallerTests: XCTestCase {
         XCTAssertNil(AIEditorHookInstaller.parseManagedVersion(in: script))
     }
 
+    func testDetectedTargetsAlwaysIncludeCursorAndClaude() throws {
+        let home = root.appendingPathComponent("home", isDirectory: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        let targets = AIEditorHookTarget.detectedTargets(repositoryPath: root, homeDirectory: home)
+        XCTAssertEqual(targets, [.cursor, .claude])
+    }
+
+    func testDetectedTargetsPickUpRepoLocalEditorDirectories() throws {
+        let home = root.appendingPathComponent("home", isDirectory: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent(".windsurf"),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent(".codex"),
+            withIntermediateDirectories: true
+        )
+        let targets = AIEditorHookTarget.detectedTargets(repositoryPath: root, homeDirectory: home)
+        XCTAssertEqual(targets, [.cursor, .claude, .windsurf, .codex])
+    }
+
+    func testDetectedTargetsPickUpHomeEditorDirectories() throws {
+        let home = root.appendingPathComponent("home", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: home.appendingPathComponent(".codeium/windsurf"),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(
+            at: home.appendingPathComponent(".codex"),
+            withIntermediateDirectories: true
+        )
+        let targets = AIEditorHookTarget.detectedTargets(repositoryPath: root, homeDirectory: home)
+        XCTAssertEqual(targets, [.cursor, .claude, .windsurf, .codex])
+    }
+
+    func testDetectedTargetsIgnorePlainFilesWithEditorNames() throws {
+        let home = root.appendingPathComponent("home", isDirectory: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        FileManager.default.createFile(
+            atPath: home.appendingPathComponent(".codex").path,
+            contents: Data()
+        )
+        let targets = AIEditorHookTarget.detectedTargets(repositoryPath: root, homeDirectory: home)
+        XCTAssertEqual(targets, [.cursor, .claude])
+    }
+
+    func testInstallCursorWithShellGate() throws {
+        let installer = AIEditorHookInstaller()
+        let result = try installer.install(
+            target: .cursor,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend",
+            withShellGate: true
+        )
+        XCTAssertTrue(result.withShellGate)
+        let shellPath = try XCTUnwrap(result.shellWrapperPath)
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: shellPath))
+
+        let data = try Data(contentsOf: URL(fileURLWithPath: result.configPath))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
+        let shellHooks = try XCTUnwrap(hooks["beforeShellExecution"] as? [[String: Any]])
+        XCTAssertTrue((shellHooks.first?["command"] as? String)?.contains("check-shell.sh") == true)
+    }
+
+    func testShellGateOffByDefaultAndReinstallRemoves() throws {
+        let installer = AIEditorHookInstaller()
+        _ = try installer.install(
+            target: .cursor,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend",
+            withShellGate: true
+        )
+        // Reinstall without the shell gate removes the entry and the orphan wrapper.
+        let result = try installer.install(
+            target: .cursor,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend"
+        )
+        XCTAssertFalse(result.withShellGate)
+        XCTAssertNil(result.shellWrapperPath)
+
+        let data = try Data(contentsOf: URL(fileURLWithPath: result.configPath))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
+        XCTAssertNil(hooks["beforeShellExecution"])
+        let shellURL = root.appendingPathComponent(AIEditorHookInstaller.shellWrapperRelativePath)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: shellURL.path))
+    }
+
+    func testInstallClaudeWithShellGateAddsBashMatcher() throws {
+        let installer = AIEditorHookInstaller()
+        let result = try installer.install(
+            target: .claude,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend",
+            withShellGate: true
+        )
+        let data = try Data(contentsOf: URL(fileURLWithPath: result.configPath))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
+        let preToolUse = try XCTUnwrap(hooks["PreToolUse"] as? [[String: Any]])
+        let matchers = preToolUse.compactMap { $0["matcher"] as? String }
+        XCTAssertTrue(matchers.contains("Read"))
+        XCTAssertTrue(matchers.contains("Bash"))
+
+        try installer.uninstall(target: .claude, repositoryPath: root)
+        let shellURL = root.appendingPathComponent(AIEditorHookInstaller.shellWrapperRelativePath)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: shellURL.path))
+    }
+
     func testDefaultPolicies() {
         XCTAssertEqual(AIEditorHookInstaller.defaultHookPolicy(for: .cursor), .softBlock)
-        XCTAssertEqual(AIEditorHookInstaller.defaultHookPolicy(for: .claude), .advise)
+        XCTAssertEqual(AIEditorHookInstaller.defaultHookPolicy(for: .claude), .softBlock)
         XCTAssertEqual(AIEditorHookInstaller.defaultHookPolicy(for: .windsurf), .softBlock)
-        XCTAssertEqual(AIEditorHookInstaller.defaultHookPolicy(for: .codex), .advise)
+        XCTAssertEqual(AIEditorHookInstaller.defaultHookPolicy(for: .codex), .softBlock)
     }
 
     func testInstallCursorWithReadGate() throws {
@@ -336,12 +448,27 @@ final class AIEditorHookInstallerTests: XCTestCase {
         XCTAssertTrue((readHooks.first?["command"] as? String)?.contains("check-read.sh") == true)
     }
 
-    func testReadGateOffByDefault() throws {
+    func testReadGateOnByDefault() throws {
         let installer = AIEditorHookInstaller()
         let result = try installer.install(
             target: .cursor,
             repositoryPath: root,
             cliExecutablePath: "/usr/local/bin/offsend"
+        )
+        XCTAssertTrue(result.withReadGate)
+        let data = try Data(contentsOf: URL(fileURLWithPath: result.configPath))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
+        XCTAssertNotNil(hooks["beforeReadFile"])
+    }
+
+    func testReadGateOptOut() throws {
+        let installer = AIEditorHookInstaller()
+        let result = try installer.install(
+            target: .cursor,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend",
+            withReadGate: false
         )
         XCTAssertFalse(result.withReadGate)
         let data = try Data(contentsOf: URL(fileURLWithPath: result.configPath))

@@ -18,6 +18,7 @@ Project rules live in [`.offsend.yml`](configuration.md) at the repository root.
 | [`offsend doctor`](#offsend-doctor) | Verify CLI, git, settings, hooks, seal key |
 | [`offsend show`](#offsend-show) | List sensitive paths visible to AI tools (no file contents) |
 | [`offsend prepare`](#offsend-prepare) | Create missing AI ignore files |
+| [`offsend ignore`](#offsend-ignore) | Add paths or patterns to every AI ignore file |
 | [`offsend check`](#offsend-check) | Scan files, staged changes, stdin, or editor hook JSON |
 | [`offsend init`](#offsend-init) | Create `.offsend.yml` |
 | [`offsend edit`](#offsend-edit) | Open `.offsend.yml` in `$EDITOR` |
@@ -100,6 +101,32 @@ Exits `2` on write errors.
 
 ---
 
+## `offsend ignore`
+
+Add paths or glob patterns to every AI ignore file in the project. Updates all ignore files that already exist (`.cursorignore`, `.claudeignore`, `.aiexclude`, …); if the project has none yet, the standard set is created first (same files as `offsend prepare`). `.gitignore` is never modified.
+
+```bash
+offsend ignore secrets/prod.json
+offsend ignore secrets/ '*.pem'
+offsend ignore config/prod.json --dry-run
+offsend ignore '*.tfstate' --format json
+```
+
+| Argument / flag | Description |
+| --- | --- |
+| `<pattern...>` | Paths or gitignore-style globs to add |
+| `--path DIR` | Project directory (default: current directory) |
+| `--dry-run` | Preview without writing |
+| `--format text\|json` | Output format |
+
+Patterns are normalized against the project root: existing directories gain a trailing slash, absolute paths under the root become relative, globs pass through as-is. Lines already present are skipped, so the command is idempotent.
+
+Note: this manages *editor* ignore files. Scanner exclusions live in `.offsend.yml` under `check.exclude`.
+
+Exits `2` on write errors or paths outside the project.
+
+---
+
 ## `offsend check`
 
 Scan file contents for API keys, tokens, private keys, PII, and custom dictionary terms.
@@ -156,12 +183,13 @@ offsend check --adapter claude --read-gate --no-notify   # file-read gate
 | Flag | Default | Description |
 | --- | --- | --- |
 | `--adapter cursor\|claude\|windsurf\|codex` | — | Hook adapter; implies stdin JSON |
-| `--hook-policy advise\|soft-block\|block` | per adapter | See [Hook policies](#hook-policies) |
+| `--hook-policy advise\|soft-block\|block` | `soft-block` | See [Hook policies](#hook-policies) |
 | `--secrets-only` / `--no-secrets-only` | on | Secret-shaped findings only (excludes noisy `highEntropyString`) |
 | `--notify` / `--no-notify` | on (Darwin) | macOS notification; **off** in installed wrappers |
 | `--seal-copy` | off | Write sealed copy to private temp file + clipboard |
 | `--debug-hook` | off | Append diagnostics to `hook-debug.log` (no secret values) |
 | `--read-gate` | off | Path denylist for Cursor / Claude file-read hooks |
+| `--shell-gate` | off | Sensitive-path gate for Cursor / Claude shell hooks (`ask` on findings) |
 | `--key-file PATH` | — | Seal key file for `--seal-copy` / `--hook-policy block` |
 | `--key-name NAME` | — | Named key in `~/.offsend/keys/NAME.key` |
 
@@ -213,25 +241,31 @@ Manage **git pre-commit** hooks and **AI-editor prompt hooks** (Cursor, Claude C
 
 ### `hook install`
 
-**Git pre-commit** (default):
+**Default (no `--target`): full protection** — git pre-commit hook **plus** AI-editor hooks for detected editors (Cursor and Claude always; Windsurf/Codex when a repo-local or home config directory exists). If the git hook cannot be installed (e.g. a foreign pre-commit hook exists), it is skipped with a warning and the AI hooks still install.
 
 ```bash
-offsend hook install
+offsend hook install                  # git hook + detected AI editors
 offsend hook install --path /path/to/repo
-offsend hook install --fail-on block --policy
-offsend hook install --force          # overwrite non-Offsend pre-commit hook
+offsend hook install --force          # also overwrite foreign hooks/wrappers
+```
+
+**Git only:**
+
+```bash
+offsend hook install --target git
+offsend hook install --target git --fail-on block --policy
 ```
 
 | Flag | Description |
 | --- | --- |
-| `--target git` | Git hook (default) |
+| `--target git` | Git hook only |
 | `--type pre-commit` | Hook type (only `pre-commit` today) |
 | `--fail-on block\|warn\|none` | Exit policy for `offsend check --staged` |
 | `--policy` | Include `--policy` in the hook command |
 | `--force` | Overwrite a foreign pre-commit hook |
 | `--cli-path PATH` | `offsend` binary used by the hook (default: install-time path, then `PATH`) |
 
-**AI-editor hooks:**
+**AI-editor hooks only:**
 
 ```bash
 offsend hook install --target cursor
@@ -240,39 +274,42 @@ offsend hook install --target windsurf
 offsend hook install --target codex
 offsend hook install --target all
 
-offsend hook install --target cursor --hook-policy soft-block
-offsend hook install --target claude --with-read-gate
+offsend hook install --target cursor --hook-policy advise
+offsend hook install --target claude --no-read-gate
 ```
 
 | Flag | Description |
 | --- | --- |
 | `--target cursor\|claude\|windsurf\|codex\|all` | AI editor target |
-| `--hook-policy advise\|soft-block\|block` | Override default policy |
-| `--with-read-gate` | Also install file-read path gates (**Cursor + Claude only**) |
+| `--hook-policy advise\|soft-block\|block` | Override default policy (`soft-block`) |
+| `--read-gate` / `--no-read-gate` | File-read path gates (**Cursor + Claude only**). **On by default**; `--no-read-gate` disables |
+| `--shell-gate` | Shell-command gate (**Cursor + Claude only**). **Opt-in**; findings ask for confirmation instead of blocking |
 | `--cli-path PATH` | CLI for wrapper scripts |
 | `--force` | Overwrite a foreign git hook or AI wrapper; managed files refresh automatically |
 
 Install **merges** into existing editor configs (does not remove foreign hooks). Writes:
 
 - `.offsend/hooks/check-prompt.sh` — install-time CLI path first, then `command -v offsend`
-- optional `.offsend/hooks/check-read.sh` with `--with-read-gate`
+- `.offsend/hooks/check-read.sh` — read gate (default on for Cursor/Claude; skipped with `--no-read-gate`)
+- `.offsend/hooks/check-shell.sh` — shell gate (only with `--shell-gate`)
 - managed entry in editor config (`_offsend` metadata)
 
 Existing AI wrappers are updated only when they contain a valid Offsend managed marker in the script header. A foreign wrapper is preserved unless `--force` is explicit.
 
 Commit `.offsend/hooks/` and the editor config to share with the team.
 
-| Target | Config file | Default `--hook-policy` |
-| --- | --- | --- |
-| `cursor` | `.cursor/hooks.json` | `soft-block` |
-| `claude` | `.claude/settings.json` | `advise` |
-| `windsurf` | `.windsurf/hooks.json` | `soft-block` |
-| `codex` | `.codex/hooks.json` | `advise` |
+| Target | Config file | Default `--hook-policy` | Read gate |
+| --- | --- | --- | --- |
+| `cursor` | `.cursor/hooks.json` | `soft-block` | on by default |
+| `claude` | `.claude/settings.json` | `soft-block` | on by default |
+| `windsurf` | `.windsurf/hooks.json` | `soft-block` | not supported |
+| `codex` | `.codex/hooks.json` | `soft-block` | not supported |
 
 ### `hook uninstall`
 
 ```bash
-offsend hook uninstall
+offsend hook uninstall            # remove every Offsend-managed hook (git + AI)
+offsend hook uninstall --target git
 offsend hook uninstall --target cursor
 offsend hook uninstall --target all
 offsend hook uninstall --force    # git: remove even if not Offsend-managed
@@ -280,24 +317,28 @@ offsend hook uninstall --force    # git: remove even if not Offsend-managed
 
 | Flag | Description |
 | --- | --- |
-| `--target git\|cursor\|…\|all` | Target (default: `git`) |
+| `--target git\|cursor\|…\|all` | Target (default: every Offsend-managed hook) |
 | `--type pre-commit` | Git hook type |
 | `--force` | Git: remove non-managed hook file |
+
+Without `--target`, missing hooks are skipped; a manually modified git hook is left in place with a warning (use `--target git --force`).
 
 ### `hook status`
 
 ```bash
-offsend hook status
+offsend hook status               # git + all AI targets
+offsend hook status --target git
 offsend hook status --target cursor
 offsend hook status --target all --format json
 ```
 
 | Flag | Description |
 | --- | --- |
-| `--target git\|cursor\|…\|all` | Target (default: `git`) |
+| `--target git\|cursor\|…\|all` | Target (default: git plus all AI targets) |
 | `--format text\|json` | Output format |
 | `--type pre-commit` | Git hook type |
 
+- No `--target`: shows the git hook and all four editors; exits `3` if the git hook is not installed or any AI hook is **broken**.
 - Single AI target: exits `3` if not installed or **broken** (wrapper missing, tampered, or outdated).
 - `--target all`: shows all four editors; exits `3` only if any target is **broken** (not installed is OK).
 
@@ -312,16 +353,22 @@ Offsend checks prompts **before** they reach Cursor, Claude Code, Windsurf, or C
 | Policy | Behavior |
 | --- | --- |
 | `advise` | Prompt proceeds. Claude/Codex show `systemMessage`; Cursor relies on hook stderr / optional notification |
-| `soft-block` | Block once with remediation text (best visibility on Cursor) |
+| `soft-block` | **Default for all editors.** Block once with remediation text; clean prompts pass through |
 | `block` | Same UI block as `soft-block`, plus seal-copy to clipboard when a seal key is available |
 
 `block` without a key still blocks in the editor; stderr hints `offsend keygen --default`.
 
-### Read-gate (optional)
+### Read-gate (on by default)
 
-`--with-read-gate` adds path denylists for Cursor `beforeReadFile` and Claude `PreToolUse` (Read). Checks **path names only** — does not read file contents. Denies `.env`, `*.pem`, credentials-like names, and files under sensitive directories such as `.ssh`, `.aws`, `.kube`, `.docker`, `.gnupg`, `.azure`, and `.fly`.
+The read gate adds path denylists for Cursor `beforeReadFile` and Claude `PreToolUse` (Read); it is installed by default for these targets (disable with `--no-read-gate`). Checks **path names only** — does not read file contents. Denies `.env`, `*.pem`, credentials-like names, and files under sensitive directories such as `.ssh`, `.aws`, `.kube`, `.docker`, `.gnupg`, `.azure`, and `.fly`.
 
 Cursor may not always enforce `beforeReadFile` deny (known IDE limitation). Prefer `offsend prepare` / `.cursorignore` for hard blocks; treat read-gate as defense-in-depth.
+
+### Shell-gate (opt-in)
+
+`offsend hook install --target cursor --shell-gate` adds a gate for agent shell commands (Cursor `beforeShellExecution`, Claude `PreToolUse` matcher `Bash`). The command line is tokenized and checked against the same sensitive-path heuristics as the read-gate (`cat .env`, `cp ~/.ssh/id_rsa …`, `--key-file=prod.key`). Findings return **`ask`** — the editor requests user confirmation instead of blocking, which keeps false positives cheap. No shell grammar parsing, no file contents read; treat it as defense-in-depth.
+
+Note: Cursor currently enforces only `deny` reliably; `ask` may not pause the command in all versions (known IDE limitation).
 
 ### Security notes
 
@@ -475,9 +522,8 @@ offsend hook install
 ### AI-editor protection
 
 ```bash
-offsend hook install --target cursor
-offsend hook install --target claude --with-read-gate
-offsend hook status --target all
+offsend hook install          # git hook + prompt/read gates for detected editors
+offsend hook status
 offsend doctor
 ```
 

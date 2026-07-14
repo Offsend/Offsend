@@ -166,6 +166,7 @@ The macOS app also ships a bundled `offsend` helper (`Offsend.app/Contents/Helpe
 | `offsend doctor` | Verify the installation |
 | `offsend show` | Show sensitive paths visible to AI tools |
 | `offsend prepare` | Create missing AI ignore files |
+| `offsend ignore` | Add a path or pattern to every AI ignore file |
 | `offsend check` | Scan files or folders |
 | `offsend check --staged` | Scan staged Git changes |
 | `offsend hook install` | Install a pre-commit or AI-editor hook |
@@ -187,7 +188,7 @@ offsend prepare --dry-run    # preview ignore files
 offsend prepare              # create missing AI ignore files
 offsend init --template node # optional project config — see docs/configuration.md
 offsend check --staged       # scan before commit
-offsend hook install         # git pre-commit hook
+offsend hook install         # git hook + AI-editor hooks for detected editors
 ```
 
 ### Examples
@@ -197,19 +198,22 @@ offsend hook install         # git pre-commit hook
 offsend show
 offsend show --format json
 offsend prepare --sync-patterns
+offsend ignore secrets/ '*.pem'   # add patterns to every AI ignore file
 
 # Content scans
 offsend check README.md Sources/
 offsend check --staged --format json --quiet   # add --verbose for every finding
 
-# Git hook
+# Full protection: git pre-commit hook + AI-editor hooks (prompt gate + read gate)
 offsend hook install --path /path/to/your/repo
+offsend hook status
 
-# AI-editor hooks (prompt + optional read-gate)
-offsend hook install --target cursor
-offsend hook install --target claude --with-read-gate
-offsend hook install --target all
-offsend hook status --target all
+# Narrower installs
+offsend hook install --target git                     # git hook only
+offsend hook install --target cursor                  # one editor
+offsend hook install --target claude --no-read-gate   # opt out of the read gate
+offsend hook install --target cursor --shell-gate     # opt-in shell-command gate (ask)
+offsend hook install --target all                     # all four editors
 ```
 
 `offsend show` exits `0` even when files are exposed (`2` if the directory is unavailable). `offsend prepare` never overwrites existing ignore files (`.cursorignore`, `.claudeignore`, `.aiexclude`, `.geminiignore`, …). The **git** hook runs `offsend check --staged`; **AI** hooks call `offsend check --adapter …` (see [docs/cli.md](docs/cli.md)).

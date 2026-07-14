@@ -46,7 +46,7 @@ if compgen -G "$staged_tmp/offsend-staged-*" >/dev/null; then
   exit 1
 fi
 
-"$CLI_PATH" hook install --path "$repo" --cli-path "$CLI_PATH"
+"$CLI_PATH" hook install --path "$repo" --target git --cli-path "$CLI_PATH"
 
 set +e
 git -C "$repo" commit -m "blocked by offsend hook"
@@ -58,7 +58,7 @@ if [[ "$commit_status" -eq 0 ]]; then
   exit 1
 fi
 
-"$CLI_PATH" hook uninstall --path "$repo"
+"$CLI_PATH" hook uninstall --path "$repo" --target git
 git -C "$repo" commit -m "commit succeeds after hook uninstall"
 
 printf '%s\n' \
@@ -480,20 +480,72 @@ if ! grep -q -- "--no-notify" "$repo/.offsend/hooks/check-prompt.sh"; then
   echo "Expected wrapper to pass --no-notify" >&2
   exit 1
 fi
-if grep -q "beforeReadFile" "$repo/.cursor/hooks.json"; then
-  echo "Expected read-gate off by default" >&2
-  cat "$repo/.cursor/hooks.json" >&2
-  exit 1
-fi
-
-"$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --with-read-gate
 if ! grep -q "beforeReadFile" "$repo/.cursor/hooks.json"; then
-  echo "Expected --with-read-gate to add beforeReadFile" >&2
+  echo "Expected read-gate on by default" >&2
   cat "$repo/.cursor/hooks.json" >&2
   exit 1
 fi
 if [[ ! -x "$repo/.offsend/hooks/check-read.sh" ]]; then
   echo "Expected check-read.sh wrapper" >&2
+  exit 1
+fi
+
+"$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --no-read-gate
+if grep -q "beforeReadFile" "$repo/.cursor/hooks.json"; then
+  echo "Expected --no-read-gate to remove beforeReadFile" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+if [[ -e "$repo/.offsend/hooks/check-read.sh" ]]; then
+  echo "Expected --no-read-gate to remove orphan check-read.sh" >&2
+  exit 1
+fi
+
+"$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --with-read-gate
+if ! grep -q "beforeReadFile" "$repo/.cursor/hooks.json"; then
+  echo "Expected --with-read-gate alias to add beforeReadFile" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+
+# Shell gate is opt-in: ask on sensitive paths, allow otherwise.
+# (The foreign beforeShellExecution audit.sh entry above must survive the merge.)
+"$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --shell-gate
+if ! grep -q "check-shell.sh" "$repo/.cursor/hooks.json"; then
+  echo "Expected --shell-gate to add the check-shell.sh entry" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+if [[ ! -x "$repo/.offsend/hooks/check-shell.sh" ]]; then
+  echo "Expected check-shell.sh wrapper" >&2
+  exit 1
+fi
+shell_ask="$(printf '%s' '{"command":"cat .env"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
+if ! echo "$shell_ask" | grep -q '"ask"'; then
+  echo "Expected shell-gate ask for 'cat .env'" >&2
+  echo "$shell_ask" >&2
+  exit 1
+fi
+shell_allow="$(printf '%s' '{"command":"ls -la src"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
+if ! echo "$shell_allow" | grep -q '"allow"'; then
+  echo "Expected shell-gate allow for 'ls -la src'" >&2
+  echo "$shell_allow" >&2
+  exit 1
+fi
+
+"$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH"
+if grep -q "check-shell.sh" "$repo/.cursor/hooks.json"; then
+  echo "Expected reinstall without --shell-gate to remove the check-shell.sh entry" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+if ! grep -q "audit.sh" "$repo/.cursor/hooks.json"; then
+  echo "Expected foreign beforeShellExecution hook to survive shell-gate removal" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+if [[ -e "$repo/.offsend/hooks/check-shell.sh" ]]; then
+  echo "Expected reinstall without --shell-gate to remove orphan check-shell.sh" >&2
   exit 1
 fi
 
@@ -506,6 +558,87 @@ fi
 if ! grep -q "beforeShellExecution" "$repo/.cursor/hooks.json"; then
   echo "Expected uninstall to keep foreign hooks" >&2
   cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+
+# Default install/status/uninstall: git hook + detected AI editors ($HOME drives detection).
+combined="$workdir/combined"
+combined_home="$workdir/combined-home"
+mkdir -p "$combined" "$combined_home/.codex"
+git -C "$combined" init
+
+HOME="$combined_home" "$CLI_PATH" hook install --path "$combined" --cli-path "$CLI_PATH"
+if [[ ! -x "$combined/.git/hooks/pre-commit" ]]; then
+  echo "Expected default install to add the git pre-commit hook" >&2
+  exit 1
+fi
+if ! grep -q "check-prompt.sh" "$combined/.cursor/hooks.json"; then
+  echo "Expected default install to add the cursor hook" >&2
+  exit 1
+fi
+if ! grep -q "check-prompt.sh" "$combined/.claude/settings.json"; then
+  echo "Expected default install to add the claude hook" >&2
+  exit 1
+fi
+if ! grep -q "check-prompt.sh" "$combined/.codex/hooks.json"; then
+  echo "Expected default install to add the codex hook (~/.codex detected)" >&2
+  exit 1
+fi
+if [[ -e "$combined/.windsurf/hooks.json" ]]; then
+  echo "Expected default install to skip windsurf (not detected)" >&2
+  exit 1
+fi
+
+"$CLI_PATH" hook status --path "$combined"
+"$CLI_PATH" hook status --path "$combined" --format json | grep -q '"git"'
+
+"$CLI_PATH" hook uninstall --path "$combined"
+if [[ -e "$combined/.git/hooks/pre-commit" ]]; then
+  echo "Expected default uninstall to remove the git hook" >&2
+  exit 1
+fi
+if grep -q "check-prompt.sh" "$combined/.cursor/hooks.json" 2>/dev/null; then
+  echo "Expected default uninstall to remove the cursor hook" >&2
+  exit 1
+fi
+set +e
+"$CLI_PATH" hook status --path "$combined" >/dev/null
+combined_status="$?"
+set -e
+if [[ "$combined_status" -ne 3 ]]; then
+  echo "Expected combined status to exit 3 after uninstall, got $combined_status" >&2
+  exit 1
+fi
+
+# offsend ignore: append patterns to existing AI ignore files, create the set when absent.
+ignore_dir="$workdir/ignore-proj"
+mkdir -p "$ignore_dir/secrets"
+printf '%s\n' "# mine" > "$ignore_dir/.cursorignore"
+
+"$CLI_PATH" ignore --path "$ignore_dir" secrets 'config/prod.json'
+if ! grep -q "secrets/" "$ignore_dir/.cursorignore"; then
+  echo "Expected ignore to append the directory pattern with a trailing slash" >&2
+  cat "$ignore_dir/.cursorignore" >&2
+  exit 1
+fi
+if ! grep -q "config/prod.json" "$ignore_dir/.cursorignore"; then
+  echo "Expected ignore to append the file pattern" >&2
+  exit 1
+fi
+if [[ -e "$ignore_dir/.claudeignore" ]]; then
+  echo "Expected ignore to leave missing ignore files absent when one exists" >&2
+  exit 1
+fi
+
+ignore_fresh="$workdir/ignore-fresh"
+mkdir -p "$ignore_fresh"
+"$CLI_PATH" ignore --path "$ignore_fresh" '*.pem' --format json | grep -q '"createdRelativePaths"'
+if ! grep -q '\*.pem' "$ignore_fresh/.cursorignore" || ! grep -q '\*.pem' "$ignore_fresh/.claudeignore"; then
+  echo "Expected ignore to create the standard set with the pattern" >&2
+  exit 1
+fi
+if [[ -e "$ignore_fresh/.gitignore" ]]; then
+  echo "Expected ignore to never touch .gitignore" >&2
   exit 1
 fi
 

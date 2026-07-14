@@ -28,7 +28,7 @@ public enum PromptReadGate {
             return PromptReadGateDecision(
                 path: path,
                 allowed: false,
-                reason: "Offsend: blocked reading sensitive path (\(name)). Add to AI ignore or use env secrets."
+                reason: "Offsend: blocked reading sensitive path (\(name)). Run `offsend ignore '\(name)'` or use env secrets."
             )
         }
         return PromptReadGateDecision(path: path, allowed: true, reason: "")

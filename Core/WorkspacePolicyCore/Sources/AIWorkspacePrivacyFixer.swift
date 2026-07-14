@@ -91,6 +91,45 @@ public final class AIWorkspacePrivacyFixer: @unchecked Sendable {
         )
     }
 
+    /// Appends the given ignore lines to one file, skipping lines already present.
+    /// When the file is missing it is created — seeded with `templateContentsIfMissing`
+    /// when provided, otherwise with just the standard header.
+    public func appendIgnoreLines(
+        _ lines: [String],
+        toRelativePath relativePath: String,
+        in rootURL: URL,
+        templateContentsIfMissing: String? = nil
+    ) -> AIWorkspacePrivacyAppendOutcome {
+        let root = rootURL.standardizedFileURL
+        if let template = templateContentsIfMissing,
+           let url = safeURL(for: relativePath, in: root),
+           !fileManager.fileExists(atPath: url.path) {
+            if case .failed(let error) = writeContents(
+                template,
+                to: url,
+                relativePath: relativePath,
+                didCreateFile: true
+            ) {
+                return .failed(error)
+            }
+            if case .failed(let error) = appendMissingLines(lines, to: relativePath, in: root) {
+                return .failed(error)
+            }
+            return .created(relativePath)
+        }
+
+        switch appendMissingLines(lines, to: relativePath, in: root) {
+        case .created(let path):
+            return .created(path)
+        case .updated(let path):
+            return .updated(path)
+        case .unchanged:
+            return .unchanged(relativePath)
+        case .failed(let error):
+            return .failed(error)
+        }
+    }
+
     private func applyFix(_ fix: AIWorkspacePrivacyFileFix, in rootURL: URL) -> FileWriteOutcome {
         switch fix.strategy {
         case .createIfMissing:
@@ -308,6 +347,13 @@ public final class AIWorkspacePrivacyFixer: @unchecked Sendable {
     private func normalizedContents(_ contents: String) -> String {
         contents.hasSuffix("\n") ? contents : contents + "\n"
     }
+}
+
+public enum AIWorkspacePrivacyAppendOutcome: Equatable, Sendable {
+    case created(String)
+    case updated(String)
+    case unchanged(String)
+    case failed(AIWorkspacePrivacyAuditError)
 }
 
 private enum FileWriteOutcome {

@@ -75,6 +75,12 @@ struct Check: AsyncParsableCommand {
     )
     var readGate = false
 
+    @Flag(
+        name: .long,
+        help: "Sensitive-path gate for editor shell hooks; findings ask for confirmation (requires --adapter cursor|claude)."
+    )
+    var shellGate = false
+
     @Option(name: .long, help: "Path to a seal key file (for --seal-copy / --hook-policy block).")
     var keyFile: String?
 
@@ -112,7 +118,7 @@ struct Check: AsyncParsableCommand {
                 reason: .invalidHookPolicy(hookPolicy),
                 started: started,
                 policy: CheckHookPolicy.defaultPolicy(for: adapter),
-                readGate: readGate
+                kind: hookKind
             )
             return
         }
@@ -126,7 +132,7 @@ struct Check: AsyncParsableCommand {
                     reason: error.failOpenReason,
                     started: started,
                     policy: resolvedHookPolicy(for: adapter),
-                    readGate: readGate
+                    kind: hookKind
                 )
                 return
             }
@@ -135,6 +141,16 @@ struct Check: AsyncParsableCommand {
 
         if readGate, let adapter {
             hookEmitter().emitReadGate(
+                adapter: adapter,
+                rawJSON: rawText,
+                started: started,
+                policy: resolvedHookPolicy(for: adapter)
+            )
+            return
+        }
+
+        if shellGate, let adapter {
+            hookEmitter().emitShellGate(
                 adapter: adapter,
                 rawJSON: rawText,
                 started: started,
@@ -220,6 +236,21 @@ struct Check: AsyncParsableCommand {
         if readGate, let adapter, adapter != .cursor, adapter != .claude {
             CLIError.exit(.error, message: "--read-gate supports --adapter cursor or claude.")
         }
+        if shellGate, adapter == nil {
+            CLIError.exit(.error, message: "--shell-gate requires --adapter.")
+        }
+        if shellGate, let adapter, adapter != .cursor, adapter != .claude {
+            CLIError.exit(.error, message: "--shell-gate supports --adapter cursor or claude.")
+        }
+        if shellGate, readGate {
+            CLIError.exit(.error, message: "--shell-gate cannot be combined with --read-gate.")
+        }
+    }
+
+    private var hookKind: CheckHookResponseRenderer.Kind {
+        if shellGate { return .shellGate }
+        if readGate { return .readGate }
+        return .promptSubmit
     }
 
     private struct ParsedPromptPayload {
@@ -243,7 +274,7 @@ struct Check: AsyncParsableCommand {
                 reason: FailOpenReason.fromPromptHookInputError(error),
                 started: started,
                 policy: resolvedHookPolicy(for: adapter),
-                readGate: false
+                kind: .promptSubmit
             )
             return nil
         } catch {
@@ -252,7 +283,7 @@ struct Check: AsyncParsableCommand {
                 reason: FailOpenReason(code: "invalid_json", debugDetail: error.localizedDescription),
                 started: started,
                 policy: resolvedHookPolicy(for: adapter),
-                readGate: false
+                kind: .promptSubmit
             )
             return nil
         }
@@ -272,7 +303,7 @@ struct Check: AsyncParsableCommand {
                     reason: .settingsUnavailable(error.localizedDescription),
                     started: started,
                     policy: resolvedHookPolicy(for: adapter),
-                    readGate: readGate
+                    kind: hookKind
                 )
                 return (nil, nil)
             }
@@ -293,7 +324,7 @@ struct Check: AsyncParsableCommand {
                     reason: .projectConfigInvalid(error.localizedDescription),
                     started: started,
                     policy: resolvedHookPolicy(for: adapter),
-                    readGate: readGate
+                    kind: hookKind
                 )
                 return (nil, nil)
             }
@@ -378,10 +409,10 @@ struct Check: AsyncParsableCommand {
         let outputFormat = CLIParse.outputFormat(format)
         let validatedFailOn = CLIParse.failPolicy(failOn)
 
-        if adapter != nil || hookPolicy != nil || sealCopy || debugHook || gateSecrets || readGate {
+        if adapter != nil || hookPolicy != nil || sealCopy || debugHook || gateSecrets || readGate || shellGate {
             CLIError.exit(
                 .error,
-                message: "--adapter/--hook-policy/--seal-copy/--debug-hook/--gate-secrets/--read-gate require stdin."
+                message: "--adapter/--hook-policy/--seal-copy/--debug-hook/--gate-secrets/--read-gate/--shell-gate require stdin."
             )
         }
 
