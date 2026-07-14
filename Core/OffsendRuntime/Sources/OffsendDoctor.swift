@@ -228,17 +228,30 @@ public struct OffsendDoctor: Sendable {
             )
         )
 
-        let sealKeyPath = fileManager.homeDirectoryForCurrentUser
-            .appendingPathComponent(".offsend/seal.key").path
+        let sealKeyURL = SealKeyPaths.defaultKeyURL(fileManager: fileManager)
+        let sealKeyPath = sealKeyURL.path
         if fileManager.fileExists(atPath: sealKeyPath) {
+            let namedCount = SealKeyPaths.countNamedKeys(fileManager: fileManager)
+            var message = namedCount > 0
+                ? "\(sealKeyPath) (+\(namedCount) named keys)"
+                : sealKeyPath
+            var status = DoctorCheckStatus.ok
+            if let permissionWarning = SealKeyPaths.insecurePermissionWarning(
+                at: sealKeyURL,
+                fileManager: fileManager
+            ) {
+                status = .warn
+                message = "\(message); \(permissionWarning)"
+            }
             checks.append(
                 DoctorCheck(
                     name: "seal-key",
-                    status: .ok,
-                    message: sealKeyPath
+                    status: status,
+                    message: message
                 )
             )
-        } else if ProcessInfo.processInfo.environment[SealKeyResolver.environmentVariable] != nil {
+        } else if let envValue = ProcessInfo.processInfo.environment[SealKeyResolver.environmentVariable],
+                  !envValue.isEmpty {
             checks.append(
                 DoctorCheck(
                     name: "seal-key",
@@ -251,7 +264,7 @@ public struct OffsendDoctor: Sendable {
                 DoctorCheck(
                     name: "seal-key",
                     status: .warn,
-                    message: "No ~/.offsend/seal.key or \(SealKeyResolver.environmentVariable). Needed for --hook-policy block seal-copy."
+                    message: "No default seal key or \(SealKeyResolver.environmentVariable). Run: \(SealKeyPaths.defaultKeyInstallHint)"
                 )
             )
         }

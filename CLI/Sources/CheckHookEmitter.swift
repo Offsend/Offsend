@@ -13,8 +13,9 @@ struct CheckHookEmitter {
     var notify: Bool
     var secretsOnly: Bool
     var sealCopy: Bool
-    var key: String?
     var keyFile: String?
+    var keyName: String?
+    var workingDirectory: URL
 
     func emitFailOpen(
         adapter: CheckHookAdapter,
@@ -89,10 +90,18 @@ struct CheckHookEmitter {
 
         var sealedText: String?
         var sealedCopyPath: String?
+        var sealFailureDetail: String?
         let sealAttempted = shouldSeal && !gateEntities.isEmpty
         if sealAttempted {
+            let resolvedKeyFile = keyFile.map {
+                URL(fileURLWithPath: $0, relativeTo: workingDirectory).standardizedFileURL.path
+            }
             do {
-                let keyData = try SealKeyResolver.resolve(key: key, keyFilePath: keyFile).data
+                let keyData = try SealKeyResolver.resolve(
+                    key: nil,
+                    keyFilePath: resolvedKeyFile,
+                    keyName: keyName
+                ).data
                 let sealed = try await OffsendSealService(context: context).seal(
                     text: textResult.scannedText,
                     entities: gateEntities,
@@ -103,9 +112,20 @@ struct CheckHookEmitter {
                 sealedCopyPath = written.fileURL.path
                 copyToClipboard(sealed.sealedText)
             } catch {
+                sealFailureDetail = SealAvailabilityHint.userMessageDetail(
+                    error: error,
+                    key: nil,
+                    keyFile: resolvedKeyFile,
+                    keyName: keyName
+                )
                 if !quiet {
                     fputs(
-                        "offsend: seal unavailable; run: offsend keygen -o ~/.offsend/seal.key\n",
+                        SealAvailabilityHint.stderrMessage(
+                            error: error,
+                            key: nil,
+                            keyFile: resolvedKeyFile,
+                            keyName: keyName
+                        ),
                         stderr
                     )
                 }
@@ -119,7 +139,8 @@ struct CheckHookEmitter {
             sealedCopyPath: sealedCopyPath,
             secretsOnly: secretsOnly,
             attachmentAdviceLines: attachmentAdvice,
-            sealAttempted: sealAttempted
+            sealAttempted: sealAttempted,
+            sealFailureDetail: sealFailureDetail
         )
         let rendered = CheckHookAdapterRenderer.render(result: advice, adapter: adapter)
 

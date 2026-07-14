@@ -77,7 +77,17 @@ final class PromptCheckAdviceTests: XCTestCase {
             sealAttempted: true
         )
         XCTAssertTrue(withoutKey.userMessage.contains("Prompt blocked; seal unavailable"))
+        XCTAssertTrue(withoutKey.userMessage.contains(SealKeyPaths.defaultKeyInstallHint))
         XCTAssertFalse(withoutKey.userMessage.contains("/tmp/"))
+
+        let badKey = PromptCheckAdviceBuilder.build(
+            entities: [entity],
+            policy: .block,
+            sealAttempted: true,
+            sealFailureDetail: "could not read key file at /secret/path.key"
+        )
+        XCTAssertTrue(badKey.userMessage.contains("could not read key file"))
+        XCTAssertFalse(badKey.userMessage.contains(SealKeyPaths.defaultKeyInstallHint))
 
         let withSeal = PromptCheckAdviceBuilder.build(
             entities: [entity],

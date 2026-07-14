@@ -126,6 +126,7 @@ offsend check --format json --verbose
 | `--working-directory PATH` | Base for relative paths |
 
 Cannot combine `--staged` with explicit paths. `--policy` with multiple directory arguments requires a single directory.
+If any file cannot be read or scanned, `check` exits `2` even with `--fail-on none`; an incomplete scan never reports success.
 
 ### Stdin (raw text)
 
@@ -161,8 +162,8 @@ offsend check --adapter claude --read-gate --no-notify   # file-read gate
 | `--seal-copy` | off | Write sealed copy to private temp file + clipboard |
 | `--debug-hook` | off | Append diagnostics to `hook-debug.log` (no secret values) |
 | `--read-gate` | off | Path denylist for Cursor / Claude file-read hooks |
-| `--key` | — | Base64 seal key (**prefer `--key-file` or `OFFSEND_SEAL_KEY`**) |
 | `--key-file PATH` | — | Seal key file for `--seal-copy` / `--hook-policy block` |
+| `--key-name NAME` | — | Named key in `~/.offsend/keys/NAME.key` |
 
 Installed wrappers run: `check --adapter … --hook-policy … --secrets-only --no-notify`.
 
@@ -249,13 +250,15 @@ offsend hook install --target claude --with-read-gate
 | `--hook-policy advise\|soft-block\|block` | Override default policy |
 | `--with-read-gate` | Also install file-read path gates (**Cursor + Claude only**) |
 | `--cli-path PATH` | CLI for wrapper scripts |
-| `--force` | **Git only** — AI install always refreshes `.offsend/hooks/` wrappers |
+| `--force` | Overwrite a foreign git hook or AI wrapper; managed files refresh automatically |
 
 Install **merges** into existing editor configs (does not remove foreign hooks). Writes:
 
 - `.offsend/hooks/check-prompt.sh` — install-time CLI path first, then `command -v offsend`
 - optional `.offsend/hooks/check-read.sh` with `--with-read-gate`
 - managed entry in editor config (`_offsend` metadata)
+
+Existing AI wrappers are updated only when they contain a valid Offsend managed marker in the script header. A foreign wrapper is preserved unless `--force` is explicit.
 
 Commit `.offsend/hooks/` and the editor config to share with the team.
 
@@ -312,11 +315,11 @@ Offsend checks prompts **before** they reach Cursor, Claude Code, Windsurf, or C
 | `soft-block` | Block once with remediation text (best visibility on Cursor) |
 | `block` | Same UI block as `soft-block`, plus seal-copy to clipboard when a seal key is available |
 
-`block` without a key still blocks in the editor; stderr hints `offsend keygen -o ~/.offsend/seal.key`.
+`block` without a key still blocks in the editor; stderr hints `offsend keygen --default`.
 
 ### Read-gate (optional)
 
-`--with-read-gate` adds path denylists for Cursor `beforeReadFile` and Claude `PreToolUse` (Read). Checks **path names only** — does not read file contents. Denies `.env`, `*.pem`, credentials-like names, etc.
+`--with-read-gate` adds path denylists for Cursor `beforeReadFile` and Claude `PreToolUse` (Read). Checks **path names only** — does not read file contents. Denies `.env`, `*.pem`, credentials-like names, and files under sensitive directories such as `.ssh`, `.aws`, `.kube`, `.docker`, `.gnupg`, `.azure`, and `.fly`.
 
 Cursor may not always enforce `beforeReadFile` deny (known IDE limitation). Prefer `offsend prepare` / `.cursorignore` for hard blocks; treat read-gate as defense-in-depth.
 
@@ -346,21 +349,24 @@ printf '%s' '{"prompt":"AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF"}' \
 Replace detected sensitive values with reversible `{{TYPE:v1.…}}` tokens.
 
 ```bash
+offsend seal notes.txt -o notes.sealed.txt
 offsend seal notes.txt --key-file ~/.offsend/seal.key -o notes.sealed.txt
-cat prompt.txt | offsend seal --key-file ~/.offsend/seal.key
+offsend seal notes.txt -o notes.sealed.txt --force
+cat prompt.txt | offsend seal
 ```
 
 | Argument / flag | Description |
 | --- | --- |
 | `[path]` | Input file (default: stdin, max **2 MiB**) |
-| `--key BASE64` | 32-byte key (prefer `--key-file`) |
 | `--key-file PATH` | Key file (32 raw bytes or base64) |
-| `-o`, `--output PATH` | Output file (default: stdout) |
+| `--key-name NAME` | Named key in `~/.offsend/keys/NAME.key` |
+| `-o`, `--output PATH` | Output file (default: stdout); refuses an existing path |
+| `--force` | Atomically replace an existing output; requires `--output` |
 | `--max-plaintext-bytes N` | Fail if any single value exceeds N UTF-8 bytes |
 | `--quiet` | Suppress `sealed N` on stderr |
-| `--working-directory PATH` | Base for relative paths |
+| `--working-directory PATH` | Base for relative input, output, and `--key-file` paths |
 
-Key resolution order: `--key` → `--key-file` → `OFFSEND_SEAL_KEY` environment variable.
+Key resolution order: `--key-file` → `--key-name` → `OFFSEND_SEAL_KEY` → `~/.offsend/seal.key`.
 
 ---
 
@@ -369,16 +375,44 @@ Key resolution order: `--key` → `--key-file` → `OFFSEND_SEAL_KEY` environmen
 Restore plaintext from seal tokens.
 
 ```bash
+offsend unseal notes.sealed.txt
 offsend unseal notes.sealed.txt --key-file ~/.offsend/seal.key
-cat notes.sealed.txt | offsend unseal --key-file ~/.offsend/seal.key
+cat notes.sealed.txt | offsend unseal
 ```
 
 | Argument / flag | Description |
 | --- | --- |
 | `[path]` | Input file (default: stdin, max **2 MiB**) |
-| `--key`, `--key-file` | Same as `seal` |
-| `-o`, `--output PATH` | Output file |
-| `--working-directory PATH` | Base for relative paths |
+| `--key-file`, `--key-name` | Same as `seal` |
+| `-o`, `--output PATH` | Output file; refuses an existing path |
+| `--force` | Atomically replace an existing output; requires `--output` |
+| `--working-directory PATH` | Base for relative input, output, and `--key-file` paths |
+
+---
+
+## Seal key storage
+
+CLI seal keys live under `~/.offsend/`:
+
+| Path | Purpose |
+| --- | --- |
+| `~/.offsend/seal.key` | Default personal key (auto-resolved by `seal`, `unseal`, `check --hook-policy block`) |
+| `~/.offsend/keys/NAME.key` | Optional named keys (`--key-name NAME`) |
+
+Install the default key once:
+
+```bash
+offsend keygen --default
+```
+
+Create an additional named key without touching the default:
+
+```bash
+offsend keygen --name work
+offsend seal notes.txt --key-name work
+```
+
+`keygen` refuses to overwrite an existing target unless you pass `--force`.
 
 ---
 
@@ -388,17 +422,24 @@ Generate a fresh 32-byte AES-256 seal key.
 
 ```bash
 offsend keygen
+offsend keygen --default
+offsend keygen --name work
 offsend keygen -o ~/.offsend/seal.key
-offsend keygen -o ~/.offsend/seal.key --raw
+offsend keygen --default --force
+offsend keygen --default --raw
 ```
 
 | Flag | Description |
 | --- | --- |
-| `-o`, `--output PATH` | Write key to file (mode `0600`) instead of stdout |
-| `--raw` | Write 32 raw bytes (requires `--output`) |
+| *(no flags)* | Print base64 key to stdout |
+| `--default` | Write to `~/.offsend/seal.key` (refuses overwrite unless `--force`) |
+| `--name NAME` | Write to `~/.offsend/keys/NAME.key` |
+| `-o`, `--output PATH` | Write to a custom path |
+| `--force` | Overwrite an existing key file (destructive; previous key is lost) |
+| `--raw` | Write 32 raw bytes (requires a file target) |
 | `--working-directory PATH` | Base for relative `--output` |
 
-Default stdout format is base64 text.
+Use only one target: stdout, `--default`, `--name`, or `--output`.
 
 ---
 

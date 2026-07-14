@@ -30,13 +30,19 @@ git -C "$repo" config user.name "Offsend CI"
 printf '%s\n' "AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF" > "$repo/secrets.env"
 git -C "$repo" add secrets.env
 
+staged_tmp="$workdir/staged-tmp"
+mkdir -p "$staged_tmp"
 set +e
-"$CLI_PATH" check --staged --working-directory "$repo" --fail-on block --quiet
+TMPDIR="$staged_tmp" "$CLI_PATH" check --staged --working-directory "$repo" --fail-on block --quiet
 check_status="$?"
 set -e
 
 if [[ "$check_status" -ne 1 ]]; then
   echo "Expected check --staged to fail with findings, got exit code $check_status" >&2
+  exit 1
+fi
+if compgen -G "$staged_tmp/offsend-staged-*" >/dev/null; then
+  echo "Expected staged temporary files to be cleaned up" >&2
   exit 1
 fi
 
@@ -75,8 +81,8 @@ check_pdf_output="$("$CLI_PATH" check --staged --working-directory "$repo" --ver
 check_pdf_status="$?"
 set -e
 
-if [[ "$check_pdf_status" -ne 0 ]]; then
-  echo "Expected check on PDF to exit 0 (skipped file), got exit code $check_pdf_status" >&2
+if [[ "$check_pdf_status" -ne 2 ]]; then
+  echo "Expected check on unscannable PDF to exit 2, got exit code $check_pdf_status" >&2
   echo "$check_pdf_output" >&2
   exit 1
 fi
@@ -225,8 +231,10 @@ if ! echo "$invalid_policy_stderr" | grep -q 'invalid_hook_policy'; then
 fi
 
 # block without seal key differs from soft-block; with key attempts seal.
+no_key_home="$workdir/no-key-home"
+mkdir -p "$no_key_home"
 set +e
-block_no_key_out="$(printf '%s' "$hook_payload" | "$CLI_PATH" check --adapter cursor --hook-policy block --no-notify 2>/tmp/offsend-block-stderr.$$)"
+block_no_key_out="$(printf '%s' "$hook_payload" | HOME="$no_key_home" "$CLI_PATH" check --adapter cursor --hook-policy block --no-notify 2>/tmp/offsend-block-stderr.$$)"
 block_no_key_status="$?"
 set -e
 if [[ "$block_no_key_status" -ne 0 ]]; then
@@ -240,8 +248,8 @@ if ! echo "$block_no_key_out" | grep -qi 'seal unavailable\|Blocked'; then
   rm -f /tmp/offsend-block-stderr.$$
   exit 1
 fi
-if ! grep -q 'keygen' /tmp/offsend-block-stderr.$$; then
-  echo "Expected block stderr keygen hint" >&2
+if ! grep -q 'keygen --default' /tmp/offsend-block-stderr.$$; then
+  echo "Expected block stderr keygen --default hint" >&2
   cat /tmp/offsend-block-stderr.$$ >&2
   rm -f /tmp/offsend-block-stderr.$$
   exit 1
@@ -258,6 +266,102 @@ if ! echo "$block_with_key_out" | grep -qi 'clipboard\|Sealed'; then
   echo "$block_with_key_out" >&2
   exit 1
 fi
+
+# Seal/unseal safe I/O contract.
+seal_work="$workdir/seal-work"
+mkdir -p "$seal_work/keys"
+cp "$seal_key" "$seal_work/keys/work.key"
+printf '%s' 'contact=user@example.com' > "$seal_work/input.txt"
+"$CLI_PATH" seal input.txt --working-directory "$seal_work" --key-file keys/work.key -o sealed.txt --quiet
+"$CLI_PATH" unseal sealed.txt --working-directory "$seal_work" --key-file keys/work.key -o restored.txt
+if [[ "$(cat "$seal_work/restored.txt")" != 'contact=user@example.com' ]]; then
+  echo "Expected relative --key-file to use --working-directory" >&2
+  exit 1
+fi
+
+set +e
+"$CLI_PATH" unseal sealed.txt --working-directory "$seal_work" --key-file keys/work.key -o restored.txt 2>/dev/null
+overwrite_status="$?"
+set -e
+if [[ "$overwrite_status" -eq 0 ]]; then
+  echo "Expected existing output to require --force" >&2
+  exit 1
+fi
+"$CLI_PATH" unseal sealed.txt --working-directory "$seal_work" --key-file keys/work.key -o restored.txt --force
+
+cp "$seal_work/sealed.txt" "$seal_work/in-place.txt"
+"$CLI_PATH" unseal in-place.txt --working-directory "$seal_work" --key-file keys/work.key -o in-place.txt --force
+if [[ "$(cat "$seal_work/in-place.txt")" != 'contact=user@example.com' ]]; then
+  echo "Expected --force to support atomic in-place output" >&2
+  exit 1
+fi
+
+printf '%s' 'target sentinel' > "$seal_work/target.txt"
+ln -s target.txt "$seal_work/output-link.txt"
+"$CLI_PATH" unseal sealed.txt --working-directory "$seal_work" --key-file keys/work.key -o output-link.txt --force
+if [[ -L "$seal_work/output-link.txt" || "$(cat "$seal_work/target.txt")" != 'target sentinel' ]]; then
+  echo "Expected --force to replace output symlink without modifying its target" >&2
+  exit 1
+fi
+
+dd if=/dev/zero bs=1048576 count=2 2>/dev/null | tr '\0' a > "$seal_work/exact-limit.txt"
+"$CLI_PATH" seal exact-limit.txt --working-directory "$seal_work" --key-file keys/work.key -o exact-limit.out --quiet
+printf 'x' >> "$seal_work/exact-limit.txt"
+set +e
+"$CLI_PATH" seal exact-limit.txt --working-directory "$seal_work" --key-file keys/work.key --quiet >/dev/null 2>&1
+oversize_status="$?"
+set -e
+if [[ "$oversize_status" -ne 2 ]]; then
+  echo "Expected file input larger than 2 MiB to exit 2, got $oversize_status" >&2
+  exit 1
+fi
+
+inline_key_secret='INLINE_KEY_MUST_NOT_APPEAR'
+set +e
+inline_key_error="$("$CLI_PATH" seal "$seal_work/input.txt" --key "$inline_key_secret" 2>&1)"
+inline_key_status="$?"
+set -e
+if [[ "$inline_key_status" -eq 0 || "$inline_key_error" == *"$inline_key_secret"* ]]; then
+  echo "Expected removed --key option to reject without echoing its value" >&2
+  exit 1
+fi
+
+# Seal key storage: refuse overwrite, auto-resolve ~/.offsend/seal.key
+offsend_home="$(mktemp -d)"
+(
+  export HOME="$offsend_home"
+  "$CLI_PATH" keygen --default
+  set +e
+  "$CLI_PATH" keygen --default 2>/tmp/offsend-keygen-dup.$$
+  dup_status="$?"
+  set -e
+  if [[ "$dup_status" -eq 0 ]]; then
+    echo "Expected duplicate keygen --default to fail" >&2
+    exit 1
+  fi
+  if ! grep -qi 'already exists' /tmp/offsend-keygen-dup.$$; then
+    echo "Expected overwrite refusal message" >&2
+    cat /tmp/offsend-keygen-dup.$$ >&2
+    exit 1
+  fi
+  rm -f /tmp/offsend-keygen-dup.$$
+
+  set +e
+  block_default_out="$(printf '%s' "$hook_payload" | "$CLI_PATH" check --adapter cursor --hook-policy block --no-notify 2>/dev/null)"
+  set -e
+  if ! echo "$block_default_out" | grep -qi 'clipboard\|Sealed'; then
+    echo "Expected block with default seal key to mention sealed clipboard" >&2
+    echo "$block_default_out" >&2
+    exit 1
+  fi
+
+  "$CLI_PATH" keygen --name work
+  if [[ ! -f "$offsend_home/.offsend/keys/work.key" ]]; then
+    echo "Expected named seal key file" >&2
+    exit 1
+  fi
+)
+rm -rf "$offsend_home"
 
 # --stdin risk report vs --gate-secrets / adapter gate
 email_payload='contact me at user@example.com'
@@ -292,15 +396,22 @@ fi
 
 # Read-gate path denylist + fail-open shape
 read_env='{"file_path":"/repo/.env"}'
+read_kube='{"file_path":"/home/user/.kube/config"}'
 read_readme='{"file_path":"/repo/README.md"}'
 set +e
 read_deny="$(printf '%s' "$read_env" | "$CLI_PATH" check --adapter cursor --read-gate --no-notify 2>/dev/null)"
+read_kube_deny="$(printf '%s' "$read_kube" | "$CLI_PATH" check --adapter cursor --read-gate --no-notify 2>/dev/null)"
 read_allow="$(printf '%s' "$read_readme" | "$CLI_PATH" check --adapter cursor --read-gate --no-notify 2>/dev/null)"
 read_fail_open="$(printf '%s' 'not-json' | "$CLI_PATH" check --adapter cursor --read-gate --no-notify 2>/dev/null)"
 set -e
 if ! echo "$read_deny" | grep -q 'deny'; then
   echo "Expected read-gate deny for .env" >&2
   echo "$read_deny" >&2
+  exit 1
+fi
+if ! echo "$read_kube_deny" | grep -q 'deny'; then
+  echo "Expected read-gate deny for .kube/config" >&2
+  echo "$read_kube_deny" >&2
   exit 1
 fi
 if ! echo "$read_allow" | grep -q 'allow'; then
@@ -318,7 +429,28 @@ if echo "$read_fail_open" | grep -q 'continue'; then
   echo "$read_fail_open" >&2
   exit 1
 fi
-# Preserve a foreign Cursor hook, then merge Offsend.
+# Refuse missing repository paths and preserve foreign wrappers unless forced.
+set +e
+"$CLI_PATH" hook install --path "$repo/missing-project" --target cursor --cli-path "$CLI_PATH" >/dev/null 2>&1
+missing_hook_status="$?"
+set -e
+if [[ "$missing_hook_status" -eq 0 || -e "$repo/missing-project" ]]; then
+  echo "Expected AI hook install to reject a missing repository path" >&2
+  exit 1
+fi
+
+mkdir -p "$repo/.offsend/hooks"
+printf '%s\n' '#!/bin/sh' 'echo custom-wrapper' > "$repo/.offsend/hooks/check-prompt.sh"
+set +e
+"$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" >/dev/null 2>&1
+foreign_wrapper_status="$?"
+set -e
+if [[ "$foreign_wrapper_status" -eq 0 ]] || ! grep -q 'custom-wrapper' "$repo/.offsend/hooks/check-prompt.sh"; then
+  echo "Expected AI hook install to preserve a foreign wrapper without --force" >&2
+  exit 1
+fi
+
+# Preserve a foreign Cursor config hook, then merge Offsend.
 mkdir -p "$repo/.cursor"
 printf '%s\n' '{
   "version": 1,
@@ -327,7 +459,7 @@ printf '%s\n' '{
   }
 }' > "$repo/.cursor/hooks.json"
 
-"$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH"
+"$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --force
 "$CLI_PATH" hook status --path "$repo" --target cursor
 "$CLI_PATH" hook status --path "$repo" --target all --format json | grep -q '"targets"'
 if ! "$CLI_PATH" hook status --path "$repo" --target all; then

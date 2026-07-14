@@ -117,6 +117,10 @@ public struct CheckReport: Equatable, Sendable {
         }
     }
 
+    public var hasErrors: Bool {
+        !fileIssues.isEmpty
+    }
+
     public var hasBlockingFindings: Bool {
         fileFindings.contains { $0.recommendedAction == .block || $0.hasCriticalSecret }
             || policyFindings.contains { $0.status == .fail }

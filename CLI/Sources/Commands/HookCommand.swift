@@ -41,7 +41,7 @@ struct HookInstall: ParsableCommand {
 
     @Flag(
         name: .long,
-        help: "Git hooks: overwrite a non-Offsend pre-commit hook. AI targets always refresh managed wrappers (no extra effect)."
+        help: "Overwrite a non-Offsend git hook or AI wrapper. Managed hooks refresh without this flag."
     )
     var force = false
 
@@ -84,12 +84,6 @@ struct HookInstall: ParsableCommand {
                         stderr
                     )
                 }
-            }
-            if force {
-                fputs(
-                    "note: --force applies to git pre-commit hooks only; AI install always refreshes `.offsend/hooks/` wrappers.\n",
-                    stderr
-                )
             }
             do {
                 for aiTarget in aiTargets {

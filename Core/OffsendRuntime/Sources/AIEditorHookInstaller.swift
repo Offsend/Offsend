@@ -15,6 +15,8 @@ public enum AIEditorHookInstallerError: Error, Equatable, LocalizedError {
     case writeFailed(path: String, message: String)
     case invalidExistingConfig(path: String)
     case notInstalled(path: String)
+    case repositoryPathNotDirectory(path: String)
+    case wrapperAlreadyExists(path: String)
 
     public var errorDescription: String? {
         switch self {
@@ -24,6 +26,10 @@ public enum AIEditorHookInstallerError: Error, Equatable, LocalizedError {
             return "Existing config at \(path) is not valid JSON object."
         case .notInstalled(let path):
             return "No Offsend-managed AI hook found at \(path)."
+        case .repositoryPathNotDirectory(let path):
+            return "Repository path does not exist or is not a directory: \(path)"
+        case .wrapperAlreadyExists(let path):
+            return "Wrapper already exists at \(path) and is not Offsend-managed. Use --force to overwrite."
         }
     }
 }
@@ -90,22 +96,33 @@ public struct AIEditorHookInstaller: Sendable {
         force: Bool = false,
         withReadGate: Bool = false
     ) throws -> AIEditorHookInstallResult {
-        // Install always rewrites managed wrappers; `force` only affects git pre-commit hooks.
         let policy = hookPolicy ?? Self.defaultHookPolicy(for: target)
         let root = repositoryPath.standardizedFileURL
-        let wrapperURL = root.appendingPathComponent(Self.wrapperRelativePath)
-        try writeWrapper(to: wrapperURL, preferredCLIPath: cliExecutablePath)
-
-        let enableReadGate = withReadGate && (target == .cursor || target == .claude)
-        var readWrapperURL: URL?
-        if enableReadGate {
-            let url = root.appendingPathComponent(Self.readWrapperRelativePath)
-            try writeReadWrapper(to: url, preferredCLIPath: cliExecutablePath)
-            readWrapperURL = url
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: root.path, isDirectory: &isDirectory),
+              isDirectory.boolValue else {
+            throw AIEditorHookInstallerError.repositoryPathNotDirectory(path: root.path)
         }
 
+        let wrapperURL = root.appendingPathComponent(Self.wrapperRelativePath)
+        let enableReadGate = withReadGate && (target == .cursor || target == .claude)
         let command = makeCommand(target: target, hookPolicy: policy)
         let configURL = configURL(for: target, repositoryPath: root)
+        let readWrapperURL = enableReadGate
+            ? root.appendingPathComponent(Self.readWrapperRelativePath)
+            : nil
+
+        // Validate every existing destination before changing any wrapper.
+        _ = try loadJSONObject(at: configURL)
+        try validateWrapperDestination(wrapperURL, force: force)
+        if let readWrapperURL {
+            try validateWrapperDestination(readWrapperURL, force: force)
+        }
+
+        try writeWrapper(to: wrapperURL, preferredCLIPath: cliExecutablePath)
+        if let readWrapperURL {
+            try writeReadWrapper(to: readWrapperURL, preferredCLIPath: cliExecutablePath)
+        }
 
         try fileManager.createDirectory(
             at: configURL.deletingLastPathComponent(),
@@ -156,7 +173,9 @@ public struct AIEditorHookInstaller: Sendable {
         }
         if !stillUsed {
             let readURL = root.appendingPathComponent(Self.readWrapperRelativePath)
-            try? fileManager.removeItem(at: readURL)
+            if isManagedWrapper(at: readURL) {
+                try? fileManager.removeItem(at: readURL)
+            }
         }
     }
 
@@ -196,7 +215,9 @@ public struct AIEditorHookInstaller: Sendable {
         }
         if !stillUsed {
             let wrapperURL = root.appendingPathComponent(Self.wrapperRelativePath)
-            try? fileManager.removeItem(at: wrapperURL)
+            if isManagedWrapper(at: wrapperURL) {
+                try? fileManager.removeItem(at: wrapperURL)
+            }
         }
         cleanupUnusedReadWrapper(repositoryPath: root)
     }
@@ -232,9 +253,6 @@ public struct AIEditorHookInstaller: Sendable {
         guard let contents = try? String(contentsOf: url, encoding: .utf8) else {
             return .unreadable
         }
-        guard contents.contains(Self.managedMarker) else {
-            return .missingManagedMarker
-        }
         guard let foundVersion = Self.parseManagedVersion(in: contents) else {
             return .missingManagedMarker
         }
@@ -246,11 +264,14 @@ public struct AIEditorHookInstaller: Sendable {
 
     public static func parseManagedVersion(in script: String) -> Int? {
         let prefix = "# \(managedMarker) v"
-        for line in script.split(separator: "\n", omittingEmptySubsequences: false) {
+        for line in script.split(separator: "\n", omittingEmptySubsequences: false).prefix(2) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard trimmed.hasPrefix(prefix) else { continue }
             let suffix = trimmed.dropFirst(prefix.count)
             let digits = suffix.prefix(while: \.isNumber)
+            guard !digits.isEmpty, suffix.dropFirst(digits.count).first.map({ $0.isWhitespace }) ?? true else {
+                continue
+            }
             return Int(digits)
         }
         return nil
@@ -315,6 +336,28 @@ public struct AIEditorHookInstaller: Sendable {
     }
 
     // MARK: - Wrapper
+
+    private func validateWrapperDestination(_ url: URL, force: Bool) throws {
+        guard (try? fileManager.attributesOfItem(atPath: url.path)) != nil else {
+            return
+        }
+        if force {
+            return
+        }
+        guard isManagedWrapper(at: url),
+              let script = try? String(contentsOf: url, encoding: .utf8),
+              let version = Self.parseManagedVersion(in: script),
+              version <= Self.managedVersion else {
+            throw AIEditorHookInstallerError.wrapperAlreadyExists(path: url.path)
+        }
+    }
+
+    private func isManagedWrapper(at url: URL) -> Bool {
+        guard let script = try? String(contentsOf: url, encoding: .utf8) else {
+            return false
+        }
+        return Self.parseManagedVersion(in: script) != nil
+    }
 
     private func writeWrapper(to url: URL, preferredCLIPath: String) throws {
         try fileManager.createDirectory(
@@ -632,12 +675,18 @@ public struct AIEditorHookInstaller: Sendable {
 
     private func loadJSONObject(at url: URL) throws -> [String: Any]? {
         guard fileManager.fileExists(atPath: url.path) else { return nil }
-        let data = try Data(contentsOf: url)
-        let object = try JSONSerialization.jsonObject(with: data)
-        guard let dict = object as? [String: Any] else {
+        do {
+            let data = try Data(contentsOf: url)
+            let object = try JSONSerialization.jsonObject(with: data)
+            guard let dict = object as? [String: Any] else {
+                throw AIEditorHookInstallerError.invalidExistingConfig(path: url.path)
+            }
+            return dict
+        } catch let error as AIEditorHookInstallerError {
+            throw error
+        } catch {
             throw AIEditorHookInstallerError.invalidExistingConfig(path: url.path)
         }
-        return dict
     }
 
     private func writeJSON(_ object: [String: Any], to url: URL) throws {

@@ -96,6 +96,28 @@ final class HookContractTests: XCTestCase {
         XCTAssertTrue(readmeClaude.allowed)
     }
 
+    func testReadGateDeniesSensitiveDirectoryPaths() throws {
+        let kube = try PromptReadGate.evaluate(
+            json: #"{"file_path":"/Users/me/.kube/config"}"#,
+            adapter: .cursor
+        )
+        XCTAssertFalse(kube.allowed)
+        XCTAssertTrue(PromptReadGateRenderer.render(decision: kube, adapter: .cursor).stdout.contains("deny"))
+
+        let docker = try PromptReadGate.evaluate(
+            json: #"{"tool_input":{"file_path":"/Users/me/.docker/config.json"}}"#,
+            adapter: .claude
+        )
+        XCTAssertFalse(docker.allowed)
+        XCTAssertTrue(PromptReadGateRenderer.render(decision: docker, adapter: .claude).stdout.contains("block"))
+
+        let ordinary = try PromptReadGate.evaluate(
+            json: #"{"file_path":"/repo/docker/config.json"}"#,
+            adapter: .cursor
+        )
+        XCTAssertTrue(ordinary.allowed)
+    }
+
     func testReadGateFailOpenUsesPermissionAllow() {
         let output = CheckHookResponseRenderer.failOpen(
             adapter: .cursor,

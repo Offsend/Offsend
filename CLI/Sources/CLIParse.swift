@@ -6,9 +6,16 @@ import OffsendRuntime
 /// Shared validation helpers for CLI options. Invalid values terminate the
 /// process with `OffsendExitCode.error` instead of being silently defaulted.
 enum CLIParse {
-    static func sealKey(key: String?, keyFile: String?) -> Data {
+    static func sealKey(keyFile: String?, keyName: String? = nil, workingDirectory: URL) -> Data {
+        let resolvedKeyFile = keyFile.map {
+            URL(fileURLWithPath: $0, relativeTo: workingDirectory).standardizedFileURL.path
+        }
         do {
-            return try SealKeyResolver.resolve(key: key, keyFilePath: keyFile).data
+            return try SealKeyResolver.resolve(
+                key: nil,
+                keyFilePath: resolvedKeyFile,
+                keyName: keyName
+            ).data
         } catch let error as SealError {
             CLIError.exit(.error, message: error.localizedDescription)
         } catch {

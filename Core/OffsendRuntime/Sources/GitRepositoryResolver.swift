@@ -23,7 +23,11 @@ public struct GitRepositoryResolver: Sendable {
     public func repositoryRoot(startingAt path: URL) throws -> URL {
         let standardized = path.standardizedFileURL
         var candidate = standardized
-        if !fileManager.fileExists(atPath: candidate.path, isDirectory: nil) {
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: candidate.path, isDirectory: &isDirectory) else {
+            throw GitRepositoryError.notARepository(path: standardized.path)
+        }
+        if !isDirectory.boolValue {
             candidate = standardized.deletingLastPathComponent()
         }
 
@@ -73,20 +77,43 @@ public struct GitRepositoryResolver: Sendable {
     /// Returns the URLs of the materialized files in the same order as the staged paths.
     public func exportStagedFiles(in repositoryRoot: URL, to destination: URL) throws -> [URL] {
         let relativePaths = try stagedRelativePaths(in: repositoryRoot)
+        try fileManager.createDirectory(
+            at: destination,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: destination.path)
+
         var exported: [URL] = []
         exported.reserveCapacity(relativePaths.count)
 
         for relativePath in relativePaths {
             let fileURL = try resolvedExportDestination(for: relativePath, in: destination)
             let data = try stagedFileData(relativePath: relativePath, in: repositoryRoot)
+            let parentURL = fileURL.deletingLastPathComponent()
             try fileManager.createDirectory(
-                at: fileURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
+                at: parentURL,
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700]
             )
+            try secureDirectoryTree(from: destination, through: parentURL)
             try data.write(to: fileURL)
+            try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
             exported.append(fileURL)
         }
         return exported
+    }
+
+    private func secureDirectoryTree(from root: URL, through leaf: URL) throws {
+        var directory = leaf.standardizedFileURL
+        let root = root.standardizedFileURL
+        while true {
+            try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+            if directory == root {
+                return
+            }
+            directory = directory.deletingLastPathComponent().standardizedFileURL
+        }
     }
 
     /// Shared by export and tests: reject any staged path that would escape `destination`.

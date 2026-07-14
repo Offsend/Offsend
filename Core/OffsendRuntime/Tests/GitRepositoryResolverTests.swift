@@ -35,6 +35,32 @@ final class GitRepositoryResolverTests: XCTestCase {
         }
     }
 
+    func testRepositoryRootRejectsMissingChildOfRepository() throws {
+        let root = try makeGitRepository()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let missing = root.appendingPathComponent("missing", isDirectory: true)
+        XCTAssertThrowsError(try GitRepositoryResolver().repositoryRoot(startingAt: missing)) { error in
+            guard case .notARepository(let path) = error as? GitRepositoryError else {
+                return XCTFail("Expected notARepository, got \(error)")
+            }
+            XCTAssertEqual(path, missing.path)
+        }
+    }
+
+    func testRepositoryRootAcceptsExistingFileInsideRepository() throws {
+        let root = try makeGitRepository()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let file = root.appendingPathComponent("README.md")
+        try "test".write(to: file, atomically: true, encoding: .utf8)
+
+        XCTAssertEqual(
+            try GitRepositoryResolver().repositoryRoot(startingAt: file),
+            root.standardizedFileURL
+        )
+    }
+
     func testHooksDirectoryFallsBackWhenGitUnavailable() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -72,9 +98,13 @@ final class GitRepositoryResolverTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
 
         let resolver = GitRepositoryResolver()
-        let fileURL = root.appendingPathComponent("secrets.env")
+        let fileURL = root.appendingPathComponent("nested/secrets.env")
+        try FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
         try "STAGED_CONTENT".write(to: fileURL, atomically: true, encoding: .utf8)
-        try resolver.runGit(arguments: ["add", "secrets.env"], workingDirectory: root)
+        try resolver.runGit(arguments: ["add", "nested/secrets.env"], workingDirectory: root)
         // Modify the working tree after staging; the staged blob must win.
         try "WORKING_TREE_CONTENT".write(to: fileURL, atomically: true, encoding: .utf8)
 
@@ -89,6 +119,9 @@ final class GitRepositoryResolverTests: XCTestCase {
             try String(contentsOf: exported[0], encoding: .utf8),
             "STAGED_CONTENT"
         )
+        XCTAssertEqual(try permissions(at: destination), 0o700)
+        XCTAssertEqual(try permissions(at: destination.appendingPathComponent("nested")), 0o700)
+        XCTAssertEqual(try permissions(at: exported[0]), 0o600)
     }
 
     func testExportStagedFilesRejectsUnsafeRelativePaths() throws {
@@ -124,5 +157,10 @@ final class GitRepositoryResolverTests: XCTestCase {
         try resolver.runGit(arguments: ["config", "user.email", "test@example.com"], workingDirectory: root)
         try resolver.runGit(arguments: ["config", "user.name", "Offsend Tests"], workingDirectory: root)
         return root
+    }
+
+    private func permissions(at url: URL) throws -> Int {
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        return (attributes[.posixPermissions] as? NSNumber)?.intValue ?? -1
     }
 }

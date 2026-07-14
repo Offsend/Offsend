@@ -96,11 +96,24 @@ public enum PromptAttachmentAdvisor {
         "tfstate", "tfvars", "jks", "keystore", "mobileprovision",
     ]
 
+    private static let sensitiveDirectoryComponents: Set<String> = [
+        ".ssh", ".aws", ".azure", ".kube", ".docker", ".gnupg", ".fly",
+    ]
+
     public static func suspiciousPaths(in paths: [String]) -> [String] {
         paths.filter(isSuspicious(path:))
     }
 
     public static func isSuspicious(path: String) -> Bool {
+        let components = path
+            .replacingOccurrences(of: "\\", with: "/")
+            .lowercased()
+            .split(separator: "/")
+            .map(String.init)
+        if components.contains(where: sensitiveDirectoryComponents.contains) {
+            return true
+        }
+
         let name = URL(fileURLWithPath: path).lastPathComponent.lowercased()
 
         if name == ".env" || name.hasPrefix(".env.") || name.hasSuffix(".env") {

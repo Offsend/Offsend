@@ -13,15 +13,117 @@ final class SealKeyResolverTests: XCTestCase {
         XCTAssertEqual(resolved.source, .flagKey)
     }
 
-    func testRejectsBothKeyAndKeyFile() {
+    func testRejectsMultipleKeySources() {
         XCTAssertThrowsError(
             try SealKeyResolver.resolve(key: "abc", keyFilePath: "/tmp/k", environment: [:])
         ) { error in
             guard case SealError.invalidKey(let reason) = error else {
                 return XCTFail("Expected invalidKey, got \(error)")
             }
-            XCTAssertTrue(reason.contains("not both"))
+            XCTAssertTrue(reason.contains("only one of"))
         }
+    }
+
+    func testRejectsKeyFileAndKeyName() {
+        XCTAssertThrowsError(
+            try SealKeyResolver.resolve(key: nil, keyFilePath: "/tmp/k", keyName: "work", environment: [:])
+        ) { error in
+            guard case SealError.invalidKey(let reason) = error else {
+                return XCTFail("Expected invalidKey, got \(error)")
+            }
+            XCTAssertTrue(reason.contains("only one of"))
+        }
+    }
+
+    func testResolvesDefaultKeyFile() throws {
+        let home = FileManager.default.temporaryDirectory
+            .appendingPathComponent("offsend-home-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+
+        let savedHome = getenv("HOME").map { String(cString: $0) }
+        setenv("HOME", home.path, 1)
+        defer {
+            if let savedHome {
+                setenv("HOME", savedHome, 1)
+            } else {
+                unsetenv("HOME")
+            }
+        }
+
+        let keyData = Data((0..<32).map { UInt8($0) })
+        try SealKeyPaths.writeKey(keyData, to: SealKeyPaths.defaultKeyURL(), raw: false, force: false)
+
+        let resolved = try SealKeyResolver.resolve(
+            key: nil,
+            keyFilePath: nil,
+            environment: ["HOME": home.path]
+        )
+        XCTAssertEqual(resolved.data, keyData)
+        XCTAssertEqual(resolved.source, .defaultFile)
+    }
+
+    func testEnvironmentTakesPriorityOverDefaultFile() throws {
+        let home = FileManager.default.temporaryDirectory
+            .appendingPathComponent("offsend-home-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+
+        let savedHome = getenv("HOME").map { String(cString: $0) }
+        setenv("HOME", home.path, 1)
+        defer {
+            if let savedHome {
+                setenv("HOME", savedHome, 1)
+            } else {
+                unsetenv("HOME")
+            }
+        }
+
+        let fileKey = Data((0..<32).map { UInt8($0) })
+        let envKey = Data((32..<64).map { UInt8($0) })
+        try SealKeyPaths.writeKey(fileKey, to: SealKeyPaths.defaultKeyURL(), raw: false, force: false)
+
+        let resolved = try SealKeyResolver.resolve(
+            key: nil,
+            keyFilePath: nil,
+            environment: [SealKeyResolver.environmentVariable: envKey.base64EncodedString()]
+        )
+        XCTAssertEqual(resolved.data, envKey)
+        XCTAssertEqual(resolved.source, .environment)
+    }
+
+    func testResolvesNamedKey() throws {
+        let home = FileManager.default.temporaryDirectory
+            .appendingPathComponent("offsend-home-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+
+        let savedHome = getenv("HOME").map { String(cString: $0) }
+        setenv("HOME", home.path, 1)
+        defer {
+            if let savedHome {
+                setenv("HOME", savedHome, 1)
+            } else {
+                unsetenv("HOME")
+            }
+        }
+
+        let keyData = Data((0..<32).map { UInt8($0) })
+        try SealKeyPaths.writeKey(
+            keyData,
+            to: try SealKeyPaths.namedKeyURL(name: "work"),
+            raw: false,
+            force: false
+        )
+
+        let resolved = try SealKeyResolver.resolve(
+            key: nil,
+            keyFilePath: nil,
+            keyName: "work",
+            environment: ["HOME": home.path]
+        )
+        XCTAssertEqual(resolved.data, keyData)
+        XCTAssertEqual(resolved.source, .keyName)
     }
 
     func testFallsBackToEnvironment() throws {
@@ -37,8 +139,14 @@ final class SealKeyResolverTests: XCTestCase {
     }
 
     func testMissingKeyFails() {
+        let home = FileManager.default.temporaryDirectory
+            .appendingPathComponent("offsend-home-\(UUID().uuidString)", isDirectory: true)
         XCTAssertThrowsError(
-            try SealKeyResolver.resolve(key: nil, keyFilePath: nil, environment: [:])
+            try SealKeyResolver.resolve(
+                key: nil,
+                keyFilePath: nil,
+                environment: ["HOME": home.path]
+            )
         ) { error in
             guard case SealError.invalidKey = error else {
                 return XCTFail("Expected invalidKey, got \(error)")
@@ -142,11 +250,16 @@ final class SealKeyResolverTests: XCTestCase {
     }
 
     func testEmptyEnvironmentKeyFails() {
+        let home = FileManager.default.temporaryDirectory
+            .appendingPathComponent("offsend-home-\(UUID().uuidString)", isDirectory: true)
         XCTAssertThrowsError(
             try SealKeyResolver.resolve(
                 key: nil,
                 keyFilePath: nil,
-                environment: [SealKeyResolver.environmentVariable: ""]
+                environment: [
+                    "HOME": home.path,
+                    SealKeyResolver.environmentVariable: "",
+                ]
             )
         ) { error in
             guard case SealError.invalidKey = error else {

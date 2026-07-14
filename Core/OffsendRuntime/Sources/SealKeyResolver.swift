@@ -19,7 +19,9 @@ public enum SealKeyResolver {
     public enum Source: Equatable, Sendable {
         case flagKey
         case keyFile
+        case keyName
         case environment
+        case defaultFile
     }
 
     public struct ResolvedKey: Equatable, Sendable {
@@ -32,14 +34,18 @@ public enum SealKeyResolver {
         }
     }
 
-    /// Resolves a 32-byte seal key. Priority: `key` > `keyFilePath` > `OFFSEND_SEAL_KEY`.
+    /// Resolves a 32-byte seal key.
+    /// Priority: `key` > `keyFilePath` > `keyName` > `OFFSEND_SEAL_KEY` > `~/.offsend/seal.key`.
     public static func resolve(
         key: String?,
         keyFilePath: String?,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        keyName: String? = nil,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        fileManager: FileManager = .default
     ) throws -> ResolvedKey {
-        if key != nil, keyFilePath != nil {
-            throw SealError.invalidKey("pass either --key or --key-file, not both")
+        let providedSources = [key != nil, keyFilePath != nil, keyName != nil].filter { $0 }.count
+        if providedSources > 1 {
+            throw SealError.invalidKey("pass only one of --key, --key-file, or --key-name")
         }
 
         if let key {
@@ -50,12 +56,29 @@ public enum SealKeyResolver {
             return ResolvedKey(data: try loadKeyFile(at: keyFilePath), source: .keyFile)
         }
 
+        if let keyName {
+            let url = try SealKeyPaths.namedKeyURL(
+                name: keyName,
+                fileManager: fileManager,
+                environment: environment
+            )
+            return ResolvedKey(data: try loadKeyFile(at: url.path), source: .keyName)
+        }
+
         if let envValue = environment[environmentVariable], !envValue.isEmpty {
             return ResolvedKey(data: try decodeBase64Key(envValue), source: .environment)
         }
 
+        let defaultURL = SealKeyPaths.defaultKeyURL(fileManager: fileManager, environment: environment)
+        if fileManager.fileExists(atPath: defaultURL.path) {
+            return ResolvedKey(
+                data: try loadKeyFile(at: defaultURL.path),
+                source: .defaultFile
+            )
+        }
+
         throw SealError.invalidKey(
-            "provide --key, --key-file, or set \(environmentVariable)"
+            "provide --key-file or --key-name, set \(environmentVariable), or run: \(SealKeyPaths.defaultKeyInstallHint)"
         )
     }
 

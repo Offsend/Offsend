@@ -75,11 +75,11 @@ struct Check: AsyncParsableCommand {
     )
     var readGate = false
 
-    @Option(name: .long, help: "Base64-encoded 32-byte seal key (prefer --key-file / OFFSEND_SEAL_KEY).")
-    var key: String?
-
     @Option(name: .long, help: "Path to a seal key file (for --seal-copy / --hook-policy block).")
     var keyFile: String?
+
+    @Option(name: .long, help: "Named seal key in ~/.offsend/keys/NAME.key.")
+    var keyName: String?
 
     @Flag(name: .long, help: "Only print findings and errors.")
     var quiet = false
@@ -116,10 +116,6 @@ struct Check: AsyncParsableCommand {
             )
             return
         }
-        if key != nil, adapter != nil, !quiet {
-            fputs("warning: prefer --key-file or OFFSEND_SEAL_KEY; --key is visible in process listings.\n", stderr)
-        }
-
         let rawText: String
         do {
             rawText = try CLIStdin.readUTF8()
@@ -363,8 +359,11 @@ struct Check: AsyncParsableCommand {
             notify: notify,
             secretsOnly: secretsOnly,
             sealCopy: sealCopy,
-            key: key,
-            keyFile: keyFile
+            keyFile: keyFile,
+            keyName: keyName,
+            workingDirectory: URL(
+                fileURLWithPath: workingDirectory ?? FileManager.default.currentDirectoryPath
+            ).standardizedFileURL
         )
     }
 
@@ -431,8 +430,10 @@ struct Check: AsyncParsableCommand {
             do {
                 fileURLs = try gitResolver.exportStagedFiles(in: repositoryRoot, to: exportRoot)
             } catch let error as GitRepositoryError {
+                try? FileManager.default.removeItem(at: exportRoot)
                 CLIError.exit(for: error)
             } catch {
+                try? FileManager.default.removeItem(at: exportRoot)
                 CLIError.exit(.error, message: "Failed to read staged files: \(error.localizedDescription)")
             }
             scanRoot = exportRoot
@@ -495,6 +496,9 @@ struct Check: AsyncParsableCommand {
             print(output)
         }
 
+        if report.hasErrors {
+            throw ExitCode(OffsendExitCode.error.rawValue)
+        }
         if report.shouldFail {
             throw ExitCode(OffsendExitCode.findings.rawValue)
         }

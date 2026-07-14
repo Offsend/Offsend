@@ -35,6 +35,7 @@ final class OffsendCheckServiceTests: XCTestCase {
         XCTAssertEqual(report.fileIssues[0].relativePath, "scan.pdf")
         XCTAssertEqual(report.fileIssues[0].message, "Unsupported format (.pdf)")
         XCTAssertFalse(report.shouldFail)
+        XCTAssertTrue(report.hasErrors)
     }
 
     func testAnalyzesPlainTextWithCLIPipeline() async throws {

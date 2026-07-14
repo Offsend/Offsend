@@ -71,7 +71,8 @@ public enum PromptCheckAdviceBuilder {
         sealedCopyPath: String? = nil,
         secretsOnly: Bool = true,
         attachmentAdviceLines: [String] = [],
-        sealAttempted: Bool = false
+        sealAttempted: Bool = false,
+        sealFailureDetail: String? = nil
     ) -> PromptCheckAdviceResult {
         let filtered = filterEntities(entities, secretsOnly: secretsOnly)
         var findings = filtered.map { entity -> PromptCheckAdviceFinding in
@@ -108,7 +109,9 @@ public enum PromptCheckAdviceBuilder {
                 if sealedCopyPath != nil || sealedText != nil {
                     userMessage += " Prompt blocked; sealed copy is on the clipboard."
                 } else if sealAttempted {
-                    userMessage += " Prompt blocked; seal unavailable — run: offsend keygen -o ~/.offsend/seal.key"
+                    let detail = sealFailureDetail
+                        ?? "run: \(SealKeyPaths.defaultKeyInstallHint)"
+                    userMessage += " Prompt blocked; seal unavailable — \(detail)"
                 } else {
                     userMessage += " Prompt blocked (same as soft-block)."
                 }
