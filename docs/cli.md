@@ -18,9 +18,10 @@ Project rules live in [`.offsend.yml`](configuration.md) at the repository root.
 | [`offsend doctor`](#offsend-doctor) | Verify CLI, git, settings, hooks, seal key |
 | [`offsend show`](#offsend-show) | List sensitive paths visible to AI tools (no file contents) |
 | [`offsend prepare`](#offsend-prepare) | Create missing AI ignore files |
+| [`offsend protect`](#offsend-protect) | Hide exposed sensitive paths from AI (prepare + ignore required) |
 | [`offsend ignore`](#offsend-ignore) | Add paths or patterns to every AI ignore file |
 | [`offsend check`](#offsend-check) | Scan files, staged changes, stdin, or editor hook JSON |
-| [`offsend init`](#offsend-init) | Create `.offsend.yml` |
+| [`offsend init`](#offsend-init) | Create `.offsend.yml` (+ optional baseline check) |
 | [`offsend edit`](#offsend-edit) | Open `.offsend.yml` in `$EDITOR` |
 | [`offsend hook`](#offsend-hook) | Install / remove / status for git and AI-editor hooks |
 | [`offsend seal`](#offsend-seal) | Replace secrets with reversible seal tokens |
@@ -56,7 +57,7 @@ offsend doctor --format json
 
 Exits `2` when any check has status `fail`. AI hooks and seal key warnings are informational (`warn`).
 
-Checks include `ai-wrapper-prompt` / `ai-wrapper-read` / `ai-wrapper-shell` (managed marker + version) when those wrappers exist, and `ai-shell-gate` (warn) when Cursor/Claude are installed without a shell-gate.
+Checks include `ai-wrapper-prompt` / `ai-wrapper-read` / `ai-wrapper-shell` (managed marker + version) when those wrappers exist, `ai-shell-gate` (warn) when Cursor/Claude are installed without a shell-gate, and `next-actions` (ranked setup hints: init → protect → hooks).
 
 ---
 
@@ -96,6 +97,30 @@ offsend prepare --format json
 | `--dry-run` | Preview without writing |
 | `--sync-patterns` | Append missing sensitive-data patterns to existing ignore files |
 | `--format text\|json` | Output format |
+
+Exits `2` on write errors.
+
+---
+
+## `offsend protect`
+
+Hide exposed sensitive paths from AI tools in one step: create missing ignore files (like `prepare`), then append canonical ignore lines for every **required** exposure from the same audit as `show`.
+
+```bash
+offsend protect
+offsend protect --dry-run
+offsend protect --include-recommended
+offsend protect ./my-project --format json
+```
+
+| Argument / flag | Description |
+| --- | --- |
+| `[path]` | Project directory (default: current directory) |
+| `--dry-run` | Preview without writing |
+| `--include-recommended` | Also ignore recommended exposures (SSH, AWS paths, …) |
+| `--format text\|json` | Output format |
+
+Prefer this after `offsend init`. Verify with `offsend show`. Low-level alternatives: `prepare` / `ignore`.
 
 Exits `2` on write errors.
 
@@ -203,24 +228,28 @@ Prompt scanning does **not** honor inline `offsend:ignore` bypasses.
 
 ## `offsend init`
 
-Create a starter [`.offsend.yml`](configuration.md) at the git repository root (or current directory if not in a repo).
+Create a starter [`.offsend.yml`](configuration.md) at the git repository root (or current directory if not in a repo). After writing the file, runs a **baseline `check .`** (advise-only; does not fail `init`) with remediation hints (`# offsend:ignore` for fixtures, rotate/env for real secrets).
 
 ```bash
-offsend init
+offsend init                      # TTY: prompts for template; then baseline check
 offsend init --template node
 offsend init --template js,swift
 offsend init --template python --merge-exclude
 offsend init --list-templates
 offsend init --force
+offsend init --template node --no-check
 ```
 
 | Flag | Description |
 | --- | --- |
 | `--path DIR` | Directory to initialize (default: current directory) |
-| `--template NAME` | Exclude preset(s); repeatable or comma-separated. Aliases: `js`/`ts` → `node`, `ios` → `swift`. Always includes `common` |
+| `--template NAME` | Exclude preset(s); repeatable or comma-separated. Aliases: `js`/`ts` → `node`, `ios` → `swift`. Always includes `common`. **Required in non-TTY**; in a TTY, omit to be prompted (Enter = common only) |
 | `--list-templates` | Print preset catalog and exit |
 | `--merge-exclude` | Add template patterns to existing config (no overwrite) |
 | `--force` | Overwrite existing file |
+| `--no-check` | Skip the baseline content scan after writing the config |
+
+Next steps printed: `offsend protect && offsend show && offsend hook install`.
 
 ---
 
@@ -552,24 +581,22 @@ offsend report ./my-project --out report.json
 
 ## Typical workflows
 
-### Repository hygiene
+### Repository hygiene (ignore-first)
 
 ```bash
-offsend show
-offsend prepare --dry-run
-offsend prepare
-offsend init --template node
-offsend check --staged
-offsend hook install
+offsend doctor
+offsend init --template node          # .offsend.yml + baseline check
+offsend protect                       # hide required paths from AI
+offsend show                          # verify AI boundary OK
+offsend hook install                  # prompt/read/shell + git pre-commit
 ```
 
 ### AI-editor protection
 
 ```bash
+offsend protect                       # or: prepare + ignore …
 offsend show
-offsend prepare
-offsend ignore .env secrets/ '*.pem'   # harden ignore rules first
-offsend hook install                   # git + prompt/read/shell gates for detected editors
+offsend hook install
 offsend hook status --target all
 offsend doctor
 ```
@@ -583,7 +610,13 @@ offsend doctor
     fail-on: block
 ```
 
-Or: `offsend check --staged --fail-on block`.
+Or install the CLI and run:
+
+```bash
+offsend check --staged --policy --fail-on block
+```
+
+`--policy` also fails when AI ignore rules regress (exposed sensitive paths / missing ignore files).
 
 ---
 

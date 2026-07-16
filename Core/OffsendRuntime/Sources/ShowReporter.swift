@@ -29,7 +29,9 @@ public struct ShowReporter: Sendable {
         }
 
         if !report.hasExposure {
-            lines.append("No sensitive files are exposed to AI tools.")
+            lines.append("AI boundary OK — no sensitive files are exposed to AI tools.")
+            lines.append(palette.dim("Next (optional): offsend hook install   # prompt/read/shell gates + git pre-commit"))
+            lines.append(palette.dim("CI tip: offsend check --staged --policy --fail-on block"))
             return lines.joined(separator: "\n")
         }
 

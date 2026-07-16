@@ -14,6 +14,7 @@ struct OffsendCLI: AsyncParsableCommand {
             Show.self,
             Report.self,
             Prepare.self,
+            Protect.self,
             Ignore.self,
             Seal.self,
             Unseal.self,

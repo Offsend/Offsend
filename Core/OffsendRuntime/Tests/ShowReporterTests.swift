@@ -72,7 +72,10 @@ final class ShowReporterTests: XCTestCase {
 
         let output = ShowReporter().render(report, format: .text)
 
-        XCTAssertEqual(output, "No sensitive files are exposed to AI tools.")
+        XCTAssertTrue(output.contains("AI boundary OK"))
+        XCTAssertTrue(output.contains("no sensitive files are exposed"))
+        XCTAssertTrue(output.contains("offsend hook install"))
+        XCTAssertTrue(output.contains("check --staged --policy"))
     }
 
     func testIncompleteScanErrorIsShownAlongsideExposure() {

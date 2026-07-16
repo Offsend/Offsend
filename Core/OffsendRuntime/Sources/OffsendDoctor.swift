@@ -1,5 +1,6 @@
 import Foundation
 import StorageCore
+import WorkspacePolicyCore
 
 public enum DoctorCheckStatus: String, Sendable, Equatable {
     case ok
@@ -327,7 +328,84 @@ public struct OffsendDoctor: Sendable {
             )
         }
 
+        checks.append(
+            nextActionsCheck(
+                cwd: cwd,
+                configLoader: configLoader,
+                installer: installer,
+                context: context
+            )
+        )
+
         return DoctorReport(checks: checks)
+    }
+
+    /// Ranked setup hints: project config → AI boundary → shell-gate → git hook.
+    private func nextActionsCheck(
+        cwd: URL,
+        configLoader: ProjectConfigLoader,
+        installer: AIEditorHookInstaller,
+        context: OffsendRuntimeContext?
+    ) -> DoctorCheck {
+        var actions: [String] = []
+
+        if configLoader.configURL(for: cwd) == nil {
+            actions.append("offsend init --template <stack>   # create .offsend.yml")
+        }
+
+        if let context {
+            let show = OffsendShowService(context: context).run(directoryURL: cwd)
+            let requiredPaths = Set(
+                show.groups
+                    .filter { $0.severity == AIWorkspacePrivacyRuleSeverity.required.rawValue }
+                    .flatMap(\.relativePaths)
+            )
+            if !requiredPaths.isEmpty {
+                actions.append(
+                    "offsend protect   # hide \(requiredPaths.count) required path(s) from AI, then offsend show"
+                )
+            }
+        }
+
+        let gateTargets: [AIEditorHookTarget] = [.cursor, .claude]
+        let installedWithoutShell = gateTargets.filter { target in
+            let status = installer.status(target: target, repositoryPath: cwd)
+            return status.installed && !status.shellGate
+        }
+        if !installedWithoutShell.isEmpty {
+            actions.append(
+                "offsend hook install --target \(installedWithoutShell[0].rawValue)   # add shell-gate (on by default)"
+            )
+        } else {
+            let anyAI = AIEditorHookTarget.allCases.contains {
+                installer.status(target: $0, repositoryPath: cwd).installed
+            }
+            if !anyAI {
+                actions.append("offsend hook install   # prompt/read/shell gates + git pre-commit")
+            }
+        }
+
+        let gitInstalled = (try? HookManager(fileManager: fileManager).isInstalled(repositoryPath: cwd)) ?? false
+        if !gitInstalled, !actions.contains(where: { $0.contains("hook install") }) {
+            actions.append("offsend hook install --target git   # pre-commit check --staged")
+        }
+
+        if actions.isEmpty {
+            return DoctorCheck(
+                name: "next-actions",
+                status: .ok,
+                message: "No urgent setup steps. Optional: offsend check --staged --policy"
+            )
+        }
+
+        let numbered = actions.enumerated().map { index, action in
+            "\(index + 1). \(action)"
+        }
+        return DoctorCheck(
+            name: "next-actions",
+            status: .warn,
+            message: numbered.joined(separator: " ")
+        )
     }
 
     private func projectConfigCheck(loader: ProjectConfigLoader, directory: URL) -> DoctorCheck {

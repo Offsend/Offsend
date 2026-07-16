@@ -2,7 +2,13 @@ import ArgumentParser
 import Foundation
 import OffsendRuntime
 
-struct Init: ParsableCommand {
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
+
+struct Init: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "init",
         abstract: "Create a starter \(ProjectConfigLoader.filename) configuration file."
@@ -18,7 +24,7 @@ struct Init: ParsableCommand {
         Exclude preset to expand into check.exclude. Repeatable, or comma-separated \
         (e.g. --template node --template swift, or --template js,python). \
         Case-insensitive; aliases: js/ts→node, ios→swift. Always includes 'common'. \
-        Use --list-templates to print all presets.
+        When omitted in a TTY, you will be prompted. Use --list-templates to print all presets.
         """
     )
     var template: [String] = []
@@ -35,7 +41,13 @@ struct Init: ParsableCommand {
     @Flag(name: .long, help: "Print available exclude templates and exit.")
     var listTemplates = false
 
-    mutating func run() throws {
+    @Flag(
+        name: .customLong("no-check"),
+        help: "Skip the baseline content scan after writing \(ProjectConfigLoader.filename)."
+    )
+    var noCheck = false
+
+    mutating func run() async throws {
         if listTemplates {
             print(ProjectConfigTemplates.listTemplatesText())
             return
@@ -47,13 +59,9 @@ struct Init: ParsableCommand {
 
         let configURL = Self.configURL(forDirectory: path)
         let exists = FileManager.default.fileExists(atPath: configURL.path)
+        let directoryURL = configURL.deletingLastPathComponent()
 
-        let templates: [ProjectConfigTemplateID]
-        do {
-            templates = try ProjectConfigTemplates.resolve(rawValues: template)
-        } catch {
-            CLIError.exit(.error, message: error.localizedDescription)
-        }
+        let templates = resolveTemplatesOrExit()
 
         let labels = templates.map(\.rawValue).joined(separator: ", ")
         let templatePatterns = ProjectConfigTemplates.excludePatterns(for: templates)
@@ -91,7 +99,7 @@ struct Init: ParsableCommand {
             } else {
                 print("Updated \(configURL.path) — added \(merged.added.count) exclude pattern(s) (templates: \(labels))")
             }
-            printNextSteps()
+            try await finishInit(directoryURL: directoryURL)
             return
         }
 
@@ -111,12 +119,133 @@ struct Init: ParsableCommand {
         }
 
         print("Created \(configURL.path) (templates: \(labels))")
+        try await finishInit(directoryURL: directoryURL)
+    }
+
+    private func finishInit(directoryURL: URL) async throws {
+        if !noCheck {
+            await runBaselineCheck(directoryURL: directoryURL)
+        }
         printNextSteps()
+    }
+
+    private func resolveTemplatesOrExit() -> [ProjectConfigTemplateID] {
+        if !template.isEmpty {
+            do {
+                return try ProjectConfigTemplates.resolve(rawValues: template)
+            } catch {
+                CLIError.exit(.error, message: error.localizedDescription)
+            }
+        }
+
+        if Self.isInteractiveTTY {
+            do {
+                let prompted = try Self.promptForTemplates()
+                return try ProjectConfigTemplates.resolve(rawValues: prompted)
+            } catch {
+                CLIError.exit(.error, message: error.localizedDescription)
+            }
+        }
+
+        CLIError.exit(
+            .error,
+            message: "Pass --template <name> (e.g. --template node or --template common). In a TTY, omit --template to be prompted. See --list-templates."
+        )
+    }
+
+    /// Ask for stack template(s). Empty Enter → common only. Retries on invalid input.
+    private static func promptForTemplates(maxAttempts: Int = 3) throws -> [String] {
+        let choices = ProjectConfigTemplateID.allCases.filter { $0 != .common }
+        fputs("Available stack templates (`common` is always included):\n", stderr)
+        for id in choices {
+            fputs("  \(id.rawValue)  — \(id.summary)\n", stderr)
+        }
+        fputs(
+            "Stack template(s)? [comma-separated, or Enter for common only]: ",
+            stderr
+        )
+
+        for attempt in 1...maxAttempts {
+            let line = readLine() ?? ""
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                return []
+            }
+            do {
+                _ = try ProjectConfigTemplates.resolve(rawValues: [trimmed])
+                return [trimmed]
+            } catch {
+                fputs("Invalid template: \(error.localizedDescription)\n", stderr)
+                if attempt < maxAttempts {
+                    fputs("Try again: ", stderr)
+                }
+            }
+        }
+        CLIError.exit(
+            .error,
+            message: "Could not parse templates. Pass --template explicitly (see --list-templates)."
+        )
+    }
+
+    private static var isInteractiveTTY: Bool {
+        isatty(STDIN_FILENO) != 0 && isatty(STDERR_FILENO) != 0
+    }
+
+    private func runBaselineCheck(directoryURL: URL) async {
+        let context: OffsendRuntimeContext
+        do {
+            context = try OffsendRuntimeContext.load()
+        } catch {
+            fputs("warning: baseline check skipped (settings): \(error.localizedDescription)\n", stderr)
+            return
+        }
+
+        let projectConfig = (try? ProjectConfigLoader().load(from: directoryURL)) ?? nil
+        let resolved = OptionsResolver.resolveCheckOptions(
+            overrides: CLICheckOverrides(
+                policySpecified: false,
+                policyValue: false,
+                failOn: CheckFailPolicy.none.rawValue
+            ),
+            projectConfig: projectConfig,
+            staged: false
+        )
+
+        let files = OffsendInitBaseline.collectFiles(
+            in: directoryURL,
+            excludePatterns: resolved.excludePatterns
+        )
+        guard !files.isEmpty else {
+            print("Baseline check: no files to scan.")
+            return
+        }
+
+        let service = OffsendCheckService(context: context)
+        let request = OffsendCheckRequest(
+            fileURLs: files,
+            policyDirectoryURL: nil,
+            failPolicy: .none,
+            workingDirectory: directoryURL,
+            excludePatterns: resolved.excludePatterns,
+            disabledDetectors: resolved.disabledDetectors,
+            customDictionaries: resolved.customDictionaries
+        )
+
+        let report = await CLISpinner(message: "Baseline check...").runWhile {
+            await service.run(request)
+        }
+
+        let text = OffsendInitBaseline.renderRemediation(report: report)
+        if !text.isEmpty {
+            print("")
+            print(text)
+            print("")
+        }
     }
 
     private func printNextSteps() {
         print("Commit \(ProjectConfigLoader.filename) so hooks and CI share the same rules.")
-        print("Next: offsend check . --quiet")
+        print("Next: offsend protect && offsend show && offsend hook install")
     }
 
     /// Resolves the config path at the git repository root, falling back to the

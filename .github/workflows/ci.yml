@@ -22,6 +22,8 @@ jobs:
       - uses: Offsend/ai-hygiene@v1
         with:
           fail-on: block
+      # Also recommended locally / in custom CI:
+      #   offsend check --staged --policy --fail-on block
       - name: Install Tuist
         uses: jdx/mise-action@v2
         with:

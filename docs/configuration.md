@@ -5,16 +5,19 @@ Offsend looks for a project config file named `.offsend.yml` at the repository r
 Create a starter file:
 
 ```bash
-offsend init
+offsend init                      # TTY prompts for template; then baseline check
 offsend init --template node
 offsend init --template js,swift
 offsend init --template python --merge-exclude
 offsend init --list-templates
+offsend init --template node --no-check
 # or copy the example:
 cp .offsend.yml.example .offsend.yml
 ```
 
-`offsend init` expands exclude presets into a concrete `check.exclude` list (no `preset` field in the YAML). The `common` preset is always included. Template names are case-insensitive; aliases: `js`/`ts` → `node`, `ios` → `swift`. Use `--merge-exclude` to add patterns to an existing file without overwriting the rest.
+`offsend init` expands exclude presets into a concrete `check.exclude` list (no `preset` field in the YAML). The `common` preset is always included. Template names are case-insensitive; aliases: `js`/`ts` → `node`, `ios` → `swift`. Without `--template`, a TTY prompts for the stack; non-TTY requires `--template` explicitly. After writing the file, init runs a baseline `check .` unless `--no-check` is set. Use `--merge-exclude` to add patterns to an existing file without overwriting the rest.
+
+Recommended follow-up: `offsend protect && offsend show && offsend hook install`.
 
 CLI flags override config values when provided explicitly. For example, `offsend check --policy` enables policy checks even if `check.policy` is `false`.
 
