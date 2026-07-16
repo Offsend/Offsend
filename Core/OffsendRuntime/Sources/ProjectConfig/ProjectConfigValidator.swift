@@ -11,7 +11,7 @@ public enum ProjectConfigValidator {
         }
 
         var issues: [String] = []
-        issues.append(contentsOf: unknownKeys(in: root, allowed: ["version", "check", "hooks"], path: "root"))
+        issues.append(contentsOf: unknownKeys(in: root, allowed: ["version", "check", "hooks", "context"], path: "root"))
 
         if let check = root["check"] as? [String: Any] {
             issues.append(
@@ -47,6 +47,43 @@ public enum ProjectConfigValidator {
             )
         }
 
+        if let context = root["context"] as? [String: Any] {
+            issues.append(
+                contentsOf: unknownKeys(
+                    in: context,
+                    allowed: ["mcp", "subagents", "history"],
+                    path: "context"
+                )
+            )
+            if let mcp = context["mcp"] as? [String: Any] {
+                issues.append(
+                    contentsOf: unknownKeys(
+                        in: mcp,
+                        allowed: ["mode", "allow", "deny", "high_risk"],
+                        path: "context.mcp"
+                    )
+                )
+            }
+            if let subagents = context["subagents"] as? [String: Any] {
+                issues.append(
+                    contentsOf: unknownKeys(
+                        in: subagents,
+                        allowed: ["mode", "scan_task"],
+                        path: "context.subagents"
+                    )
+                )
+            }
+            if let history = context["history"] as? [String: Any] {
+                issues.append(
+                    contentsOf: unknownKeys(
+                        in: history,
+                        allowed: ["audit", "scrub_on_protect"],
+                        path: "context.history"
+                    )
+                )
+            }
+        }
+
         return issues
     }
 
@@ -76,6 +113,20 @@ public enum ProjectConfigValidator {
             .filter { CustomDictionaryKind(rawValue: $0) == nil }
         if !unknownKinds.isEmpty {
             issues.append("Unknown dictionary kind(s) in check.dictionaries: \(unknownKinds.joined(separator: ", ")).")
+        }
+
+        if let mcpMode = config.context?.mcp?.mode,
+           OffsendContextEnforcementMode(rawValue: mcpMode) == nil {
+            issues.append(
+                "context.mcp.mode '\(mcpMode)' is invalid (use \(validValues(OffsendContextEnforcementMode.self)))."
+            )
+        }
+
+        if let subagentMode = config.context?.subagents?.mode,
+           OffsendContextEnforcementMode(rawValue: subagentMode) == nil {
+            issues.append(
+                "context.subagents.mode '\(subagentMode)' is invalid (use \(validValues(OffsendContextEnforcementMode.self)))."
+            )
         }
 
         return issues

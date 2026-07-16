@@ -71,3 +71,18 @@ hooks:
   type: pre-commit
   fail_on: block
   policy: false
+
+# Optional AI-context controls used by `show`, `doctor`, and the editor gates
+# (`offsend hook install`). See docs/configuration.md#contextmcp.
+# context:
+#   mcp:
+#     mode: ask               # observe | ask | deny (deny also fails closed on bad hook input)
+#     allow: [github]         # non-empty allow = allowlist mode
+#     deny: [postgres]        # or ["*"] for allowlist-only
+#     high_risk: [filesystem, postgres]
+#   subagents:
+#     mode: deny              # observe | deny (ask is treated as deny on Cursor subagentStart)
+#     scan_task: true         # secret-scan the subagent task prompt
+#   history:
+#     audit: true             # `offsend show` includes the agent-history section
+#     scrub_on_protect: false # `offsend protect` also runs history scrub

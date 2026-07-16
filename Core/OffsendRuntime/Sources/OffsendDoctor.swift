@@ -161,6 +161,18 @@ public struct OffsendDoctor: Sendable {
                             )
                         }
                     }
+                    if AIEditorHookInstaller.configTextReferences(
+                        contents,
+                        relativePath: AIEditorHookInstaller.mcpWrapperRelativePath
+                    ) {
+                        let mcpURL = cwd.appendingPathComponent(AIEditorHookInstaller.mcpWrapperRelativePath)
+                        let mcpIssue = installer.validateWrapper(at: mcpURL)
+                        if mcpIssue != .ok {
+                            details.append(
+                                AIEditorHookInstaller.wrapperValidationMessage(mcpIssue, path: mcpURL.path)
+                            )
+                        }
+                    }
                 }
                 if details.isEmpty {
                     details.append("wrapper missing or not executable")
@@ -261,6 +273,31 @@ public struct OffsendDoctor: Sendable {
                 }
             }
 
+            let mcpURL = cwd.appendingPathComponent(AIEditorHookInstaller.mcpWrapperRelativePath)
+            if fileManager.fileExists(atPath: mcpURL.path) {
+                let mcpValidation = installer.validateWrapper(at: mcpURL)
+                if mcpValidation != .ok {
+                    checks.append(
+                        DoctorCheck(
+                            name: "ai-wrapper-mcp",
+                            status: .warn,
+                            message: AIEditorHookInstaller.wrapperValidationMessage(
+                                mcpValidation,
+                                path: mcpURL.path
+                            )
+                        )
+                    )
+                } else {
+                    checks.append(
+                        DoctorCheck(
+                            name: "ai-wrapper-mcp",
+                            status: .ok,
+                            message: "\(mcpURL.path) (v\(AIEditorHookInstaller.managedVersion))"
+                        )
+                    )
+                }
+            }
+
             // Shell-gate is on by default for Cursor/Claude; warn when an install omits it.
             let missingShellGate = AIEditorHookTarget.allCases.filter { target in
                 guard AIEditorHookInstaller.supportsFileGates(target) else { return false }
@@ -274,6 +311,113 @@ public struct OffsendDoctor: Sendable {
                         name: "ai-shell-gate",
                         status: .warn,
                         message: "Shell gate not installed for \(names). Agents can still read sensitive files via shell (cat/grep/sed). Re-run: offsend hook install --target cursor|claude (shell-gate is on by default; use --no-shell-gate to opt out)"
+                    )
+                )
+            }
+
+            let missingMCPGate = AIEditorHookTarget.allCases.filter { target in
+                guard AIEditorHookInstaller.supportsFileGates(target) else { return false }
+                let status = installer.status(target: target, repositoryPath: cwd)
+                return status.installed && !status.mcpGate
+            }
+            if !missingMCPGate.isEmpty {
+                let names = missingMCPGate.map(\.rawValue).joined(separator: ", ")
+                checks.append(
+                    DoctorCheck(
+                        name: "ai-mcp-gate",
+                        status: .warn,
+                        message: "MCP gate not installed for \(names). Tool payloads can bypass file/shell gates. Re-run: offsend hook install --target cursor|claude (mcp-gate is on by default; use --no-mcp-gate to opt out)"
+                    )
+                )
+            }
+
+            let missingSubagentGate = AIEditorHookTarget.allCases.filter { target in
+                guard AIEditorHookInstaller.supportsSubagentGate(target) else { return false }
+                let status = installer.status(target: target, repositoryPath: cwd)
+                return status.installed && !status.subagentGate
+            }
+            if !missingSubagentGate.isEmpty {
+                checks.append(
+                    DoctorCheck(
+                        name: "ai-subagent-gate",
+                        status: .warn,
+                        message: "Subagent gate not installed for cursor. Task prompts to subagents are unchecked. Re-run: offsend hook install --target cursor (subagent-gate is on by default; use --no-subagent-gate to opt out)"
+                    )
+                )
+            }
+
+            let subagentURL = cwd.appendingPathComponent(AIEditorHookInstaller.subagentWrapperRelativePath)
+            if fileManager.fileExists(atPath: subagentURL.path) {
+                let subagentValidation = installer.validateWrapper(at: subagentURL)
+                if subagentValidation != .ok {
+                    checks.append(
+                        DoctorCheck(
+                            name: "ai-wrapper-subagent",
+                            status: .warn,
+                            message: AIEditorHookInstaller.wrapperValidationMessage(
+                                subagentValidation,
+                                path: subagentURL.path
+                            )
+                        )
+                    )
+                } else {
+                    checks.append(
+                        DoctorCheck(
+                            name: "ai-wrapper-subagent",
+                            status: .ok,
+                            message: "\(subagentURL.path) (v\(AIEditorHookInstaller.managedVersion))"
+                        )
+                    )
+                }
+            }
+        }
+
+        let home = ProcessInfo.processInfo.environment["HOME"]
+            .flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
+            ?? fileManager.homeDirectoryForCurrentUser
+        let projectConfig = try? configLoader.load(from: cwd)
+        let mcpInventory = OffsendMCPInventory(fileManager: fileManager).collect(
+            projectRoot: cwd,
+            homeDirectory: home,
+            mcpConfig: projectConfig?.context?.mcp
+        )
+        if mcpInventory.servers.isEmpty {
+            checks.append(
+                DoctorCheck(
+                    name: "mcp-inventory",
+                    status: .ok,
+                    message: "No MCP servers configured in project/user Cursor/Claude configs"
+                )
+            )
+        } else {
+            let risk = mcpInventory.servers.filter(\.highRisk).count
+            var message = "\(mcpInventory.servers.count) MCP server(s)"
+            if risk > 0 { message += ", \(risk) high-risk" }
+            if mcpInventory.policyMode == nil {
+                message += "; context.mcp policy unset — add context.mcp to .offsend.yml"
+                checks.append(DoctorCheck(name: "mcp-inventory", status: .warn, message: message))
+            } else {
+                message += "; policy: \(mcpInventory.policyMode ?? "observe")"
+                checks.append(DoctorCheck(name: "mcp-inventory", status: .ok, message: message))
+            }
+        }
+
+        if let context {
+            let history = OffsendShowService(context: context).run(directoryURL: cwd).history
+            if history.filesScanned > 0 {
+                checks.append(
+                    DoctorCheck(
+                        name: "agent-history",
+                        status: .warn,
+                        message: "\(history.filesScanned) local agent transcript file(s) found. Run: offsend history audit"
+                    )
+                )
+            } else {
+                checks.append(
+                    DoctorCheck(
+                        name: "agent-history",
+                        status: .ok,
+                        message: "No project-scoped Cursor agent transcripts found"
                     )
                 )
             }
@@ -340,7 +484,7 @@ public struct OffsendDoctor: Sendable {
         return DoctorReport(checks: checks)
     }
 
-    /// Ranked setup hints: project config → AI boundary → shell-gate → git hook.
+    /// Ranked setup hints: project config → AI boundary → shell/MCP gates → git hook.
     private func nextActionsCheck(
         cwd: URL,
         configLoader: ProjectConfigLoader,
@@ -353,8 +497,8 @@ public struct OffsendDoctor: Sendable {
             actions.append("offsend init --template <stack>   # create .offsend.yml")
         }
 
-        if let context {
-            let show = OffsendShowService(context: context).run(directoryURL: cwd)
+        let showReport = context.map { OffsendShowService(context: $0).run(directoryURL: cwd) }
+        if let show = showReport {
             let requiredPaths = Set(
                 show.groups
                     .filter { $0.severity == AIWorkspacePrivacyRuleSeverity.required.rawValue }
@@ -372,17 +516,36 @@ public struct OffsendDoctor: Sendable {
             let status = installer.status(target: target, repositoryPath: cwd)
             return status.installed && !status.shellGate
         }
+        let installedWithoutMCP = gateTargets.filter { target in
+            let status = installer.status(target: target, repositoryPath: cwd)
+            return status.installed && !status.mcpGate
+        }
         if !installedWithoutShell.isEmpty {
             actions.append(
                 "offsend hook install --target \(installedWithoutShell[0].rawValue)   # add shell-gate (on by default)"
             )
+        } else if !installedWithoutMCP.isEmpty {
+            actions.append(
+                "offsend hook install --target \(installedWithoutMCP[0].rawValue)   # add mcp-gate (on by default)"
+            )
         } else {
-            let anyAI = AIEditorHookTarget.allCases.contains {
-                installer.status(target: $0, repositoryPath: cwd).installed
+            let cursorStatus = installer.status(target: .cursor, repositoryPath: cwd)
+            if cursorStatus.installed, !cursorStatus.subagentGate {
+                actions.append(
+                    "offsend hook install --target cursor   # add subagent-gate (on by default)"
+                )
+            } else {
+                let anyAI = AIEditorHookTarget.allCases.contains {
+                    installer.status(target: $0, repositoryPath: cwd).installed
+                }
+                if !anyAI {
+                    actions.append("offsend hook install   # prompt/read/shell/MCP/subagent gates + git pre-commit")
+                }
             }
-            if !anyAI {
-                actions.append("offsend hook install   # prompt/read/shell gates + git pre-commit")
-            }
+        }
+
+        if let history = showReport?.history, history.filesScanned > 0 {
+            actions.append("offsend history audit   # scan \(history.filesScanned) local agent transcript(s)")
         }
 
         let gitInstalled = (try? HookManager(fileManager: fileManager).isInstalled(repositoryPath: cwd)) ?? false

@@ -30,7 +30,9 @@ public struct ShowReporter: Sendable {
 
         if !report.hasExposure {
             lines.append("AI boundary OK — no sensitive files are exposed to AI tools.")
-            lines.append(palette.dim("Next (optional): offsend hook install   # prompt/read/shell gates + git pre-commit"))
+            lines.append(contentsOf: renderMCPLines(report.mcp, palette: palette))
+            lines.append(contentsOf: renderHistoryLines(report.history, palette: palette))
+            lines.append(palette.dim("Next (optional): offsend hook install   # prompt/read/shell/MCP/subagent gates + git pre-commit"))
             lines.append(palette.dim("CI tip: offsend check --staged --policy --fail-on block"))
             return lines.joined(separator: "\n")
         }
@@ -60,7 +62,71 @@ public struct ShowReporter: Sendable {
             }
         }
 
+        lines.append(contentsOf: renderMCPLines(report.mcp, palette: palette))
+        lines.append(contentsOf: renderHistoryLines(report.history, palette: palette))
         return lines.joined(separator: "\n")
+    }
+
+    private func renderHistoryLines(_ history: ShowHistorySection, palette: CLIPalette) -> [String] {
+        if history.skipped {
+            return []
+        }
+        guard history.filesScanned > 0 || history.hasFindings else { return [] }
+        var lines: [String] = ["", "Agent history"]
+        lines.append("  \(history.filesScanned) local transcript file(s)")
+        if history.hasFindings {
+            lines.append("  \(history.filesWithFindings) with secret-shaped findings")
+            if !history.secretTypes.isEmpty {
+                lines.append(palette.dim("  types: \(history.secretTypes.joined(separator: ", "))"))
+            }
+            lines.append(palette.dim("  → offsend history scrub --apply"))
+        } else if let message = history.message {
+            lines.append(palette.dim("  → \(message)"))
+        }
+        return lines
+    }
+
+    private func renderMCPLines(_ mcp: ShowMCPSection, palette: CLIPalette) -> [String] {
+        guard !mcp.isEmpty else { return [] }
+        var lines: [String] = ["", "MCP"]
+        let riskCount = mcp.servers.filter(\.highRisk).count
+        var summary = "\(mcp.servers.count) server\(mcp.servers.count == 1 ? "" : "s")"
+        if riskCount > 0 {
+            summary += " (\(riskCount) high-risk)"
+        }
+        if let mode = mcp.policyMode, !mode.isEmpty {
+            summary += "; policy: \(mode)"
+        } else {
+            summary += "; policy: unset"
+        }
+        if mcp.hasAllowlist || mcp.hasDenylist {
+            var bits: [String] = []
+            if mcp.hasAllowlist { bits.append("allowlist") }
+            if mcp.hasDenylist { bits.append("denylist") }
+            summary += " (\(bits.joined(separator: "+")))"
+        }
+        if mcp.gateTargets.isEmpty {
+            summary += "; gate: missing"
+        } else {
+            summary += "; gate: \(mcp.gateTargets.joined(separator: ", "))"
+        }
+        lines.append("  \(summary)")
+        for server in mcp.servers.prefix(20) {
+            let risk = server.highRisk ? " !" : ""
+            let detail = server.detail.isEmpty ? "" : " — \(server.detail)"
+            lines.append("  - \(server.name) [\(server.source)]\(risk)\(detail)")
+        }
+        let overflow = mcp.servers.count - 20
+        if overflow > 0 {
+            lines.append(palette.dim("  … and \(overflow) more (use --format json for the full list)"))
+        }
+        if mcp.gateTargets.isEmpty {
+            lines.append(palette.dim("  → offsend hook install   # add MCP gate (on by default)"))
+        }
+        if mcp.policyMode == nil {
+            lines.append(palette.dim("  → set context.mcp in .offsend.yml to observe|ask|deny"))
+        }
+        return lines
     }
 
     private func renderJSON(_ report: ShowReport) -> String {
@@ -71,12 +137,34 @@ public struct ShowReporter: Sendable {
             let remediation: String
             let relativePaths: [String]
         }
+        struct MCPServerPayload: Encodable {
+            let name: String
+            let source: String
+            let detail: String
+            let highRisk: Bool
+        }
+        struct MCPPayload: Encodable {
+            let servers: [MCPServerPayload]
+            let policyMode: String?
+            let hasAllowlist: Bool
+            let hasDenylist: Bool
+            let gateTargets: [String]
+        }
+        struct HistoryPayload: Encodable {
+            let filesScanned: Int
+            let filesWithFindings: Int
+            let secretTypes: [String]
+            let skipped: Bool
+            let message: String?
+        }
         struct Payload: Encodable {
             let directory: String
             let totalExposedCount: Int
             let scanIncomplete: Bool
             let groups: [GroupPayload]
             let errors: [String]
+            let mcp: MCPPayload
+            let history: HistoryPayload
         }
 
         let payload = Payload(
@@ -92,7 +180,28 @@ public struct ShowReporter: Sendable {
                     relativePaths: $0.relativePaths
                 )
             },
-            errors: report.errors
+            errors: report.errors,
+            mcp: MCPPayload(
+                servers: report.mcp.servers.map {
+                    MCPServerPayload(
+                        name: $0.name,
+                        source: $0.source,
+                        detail: $0.detail,
+                        highRisk: $0.highRisk
+                    )
+                },
+                policyMode: report.mcp.policyMode,
+                hasAllowlist: report.mcp.hasAllowlist,
+                hasDenylist: report.mcp.hasDenylist,
+                gateTargets: report.mcp.gateTargets
+            ),
+            history: HistoryPayload(
+                filesScanned: report.history.filesScanned,
+                filesWithFindings: report.history.filesWithFindings,
+                secretTypes: report.history.secretTypes,
+                skipped: report.history.skipped,
+                message: report.history.message
+            )
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

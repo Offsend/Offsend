@@ -81,6 +81,18 @@ struct Check: AsyncParsableCommand {
     )
     var shellGate = false
 
+    @Flag(
+        name: .long,
+        help: "MCP tool-call gate for editor hooks: server policy + path/secret scan in args (requires --adapter cursor|claude)."
+    )
+    var mcpGate = false
+
+    @Flag(
+        name: .long,
+        help: "Subagent spawn gate: secret-scan the task prompt (requires --adapter cursor)."
+    )
+    var subagentGate = false
+
     @Option(name: .long, help: "Path to a seal key file (for --seal-copy / --hook-policy block).")
     var keyFile: String?
 
@@ -173,6 +185,58 @@ struct Check: AsyncParsableCommand {
             return
         }
 
+        if mcpGate, let adapter {
+            let (context, projectConfig) = loadStdinRuntime(adapter: adapter, started: started)
+            guard let context else { return }
+            let resolved = OptionsResolver.resolveCheckOptions(
+                overrides: CLICheckOverrides(
+                    policySpecified: false,
+                    policyValue: false,
+                    failOn: CLIParse.failPolicy(failOn)
+                ),
+                projectConfig: projectConfig,
+                staged: false
+            )
+            await hookEmitter().emitMCPGate(
+                adapter: adapter,
+                rawJSON: rawText,
+                started: started,
+                policy: resolvedHookPolicy(for: adapter),
+                context: context,
+                mcpConfig: projectConfig?.context?.mcp,
+                disabledDetectors: resolved.disabledDetectors,
+                customDictionaries: resolved.customDictionaries,
+                secretsOnly: secretsOnly
+            )
+            return
+        }
+
+        if subagentGate, let adapter {
+            let (context, projectConfig) = loadStdinRuntime(adapter: adapter, started: started)
+            guard let context else { return }
+            let resolved = OptionsResolver.resolveCheckOptions(
+                overrides: CLICheckOverrides(
+                    policySpecified: false,
+                    policyValue: false,
+                    failOn: CLIParse.failPolicy(failOn)
+                ),
+                projectConfig: projectConfig,
+                staged: false
+            )
+            await hookEmitter().emitSubagentGate(
+                adapter: adapter,
+                rawJSON: rawText,
+                started: started,
+                policy: resolvedHookPolicy(for: adapter),
+                context: context,
+                subagentsConfig: projectConfig?.context?.subagents,
+                disabledDetectors: resolved.disabledDetectors,
+                customDictionaries: resolved.customDictionaries,
+                secretsOnly: secretsOnly
+            )
+            return
+        }
+
         let promptPayload = parsePromptPayload(rawText: rawText, adapter: adapter, started: started)
         if promptPayload == nil, adapter != nil {
             return
@@ -257,12 +321,30 @@ struct Check: AsyncParsableCommand {
         if shellGate, let adapter, adapter != .cursor, adapter != .claude {
             CLIError.exit(.error, message: "--shell-gate supports --adapter cursor or claude.")
         }
-        if shellGate, readGate {
-            CLIError.exit(.error, message: "--shell-gate cannot be combined with --read-gate.")
+        if mcpGate, adapter == nil {
+            CLIError.exit(.error, message: "--mcp-gate requires --adapter.")
+        }
+        if mcpGate, let adapter, adapter != .cursor, adapter != .claude {
+            CLIError.exit(.error, message: "--mcp-gate supports --adapter cursor or claude.")
+        }
+        if subagentGate, adapter == nil {
+            CLIError.exit(.error, message: "--subagent-gate requires --adapter.")
+        }
+        if subagentGate, let adapter, adapter != .cursor {
+            CLIError.exit(.error, message: "--subagent-gate supports --adapter cursor only.")
+        }
+        let gateFlags = [readGate, shellGate, mcpGate, subagentGate].filter { $0 }.count
+        if gateFlags > 1 {
+            CLIError.exit(
+                .error,
+                message: "--read-gate, --shell-gate, --mcp-gate, and --subagent-gate are mutually exclusive."
+            )
         }
     }
 
     private var hookKind: CheckHookResponseRenderer.Kind {
+        if subagentGate { return .subagentGate }
+        if mcpGate { return .mcpGate }
         if shellGate { return .shellGate }
         if readGate { return .readGate }
         return .promptSubmit
@@ -446,10 +528,10 @@ struct Check: AsyncParsableCommand {
         let outputFormat = CLIParse.outputFormat(format)
         let validatedFailOn = CLIParse.failPolicy(failOn)
 
-        if adapter != nil || hookPolicy != nil || sealCopy || debugHook || gateSecrets || readGate || shellGate {
+        if adapter != nil || hookPolicy != nil || sealCopy || debugHook || gateSecrets || readGate || shellGate || mcpGate || subagentGate {
             CLIError.exit(
                 .error,
-                message: "--adapter/--hook-policy/--seal-copy/--debug-hook/--gate-secrets/--read-gate/--shell-gate require stdin."
+                message: "--adapter/--hook-policy/--seal-copy/--debug-hook/--gate-secrets/--read-gate/--shell-gate/--mcp-gate/--subagent-gate require stdin."
             )
         }
 

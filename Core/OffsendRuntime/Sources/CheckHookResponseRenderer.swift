@@ -10,6 +10,10 @@ public enum CheckHookResponseRenderer {
         /// Cursor `beforeShellExecution` / Claude `PreToolUse` (Bash).
         /// Same permission-shaped fail-open as the read gate.
         case shellGate
+        /// Cursor `beforeMCPExecution` / Claude `PreToolUse` (MCP tools).
+        case mcpGate
+        /// Cursor `subagentStart`.
+        case subagentGate
     }
 
     /// Allow through after an infrastructure error. `reason` is a short public code.
@@ -33,7 +37,7 @@ public enum CheckHookResponseRenderer {
             case .windsurf:
                 return CheckHookAdapterOutput(stdout: "", stderr: stderr, exitCode: 0)
             }
-        case .readGate, .shellGate:
+        case .readGate, .shellGate, .mcpGate, .subagentGate:
             switch adapter {
             case .cursor:
                 return CheckHookAdapterOutput(

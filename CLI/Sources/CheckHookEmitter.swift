@@ -128,6 +128,160 @@ struct CheckHookEmitter {
         )
     }
 
+    func emitSubagentGate(
+        adapter: CheckHookAdapter,
+        rawJSON: String,
+        started: Date,
+        policy: CheckHookPolicy,
+        context: OffsendRuntimeContext,
+        subagentsConfig: OffsendProjectSubagentsConfig?,
+        disabledDetectors: Set<SensitiveEntityType> = [],
+        customDictionaries: [CustomDictionaryItem] = [],
+        secretsOnly: Bool = true
+    ) async {
+        let call: PromptSubagentGateCall
+        do {
+            call = try PromptSubagentGate.parse(json: rawJSON, adapter: adapter)
+        } catch {
+            // Explicit `context.subagents.mode: deny` means the user asked to block; fail closed there.
+            if OffsendContextEnforcementMode(rawValue: subagentsConfig?.mode ?? "") == .deny {
+                let decision = PromptSubagentGateDecision(
+                    call: PromptSubagentGateCall(task: ""),
+                    permission: .deny,
+                    reason: "Offsend: unrecognized subagent hook input denied (context.subagents.mode: deny).",
+                    code: "invalid_input"
+                )
+                let rendered = PromptSubagentGateRenderer.render(decision: decision, adapter: adapter)
+                writeHookOutput(rendered)
+                logDebug(
+                    adapter: adapter,
+                    policy: policy,
+                    advice: nil,
+                    exitCode: rendered.exitCode,
+                    started: started,
+                    error: "subagent_gate_invalid_input"
+                )
+                return
+            }
+            emitFailOpen(
+                adapter: adapter,
+                reason: .invalidJSON,
+                started: started,
+                policy: policy,
+                kind: .subagentGate
+            )
+            return
+        }
+
+        var secretTypes: [String] = []
+        if !call.task.isEmpty {
+            let textResult = await OffsendCheckService(context: context).runText(
+                call.task,
+                failPolicy: .block,
+                disabledDetectors: disabledDetectors,
+                customDictionaries: customDictionaries
+            )
+            let secrets = PromptCheckAdviceBuilder.filterEntities(
+                textResult.entities,
+                secretsOnly: secretsOnly
+            )
+            secretTypes = Array(Set(secrets.map(\.type.rawValue))).sorted()
+        }
+
+        let decision = PromptSubagentGate.evaluate(
+            call: call,
+            subagentsConfig: subagentsConfig,
+            secretTypes: secretTypes
+        )
+        let rendered = PromptSubagentGateRenderer.render(decision: decision, adapter: adapter)
+        writeHookOutput(rendered)
+        logDebug(
+            adapter: adapter,
+            policy: policy,
+            advice: nil,
+            exitCode: rendered.exitCode,
+            started: started,
+            error: decision.allowed ? nil : "subagent_gate_\(decision.code)"
+        )
+    }
+
+    func emitMCPGate(
+        adapter: CheckHookAdapter,
+        rawJSON: String,
+        started: Date,
+        policy: CheckHookPolicy,
+        context: OffsendRuntimeContext,
+        mcpConfig: OffsendProjectMCPConfig?,
+        disabledDetectors: Set<SensitiveEntityType> = [],
+        customDictionaries: [CustomDictionaryItem] = [],
+        secretsOnly: Bool = true
+    ) async {
+        let call: PromptMCPGateCall
+        do {
+            call = try PromptMCPGate.parse(json: rawJSON, adapter: adapter)
+        } catch {
+            // Explicit `context.mcp.mode: deny` means the user asked to block; fail closed there.
+            if OffsendContextEnforcementMode(rawValue: mcpConfig?.mode ?? "") == .deny {
+                let decision = PromptMCPGateDecision(
+                    call: PromptMCPGateCall(server: "unknown", tool: "unknown", toolInput: ""),
+                    permission: .deny,
+                    reason: "Offsend: unrecognized MCP hook input denied (context.mcp.mode: deny).",
+                    code: "invalid_input"
+                )
+                let rendered = PromptMCPGateRenderer.render(decision: decision, adapter: adapter)
+                writeHookOutput(rendered)
+                logDebug(
+                    adapter: adapter,
+                    policy: policy,
+                    advice: nil,
+                    exitCode: rendered.exitCode,
+                    started: started,
+                    error: "mcp_gate_invalid_input"
+                )
+                return
+            }
+            emitFailOpen(
+                adapter: adapter,
+                reason: .invalidJSON,
+                started: started,
+                policy: policy,
+                kind: .mcpGate
+            )
+            return
+        }
+
+        var secretTypes: [String] = []
+        if !call.toolInput.isEmpty {
+            let textResult = await OffsendCheckService(context: context).runText(
+                call.toolInput,
+                failPolicy: .block,
+                disabledDetectors: disabledDetectors,
+                customDictionaries: customDictionaries
+            )
+            let secrets = PromptCheckAdviceBuilder.filterEntities(
+                textResult.entities,
+                secretsOnly: secretsOnly
+            )
+            secretTypes = Array(Set(secrets.map(\.type.rawValue))).sorted()
+        }
+
+        let decision = PromptMCPGate.evaluate(
+            call: call,
+            mcpConfig: mcpConfig,
+            secretTypes: secretTypes
+        )
+        let rendered = PromptMCPGateRenderer.render(decision: decision, adapter: adapter)
+        writeHookOutput(rendered)
+        logDebug(
+            adapter: adapter,
+            policy: policy,
+            advice: nil,
+            exitCode: rendered.exitCode,
+            started: started,
+            error: decision.allowed ? nil : "mcp_gate_\(decision.code)"
+        )
+    }
+
     func emitAdapter(
         adapter: CheckHookAdapter,
         textResult: OffsendTextCheckResult,

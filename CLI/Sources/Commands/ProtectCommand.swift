@@ -2,7 +2,7 @@ import ArgumentParser
 import Foundation
 import OffsendRuntime
 
-struct Protect: ParsableCommand {
+struct Protect: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "protect",
         abstract: "Hide exposed sensitive paths from AI tools (create ignore files + add required patterns).",
@@ -11,7 +11,8 @@ struct Protect: ParsableCommand {
         (like `offsend prepare`), then appends canonical ignore lines for every \
         required exposed pattern (like `offsend ignore`). Use --include-recommended \
         to also cover recommended exposures. Preview with --dry-run, then verify with \
-        `offsend show`.
+        `offsend show`. When `.offsend.yml` has `context.history.scrub_on_protect: true`, \
+        also dry-runs (or applies, unless --dry-run) a local agent-history scrub.
         """
     )
 
@@ -30,7 +31,7 @@ struct Protect: ParsableCommand {
     @Option(name: .long, help: "Output format (text, json).")
     var format: String = CheckOutputFormat.text.rawValue
 
-    mutating func run() throws {
+    mutating func run() async throws {
         let outputFormat = CLIParse.outputFormat(format)
 
         let context: OffsendRuntimeContext
@@ -55,6 +56,34 @@ struct Protect: ParsableCommand {
         let output = ProtectReporter().render(report, format: outputFormat)
         if !output.isEmpty {
             print(output)
+        }
+
+        let projectConfig = CLIParse.projectConfig(from: directoryURL)
+        if projectConfig?.context?.history?.scrubOnProtect == true {
+            let home: URL = {
+                if let value = ProcessInfo.processInfo.environment["HOME"], !value.isEmpty {
+                    return URL(fileURLWithPath: value)
+                }
+                return FileManager.default.homeDirectoryForCurrentUser
+            }()
+            let resolved = OptionsResolver.resolveCheckOptions(
+                overrides: CLICheckOverrides(),
+                projectConfig: projectConfig,
+                staged: false
+            )
+            let scrub = await OffsendHistoryService().scrub(
+                projectRoot: directoryURL,
+                homeDirectory: home,
+                context: context,
+                apply: !dryRun,
+                allProjects: false,
+                disabledDetectors: resolved.disabledDetectors,
+                customDictionaries: resolved.customDictionaries
+            )
+            let scrubOut = OffsendHistoryReporter.renderScrub(scrub, format: outputFormat)
+            if !scrubOut.isEmpty {
+                print(scrubOut)
+            }
         }
 
         if report.hasErrors {

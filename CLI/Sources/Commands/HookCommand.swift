@@ -61,6 +61,20 @@ struct HookInstall: ParsableCommand {
     )
     var shellGate: Bool?
 
+    @Flag(
+        name: [.customLong("mcp-gate"), .customLong("with-mcp-gate")],
+        inversion: .prefixedNo,
+        help: "MCP tool-call gates — server policy + path/secret scan in args (Cursor beforeMCPExecution / Claude PreToolUse mcp__*). On by default for cursor/claude; disable with --no-mcp-gate."
+    )
+    var mcpGate: Bool?
+
+    @Flag(
+        name: [.customLong("subagent-gate"), .customLong("with-subagent-gate")],
+        inversion: .prefixedNo,
+        help: "Subagent spawn gates — secret-scan task text (Cursor subagentStart). On by default for cursor; disable with --no-subagent-gate."
+    )
+    var subagentGate: Bool?
+
     @Option(name: .long, help: "Path to the offsend executable used by the hook.")
     var cliPath: String?
 
@@ -103,6 +117,12 @@ struct HookInstall: ParsableCommand {
             }
             if shellGate != nil {
                 CLIError.exit(.error, message: "--shell-gate/--no-shell-gate requires an AI-editor target.")
+            }
+            if mcpGate != nil {
+                CLIError.exit(.error, message: "--mcp-gate/--no-mcp-gate requires an AI-editor target.")
+            }
+            if subagentGate != nil {
+                CLIError.exit(.error, message: "--subagent-gate/--no-subagent-gate requires an AI-editor target.")
             }
             if hookPolicy != nil {
                 CLIError.exit(.error, message: "--hook-policy requires an AI-editor target.")
@@ -171,9 +191,11 @@ struct HookInstall: ParsableCommand {
         let policyOverride = hookPolicy.map { CLIParse.checkHookPolicy($0) }
         let installer = AIEditorHookInstaller()
         let gateSupported: Set<AIEditorHookTarget> = [.cursor, .claude]
-        // Read/shell gates are on by default for supported targets; --no-*-gate opts out.
+        // Read/shell/MCP gates are on by default for supported targets; --no-*-gate opts out.
         let enableReadGate = readGate ?? true
         let enableShellGate = shellGate ?? true
+        let enableMCPGate = mcpGate ?? true
+        let enableSubagentGate = subagentGate ?? true
         if readGate == true {
             let unsupported = aiTargets.filter { !gateSupported.contains($0) }
             for skipped in unsupported {
@@ -192,6 +214,24 @@ struct HookInstall: ParsableCommand {
                 )
             }
         }
+        if mcpGate == true {
+            let unsupported = aiTargets.filter { !gateSupported.contains($0) }
+            for skipped in unsupported {
+                fputs(
+                    "warning: --mcp-gate is not supported for \(skipped.rawValue); installing prompt hook only.\n",
+                    stderr
+                )
+            }
+        }
+        if subagentGate == true {
+            let unsupported = aiTargets.filter { !AIEditorHookInstaller.supportsSubagentGate($0) }
+            for skipped in unsupported {
+                fputs(
+                    "warning: --subagent-gate is not supported for \(skipped.rawValue) (Cursor only).\n",
+                    stderr
+                )
+            }
+        }
         do {
             for aiTarget in aiTargets {
                 let result = try installer.install(
@@ -201,7 +241,9 @@ struct HookInstall: ParsableCommand {
                     hookPolicy: policyOverride,
                     force: force,
                     withReadGate: enableReadGate,
-                    withShellGate: enableShellGate
+                    withShellGate: enableShellGate,
+                    withMCPGate: enableMCPGate,
+                    withSubagentGate: enableSubagentGate
                 )
                 print(
                     "Installed \(result.target.rawValue) hook (\(result.hookPolicy.rawValue)) at \(result.configPath)"
@@ -212,6 +254,12 @@ struct HookInstall: ParsableCommand {
                 }
                 if let shellPath = result.shellWrapperPath {
                     print("Shell gate: \(shellPath)")
+                }
+                if let mcpPath = result.mcpWrapperPath {
+                    print("MCP gate: \(mcpPath)")
+                }
+                if let subagentPath = result.subagentWrapperPath {
+                    print("Subagent gate: \(subagentPath)")
                 }
                 print("Command: \(result.command)")
             }
@@ -510,6 +558,12 @@ struct HookStatus: ParsableCommand {
         if AIEditorHookInstaller.supportsFileGates(target), !status.shellGate {
             detail += "; warning: shell-gate missing — re-run offsend hook install --target \(target.rawValue)"
         }
+        if AIEditorHookInstaller.supportsFileGates(target), !status.mcpGate {
+            detail += "; warning: mcp-gate missing — re-run offsend hook install --target \(target.rawValue)"
+        }
+        if AIEditorHookInstaller.supportsSubagentGate(target), !status.subagentGate {
+            detail += "; warning: subagent-gate missing — re-run offsend hook install --target \(target.rawValue)"
+        }
         return "✓ \(target.rawValue): \(detail) (\(status.configPath))"
     }
 
@@ -524,11 +578,21 @@ struct HookStatus: ParsableCommand {
             "configPath": status.configPath,
             "readGate": status.readGate,
             "shellGate": status.shellGate,
+            "mcpGate": status.mcpGate,
+            "subagentGate": status.subagentGate,
         ]
-        if AIEditorHookInstaller.supportsFileGates(target),
-           status.installed,
-           !status.shellGate {
-            payload["warning"] = "shell-gate missing"
+        var warnings: [String] = []
+        if status.installed {
+            if AIEditorHookInstaller.supportsFileGates(target) {
+                if !status.shellGate { warnings.append("shell-gate missing") }
+                if !status.mcpGate { warnings.append("mcp-gate missing") }
+            }
+            if AIEditorHookInstaller.supportsSubagentGate(target), !status.subagentGate {
+                warnings.append("subagent-gate missing")
+            }
+        }
+        if !warnings.isEmpty {
+            payload["warning"] = warnings.joined(separator: "; ")
         }
         return payload
     }

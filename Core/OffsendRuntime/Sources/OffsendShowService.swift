@@ -20,6 +20,72 @@ public struct ShowExposedGroup: Sendable, Equatable {
     }
 }
 
+/// One MCP server discovered while auditing AI context exposure.
+public struct ShowMCPServer: Sendable, Equatable {
+    public let name: String
+    public let source: String
+    public let detail: String
+    public let highRisk: Bool
+
+    public init(name: String, source: String, detail: String, highRisk: Bool) {
+        self.name = name
+        self.source = source
+        self.detail = detail
+        self.highRisk = highRisk
+    }
+}
+
+/// Local agent-transcript audit snapshot for `offsend show`.
+public struct ShowHistorySection: Sendable, Equatable {
+    public let filesScanned: Int
+    public let filesWithFindings: Int
+    public let secretTypes: [String]
+    public let skipped: Bool
+    public let message: String?
+
+    public init(
+        filesScanned: Int = 0,
+        filesWithFindings: Int = 0,
+        secretTypes: [String] = [],
+        skipped: Bool = false,
+        message: String? = nil
+    ) {
+        self.filesScanned = filesScanned
+        self.filesWithFindings = filesWithFindings
+        self.secretTypes = secretTypes
+        self.skipped = skipped
+        self.message = message
+    }
+
+    public var hasFindings: Bool { filesWithFindings > 0 }
+}
+
+/// MCP inventory + policy snapshot attached to `offsend show`.
+public struct ShowMCPSection: Sendable, Equatable {
+    public let servers: [ShowMCPServer]
+    public let policyMode: String?
+    public let hasAllowlist: Bool
+    public let hasDenylist: Bool
+    /// Editor targets that already have an Offsend MCP gate installed.
+    public let gateTargets: [String]
+
+    public init(
+        servers: [ShowMCPServer] = [],
+        policyMode: String? = nil,
+        hasAllowlist: Bool = false,
+        hasDenylist: Bool = false,
+        gateTargets: [String] = []
+    ) {
+        self.servers = servers
+        self.policyMode = policyMode
+        self.hasAllowlist = hasAllowlist
+        self.hasDenylist = hasDenylist
+        self.gateTargets = gateTargets
+    }
+
+    public var isEmpty: Bool { servers.isEmpty }
+}
+
 /// What `offsend show` found: the sensitive files that would be sent to AI tools,
 /// grouped by data type.
 public struct ShowReport: Sendable, Equatable {
@@ -31,19 +97,25 @@ public struct ShowReport: Sendable, Equatable {
     /// True when the workspace walk hit a file/time limit, so results may be incomplete.
     public let scanIncomplete: Bool
     public let errors: [String]
+    public let mcp: ShowMCPSection
+    public let history: ShowHistorySection
 
     public init(
         directoryPath: String,
         groups: [ShowExposedGroup],
         totalExposedCount: Int,
         scanIncomplete: Bool,
-        errors: [String]
+        errors: [String],
+        mcp: ShowMCPSection = ShowMCPSection(),
+        history: ShowHistorySection = ShowHistorySection()
     ) {
         self.directoryPath = directoryPath
         self.groups = groups
         self.totalExposedCount = totalExposedCount
         self.scanIncomplete = scanIncomplete
         self.errors = errors
+        self.mcp = mcp
+        self.history = history
     }
 
     public var hasErrors: Bool { !errors.isEmpty }
@@ -75,8 +147,27 @@ public struct OffsendShowService: Sendable {
         self.auditor = auditor
     }
 
-    public func run(directoryURL: URL) -> ShowReport {
+    public func run(
+        directoryURL: URL,
+        homeDirectory: URL? = nil,
+        projectConfig: OffsendProjectConfig? = nil
+    ) -> ShowReport {
         let standardizedURL = directoryURL.standardizedFileURL
+        let home = homeDirectory
+            ?? ProcessInfo.processInfo.environment["HOME"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
+            ?? FileManager.default.homeDirectoryForCurrentUser
+        let config = projectConfig ?? (try? ProjectConfigLoader().load(from: standardizedURL))
+        let mcpSection = Self.makeMCPSection(
+            projectRoot: standardizedURL,
+            homeDirectory: home,
+            projectConfig: config
+        )
+        let historySection = Self.makeHistorySection(
+            projectRoot: standardizedURL,
+            homeDirectory: home,
+            projectConfig: config
+        )
+
         let audit = auditor.audit(directoryURL: standardizedURL, configuration: configuration)
 
         if audit.isDirectoryUnavailable {
@@ -85,7 +176,9 @@ public struct OffsendShowService: Sendable {
                 groups: [],
                 totalExposedCount: 0,
                 scanIncomplete: false,
-                errors: audit.errors.map(\.message)
+                errors: audit.errors.map(\.message),
+                mcp: mcpSection,
+                history: historySection
             )
         }
 
@@ -112,7 +205,86 @@ public struct OffsendShowService: Sendable {
             groups: groups,
             totalExposedCount: audit.allExposedRelativePaths.count,
             scanIncomplete: !audit.exposureScanCompletion.isComplete,
-            errors: audit.errors.map(\.message)
+            errors: audit.errors.map(\.message),
+            mcp: mcpSection,
+            history: historySection
+        )
+    }
+
+    private static func makeHistorySection(
+        projectRoot: URL,
+        homeDirectory: URL,
+        projectConfig: OffsendProjectConfig?
+    ) -> ShowHistorySection {
+        if projectConfig?.context?.history?.audit == false {
+            return ShowHistorySection(skipped: true, message: "context.history.audit is false")
+        }
+        let slug = OffsendHistoryService.cursorProjectSlug(for: projectRoot)
+        let cursorDir = homeDirectory
+            .appendingPathComponent(".cursor/projects")
+            .appendingPathComponent(slug)
+            .appendingPathComponent("agent-transcripts")
+        let count = countTranscriptFiles(under: cursorDir)
+            + countTranscriptFiles(under: projectRoot.appendingPathComponent(".cursor"))
+        if count == 0 {
+            return ShowHistorySection(filesScanned: 0, message: nil)
+        }
+        return ShowHistorySection(
+            filesScanned: count,
+            filesWithFindings: 0,
+            secretTypes: [],
+            message: "run offsend history audit to scan for secrets"
+        )
+    }
+
+    private static func countTranscriptFiles(under root: URL) -> Int {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: root.path),
+              let enumerator = fm.enumerator(
+                at: root,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles]
+              ) else { return 0 }
+        var count = 0
+        while let url = enumerator.nextObject() as? URL {
+            let ext = url.pathExtension.lowercased()
+            guard ext == "jsonl" || ext == "txt" else { continue }
+            if url.path.contains("agent-transcripts") || root.path.contains("agent-transcripts") {
+                count += 1
+            }
+            if count >= 500 { break }
+        }
+        return count
+    }
+
+    private static func makeMCPSection(
+        projectRoot: URL,
+        homeDirectory: URL,
+        projectConfig: OffsendProjectConfig?
+    ) -> ShowMCPSection {
+        let inventory = OffsendMCPInventory().collect(
+            projectRoot: projectRoot,
+            homeDirectory: homeDirectory,
+            mcpConfig: projectConfig?.context?.mcp
+        )
+        let installer = AIEditorHookInstaller()
+        let gateTargets = AIEditorHookTarget.allCases
+            .filter { AIEditorHookInstaller.supportsFileGates($0) }
+            .filter { installer.status(target: $0, repositoryPath: projectRoot).mcpGate }
+            .map(\.rawValue)
+        return ShowMCPSection(
+            servers: inventory.servers.map {
+                ShowMCPServer(
+                    name: $0.name,
+                    source: $0.source,
+                    detail: $0.detail,
+                    highRisk: $0.highRisk
+                )
+            },
+            policyMode: inventory.policyMode,
+            hasAllowlist: inventory.hasAllowlist,
+            hasDenylist: inventory.hasDenylist,
+            gateTargets: gateTargets
         )
     }
 

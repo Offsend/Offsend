@@ -58,6 +58,13 @@ hooks:
   type: pre-commit
   fail_on: block
   policy: false
+
+# Optional AI-context controls (MCP policy, etc.)
+# context:
+#   mcp:
+#     mode: ask          # observe | ask | deny
+#     allow: [github]    # non-empty allow = allowlist mode
+#     high_risk: [filesystem, postgres]
 ```
 
 A fuller annotated example lives in [`.offsend.yml.example`](../.offsend.yml.example).
@@ -144,6 +151,31 @@ Exit policy used by installed hooks. If omitted, falls back to `check.fail_on`, 
 
 Whether installed hooks include workspace policy checks. If omitted, falls back to `check.policy`, then `false`. For faster commits that check only staged files, keep this `false`.
 
+### `context.mcp`
+
+Optional MCP policy used by `offsend show`, `offsend doctor`, and the MCP-gate (`offsend hook install` / `check --mcp-gate`):
+
+| Field | Description |
+| --- | --- |
+| `mode` | `observe` (stderr only), `ask` (confirm), or `deny` (block). Default when unset: `ask` for findings. With explicit `deny`, unrecognized hook input is also denied (fail-closed) |
+| `allow` | Server name patterns permitted. A non-empty list switches to allowlist mode: servers not matching are flagged |
+| `deny` | Server name patterns to block. `"*"` also enables allowlist mode |
+| `high_risk` | Patterns flagged in `show` / `doctor` (defaults include `filesystem`, `postgres`, …) |
+
+### `context.subagents`
+
+| Field | Description |
+| --- | --- |
+| `mode` | `observe` or `deny` (`ask` is treated as deny on Cursor `subagentStart`) |
+| `scan_task` | Secret-scan the subagent task prompt (default `true`) |
+
+### `context.history`
+
+| Field | Description |
+| --- | --- |
+| `audit` | When `false`, `offsend show` skips the agent-history section (default: audit) |
+| `scrub_on_protect` | When `true`, `offsend protect` also runs history scrub (honors `--dry-run`) |
+
 ---
 
 ## Where settings live
@@ -159,6 +191,8 @@ Whether installed hooks include workspace policy checks. If omitted, falls back 
 
 ## Related
 
+- [Docs index](README.md)
 - [CLI reference](cli.md) — all commands and AI-editor hooks
+- [FAQ](faq.md)
 - [README](../README.md) — quick start and workflows
 - [`.offsend.yml.example`](../.offsend.yml.example) — copy-paste starter

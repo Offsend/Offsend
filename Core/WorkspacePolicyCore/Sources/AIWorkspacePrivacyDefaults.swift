@@ -669,6 +669,18 @@ public extension AIWorkspaceSensitivePattern {
             remediation: "Consider ignoring shell/REPL history files that can capture secrets."
         ),
         AIWorkspaceSensitivePattern(
+            id: "agent-transcripts",
+            title: "AI agent transcripts",
+            acceptedPatterns: [
+                "**/agent-transcripts/**",
+                "**/.cursor/agent-transcripts/**",
+                "agent-transcripts/**"
+            ],
+            severity: .recommended,
+            category: .history,
+            remediation: "Ignore project-local agent transcripts; scrub home copies with `offsend history scrub --apply`."
+        ),
+        AIWorkspaceSensitivePattern(
             id: "db-dumps",
             title: "Database dumps",
             acceptedPatterns: [

@@ -120,5 +120,35 @@ final class ShowReporterTests: XCTestCase {
         XCTAssertTrue(output.contains("\"remediation\""))
         XCTAssertTrue(output.contains("Ignore PEM key files."))
         XCTAssertTrue(output.contains("\"scanIncomplete\""))
+        XCTAssertTrue(output.contains("\"mcp\""))
+    }
+
+    func testMCPSectionRenderedWhenServersPresent() {
+        let report = ShowReport(
+            directoryPath: "/tmp/project",
+            groups: [],
+            totalExposedCount: 0,
+            scanIncomplete: false,
+            errors: [],
+            mcp: ShowMCPSection(
+                servers: [
+                    ShowMCPServer(
+                        name: "filesystem",
+                        source: "cursor-project",
+                        detail: "npx server-filesystem",
+                        highRisk: true
+                    ),
+                ],
+                policyMode: nil,
+                gateTargets: []
+            )
+        )
+
+        let output = ShowReporter().render(report, format: .text)
+        XCTAssertTrue(output.contains("AI boundary OK"))
+        XCTAssertTrue(output.contains("MCP"))
+        XCTAssertTrue(output.contains("filesystem"))
+        XCTAssertTrue(output.contains("high-risk"))
+        XCTAssertTrue(output.contains("gate: missing"))
     }
 }

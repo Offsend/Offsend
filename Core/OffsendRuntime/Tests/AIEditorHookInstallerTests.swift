@@ -401,6 +401,86 @@ final class AIEditorHookInstallerTests: XCTestCase {
         let status = installer.status(target: .cursor, repositoryPath: root)
         XCTAssertTrue(status.shellGate)
         XCTAssertTrue(status.readGate)
+        XCTAssertTrue(status.mcpGate)
+    }
+
+    func testMCPGateOnByDefaultWithFailClosed() throws {
+        let installer = AIEditorHookInstaller()
+        let result = try installer.install(
+            target: .cursor,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend"
+        )
+        XCTAssertTrue(result.withMCPGate)
+        XCTAssertNotNil(result.mcpWrapperPath)
+
+        let data = try Data(contentsOf: URL(fileURLWithPath: result.configPath))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
+        let mcpHooks = try XCTUnwrap(hooks["beforeMCPExecution"] as? [[String: Any]])
+        XCTAssertTrue((mcpHooks.first?["command"] as? String)?.contains("check-mcp.sh") == true)
+        XCTAssertEqual(mcpHooks.first?["failClosed"] as? Bool, true)
+
+        let wrapper = try String(
+            contentsOf: URL(fileURLWithPath: result.mcpWrapperPath!),
+            encoding: .utf8
+        )
+        XCTAssertTrue(wrapper.contains("--mcp-gate"))
+        XCTAssertTrue(wrapper.contains("--secrets-only"))
+    }
+
+    func testSubagentGateOnByDefaultForCursorOnly() throws {
+        let installer = AIEditorHookInstaller()
+        let cursor = try installer.install(
+            target: .cursor,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend"
+        )
+        XCTAssertTrue(cursor.withSubagentGate)
+        XCTAssertNotNil(cursor.subagentWrapperPath)
+        let data = try Data(contentsOf: URL(fileURLWithPath: cursor.configPath))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
+        let subagentHooks = try XCTUnwrap(hooks["subagentStart"] as? [[String: Any]])
+        XCTAssertTrue((subagentHooks.first?["command"] as? String)?.contains("check-subagent.sh") == true)
+        XCTAssertEqual(subagentHooks.first?["failClosed"] as? Bool, true)
+        XCTAssertTrue(installer.status(target: .cursor, repositoryPath: root).subagentGate)
+
+        let claudeRoot = root.appendingPathComponent("claude-proj", isDirectory: true)
+        try FileManager.default.createDirectory(at: claudeRoot, withIntermediateDirectories: true)
+        let claude = try installer.install(
+            target: .claude,
+            repositoryPath: claudeRoot,
+            cliExecutablePath: "/usr/local/bin/offsend"
+        )
+        XCTAssertFalse(claude.withSubagentGate)
+        XCTAssertNil(claude.subagentWrapperPath)
+    }
+
+    func testMCPGateOptOutRemovesEntryAndOrphanWrapper() throws {
+        let installer = AIEditorHookInstaller()
+        _ = try installer.install(
+            target: .cursor,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend",
+            withMCPGate: true
+        )
+        let result = try installer.install(
+            target: .cursor,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend",
+            withMCPGate: false
+        )
+        XCTAssertFalse(result.withMCPGate)
+        XCTAssertNil(result.mcpWrapperPath)
+
+        let data = try Data(contentsOf: URL(fileURLWithPath: result.configPath))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
+        XCTAssertNil(hooks["beforeMCPExecution"])
+        let mcpURL = root.appendingPathComponent(AIEditorHookInstaller.mcpWrapperRelativePath)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: mcpURL.path))
+        XCTAssertFalse(installer.status(target: .cursor, repositoryPath: root).mcpGate)
     }
 
     func testShellGateOptOutRemovesEntryAndOrphanWrapper() throws {
@@ -444,10 +524,13 @@ final class AIEditorHookInstallerTests: XCTestCase {
         let matchers = preToolUse.compactMap { $0["matcher"] as? String }
         XCTAssertTrue(matchers.contains("Read|Edit|Write"))
         XCTAssertTrue(matchers.contains("Bash"))
+        XCTAssertTrue(matchers.contains(AIEditorHookInstaller.claudeMCPMatcher))
 
         try installer.uninstall(target: .claude, repositoryPath: root)
         let shellURL = root.appendingPathComponent(AIEditorHookInstaller.shellWrapperRelativePath)
         XCTAssertFalse(FileManager.default.fileExists(atPath: shellURL.path))
+        let mcpURL = root.appendingPathComponent(AIEditorHookInstaller.mcpWrapperRelativePath)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: mcpURL.path))
     }
 
     func testDefaultPolicies() {

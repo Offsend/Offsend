@@ -4,15 +4,18 @@ public struct OffsendProjectConfig: Codable, Equatable, Sendable {
     public var version: Int
     public var check: OffsendProjectCheckConfig?
     public var hooks: OffsendProjectHooksConfig?
+    public var context: OffsendProjectContextConfig?
 
     public init(
         version: Int = 1,
         check: OffsendProjectCheckConfig? = nil,
-        hooks: OffsendProjectHooksConfig? = nil
+        hooks: OffsendProjectHooksConfig? = nil,
+        context: OffsendProjectContextConfig? = nil
     ) {
         self.version = version
         self.check = check
         self.hooks = hooks
+        self.context = context
     }
 }
 

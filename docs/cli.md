@@ -1,13 +1,39 @@
 # CLI reference
 
-The `offsend` command runs locally on **macOS and Linux** (x86_64 / arm64). Install:
+The `offsend` command runs locally on **macOS and Linux** (x86_64 / arm64). Product overview: [README](../README.md).
+
+Project rules live in [`.offsend.yml`](configuration.md) at the repository root. CLI flags override config when passed explicitly.
+
+---
+
+## Install
 
 ```bash
 curl -fsSL https://install.offsend.io/cli | bash
 offsend doctor
 ```
 
-Project rules live in [`.offsend.yml`](configuration.md) at the repository root. CLI flags override config when passed explicitly.
+```bash
+# Homebrew — macOS (cask) / Linux (formula)
+brew install --cask offsend/tap/offsend-cli   # macOS
+brew install offsend/tap/offsend-cli          # Linux
+
+# No root
+OFFSEND_INSTALL_DIR=$HOME/.local/bin OFFSEND_PREFIX=$HOME/.local/lib/offsend/cli \
+  curl -fsSL https://install.offsend.io/cli | bash
+
+# Docker
+docker build -f CLI/Dockerfile -t offsend/cli .
+docker run --rm -v "$PWD:/work" -w /work offsend/cli check README.md
+
+# From source (Swift 6.0+)
+swift build --product offsend -c release
+.build/release/offsend doctor
+```
+
+Pin a release with `OFFSEND_VERSION=…`. On Linux, config lives under `$XDG_CONFIG_HOME/offsend` (typically `~/.config/offsend`). On macOS CLI, settings use Application Support / Keychain like the app.
+
+The package is `offsend-cli`; the command is `offsend`. The macOS app also ships a bundled helper — see [macOS app](macos-app.md).
 
 ---
 
@@ -21,6 +47,7 @@ Project rules live in [`.offsend.yml`](configuration.md) at the repository root.
 | [`offsend protect`](#offsend-protect) | Hide exposed sensitive paths from AI (prepare + ignore required) |
 | [`offsend ignore`](#offsend-ignore) | Add paths or patterns to every AI ignore file |
 | [`offsend check`](#offsend-check) | Scan files, staged changes, stdin, or editor hook JSON |
+| [`offsend history`](#agent-history) | Audit / scrub secrets in local Cursor & Claude transcripts |
 | [`offsend init`](#offsend-init) | Create `.offsend.yml` (+ optional baseline check) |
 | [`offsend edit`](#offsend-edit) | Open `.offsend.yml` in `$EDITOR` |
 | [`offsend hook`](#offsend-hook) | Install / remove / status for git and AI-editor hooks |
@@ -57,13 +84,13 @@ offsend doctor --format json
 
 Exits `2` when any check has status `fail`. AI hooks and seal key warnings are informational (`warn`).
 
-Checks include `ai-wrapper-prompt` / `ai-wrapper-read` / `ai-wrapper-shell` (managed marker + version) when those wrappers exist, `ai-shell-gate` (warn) when Cursor/Claude are installed without a shell-gate, and `next-actions` (ranked setup hints: init → protect → hooks).
+Checks include `ai-wrapper-prompt` / `ai-wrapper-read` / `ai-wrapper-shell` / `ai-wrapper-mcp` (managed marker + version) when those wrappers exist, `ai-shell-gate` / `ai-mcp-gate` (warn) when Cursor/Claude are installed without those gates, `mcp-inventory` (configured MCP servers + policy), and `next-actions` (ranked setup hints: init → protect → hooks).
 
 ---
 
 ## `offsend show`
 
-Read-only audit: which sensitive **paths** AI tools can see (ignore rules only — **does not read file contents**).
+Read-only audit: which sensitive **paths** AI tools can see (ignore rules only — **does not read file contents** of those paths). Also reports configured MCP servers and a local agent-history summary when present.
 
 ```bash
 offsend show
@@ -77,6 +104,8 @@ offsend show --format json
 | `--format text\|json` | Output format |
 
 Exits `0` when paths are exposed (informational). Exits `2` on errors (e.g. unreadable directory).
+
+See also: [`context.mcp` / `context.history`](configuration.md#contextmcp), [`offsend history`](#agent-history).
 
 ---
 
@@ -215,6 +244,8 @@ offsend check --adapter claude --read-gate --no-notify   # file-read gate
 | `--debug-hook` | off | Append diagnostics to `hook-debug.log` (no secret values) |
 | `--read-gate` | off | File-read gate for Cursor / Claude: sensitive paths + secret content scan |
 | `--shell-gate` | — | Sensitive-path gate for Cursor / Claude shell hooks (`ask` on findings); used by installed wrappers |
+| `--mcp-gate` | — | MCP tool-call gate for Cursor / Claude: `context.mcp` policy + path/secret scan in args |
+| `--subagent-gate` | — | Subagent spawn gate for Cursor: secret-scan task text |
 | `--key-file PATH` | — | Seal key file for `--seal-copy` / `--hook-policy block` |
 | `--key-name NAME` | — | Named key in `~/.offsend/keys/NAME.key` |
 
@@ -306,6 +337,7 @@ offsend hook install --target all
 offsend hook install --target cursor --hook-policy advise
 offsend hook install --target claude --no-read-gate
 offsend hook install --target cursor --no-shell-gate
+offsend hook install --target cursor --no-mcp-gate
 ```
 
 | Flag | Description |
@@ -314,26 +346,32 @@ offsend hook install --target cursor --no-shell-gate
 | `--hook-policy advise\|soft-block\|block` | Override default policy (`soft-block`) |
 | `--read-gate` / `--no-read-gate` | File-read path gates (**Cursor + Claude only**). **On by default**; `--no-read-gate` disables |
 | `--shell-gate` / `--no-shell-gate` | Shell-command gate (**Cursor + Claude only**). **On by default**; findings ask for confirmation instead of blocking. `--no-shell-gate` disables |
+| `--mcp-gate` / `--no-mcp-gate` | MCP tool-call gate (**Cursor + Claude only**). **On by default**; Cursor `beforeMCPExecution` with `failClosed: true`. `--no-mcp-gate` disables |
+| `--subagent-gate` / `--no-subagent-gate` | Subagent spawn gate (**Cursor only**). **On by default**; `subagentStart` with `failClosed: true`. `--no-subagent-gate` disables |
 | `--cli-path PATH` | CLI for wrapper scripts |
 | `--force` | Overwrite a foreign git hook or AI wrapper; managed files refresh automatically |
+
+Gate flags also accept `--with-read-gate` / `--with-shell-gate` / `--with-mcp-gate` / `--with-subagent-gate` as aliases.
 
 Install **merges** into existing editor configs (does not remove foreign hooks). Writes:
 
 - `.offsend/hooks/check-prompt.sh` — install-time CLI path first, then `command -v offsend`
 - `.offsend/hooks/check-read.sh` — read gate (default on for Cursor/Claude; skipped with `--no-read-gate`)
 - `.offsend/hooks/check-shell.sh` — shell gate (default on for Cursor/Claude; skipped with `--no-shell-gate`)
+- `.offsend/hooks/check-mcp.sh` — MCP gate (default on for Cursor/Claude; skipped with `--no-mcp-gate`)
+- `.offsend/hooks/check-subagent.sh` — subagent gate (default on for Cursor; skipped with `--no-subagent-gate`)
 - managed entry in editor config (`_offsend` metadata)
 
 Existing AI wrappers are updated only when they contain a valid Offsend managed marker in the script header. A foreign wrapper is preserved unless `--force` is explicit.
 
 Commit `.offsend/hooks/` and the editor config to share with the team.
 
-| Target | Config file | Default `--hook-policy` | Read gate | Shell gate |
-| --- | --- | --- | --- | --- |
-| `cursor` | `.cursor/hooks.json` | `soft-block` | on by default | on by default |
-| `claude` | `.claude/settings.json` | `soft-block` | on by default | on by default |
-| `windsurf` | `.windsurf/hooks.json` | `soft-block` | not supported | not supported |
-| `codex` | `.codex/hooks.json` | `soft-block` | not supported | not supported |
+| Target | Config file | Default `--hook-policy` | Read / shell / MCP gates |
+| --- | --- | --- | --- |
+| `cursor` | `.cursor/hooks.json` | `soft-block` | on by default |
+| `claude` | `.claude/settings.json` | `soft-block` | on by default |
+| `windsurf` | `.windsurf/hooks.json` | `soft-block` | not supported |
+| `codex` | `.codex/hooks.json` | `soft-block` | not supported |
 
 ### `hook uninstall`
 
@@ -394,6 +432,8 @@ Treat editor hooks as **defense-in-depth**, not a hard perimeter. Prefer this st
 | `@file` / file-like mentions in the prompt | Prompt gate | Bounded disk read of the mentioned path |
 | Editor Read / Edit / Write tools | Read-gate | Cursor `beforeReadFile`; Claude `PreToolUse` (`Read\|Edit\|Write`) |
 | Agent shell (`Bash` / `beforeShellExecution`) | Shell-gate | On by default for Cursor/Claude; returns `ask`, not hard deny |
+| MCP tool calls | MCP-gate | On by default for Cursor/Claude; Cursor `beforeMCPExecution` (`failClosed: true`); Claude `PreToolUse` (`mcp__.*`). Policy + path/secret scan on **args**; see `context.mcp` in `.offsend.yml` |
+| Subagent spawn (Cursor Task) | Subagent-gate | On by default for Cursor `subagentStart`; secret-scan of the task prompt (`deny` on findings; no `ask`). Claude subagents are not gated — rely on AI ignore |
 
 ### What hooks do not cover
 
@@ -402,8 +442,10 @@ These walk past a path-based file hook by design. Close them with ignore rules a
 | Bypass | Why the hook misses it | What to use instead |
 | --- | --- | --- |
 | **Shell without shell-gate** | `cat` / `grep` / `sed` read the file outside the Read tool (older installs, or `--no-shell-gate`) | Re-run `offsend hook install --target cursor\|claude` (shell-gate is on by default) |
-| **MCP / other tools** | Tool response payloads can include file content on a different pipe than file-reference hooks | Restrict MCP access; keep secrets out of the workspace; rely on AI ignore |
-| **Subagents** | A subagent may run with its own context and hook config (or none), independent of the parent turn | Project-level AI ignore; do not store plaintext secrets where any agent can reach them |
+| **MCP tool responses** | MCP-gate scans call **arguments**, not response payloads returned into context | Restrict MCP servers (`context.mcp` allow/deny); keep secrets off disk; AI ignore |
+| **MCP without mcp-gate** | Older installs, or `--no-mcp-gate` | Re-run `offsend hook install --target cursor\|claude` (mcp-gate is on by default) |
+| **Subagents (Claude / ungated Cursor)** | Claude subagents may skip parent hooks; Cursor without `--subagent-gate` does not scan task text | `offsend hook install --target cursor` (subagent-gate on by default); project-level AI ignore; no plaintext secrets on disk |
+| **Local agent history already written** | Prior transcripts may already contain secrets | `offsend history audit` / `offsend history scrub --apply` |
 | **Symlinks to sensitive targets** | A benign link name (e.g. `notes.txt` → `.env`) used to skip name heuristics | Read-gate and shell-gate (when the path exists) also check the symlink-resolved target |
 | **Renamed copies** | A real copy under a new name is not a symlink, so path heuristics may miss it | Content scan on the gated read path may still catch secret-shaped values; ignore patterns + no plaintext remain the real control |
 | **Open editor tabs (Cursor)** | Cursor may not always enforce `beforeReadFile` deny | `offsend prepare` / `.cursorignore` for hard blocks |
@@ -441,6 +483,46 @@ The command line is tokenized and checked against the same sensitive-path heuris
 `offsend doctor` and `offsend hook status` warn when Cursor/Claude hooks are installed without a shell-gate (common for older installs). Re-run `offsend hook install --target cursor` (or `claude`) to add it.
 
 Note: Cursor currently enforces only `deny` reliably; `ask` may not pause the command in all versions (known IDE limitation).
+
+### MCP-gate (on by default)
+
+Installed by default for Cursor and Claude (disable with `--no-mcp-gate`). Gates MCP tool **calls** (Cursor `beforeMCPExecution` with `failClosed: true`, Claude `PreToolUse` matcher `mcp__.*`):
+
+1. **Server policy** — optional `context.mcp.allow` / `deny` in `.offsend.yml`. A non-empty `allow` list (or `deny: ["*"]`) switches to allowlist mode: servers not matching `allow` are flagged
+2. **Sensitive paths in tool args** — same path heuristics as the shell-gate
+3. **Secret-shaped values in tool args** — same detectors as the prompt gate (`--secrets-only` by default)
+
+Enforcement mode (`context.mcp.mode`): `observe` (allow + stderr), `ask` (default when unset), or `deny`. `offsend show` lists configured MCP servers; `offsend doctor` warns when MCP is present without a policy or when the gate is missing.
+
+Fail-open vs fail-closed: infrastructure errors (unreadable settings, invalid config) fail **open** so a broken install never blocks the editor. With an explicit `context.mcp.mode: deny` (or `context.subagents.mode: deny` for the subagent gate), unrecognized hook input is **denied** instead — you asked to block, so Offsend fails closed there.
+
+This does **not** rewrite MCP **response** payloads after the tool runs — keep secrets off disk and restrict high-risk servers.
+
+### Subagent-gate (on by default for Cursor)
+
+Installed by default for Cursor (`subagentStart`, `failClosed: true`). Scans the subagent **task** text for secret-shaped values before spawn. Findings **deny** (Cursor does not support `ask` for this event). Mode via `context.subagents.mode` (`observe` / `deny`; `ask` is treated as deny). Claude Code is not covered — subagents may use a separate hook config.
+
+### Agent history
+
+Local Cursor/Claude transcripts can retain secrets from earlier turns:
+
+```bash
+offsend history audit                 # project-scoped Cursor transcripts (+ matching Claude)
+offsend history audit --all           # every project under ~/.cursor and ~/.claude
+offsend history scrub                 # dry-run redactions
+offsend history scrub --apply         # write OFFSEND_REDACTED_<type> placeholders
+```
+
+| Flag | Description |
+| --- | --- |
+| `--path DIR` | Project directory used to scope transcripts (default: cwd) |
+| `--all` | Every project under `~/.cursor` and `~/.claude` |
+| `--format text\|json` | Output format |
+| `--apply` (scrub only) | Write redactions to disk; without it, dry-run |
+
+`offsend show` lists transcript file counts; `offsend doctor` warns when any are present. Set `context.history.scrub_on_protect: true` to scrub during `offsend protect`.
+
+Scrub limits: files larger than 2 MB are scanned (bounded prefix) but skipped by scrub — redact those manually. Close active agent sessions before `--apply`; files that change mid-scrub are skipped and reported.
 
 ### Security notes
 
@@ -588,7 +670,7 @@ offsend doctor
 offsend init --template node          # .offsend.yml + baseline check
 offsend protect                       # hide required paths from AI
 offsend show                          # verify AI boundary OK
-offsend hook install                  # prompt/read/shell + git pre-commit
+offsend hook install                  # prompt/read/shell/MCP/subagent + git pre-commit
 ```
 
 ### AI-editor protection
@@ -598,6 +680,7 @@ offsend protect                       # or: prepare + ignore …
 offsend show
 offsend hook install
 offsend hook status --target all
+offsend history audit                 # secrets already in local transcripts
 offsend doctor
 ```
 
@@ -622,6 +705,9 @@ offsend check --staged --policy --fail-on block
 
 ## Related
 
+- [Docs index](README.md)
 - [Configuration (`.offsend.yml`)](configuration.md)
-- [README](../README.md) — install options, app vs CLI, FAQ
+- [macOS app](macos-app.md)
+- [FAQ](faq.md)
+- [README](../README.md) — product overview and quick start
 - [`.offsend.yml.example`](../.offsend.yml.example) — annotated starter

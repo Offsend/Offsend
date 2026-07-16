@@ -64,10 +64,14 @@ public struct AIEditorHookInstallResult: Equatable, Sendable {
     public let wrapperPath: String
     public let readWrapperPath: String?
     public let shellWrapperPath: String?
+    public let mcpWrapperPath: String?
+    public let subagentWrapperPath: String?
     public let hookPolicy: CheckHookPolicy
     public let command: String
     public let withReadGate: Bool
     public let withShellGate: Bool
+    public let withMCPGate: Bool
+    public let withSubagentGate: Bool
 
     public init(
         target: AIEditorHookTarget,
@@ -75,20 +79,28 @@ public struct AIEditorHookInstallResult: Equatable, Sendable {
         wrapperPath: String,
         readWrapperPath: String? = nil,
         shellWrapperPath: String? = nil,
+        mcpWrapperPath: String? = nil,
+        subagentWrapperPath: String? = nil,
         hookPolicy: CheckHookPolicy,
         command: String,
         withReadGate: Bool = false,
-        withShellGate: Bool = false
+        withShellGate: Bool = false,
+        withMCPGate: Bool = false,
+        withSubagentGate: Bool = false
     ) {
         self.target = target
         self.configPath = configPath
         self.wrapperPath = wrapperPath
         self.readWrapperPath = readWrapperPath
         self.shellWrapperPath = shellWrapperPath
+        self.mcpWrapperPath = mcpWrapperPath
+        self.subagentWrapperPath = subagentWrapperPath
         self.hookPolicy = hookPolicy
         self.command = command
         self.withReadGate = withReadGate
         self.withShellGate = withShellGate
+        self.withMCPGate = withMCPGate
+        self.withSubagentGate = withSubagentGate
     }
 }
 
@@ -101,19 +113,27 @@ public struct AIEditorHookTargetStatus: Equatable, Sendable {
     public let readGate: Bool
     /// Config references the shell-gate wrapper (`check-shell.sh`).
     public let shellGate: Bool
+    /// Config references the MCP-gate wrapper (`check-mcp.sh`).
+    public let mcpGate: Bool
+    /// Config references the subagent-gate wrapper (`check-subagent.sh`). Cursor only.
+    public let subagentGate: Bool
 
     public init(
         installed: Bool,
         configPath: String,
         broken: Bool,
         readGate: Bool = false,
-        shellGate: Bool = false
+        shellGate: Bool = false,
+        mcpGate: Bool = false,
+        subagentGate: Bool = false
     ) {
         self.installed = installed
         self.configPath = configPath
         self.broken = broken
         self.readGate = readGate
         self.shellGate = shellGate
+        self.mcpGate = mcpGate
+        self.subagentGate = subagentGate
     }
 }
 
@@ -123,9 +143,17 @@ public struct AIEditorHookInstaller: Sendable {
     public static let wrapperRelativePath = ".offsend/hooks/check-prompt.sh"
     public static let readWrapperRelativePath = ".offsend/hooks/check-read.sh"
     public static let shellWrapperRelativePath = ".offsend/hooks/check-shell.sh"
-    /// Cursor and Claude support read/shell gates; Windsurf/Codex do not.
+    public static let mcpWrapperRelativePath = ".offsend/hooks/check-mcp.sh"
+    public static let subagentWrapperRelativePath = ".offsend/hooks/check-subagent.sh"
+    /// Claude PreToolUse matcher for MCP tools (`mcp__server__tool`).
+    public static let claudeMCPMatcher = "mcp__.*"
+    /// Cursor and Claude support read/shell/MCP gates; Windsurf/Codex do not.
     public static func supportsFileGates(_ target: AIEditorHookTarget) -> Bool {
         target == .cursor || target == .claude
+    }
+    /// Cursor `subagentStart` only (Claude subagents do not reliably inherit parent hooks).
+    public static func supportsSubagentGate(_ target: AIEditorHookTarget) -> Bool {
+        target == .cursor
     }
 
     public static let managedVersion = 2
@@ -156,7 +184,9 @@ public struct AIEditorHookInstaller: Sendable {
         hookPolicy: CheckHookPolicy? = nil,
         force: Bool = false,
         withReadGate: Bool = true,
-        withShellGate: Bool = true
+        withShellGate: Bool = true,
+        withMCPGate: Bool = true,
+        withSubagentGate: Bool = true
     ) throws -> AIEditorHookInstallResult {
         let policy = hookPolicy ?? Self.defaultHookPolicy(for: target)
         let root = repositoryPath.standardizedFileURL
@@ -170,6 +200,8 @@ public struct AIEditorHookInstaller: Sendable {
         let gateSupported = Self.supportsFileGates(target)
         let enableReadGate = withReadGate && gateSupported
         let enableShellGate = withShellGate && gateSupported
+        let enableMCPGate = withMCPGate && gateSupported
+        let enableSubagentGate = withSubagentGate && Self.supportsSubagentGate(target)
         let command = makeCommand(target: target, hookPolicy: policy)
         let configURL = configURL(for: target, repositoryPath: root)
         let readWrapperURL = enableReadGate
@@ -177,6 +209,12 @@ public struct AIEditorHookInstaller: Sendable {
             : nil
         let shellWrapperURL = enableShellGate
             ? root.appendingPathComponent(Self.shellWrapperRelativePath)
+            : nil
+        let mcpWrapperURL = enableMCPGate
+            ? root.appendingPathComponent(Self.mcpWrapperRelativePath)
+            : nil
+        let subagentWrapperURL = enableSubagentGate
+            ? root.appendingPathComponent(Self.subagentWrapperRelativePath)
             : nil
 
         // Validate every existing destination before changing any wrapper.
@@ -188,6 +226,12 @@ public struct AIEditorHookInstaller: Sendable {
         if let shellWrapperURL {
             try validateWrapperDestination(shellWrapperURL, force: force)
         }
+        if let mcpWrapperURL {
+            try validateWrapperDestination(mcpWrapperURL, force: force)
+        }
+        if let subagentWrapperURL {
+            try validateWrapperDestination(subagentWrapperURL, force: force)
+        }
 
         try writeWrapper(to: wrapperURL, preferredCLIPath: cliExecutablePath)
         if let readWrapperURL {
@@ -195,6 +239,12 @@ public struct AIEditorHookInstaller: Sendable {
         }
         if let shellWrapperURL {
             try writeShellWrapper(to: shellWrapperURL, preferredCLIPath: cliExecutablePath)
+        }
+        if let mcpWrapperURL {
+            try writeMCPWrapper(to: mcpWrapperURL, preferredCLIPath: cliExecutablePath)
+        }
+        if let subagentWrapperURL {
+            try writeSubagentWrapper(to: subagentWrapperURL, preferredCLIPath: cliExecutablePath)
         }
 
         try fileManager.createDirectory(
@@ -208,6 +258,8 @@ public struct AIEditorHookInstaller: Sendable {
                 command: command,
                 readCommand: enableReadGate ? makeReadCommand(target: target) : nil,
                 shellCommand: enableShellGate ? makeShellCommand(target: target) : nil,
+                mcpCommand: enableMCPGate ? makeMCPCommand(target: target) : nil,
+                subagentCommand: enableSubagentGate ? makeSubagentCommand(target: target) : nil,
                 at: configURL
             )
         case .windsurf:
@@ -219,6 +271,7 @@ public struct AIEditorHookInstaller: Sendable {
                 command: command,
                 readCommand: enableReadGate ? makeReadCommand(target: target) : nil,
                 shellCommand: enableShellGate ? makeShellCommand(target: target) : nil,
+                mcpCommand: enableMCPGate ? makeMCPCommand(target: target) : nil,
                 at: configURL
             )
         }
@@ -229,6 +282,12 @@ public struct AIEditorHookInstaller: Sendable {
         if !enableShellGate {
             cleanupUnusedShellWrapper(repositoryPath: root)
         }
+        if !enableMCPGate {
+            cleanupUnusedMCPWrapper(repositoryPath: root)
+        }
+        if !enableSubagentGate {
+            cleanupUnusedSubagentWrapper(repositoryPath: root)
+        }
 
         return AIEditorHookInstallResult(
             target: target,
@@ -236,10 +295,14 @@ public struct AIEditorHookInstaller: Sendable {
             wrapperPath: wrapperURL.path,
             readWrapperPath: readWrapperURL?.path,
             shellWrapperPath: shellWrapperURL?.path,
+            mcpWrapperPath: mcpWrapperURL?.path,
+            subagentWrapperPath: subagentWrapperURL?.path,
             hookPolicy: policy,
             command: command,
             withReadGate: enableReadGate,
-            withShellGate: enableShellGate
+            withShellGate: enableShellGate,
+            withMCPGate: enableMCPGate,
+            withSubagentGate: enableSubagentGate
         )
     }
 
@@ -251,6 +314,16 @@ public struct AIEditorHookInstaller: Sendable {
     /// Removes `.offsend/hooks/check-shell.sh` when no target config still references it.
     public func cleanupUnusedShellWrapper(repositoryPath: URL) {
         cleanupUnusedWrapper(relativePath: Self.shellWrapperRelativePath, repositoryPath: repositoryPath)
+    }
+
+    /// Removes `.offsend/hooks/check-mcp.sh` when no target config still references it.
+    public func cleanupUnusedMCPWrapper(repositoryPath: URL) {
+        cleanupUnusedWrapper(relativePath: Self.mcpWrapperRelativePath, repositoryPath: repositoryPath)
+    }
+
+    /// Removes `.offsend/hooks/check-subagent.sh` when no target config still references it.
+    public func cleanupUnusedSubagentWrapper(repositoryPath: URL) {
+        cleanupUnusedWrapper(relativePath: Self.subagentWrapperRelativePath, repositoryPath: repositoryPath)
     }
 
     private func cleanupUnusedWrapper(relativePath: String, repositoryPath: URL) {
@@ -292,15 +365,17 @@ public struct AIEditorHookInstaller: Sendable {
             let promptRemoved = try removeManagedFromEventArray(at: configURL, event: "beforeSubmitPrompt")
             let readRemoved = try removeManagedFromEventArray(at: configURL, event: "beforeReadFile")
             let shellRemoved = try removeManagedFromEventArray(at: configURL, event: "beforeShellExecution")
-            removed = promptRemoved || readRemoved || shellRemoved
+            let mcpRemoved = try removeManagedFromEventArray(at: configURL, event: "beforeMCPExecution")
+            let subagentRemoved = try removeManagedFromEventArray(at: configURL, event: "subagentStart")
+            removed = promptRemoved || readRemoved || shellRemoved || mcpRemoved || subagentRemoved
         case .windsurf:
             removed = try removeManagedFromEventArray(at: configURL, event: "pre_user_prompt")
         case .codex:
             removed = try removeManagedNested(at: configURL, event: "UserPromptSubmit")
         case .claude:
             let promptRemoved = try removeManagedNested(at: configURL, event: "UserPromptSubmit")
-            let readRemoved = try removeManagedNested(at: configURL, event: "PreToolUse")
-            removed = promptRemoved || readRemoved
+            let toolRemoved = try removeManagedNested(at: configURL, event: "PreToolUse")
+            removed = promptRemoved || toolRemoved
         }
 
         guard removed else {
@@ -319,6 +394,8 @@ public struct AIEditorHookInstaller: Sendable {
         }
         cleanupUnusedReadWrapper(repositoryPath: root)
         cleanupUnusedShellWrapper(repositoryPath: root)
+        cleanupUnusedMCPWrapper(repositoryPath: root)
+        cleanupUnusedSubagentWrapper(repositoryPath: root)
     }
 
     public func status(
@@ -337,6 +414,8 @@ public struct AIEditorHookInstaller: Sendable {
         let installed = Self.configTextReferences(contents, relativePath: Self.wrapperRelativePath)
             || Self.configTextReferences(contents, relativePath: Self.readWrapperRelativePath)
             || Self.configTextReferences(contents, relativePath: Self.shellWrapperRelativePath)
+            || Self.configTextReferences(contents, relativePath: Self.mcpWrapperRelativePath)
+            || Self.configTextReferences(contents, relativePath: Self.subagentWrapperRelativePath)
             || contents.contains(Self.managedMarker)
         let promptURL = repositoryPath.appendingPathComponent(Self.wrapperRelativePath)
         let promptOK = validateWrapper(at: promptURL) == .ok
@@ -346,12 +425,20 @@ public struct AIEditorHookInstaller: Sendable {
         let shellUsed = Self.configTextReferences(contents, relativePath: Self.shellWrapperRelativePath)
         let shellURL = repositoryPath.appendingPathComponent(Self.shellWrapperRelativePath)
         let shellOK = !shellUsed || validateWrapper(at: shellURL) == .ok
+        let mcpUsed = Self.configTextReferences(contents, relativePath: Self.mcpWrapperRelativePath)
+        let mcpURL = repositoryPath.appendingPathComponent(Self.mcpWrapperRelativePath)
+        let mcpOK = !mcpUsed || validateWrapper(at: mcpURL) == .ok
+        let subagentUsed = Self.configTextReferences(contents, relativePath: Self.subagentWrapperRelativePath)
+        let subagentURL = repositoryPath.appendingPathComponent(Self.subagentWrapperRelativePath)
+        let subagentOK = !subagentUsed || validateWrapper(at: subagentURL) == .ok
         return AIEditorHookTargetStatus(
             installed: installed,
             configPath: url.path,
-            broken: installed && (!promptOK || !readOK || !shellOK),
+            broken: installed && (!promptOK || !readOK || !shellOK || !mcpOK || !subagentOK),
             readGate: readUsed,
-            shellGate: shellUsed
+            shellGate: shellUsed,
+            mcpGate: mcpUsed,
+            subagentGate: subagentUsed
         )
     }
 
@@ -441,6 +528,20 @@ public struct AIEditorHookInstaller: Sendable {
         case .cursor, .windsurf, .codex:
             return "\(script) \(target.adapter.rawValue)"
         }
+    }
+
+    public func makeMCPCommand(target: AIEditorHookTarget) -> String {
+        let script = Self.mcpWrapperRelativePath
+        switch target {
+        case .claude:
+            return "\"$CLAUDE_PROJECT_DIR\"/\(script) \(target.adapter.rawValue)"
+        case .cursor, .windsurf, .codex:
+            return "\(script) \(target.adapter.rawValue)"
+        }
+    }
+
+    public func makeSubagentCommand(target: AIEditorHookTarget) -> String {
+        "\(Self.subagentWrapperRelativePath) \(target.adapter.rawValue)"
     }
 
     public func configURL(for target: AIEditorHookTarget, repositoryPath: URL) -> URL {
@@ -594,12 +695,88 @@ public struct AIEditorHookInstaller: Sendable {
         }
     }
 
+    private func writeMCPWrapper(to url: URL, preferredCLIPath: String) throws {
+        try fileManager.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let script = """
+        #!/bin/sh
+        # \(Self.managedMarker) v\(Self.managedVersion) mcp-gate
+        set -eu
+        ADAPTER="${1:?adapter required}"
+        PREFERRED_BIN=\(shellQuote(preferredCLIPath))
+        OFFSEND_BIN=""
+        if [ -x "${PREFERRED_BIN}" ]; then
+          OFFSEND_BIN="${PREFERRED_BIN}"
+        fi
+        if [ -z "${OFFSEND_BIN}" ]; then
+          OFFSEND_BIN="$(command -v offsend 2>/dev/null || true)"
+        fi
+        if [ -z "${OFFSEND_BIN}" ] || [ ! -x "${OFFSEND_BIN}" ]; then
+          echo "offsend: executable not found; install CLI or re-run hook install" >&2
+          case "$ADAPTER" in
+            cursor) echo '{"permission":"allow"}' ;;
+            claude) echo '{}' ;;
+            windsurf) : ;;
+          esac
+          exit 0
+        fi
+        exec "${OFFSEND_BIN}" check --adapter "${ADAPTER}" --mcp-gate --secrets-only --no-notify
+        """
+        do {
+            try script.write(to: url, atomically: true, encoding: .utf8)
+            try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+        } catch {
+            throw AIEditorHookInstallerError.writeFailed(path: url.path, message: error.localizedDescription)
+        }
+    }
+
+    private func writeSubagentWrapper(to url: URL, preferredCLIPath: String) throws {
+        try fileManager.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let script = """
+        #!/bin/sh
+        # \(Self.managedMarker) v\(Self.managedVersion) subagent-gate
+        set -eu
+        ADAPTER="${1:?adapter required}"
+        PREFERRED_BIN=\(shellQuote(preferredCLIPath))
+        OFFSEND_BIN=""
+        if [ -x "${PREFERRED_BIN}" ]; then
+          OFFSEND_BIN="${PREFERRED_BIN}"
+        fi
+        if [ -z "${OFFSEND_BIN}" ]; then
+          OFFSEND_BIN="$(command -v offsend 2>/dev/null || true)"
+        fi
+        if [ -z "${OFFSEND_BIN}" ] || [ ! -x "${OFFSEND_BIN}" ]; then
+          echo "offsend: executable not found; install CLI or re-run hook install" >&2
+          case "$ADAPTER" in
+            cursor) echo '{"permission":"allow"}' ;;
+            claude) echo '{}' ;;
+            windsurf) : ;;
+          esac
+          exit 0
+        fi
+        exec "${OFFSEND_BIN}" check --adapter "${ADAPTER}" --subagent-gate --secrets-only --no-notify
+        """
+        do {
+            try script.write(to: url, atomically: true, encoding: .utf8)
+            try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+        } catch {
+            throw AIEditorHookInstallerError.writeFailed(path: url.path, message: error.localizedDescription)
+        }
+    }
+
     // MARK: - Merge configs
 
     private func mergeCursorConfig(
         command: String,
         readCommand: String?,
         shellCommand: String?,
+        mcpCommand: String?,
+        subagentCommand: String?,
         at url: URL
     ) throws {
         var root = try loadJSONObject(at: url) ?? ["version": 1]
@@ -612,6 +789,9 @@ public struct AIEditorHookInstaller: Sendable {
 
         setManagedCursorGate(&hooks, event: "beforeReadFile", command: readCommand)
         setManagedCursorGate(&hooks, event: "beforeShellExecution", command: shellCommand)
+        // Security-critical: fail closed when the MCP hook crashes or times out.
+        setManagedCursorGate(&hooks, event: "beforeMCPExecution", command: mcpCommand, failClosed: true)
+        setManagedCursorGate(&hooks, event: "subagentStart", command: subagentCommand, failClosed: true)
 
         root["hooks"] = hooks
         root["_offsend"] = managedMetadata(event: event)
@@ -619,11 +799,16 @@ public struct AIEditorHookInstaller: Sendable {
     }
 
     /// Adds/refreshes the managed entry for a gate event, or removes it when `command` is nil.
-    private func setManagedCursorGate(_ hooks: inout [String: Any], event: String, command: String?) {
+    private func setManagedCursorGate(
+        _ hooks: inout [String: Any],
+        event: String,
+        command: String?,
+        failClosed: Bool = false
+    ) {
         if let command {
             var entries = (hooks[event] as? [[String: Any]]) ?? []
             entries.removeAll { isManagedHookObject($0) }
-            entries.append(managedCursorEntry(command: command))
+            entries.append(managedCursorEntry(command: command, failClosed: failClosed))
             hooks[event] = entries
         } else if var entries = hooks[event] as? [[String: Any]] {
             entries.removeAll { isManagedHookObject($0) }
@@ -684,6 +869,7 @@ public struct AIEditorHookInstaller: Sendable {
         command: String,
         readCommand: String?,
         shellCommand: String?,
+        mcpCommand: String?,
         at url: URL
     ) throws {
         var root = try loadJSONObject(at: url) ?? [:]
@@ -712,6 +898,9 @@ public struct AIEditorHookInstaller: Sendable {
         }
         if let shellCommand {
             toolGroups.append(managedClaudeToolGroup(matcher: "Bash", command: shellCommand))
+        }
+        if let mcpCommand {
+            toolGroups.append(managedClaudeToolGroup(matcher: Self.claudeMCPMatcher, command: mcpCommand))
         }
         if toolGroups.isEmpty {
             hooks.removeValue(forKey: toolEvent)
@@ -810,10 +999,10 @@ public struct AIEditorHookInstaller: Sendable {
 
     // MARK: - Helpers
 
-    private func managedCursorEntry(command: String) -> [String: Any] {
+    private func managedCursorEntry(command: String, failClosed: Bool = false) -> [String: Any] {
         [
             "command": command,
-            "failClosed": false,
+            "failClosed": failClosed,
             "timeout": CheckHookLimits.recommendedTimeoutSeconds,
         ]
     }
@@ -832,6 +1021,8 @@ public struct AIEditorHookInstaller: Sendable {
             return command.contains(Self.wrapperRelativePath)
                 || command.contains(Self.readWrapperRelativePath)
                 || command.contains(Self.shellWrapperRelativePath)
+                || command.contains(Self.mcpWrapperRelativePath)
+                || command.contains(Self.subagentWrapperRelativePath)
                 || command.contains(Self.managedMarker)
         }
         return false

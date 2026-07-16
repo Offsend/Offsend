@@ -503,6 +503,39 @@ if ! grep -q "audit.sh" "$repo/.cursor/hooks.json"; then
   cat "$repo/.cursor/hooks.json" >&2
   exit 1
 fi
+if ! grep -q "check-mcp.sh" "$repo/.cursor/hooks.json"; then
+  echo "Expected mcp-gate on by default" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+if ! grep -q "beforeMCPExecution" "$repo/.cursor/hooks.json"; then
+  echo "Expected beforeMCPExecution on by default" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+if [[ ! -x "$repo/.offsend/hooks/check-mcp.sh" ]]; then
+  echo "Expected check-mcp.sh wrapper" >&2
+  exit 1
+fi
+if ! grep -q "failClosed" "$repo/.cursor/hooks.json"; then
+  echo "Expected failClosed on MCP/subagent Cursor gates" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+if ! grep -q "check-subagent.sh" "$repo/.cursor/hooks.json"; then
+  echo "Expected subagent-gate on by default for Cursor" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+if ! grep -q "subagentStart" "$repo/.cursor/hooks.json"; then
+  echo "Expected subagentStart on by default for Cursor" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+if [[ ! -x "$repo/.offsend/hooks/check-subagent.sh" ]]; then
+  echo "Expected check-subagent.sh wrapper" >&2
+  exit 1
+fi
 
 "$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --no-read-gate
 if grep -q "beforeReadFile" "$repo/.cursor/hooks.json"; then
@@ -559,6 +592,117 @@ if ! grep -q "check-shell.sh" "$repo/.cursor/hooks.json"; then
   exit 1
 fi
 
+# MCP gate: sensitive path → ask; clean args → allow; fail-open; policy deny; install toggles.
+mcp_ask="$(printf '%s' '{"server":"github","tool_name":"read_file","tool_input":{"path":".env"}}' | "$CLI_PATH" check --adapter cursor --mcp-gate --no-notify 2>/dev/null)"
+if ! echo "$mcp_ask" | grep -q '"ask"'; then
+  echo "Expected mcp-gate ask for .env in tool args" >&2
+  echo "$mcp_ask" >&2
+  exit 1
+fi
+mcp_allow="$(printf '%s' '{"server":"github","tool_name":"search","tool_input":{"q":"README"}}' | "$CLI_PATH" check --adapter cursor --mcp-gate --no-notify 2>/dev/null)"
+if ! echo "$mcp_allow" | grep -q '"allow"'; then
+  echo "Expected mcp-gate allow for clean tool args" >&2
+  echo "$mcp_allow" >&2
+  exit 1
+fi
+mcp_fail_open="$(printf '%s' 'not-json' | "$CLI_PATH" check --adapter cursor --mcp-gate --no-notify 2>/dev/null)"
+if ! echo "$mcp_fail_open" | grep -q 'permission'; then
+  echo "Expected mcp-gate fail-open permission:allow" >&2
+  echo "$mcp_fail_open" >&2
+  exit 1
+fi
+
+mcp_policy_repo="$workdir/mcp-policy"
+mkdir -p "$mcp_policy_repo"
+printf '%s\n' \
+  "version: 1" \
+  "" \
+  "context:" \
+  "  mcp:" \
+  "    mode: deny" \
+  "    deny:" \
+  "      - postgres" > "$mcp_policy_repo/.offsend.yml"
+mcp_deny="$(printf '%s' '{"server":"postgres","tool_name":"query","tool_input":"{}"}' | "$CLI_PATH" check --adapter cursor --mcp-gate --no-notify --working-directory "$mcp_policy_repo" 2>/dev/null)"
+if ! echo "$mcp_deny" | grep -q '"deny"'; then
+  echo "Expected mcp-gate deny for context.mcp.deny postgres" >&2
+  echo "$mcp_deny" >&2
+  exit 1
+fi
+# Explicit mode: deny fails closed on unrecognized hook input (no silent allow).
+mcp_invalid_deny="$(printf '%s' 'not-json' | "$CLI_PATH" check --adapter cursor --mcp-gate --no-notify --working-directory "$mcp_policy_repo" 2>/dev/null)"
+if ! echo "$mcp_invalid_deny" | grep -q '"deny"'; then
+  echo "Expected mcp-gate deny for invalid input under context.mcp.mode deny" >&2
+  echo "$mcp_invalid_deny" >&2
+  exit 1
+fi
+
+"$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --no-mcp-gate
+if grep -q "check-mcp.sh" "$repo/.cursor/hooks.json"; then
+  echo "Expected --no-mcp-gate to remove the check-mcp.sh entry" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+if [[ -e "$repo/.offsend/hooks/check-mcp.sh" ]]; then
+  echo "Expected --no-mcp-gate to remove orphan check-mcp.sh" >&2
+  exit 1
+fi
+if ! grep -q "check-subagent.sh" "$repo/.cursor/hooks.json"; then
+  echo "Expected --no-mcp-gate to keep subagent-gate" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+
+"$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --with-mcp-gate
+if ! grep -q "check-mcp.sh" "$repo/.cursor/hooks.json"; then
+  echo "Expected --with-mcp-gate alias to add check-mcp.sh" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+
+# Subagent gate (Cursor): secret in task → deny; clean task → allow; fail-open; install toggles.
+# offsend:ignore-next-line
+subagent_deny="$(printf '%s' '{"task":"use AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF","subagent_type":"explore"}' | "$CLI_PATH" check --adapter cursor --subagent-gate --no-notify 2>/dev/null)"
+if ! echo "$subagent_deny" | grep -q '"deny"'; then
+  echo "Expected subagent-gate deny for secret-shaped task" >&2
+  echo "$subagent_deny" >&2
+  exit 1
+fi
+subagent_allow="$(printf '%s' '{"task":"Explore the auth module","subagent_type":"explore"}' | "$CLI_PATH" check --adapter cursor --subagent-gate --no-notify 2>/dev/null)"
+if ! echo "$subagent_allow" | grep -q '"allow"'; then
+  echo "Expected subagent-gate allow for clean task" >&2
+  echo "$subagent_allow" >&2
+  exit 1
+fi
+subagent_fail_open="$(printf '%s' 'not-json' | "$CLI_PATH" check --adapter cursor --subagent-gate --no-notify 2>/dev/null)"
+if ! echo "$subagent_fail_open" | grep -q 'permission'; then
+  echo "Expected subagent-gate fail-open permission:allow" >&2
+  echo "$subagent_fail_open" >&2
+  exit 1
+fi
+
+"$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --no-subagent-gate
+if grep -q "check-subagent.sh" "$repo/.cursor/hooks.json"; then
+  echo "Expected --no-subagent-gate to remove the check-subagent.sh entry" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+if [[ -e "$repo/.offsend/hooks/check-subagent.sh" ]]; then
+  echo "Expected --no-subagent-gate to remove orphan check-subagent.sh" >&2
+  exit 1
+fi
+if ! grep -q "check-mcp.sh" "$repo/.cursor/hooks.json"; then
+  echo "Expected --no-subagent-gate to keep mcp-gate" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+
+"$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --with-subagent-gate
+if ! grep -q "check-subagent.sh" "$repo/.cursor/hooks.json"; then
+  echo "Expected --with-subagent-gate alias to add check-subagent.sh" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+
 "$CLI_PATH" hook uninstall --path "$repo" --target cursor
 if grep -q "check-prompt.sh" "$repo/.cursor/hooks.json" 2>/dev/null; then
   echo "Expected uninstall to remove Offsend cursor hook entry" >&2
@@ -608,6 +752,18 @@ fi
 if ! grep -q "beforeReadFile" "$combined/.cursor/hooks.json"; then
   echo "Expected default install to keep cursor beforeReadFile" >&2
   cat "$combined/.cursor/hooks.json" >&2
+  exit 1
+fi
+if [[ ! -x "$combined/.offsend/hooks/check-mcp.sh" ]] || ! grep -q "beforeMCPExecution" "$combined/.cursor/hooks.json"; then
+  echo "Expected default install to keep cursor mcp-gate after multi-target install" >&2
+  cat "$combined/.cursor/hooks.json" >&2
+  ls -la "$combined/.offsend/hooks/" >&2
+  exit 1
+fi
+if [[ ! -x "$combined/.offsend/hooks/check-subagent.sh" ]] || ! grep -q "subagentStart" "$combined/.cursor/hooks.json"; then
+  echo "Expected default install to keep cursor subagent-gate after multi-target install" >&2
+  cat "$combined/.cursor/hooks.json" >&2
+  ls -la "$combined/.offsend/hooks/" >&2
   exit 1
 fi
 
@@ -661,6 +817,64 @@ if ! grep -q '\*.pem' "$ignore_fresh/.cursorignore" || ! grep -q '\*.pem' "$igno
 fi
 if [[ -e "$ignore_fresh/.gitignore" ]]; then
   echo "Expected ignore to never touch .gitignore" >&2
+  exit 1
+fi
+
+# history audit: discover planted Cursor transcript under $HOME and flag secret shapes.
+hist_repo="$workdir/hist-repo"
+hist_home="$workdir/hist-home"
+mkdir -p "$hist_repo"
+# Match OffsendHistoryService.cursorProjectSlug (standardized path, no symlink resolve).
+hist_slug="$(python3 -c "import os; p=os.path.abspath('$hist_repo'); print(p.lstrip('/').replace('/', '-').replace(' ', '-'))")"
+hist_dir="$hist_home/.cursor/projects/$hist_slug/agent-transcripts/session-1"
+mkdir -p "$hist_dir"
+# offsend:ignore-next-line
+printf '%s\n' '{"role":"user","content":"AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF"}' > "$hist_dir/session-1.jsonl"
+
+set +e
+hist_audit="$(HOME="$hist_home" "$CLI_PATH" history audit --path "$hist_repo" --format json 2>/dev/null)"
+hist_status="$?"
+set -e
+if [[ "$hist_status" -ne 1 ]]; then
+  echo "Expected history audit to exit 1 with findings, got $hist_status" >&2
+  echo "$hist_audit" >&2
+  exit 1
+fi
+if ! echo "$hist_audit" | grep -Eq '"filesScanned"[[:space:]]*:[[:space:]]*1'; then
+  echo "Expected history audit filesScanned:1" >&2
+  echo "$hist_audit" >&2
+  exit 1
+fi
+if ! echo "$hist_audit" | grep -Eq '"filesWithFindings"[[:space:]]*:[[:space:]]*1'; then
+  echo "Expected history audit filesWithFindings:1" >&2
+  echo "$hist_audit" >&2
+  exit 1
+fi
+
+set +e
+hist_scrub="$(HOME="$hist_home" "$CLI_PATH" history scrub --path "$hist_repo" --format json 2>/dev/null)"
+hist_scrub_status="$?"
+set -e
+if [[ "$hist_scrub_status" -ne 0 ]]; then
+  echo "Expected history scrub dry-run to exit 0, got $hist_scrub_status" >&2
+  echo "$hist_scrub" >&2
+  exit 1
+fi
+if ! echo "$hist_scrub" | grep -Eq '"dryRun"[[:space:]]*:[[:space:]]*true'; then
+  echo "Expected history scrub dry-run dryRun:true" >&2
+  echo "$hist_scrub" >&2
+  exit 1
+fi
+if ! echo "$hist_scrub" | grep -Eq '"redactionCount"[[:space:]]*:[[:space:]]*[1-9]'; then
+  echo "Expected history scrub dry-run redactionCount >= 1" >&2
+  echo "$hist_scrub" >&2
+  exit 1
+fi
+if grep -q 'AKIA1234567890ABCDEF' "$hist_dir/session-1.jsonl"; then
+  : # dry-run must leave the secret on disk
+else
+  echo "Expected history scrub dry-run to leave transcript unchanged" >&2
+  cat "$hist_dir/session-1.jsonl" >&2
   exit 1
 fi
 

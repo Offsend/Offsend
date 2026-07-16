@@ -70,6 +70,8 @@ public enum AIWorkspacePrivacyIgnoreTemplate {
         ".psql_history",
         ".mysql_history",
         ".python_history",
+        "agent-transcripts/",
+        "**/agent-transcripts/**",
         "*.sql.gz",
         "*.dump"
     ]
