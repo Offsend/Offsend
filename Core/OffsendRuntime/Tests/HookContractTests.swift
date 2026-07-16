@@ -170,6 +170,26 @@ final class HookContractTests: XCTestCase {
         )
     }
 
+    func testReadGateDeniesSymlinkToSensitiveTarget() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("offsend-read-gate-symlink-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let env = root.appendingPathComponent(".env")
+        let link = root.appendingPathComponent("notes.txt")
+        try "SECRET=1\n".write(to: env, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: env)
+
+        let decision = PromptReadGate.evaluatePath(link.path)
+        XCTAssertFalse(decision.allowed)
+        XCTAssertTrue(decision.reason.contains(".env"))
+
+        let ordinary = root.appendingPathComponent("readme.md")
+        try "# hi\n".write(to: ordinary, atomically: true, encoding: .utf8)
+        XCTAssertTrue(PromptReadGate.evaluatePath(ordinary.path).allowed)
+    }
+
     func testReadGateIgnoresHighEntropyWhenSecretsOnly() {
         let value = String(repeating: "Ab1+", count: 20)
         let entity = SensitiveEntity(

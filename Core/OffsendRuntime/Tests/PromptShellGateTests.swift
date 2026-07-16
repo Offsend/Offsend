@@ -76,4 +76,25 @@ final class PromptShellGateTests: XCTestCase {
         )
         XCTAssertEqual(allowed.stdout, "{}")
     }
+
+    func testFlagsSymlinkToSensitiveTargetViaCwd() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("offsend-shell-gate-symlink-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let env = root.appendingPathComponent(".env")
+        let link = root.appendingPathComponent("notes.txt")
+        try "SECRET=1\n".write(to: env, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: env)
+
+        let decision = PromptShellGate.evaluate(command: "cat notes.txt", cwd: root.path)
+        XCTAssertFalse(decision.allowed)
+        XCTAssertEqual(decision.suspiciousPaths, [".env"])
+
+        let json = #"{"command":"cat notes.txt","cwd":"\#(root.path)"}"#
+        let fromJSON = try PromptShellGate.evaluate(json: json, adapter: .cursor)
+        XCTAssertFalse(fromJSON.allowed)
+        XCTAssertEqual(fromJSON.suspiciousPaths, [".env"])
+    }
 }

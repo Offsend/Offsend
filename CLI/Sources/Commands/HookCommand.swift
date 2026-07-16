@@ -55,10 +55,11 @@ struct HookInstall: ParsableCommand {
     var readGate: Bool?
 
     @Flag(
-        name: .customLong("shell-gate"),
-        help: "Also gate shell commands touching sensitive paths (Cursor beforeShellExecution / Claude PreToolUse Bash). Findings ask for confirmation. Opt-in."
+        name: [.customLong("shell-gate"), .customLong("with-shell-gate")],
+        inversion: .prefixedNo,
+        help: "Shell-command gates — sensitive paths in agent shell (Cursor beforeShellExecution / Claude PreToolUse Bash). On by default for cursor/claude; findings ask for confirmation. Disable with --no-shell-gate."
     )
-    var shellGate = false
+    var shellGate: Bool?
 
     @Option(name: .long, help: "Path to the offsend executable used by the hook.")
     var cliPath: String?
@@ -100,8 +101,8 @@ struct HookInstall: ParsableCommand {
             if readGate != nil {
                 CLIError.exit(.error, message: "--read-gate/--no-read-gate requires an AI-editor target.")
             }
-            if shellGate {
-                CLIError.exit(.error, message: "--shell-gate requires an AI-editor target.")
+            if shellGate != nil {
+                CLIError.exit(.error, message: "--shell-gate/--no-shell-gate requires an AI-editor target.")
             }
             if hookPolicy != nil {
                 CLIError.exit(.error, message: "--hook-policy requires an AI-editor target.")
@@ -170,8 +171,9 @@ struct HookInstall: ParsableCommand {
         let policyOverride = hookPolicy.map { CLIParse.checkHookPolicy($0) }
         let installer = AIEditorHookInstaller()
         let gateSupported: Set<AIEditorHookTarget> = [.cursor, .claude]
-        // Read-gate is on by default for supported targets; --no-read-gate opts out.
+        // Read/shell gates are on by default for supported targets; --no-*-gate opts out.
         let enableReadGate = readGate ?? true
+        let enableShellGate = shellGate ?? true
         if readGate == true {
             let unsupported = aiTargets.filter { !gateSupported.contains($0) }
             for skipped in unsupported {
@@ -181,7 +183,7 @@ struct HookInstall: ParsableCommand {
                 )
             }
         }
-        if shellGate {
+        if shellGate == true {
             let unsupported = aiTargets.filter { !gateSupported.contains($0) }
             for skipped in unsupported {
                 fputs(
@@ -199,7 +201,7 @@ struct HookInstall: ParsableCommand {
                     hookPolicy: policyOverride,
                     force: force,
                     withReadGate: enableReadGate,
-                    withShellGate: shellGate
+                    withShellGate: enableShellGate
                 )
                 print(
                     "Installed \(result.target.rawValue) hook (\(result.hookPolicy.rawValue)) at \(result.configPath)"
@@ -388,11 +390,11 @@ struct HookStatus: ParsableCommand {
             }
             let installer = AIEditorHookInstaller()
             var anyBroken = false
-            var statuses: [(target: AIEditorHookTarget, installed: Bool, broken: Bool, configPath: String)] = []
+            var statuses: [(target: AIEditorHookTarget, status: AIEditorHookTargetStatus)] = []
 
             for aiTarget in aiTargets {
                 let status = installer.status(target: aiTarget, repositoryPath: repositoryURL)
-                statuses.append((aiTarget, status.installed, status.broken, status.configPath))
+                statuses.append((aiTarget, status))
                 if status.broken {
                     anyBroken = true
                 }
@@ -401,23 +403,11 @@ struct HookStatus: ParsableCommand {
             switch outputFormat {
             case .text:
                 for entry in statuses {
-                    if entry.broken {
-                        print("! \(entry.target.rawValue): broken (\(entry.configPath))")
-                    } else {
-                        let marker = entry.installed ? "✓" : "✗"
-                        print(
-                            "\(marker) \(entry.target.rawValue): \(entry.installed ? "installed" : "not installed") (\(entry.configPath))"
-                        )
-                    }
+                    print(Self.formatAIStatusLine(target: entry.target, status: entry.status))
                 }
             case .json:
                 let targets: [[String: Any]] = statuses.map { entry in
-                    [
-                        "target": entry.target.rawValue,
-                        "installed": entry.installed,
-                        "broken": entry.broken,
-                        "configPath": entry.configPath,
-                    ]
+                    Self.jsonAIStatus(target: entry.target, status: entry.status)
                 }
                 let payload: [String: Any] = ["targets": targets]
                 if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
@@ -427,7 +417,7 @@ struct HookStatus: ParsableCommand {
             }
 
             if target != "all" {
-                let status = statuses[0]
+                let status = statuses[0].status
                 if !status.installed || status.broken {
                     throw ExitCode(OffsendExitCode.hookState.rawValue)
                 }
@@ -481,23 +471,11 @@ struct HookStatus: ParsableCommand {
         case .text:
             print("\(gitOK ? "✓" : "✗") git (\(hookType.rawValue)): \(gitState) (\(gitPath))")
             for entry in statuses {
-                if entry.status.broken {
-                    print("! \(entry.target.rawValue): broken (\(entry.status.configPath))")
-                } else {
-                    let marker = entry.status.installed ? "✓" : "✗"
-                    print(
-                        "\(marker) \(entry.target.rawValue): \(entry.status.installed ? "installed" : "not installed") (\(entry.status.configPath))"
-                    )
-                }
+                print(Self.formatAIStatusLine(target: entry.target, status: entry.status))
             }
         case .json:
             let targets: [[String: Any]] = statuses.map { entry in
-                [
-                    "target": entry.target.rawValue,
-                    "installed": entry.status.installed,
-                    "broken": entry.status.broken,
-                    "configPath": entry.status.configPath,
-                ]
+                Self.jsonAIStatus(target: entry.target, status: entry.status)
             }
             let payload: [String: Any] = [
                 "git": [
@@ -516,5 +494,42 @@ struct HookStatus: ParsableCommand {
         if !gitOK || anyBroken {
             throw ExitCode(OffsendExitCode.hookState.rawValue)
         }
+    }
+
+    private static func formatAIStatusLine(
+        target: AIEditorHookTarget,
+        status: AIEditorHookTargetStatus
+    ) -> String {
+        if status.broken {
+            return "! \(target.rawValue): broken (\(status.configPath))"
+        }
+        if !status.installed {
+            return "✗ \(target.rawValue): not installed (\(status.configPath))"
+        }
+        var detail = "installed"
+        if AIEditorHookInstaller.supportsFileGates(target), !status.shellGate {
+            detail += "; warning: shell-gate missing — re-run offsend hook install --target \(target.rawValue)"
+        }
+        return "✓ \(target.rawValue): \(detail) (\(status.configPath))"
+    }
+
+    private static func jsonAIStatus(
+        target: AIEditorHookTarget,
+        status: AIEditorHookTargetStatus
+    ) -> [String: Any] {
+        var payload: [String: Any] = [
+            "target": target.rawValue,
+            "installed": status.installed,
+            "broken": status.broken,
+            "configPath": status.configPath,
+            "readGate": status.readGate,
+            "shellGate": status.shellGate,
+        ]
+        if AIEditorHookInstaller.supportsFileGates(target),
+           status.installed,
+           !status.shellGate {
+            payload["warning"] = "shell-gate missing"
+        }
+        return payload
     }
 }

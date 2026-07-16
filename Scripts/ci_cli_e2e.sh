@@ -489,6 +489,20 @@ if [[ ! -x "$repo/.offsend/hooks/check-read.sh" ]]; then
   echo "Expected check-read.sh wrapper" >&2
   exit 1
 fi
+if ! grep -q "check-shell.sh" "$repo/.cursor/hooks.json"; then
+  echo "Expected shell-gate on by default" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+if [[ ! -x "$repo/.offsend/hooks/check-shell.sh" ]]; then
+  echo "Expected check-shell.sh wrapper" >&2
+  exit 1
+fi
+if ! grep -q "audit.sh" "$repo/.cursor/hooks.json"; then
+  echo "Expected foreign beforeShellExecution hook to survive shell-gate merge" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
 
 "$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --no-read-gate
 if grep -q "beforeReadFile" "$repo/.cursor/hooks.json"; then
@@ -508,18 +522,7 @@ if ! grep -q "beforeReadFile" "$repo/.cursor/hooks.json"; then
   exit 1
 fi
 
-# Shell gate is opt-in: ask on sensitive paths, allow otherwise.
-# (The foreign beforeShellExecution audit.sh entry above must survive the merge.)
-"$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --shell-gate
-if ! grep -q "check-shell.sh" "$repo/.cursor/hooks.json"; then
-  echo "Expected --shell-gate to add the check-shell.sh entry" >&2
-  cat "$repo/.cursor/hooks.json" >&2
-  exit 1
-fi
-if [[ ! -x "$repo/.offsend/hooks/check-shell.sh" ]]; then
-  echo "Expected check-shell.sh wrapper" >&2
-  exit 1
-fi
+# Shell gate is on by default: ask on sensitive paths, allow otherwise.
 shell_ask="$(printf '%s' '{"command":"cat .env"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
 if ! echo "$shell_ask" | grep -q '"ask"'; then
   echo "Expected shell-gate ask for 'cat .env'" >&2
@@ -533,9 +536,9 @@ if ! echo "$shell_allow" | grep -q '"allow"'; then
   exit 1
 fi
 
-"$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH"
+"$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --no-shell-gate
 if grep -q "check-shell.sh" "$repo/.cursor/hooks.json"; then
-  echo "Expected reinstall without --shell-gate to remove the check-shell.sh entry" >&2
+  echo "Expected --no-shell-gate to remove the check-shell.sh entry" >&2
   cat "$repo/.cursor/hooks.json" >&2
   exit 1
 fi
@@ -545,7 +548,14 @@ if ! grep -q "audit.sh" "$repo/.cursor/hooks.json"; then
   exit 1
 fi
 if [[ -e "$repo/.offsend/hooks/check-shell.sh" ]]; then
-  echo "Expected reinstall without --shell-gate to remove orphan check-shell.sh" >&2
+  echo "Expected --no-shell-gate to remove orphan check-shell.sh" >&2
+  exit 1
+fi
+
+"$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --with-shell-gate
+if ! grep -q "check-shell.sh" "$repo/.cursor/hooks.json"; then
+  echo "Expected --with-shell-gate alias to add check-shell.sh" >&2
+  cat "$repo/.cursor/hooks.json" >&2
   exit 1
 fi
 

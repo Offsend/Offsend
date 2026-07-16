@@ -92,12 +92,42 @@ public struct AIEditorHookInstallResult: Equatable, Sendable {
     }
 }
 
+/// Status of an Offsend-managed AI-editor hook installation for one target.
+public struct AIEditorHookTargetStatus: Equatable, Sendable {
+    public let installed: Bool
+    public let configPath: String
+    public let broken: Bool
+    /// Config references the read-gate wrapper (`check-read.sh`).
+    public let readGate: Bool
+    /// Config references the shell-gate wrapper (`check-shell.sh`).
+    public let shellGate: Bool
+
+    public init(
+        installed: Bool,
+        configPath: String,
+        broken: Bool,
+        readGate: Bool = false,
+        shellGate: Bool = false
+    ) {
+        self.installed = installed
+        self.configPath = configPath
+        self.broken = broken
+        self.readGate = readGate
+        self.shellGate = shellGate
+    }
+}
+
 /// Installs Offsend-managed AI-editor prompt hooks that call a repo-local wrapper.
 public struct AIEditorHookInstaller: Sendable {
     public static let managedMarker = "offsend-managed-ai-hook"
     public static let wrapperRelativePath = ".offsend/hooks/check-prompt.sh"
     public static let readWrapperRelativePath = ".offsend/hooks/check-read.sh"
     public static let shellWrapperRelativePath = ".offsend/hooks/check-shell.sh"
+    /// Cursor and Claude support read/shell gates; Windsurf/Codex do not.
+    public static func supportsFileGates(_ target: AIEditorHookTarget) -> Bool {
+        target == .cursor || target == .claude
+    }
+
     public static let managedVersion = 2
 
     public enum WrapperValidation: Equatable, Sendable {
@@ -126,7 +156,7 @@ public struct AIEditorHookInstaller: Sendable {
         hookPolicy: CheckHookPolicy? = nil,
         force: Bool = false,
         withReadGate: Bool = true,
-        withShellGate: Bool = false
+        withShellGate: Bool = true
     ) throws -> AIEditorHookInstallResult {
         let policy = hookPolicy ?? Self.defaultHookPolicy(for: target)
         let root = repositoryPath.standardizedFileURL
@@ -137,7 +167,7 @@ public struct AIEditorHookInstaller: Sendable {
         }
 
         let wrapperURL = root.appendingPathComponent(Self.wrapperRelativePath)
-        let gateSupported = target == .cursor || target == .claude
+        let gateSupported = Self.supportsFileGates(target)
         let enableReadGate = withReadGate && gateSupported
         let enableShellGate = withShellGate && gateSupported
         let command = makeCommand(target: target, hookPolicy: policy)
@@ -294,11 +324,15 @@ public struct AIEditorHookInstaller: Sendable {
     public func status(
         target: AIEditorHookTarget,
         repositoryPath: URL
-    ) -> (installed: Bool, configPath: String, broken: Bool) {
+    ) -> AIEditorHookTargetStatus {
         let url = configURL(for: target, repositoryPath: repositoryPath)
         guard fileManager.fileExists(atPath: url.path),
               let contents = try? String(contentsOf: url, encoding: .utf8) else {
-            return (false, url.path, false)
+            return AIEditorHookTargetStatus(
+                installed: false,
+                configPath: url.path,
+                broken: false
+            )
         }
         let installed = Self.configTextReferences(contents, relativePath: Self.wrapperRelativePath)
             || Self.configTextReferences(contents, relativePath: Self.readWrapperRelativePath)
@@ -312,7 +346,13 @@ public struct AIEditorHookInstaller: Sendable {
         let shellUsed = Self.configTextReferences(contents, relativePath: Self.shellWrapperRelativePath)
         let shellURL = repositoryPath.appendingPathComponent(Self.shellWrapperRelativePath)
         let shellOK = !shellUsed || validateWrapper(at: shellURL) == .ok
-        return (installed, url.path, installed && (!promptOK || !readOK || !shellOK))
+        return AIEditorHookTargetStatus(
+            installed: installed,
+            configPath: url.path,
+            broken: installed && (!promptOK || !readOK || !shellOK),
+            readGate: readUsed,
+            shellGate: shellUsed
+        )
     }
 
     /// Validates a repo-local wrapper script (marker, version, executable bit).

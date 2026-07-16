@@ -17,8 +17,9 @@ public struct PromptShellGateDecision: Equatable, Sendable {
 
 /// Best-effort gate for Cursor `beforeShellExecution` / Claude `PreToolUse` (Bash).
 /// Tokenizes the command and flags sensitive path tokens (same heuristics as the
-/// read-gate path heuristics). Does not parse shell grammar and never reads file contents;
-/// findings ask for user confirmation instead of blocking.
+/// read-gate path heuristics, including symlink targets when the path exists).
+/// Does not parse shell grammar and never reads file contents; findings ask for
+/// user confirmation instead of blocking.
 public enum PromptShellGate {
     public static func evaluate(json: String, adapter: CheckHookAdapter) throws -> PromptShellGateDecision {
         guard let data = json.data(using: .utf8),
@@ -28,15 +29,15 @@ public enum PromptShellGate {
         guard let command = extractCommand(from: root, adapter: adapter) else {
             throw PromptHookInputError.invalidJSON
         }
-        return evaluate(command: command)
+        let cwd = (root["cwd"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        return evaluate(command: command, cwd: cwd)
     }
 
-    public static func evaluate(command: String) -> PromptShellGateDecision {
+    public static func evaluate(command: String, cwd: String? = nil) -> PromptShellGateDecision {
         var seen = Set<String>()
         var suspicious: [String] = []
         for candidate in pathCandidates(in: command) {
-            guard PromptAttachmentAdvisor.isSuspicious(path: candidate) else { continue }
-            let name = URL(fileURLWithPath: candidate).lastPathComponent
+            guard let name = firstSuspiciousBasename(in: candidate, cwd: cwd) else { continue }
             if seen.insert(name.lowercased()).inserted {
                 suspicious.append(name)
             }
@@ -50,6 +51,19 @@ public enum PromptShellGate {
             suspiciousPaths: suspicious,
             reason: "Offsend: command touches sensitive path (\(names)). Confirm before running."
         )
+    }
+
+    /// Raw token first (covers `~/.ssh/…` without expanding), then absolute + symlink target.
+    private static func firstSuspiciousBasename(in candidate: String, cwd: String?) -> String? {
+        var paths = [candidate]
+        for resolved in PromptReadGate.sensitivityCheckPaths(for: candidate, cwd: cwd)
+            where !paths.contains(resolved) {
+            paths.append(resolved)
+        }
+        for path in paths where PromptAttachmentAdvisor.isSuspicious(path: path) {
+            return URL(fileURLWithPath: path).lastPathComponent
+        }
+        return nil
     }
 
     public static func extractCommand(from root: [String: Any], adapter: CheckHookAdapter) -> String? {

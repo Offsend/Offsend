@@ -54,6 +54,17 @@ public enum PromptReadGate {
         return URL(fileURLWithPath: path, relativeTo: baseURL).standardizedFileURL.path
     }
 
+    /// Presented path plus symlink-resolved target when it differs (benign link name → `.env`).
+    public static func sensitivityCheckPaths(for path: String, cwd: String? = nil) -> [String] {
+        let absolute = resolveFilesystemPath(path, cwd: cwd)
+        var paths = [absolute]
+        let resolved = URL(fileURLWithPath: absolute).resolvingSymlinksInPath().path
+        if resolved != absolute {
+            paths.append(resolved)
+        }
+        return paths
+    }
+
     /// Path denylist only (no content scan). Prefer `evaluate` with entities for full gate behavior.
     public static func evaluate(json: String, adapter: CheckHookAdapter) throws -> PromptReadGateDecision {
         let input = try parse(json: json, adapter: adapter)
@@ -61,8 +72,9 @@ public enum PromptReadGate {
     }
 
     public static func evaluatePath(_ path: String) -> PromptReadGateDecision {
-        if PromptAttachmentAdvisor.isSuspicious(path: path) {
-            let name = URL(fileURLWithPath: path).lastPathComponent
+        for candidate in sensitivityCheckPaths(for: path) {
+            guard PromptAttachmentAdvisor.isSuspicious(path: candidate) else { continue }
+            let name = URL(fileURLWithPath: candidate).lastPathComponent
             return PromptReadGateDecision(
                 path: path,
                 allowed: false,

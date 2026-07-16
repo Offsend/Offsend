@@ -45,14 +45,21 @@ final class AIEditorHookInstallerTests: XCTestCase {
         let data = try Data(contentsOf: configURL)
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         let hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
-        XCTAssertNotNil(hooks["beforeShellExecution"])
+        let shellHooks = try XCTUnwrap(hooks["beforeShellExecution"] as? [[String: Any]])
+        XCTAssertEqual(shellHooks.count, 2) // foreign audit.sh + Offsend check-shell.sh
+        XCTAssertTrue(shellHooks.contains { ($0["command"] as? String) == "./hooks/audit.sh" })
+        XCTAssertTrue(
+            shellHooks.contains { ($0["command"] as? String)?.contains("check-shell.sh") == true }
+        )
         let beforeSubmit = try XCTUnwrap(hooks["beforeSubmitPrompt"] as? [[String: Any]])
         XCTAssertEqual(beforeSubmit.count, 1)
         let command = try XCTUnwrap(beforeSubmit.first?["command"] as? String)
         XCTAssertTrue(command.contains(".offsend/hooks/check-prompt.sh"))
         XCTAssertTrue(command.contains("soft-block"))
         XCTAssertEqual(beforeSubmit.first?["failClosed"] as? Bool, false)
-        XCTAssertTrue(installer.status(target: .cursor, repositoryPath: root).installed)
+        let status = installer.status(target: .cursor, repositoryPath: root)
+        XCTAssertTrue(status.installed)
+        XCTAssertTrue(status.shellGate)
     }
 
     func testInstallClaudeMergesSettingsAndUninstall() throws {
@@ -375,7 +382,28 @@ final class AIEditorHookInstallerTests: XCTestCase {
         XCTAssertTrue((shellHooks.first?["command"] as? String)?.contains("check-shell.sh") == true)
     }
 
-    func testShellGateOffByDefaultAndReinstallRemoves() throws {
+    func testShellGateOnByDefault() throws {
+        let installer = AIEditorHookInstaller()
+        let result = try installer.install(
+            target: .cursor,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend"
+        )
+        XCTAssertTrue(result.withShellGate)
+        XCTAssertNotNil(result.shellWrapperPath)
+
+        let data = try Data(contentsOf: URL(fileURLWithPath: result.configPath))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
+        let shellHooks = try XCTUnwrap(hooks["beforeShellExecution"] as? [[String: Any]])
+        XCTAssertTrue((shellHooks.first?["command"] as? String)?.contains("check-shell.sh") == true)
+
+        let status = installer.status(target: .cursor, repositoryPath: root)
+        XCTAssertTrue(status.shellGate)
+        XCTAssertTrue(status.readGate)
+    }
+
+    func testShellGateOptOutRemovesEntryAndOrphanWrapper() throws {
         let installer = AIEditorHookInstaller()
         _ = try installer.install(
             target: .cursor,
@@ -383,11 +411,11 @@ final class AIEditorHookInstallerTests: XCTestCase {
             cliExecutablePath: "/usr/local/bin/offsend",
             withShellGate: true
         )
-        // Reinstall without the shell gate removes the entry and the orphan wrapper.
         let result = try installer.install(
             target: .cursor,
             repositoryPath: root,
-            cliExecutablePath: "/usr/local/bin/offsend"
+            cliExecutablePath: "/usr/local/bin/offsend",
+            withShellGate: false
         )
         XCTAssertFalse(result.withShellGate)
         XCTAssertNil(result.shellWrapperPath)
@@ -398,6 +426,7 @@ final class AIEditorHookInstallerTests: XCTestCase {
         XCTAssertNil(hooks["beforeShellExecution"])
         let shellURL = root.appendingPathComponent(AIEditorHookInstaller.shellWrapperRelativePath)
         XCTAssertFalse(FileManager.default.fileExists(atPath: shellURL.path))
+        XCTAssertFalse(installer.status(target: .cursor, repositoryPath: root).shellGate)
     }
 
     func testInstallClaudeWithShellGateAddsBashMatcher() throws {

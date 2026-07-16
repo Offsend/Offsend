@@ -259,6 +259,23 @@ public struct OffsendDoctor: Sendable {
                     )
                 }
             }
+
+            // Shell-gate is on by default for Cursor/Claude; warn when an install omits it.
+            let missingShellGate = AIEditorHookTarget.allCases.filter { target in
+                guard AIEditorHookInstaller.supportsFileGates(target) else { return false }
+                let status = installer.status(target: target, repositoryPath: cwd)
+                return status.installed && !status.shellGate
+            }
+            if !missingShellGate.isEmpty {
+                let names = missingShellGate.map(\.rawValue).joined(separator: ", ")
+                checks.append(
+                    DoctorCheck(
+                        name: "ai-shell-gate",
+                        status: .warn,
+                        message: "Shell gate not installed for \(names). Agents can still read sensitive files via shell (cat/grep/sed). Re-run: offsend hook install --target cursor|claude (shell-gate is on by default; use --no-shell-gate to opt out)"
+                    )
+                )
+            }
         }
 
         checks.append(

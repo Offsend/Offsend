@@ -56,7 +56,7 @@ offsend doctor --format json
 
 Exits `2` when any check has status `fail`. AI hooks and seal key warnings are informational (`warn`).
 
-Checks include `ai-wrapper-prompt` / `ai-wrapper-read` (managed marker + version) when AI hooks are installed.
+Checks include `ai-wrapper-prompt` / `ai-wrapper-read` / `ai-wrapper-shell` (managed marker + version) when those wrappers exist, and `ai-shell-gate` (warn) when Cursor/Claude are installed without a shell-gate.
 
 ---
 
@@ -189,7 +189,7 @@ offsend check --adapter claude --read-gate --no-notify   # file-read gate
 | `--seal-copy` | off | Write sealed copy to private temp file + clipboard |
 | `--debug-hook` | off | Append diagnostics to `hook-debug.log` (no secret values) |
 | `--read-gate` | off | File-read gate for Cursor / Claude: sensitive paths + secret content scan |
-| `--shell-gate` | off | Sensitive-path gate for Cursor / Claude shell hooks (`ask` on findings) |
+| `--shell-gate` | — | Sensitive-path gate for Cursor / Claude shell hooks (`ask` on findings); used by installed wrappers |
 | `--key-file PATH` | — | Seal key file for `--seal-copy` / `--hook-policy block` |
 | `--key-name NAME` | — | Named key in `~/.offsend/keys/NAME.key` |
 
@@ -276,10 +276,7 @@ offsend hook install --target all
 
 offsend hook install --target cursor --hook-policy advise
 offsend hook install --target claude --no-read-gate
-
-# Recommended for Cursor / Claude: prompt + read gates, plus opt-in shell gate
-offsend hook install --target cursor --shell-gate
-offsend hook install --target claude --shell-gate
+offsend hook install --target cursor --no-shell-gate
 ```
 
 | Flag | Description |
@@ -287,7 +284,7 @@ offsend hook install --target claude --shell-gate
 | `--target cursor\|claude\|windsurf\|codex\|all` | AI editor target |
 | `--hook-policy advise\|soft-block\|block` | Override default policy (`soft-block`) |
 | `--read-gate` / `--no-read-gate` | File-read path gates (**Cursor + Claude only**). **On by default**; `--no-read-gate` disables |
-| `--shell-gate` | Shell-command gate (**Cursor + Claude only**). **Opt-in**; findings ask for confirmation instead of blocking. Recommended when agents can run shell |
+| `--shell-gate` / `--no-shell-gate` | Shell-command gate (**Cursor + Claude only**). **On by default**; findings ask for confirmation instead of blocking. `--no-shell-gate` disables |
 | `--cli-path PATH` | CLI for wrapper scripts |
 | `--force` | Overwrite a foreign git hook or AI wrapper; managed files refresh automatically |
 
@@ -295,7 +292,7 @@ Install **merges** into existing editor configs (does not remove foreign hooks).
 
 - `.offsend/hooks/check-prompt.sh` — install-time CLI path first, then `command -v offsend`
 - `.offsend/hooks/check-read.sh` — read gate (default on for Cursor/Claude; skipped with `--no-read-gate`)
-- `.offsend/hooks/check-shell.sh` — shell gate (only with `--shell-gate`)
+- `.offsend/hooks/check-shell.sh` — shell gate (default on for Cursor/Claude; skipped with `--no-shell-gate`)
 - managed entry in editor config (`_offsend` metadata)
 
 Existing AI wrappers are updated only when they contain a valid Offsend managed marker in the script header. A foreign wrapper is preserved unless `--force` is explicit.
@@ -304,8 +301,8 @@ Commit `.offsend/hooks/` and the editor config to share with the team.
 
 | Target | Config file | Default `--hook-policy` | Read gate | Shell gate |
 | --- | --- | --- | --- | --- |
-| `cursor` | `.cursor/hooks.json` | `soft-block` | on by default | opt-in (`--shell-gate`) |
-| `claude` | `.claude/settings.json` | `soft-block` | on by default | opt-in (`--shell-gate`) |
+| `cursor` | `.cursor/hooks.json` | `soft-block` | on by default | on by default |
+| `claude` | `.claude/settings.json` | `soft-block` | on by default | on by default |
 | `windsurf` | `.windsurf/hooks.json` | `soft-block` | not supported | not supported |
 | `codex` | `.codex/hooks.json` | `soft-block` | not supported | not supported |
 
@@ -357,7 +354,7 @@ Treat editor hooks as **defense-in-depth**, not a hard perimeter. Prefer this st
 1. **No plaintext secrets in the workspace** — env vars, a secret manager, or `offsend seal`
 2. **AI ignore files** — `offsend prepare` / `offsend ignore` (primary hard exclusion from indexing and context)
 3. **Prompt + read gates** — friction on known editor paths (`@file`, Read/Edit/Write)
-4. **Shell-gate (opt-in)** — friction when the agent runs shell (`cat` / `grep` / `sed` and similar)
+4. **Shell-gate** — friction when the agent runs shell (`cat` / `grep` / `sed` and similar); on by default for Cursor/Claude
 5. **Git pre-commit + CI** — catch secrets if they leave via git
 
 ### What hooks cover
@@ -367,7 +364,7 @@ Treat editor hooks as **defense-in-depth**, not a hard perimeter. Prefer this st
 | Prompt text / pasted secrets | Prompt gate | Default on install |
 | `@file` / file-like mentions in the prompt | Prompt gate | Bounded disk read of the mentioned path |
 | Editor Read / Edit / Write tools | Read-gate | Cursor `beforeReadFile`; Claude `PreToolUse` (`Read\|Edit\|Write`) |
-| Agent shell (`Bash` / `beforeShellExecution`) | Shell-gate | **Opt-in** (`--shell-gate`); returns `ask`, not hard deny |
+| Agent shell (`Bash` / `beforeShellExecution`) | Shell-gate | On by default for Cursor/Claude; returns `ask`, not hard deny |
 
 ### What hooks do not cover
 
@@ -375,10 +372,11 @@ These walk past a path-based file hook by design. Close them with ignore rules a
 
 | Bypass | Why the hook misses it | What to use instead |
 | --- | --- | --- |
-| **Shell without shell-gate** | `cat` / `grep` / `sed` read the file outside the Read tool | `offsend hook install --target cursor\|claude --shell-gate` |
+| **Shell without shell-gate** | `cat` / `grep` / `sed` read the file outside the Read tool (older installs, or `--no-shell-gate`) | Re-run `offsend hook install --target cursor\|claude` (shell-gate is on by default) |
 | **MCP / other tools** | Tool response payloads can include file content on a different pipe than file-reference hooks | Restrict MCP access; keep secrets out of the workspace; rely on AI ignore |
 | **Subagents** | A subagent may run with its own context and hook config (or none), independent of the parent turn | Project-level AI ignore; do not store plaintext secrets where any agent can reach them |
-| **Symlinks / renamed copies** | Path heuristics match names and path segments; a copy or symlink under a benign name can skip the denylist | Content scan on the gated read path may still catch secret-shaped values; ignore patterns + no plaintext remain the real control |
+| **Symlinks to sensitive targets** | A benign link name (e.g. `notes.txt` → `.env`) used to skip name heuristics | Read-gate and shell-gate (when the path exists) also check the symlink-resolved target |
+| **Renamed copies** | A real copy under a new name is not a symlink, so path heuristics may miss it | Content scan on the gated read path may still catch secret-shaped values; ignore patterns + no plaintext remain the real control |
 | **Open editor tabs (Cursor)** | Cursor may not always enforce `beforeReadFile` deny | `offsend prepare` / `.cursorignore` for hard blocks |
 
 ### Hook policies
@@ -405,11 +403,13 @@ On a secret hit the editor receives deny with a short remediation message (detec
 
 Cursor may not always enforce `beforeReadFile` deny (known IDE limitation; open tabs can bypass the hook). Prefer `offsend prepare` / `.cursorignore` for hard blocks; treat read-gate as defense-in-depth.
 
-### Shell-gate (opt-in)
+### Shell-gate (on by default)
 
-`offsend hook install --target cursor --shell-gate` (same for `claude`) adds a gate for agent shell commands (Cursor `beforeShellExecution`, Claude `PreToolUse` matcher `Bash`). Recommended when the agent can run shell — without it, `cat` / `grep` / `sed` on a sensitive file bypass the read-gate entirely.
+Installed by default for Cursor and Claude (disable with `--no-shell-gate`). Gates agent shell commands (Cursor `beforeShellExecution`, Claude `PreToolUse` matcher `Bash`). Without it, `cat` / `grep` / `sed` on a sensitive file bypass the read-gate entirely.
 
 The command line is tokenized and checked against the same sensitive-path heuristics as the read-gate (`cat .env`, `cp ~/.ssh/id_rsa …`, `--key-file=prod.key`). Findings return **`ask`** — the editor requests user confirmation instead of blocking, which keeps false positives cheap. This is useful friction, not an airtight shell sandbox: no shell grammar parsing, no file contents read, and no hard deny.
+
+`offsend doctor` and `offsend hook status` warn when Cursor/Claude hooks are installed without a shell-gate (common for older installs). Re-run `offsend hook install --target cursor` (or `claude`) to add it.
 
 Note: Cursor currently enforces only `deny` reliably; `ask` may not pause the command in all versions (known IDE limitation).
 
@@ -569,9 +569,7 @@ offsend hook install
 offsend show
 offsend prepare
 offsend ignore .env secrets/ '*.pem'   # harden ignore rules first
-offsend hook install                   # git + prompt/read gates for detected editors
-offsend hook install --target cursor --shell-gate
-offsend hook install --target claude --shell-gate
+offsend hook install                   # git + prompt/read/shell gates for detected editors
 offsend hook status --target all
 offsend doctor
 ```

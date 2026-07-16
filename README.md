@@ -157,7 +157,7 @@ The macOS app also ships a bundled `offsend` helper (`Offsend.app/Contents/Helpe
 
 **AI-context boundary checks** — `offsend show` and `offsend prepare` inspect paths and AI ignore rules. They do not read the contents of matched files.
 
-**AI prompt gates** — `offsend hook install --target cursor|claude|windsurf|codex` checks prompts via editor hooks before they leave the IDE (read-gate on by default for Cursor/Claude; add `--shell-gate` when agents can run shell). Defense-in-depth — see [what hooks cover / do not cover](docs/cli.md#what-hooks-cover).
+**AI prompt gates** — `offsend hook install --target cursor|claude|windsurf|codex` checks prompts via editor hooks before they leave the IDE (read-gate and shell-gate on by default for Cursor/Claude). Defense-in-depth — see [what hooks cover / do not cover](docs/cli.md#what-hooks-cover).
 
 ### Commands
 
@@ -188,8 +188,7 @@ offsend prepare --dry-run    # preview ignore files
 offsend prepare              # create missing AI ignore files
 offsend init --template node # optional project config — see docs/configuration.md
 offsend check --staged       # scan before commit
-offsend hook install         # git hook + AI-editor hooks for detected editors
-# then: offsend hook install --target cursor --shell-gate  (and/or claude)
+offsend hook install         # git hook + AI-editor hooks (prompt/read/shell for Cursor/Claude)
 ```
 
 ### Examples
@@ -205,18 +204,15 @@ offsend ignore secrets/ '*.pem'   # add patterns to every AI ignore file
 offsend check README.md Sources/
 offsend check --staged --format json --quiet   # add --verbose for every finding
 
-# Full protection: git pre-commit + AI-editor hooks (prompt + read gates)
+# Full protection: git pre-commit + AI-editor hooks (prompt + read + shell gates)
 offsend hook install --path /path/to/your/repo
 offsend hook status
-
-# Recommended when agents can run shell (Cursor / Claude): add shell-gate
-offsend hook install --target cursor --shell-gate
-offsend hook install --target claude --shell-gate
 
 # Narrower installs
 offsend hook install --target git                     # git hook only
 offsend hook install --target cursor                  # one editor
 offsend hook install --target claude --no-read-gate   # opt out of the read gate
+offsend hook install --target cursor --no-shell-gate  # opt out of the shell gate
 offsend hook install --target all                     # all four editors
 ```
 
@@ -443,7 +439,7 @@ Coding assistants: Claude Code, Codex, Cursor, Windsurf (CLI prompt hooks + igno
 Yes. Install [AI-editor hooks](docs/cli.md#ai-editor-hooks) with `offsend hook install --target cursor` (or `claude`, `windsurf`, `codex`, `all`).
 
 **Are AI-editor hooks a hard block on every way to read a file?**  
-No. They are defense-in-depth on known editor paths (prompt, `@file`, Read/Edit/Write; optional shell-gate). Shell without `--shell-gate`, MCP tool payloads, subagents with their own hook config, and some symlink/rename cases can still reach the same file. Prefer AI ignore files and keeping secrets out of the workspace — see [what hooks cover / do not cover](docs/cli.md#what-hooks-cover).
+No. They are defense-in-depth on known editor paths (prompt, `@file`, Read/Edit/Write, shell). Older installs without shell-gate, MCP tool payloads, subagents with their own hook config, and renamed copies can still reach the same file. Symlinks to sensitive targets are checked via the resolved path. Prefer AI ignore files and keeping secrets out of the workspace — see [what hooks cover / do not cover](docs/cli.md#what-hooks-cover).
 
 **Where is the full CLI documentation?**  
 [docs/cli.md](docs/cli.md) (commands, flags, exit codes). Project config: [docs/configuration.md](docs/configuration.md).
