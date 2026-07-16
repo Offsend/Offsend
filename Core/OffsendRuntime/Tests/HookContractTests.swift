@@ -87,7 +87,8 @@ final class HookContractTests: XCTestCase {
         )
         XCTAssertFalse(envClaude.allowed)
         let claudeOut = PromptReadGateRenderer.render(decision: envClaude, adapter: .claude)
-        XCTAssertTrue(claudeOut.stdout.contains("block"))
+        XCTAssertTrue(claudeOut.stdout.contains("\"permissionDecision\":\"deny\""))
+        XCTAssertTrue(claudeOut.stdout.contains("hookSpecificOutput"))
 
         let readmeClaude = try PromptReadGate.evaluate(
             json: loadFixture("claude/PreToolUse.Read.readme.json"),
@@ -109,7 +110,9 @@ final class HookContractTests: XCTestCase {
             adapter: .claude
         )
         XCTAssertFalse(docker.allowed)
-        XCTAssertTrue(PromptReadGateRenderer.render(decision: docker, adapter: .claude).stdout.contains("block"))
+        let dockerOut = PromptReadGateRenderer.render(decision: docker, adapter: .claude)
+        XCTAssertTrue(dockerOut.stdout.contains("\"permissionDecision\":\"deny\""))
+        XCTAssertTrue(dockerOut.stdout.contains("hookSpecificOutput"))
 
         let ordinary = try PromptReadGate.evaluate(
             json: #"{"file_path":"/repo/docker/config.json"}"#,

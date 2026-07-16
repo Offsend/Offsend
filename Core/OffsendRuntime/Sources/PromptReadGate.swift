@@ -188,10 +188,15 @@ public enum PromptReadGateRenderer {
             if decision.allowed {
                 return CheckHookAdapterOutput(stdout: "{}", stderr: "", exitCode: 0)
             }
+            // PreToolUse requires hookSpecificOutput.permissionDecision (top-level
+            // decision/reason is deprecated and ignored by current Claude Code).
             return CheckHookAdapterOutput(
                 stdout: jsonObject([
-                    "decision": "block",
-                    "reason": decision.reason,
+                    "hookSpecificOutput": [
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": "deny",
+                        "permissionDecisionReason": decision.reason,
+                    ],
                 ]),
                 stderr: decision.reason + "\n",
                 exitCode: 0

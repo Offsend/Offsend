@@ -365,7 +365,7 @@ The read gate protects Cursor `beforeReadFile` and Claude `PreToolUse` (Read); i
 1. **Denies sensitive paths** — `.env`, `*.pem`, credentials-like names, and files under `.ssh`, `.aws`, `.kube`, `.docker`, `.gnupg`, `.azure`, `.fly`, …
 2. **Scans file content for secrets** — uses the same secret detectors as the prompt gate (`--secrets-only` by default). Cursor supplies `content` in the hook JSON; Claude’s PreToolUse has no body, so Offsend reads a bounded UTF-8 prefix from disk (up to 50k characters). Binary / unreadable files skip the content step (path rules still apply).
 
-On a secret hit the editor receives deny/block with a short remediation message (detector type names only — no secret values).
+On a secret hit the editor receives deny with a short remediation message (detector type names only — no secret values). Claude PreToolUse uses `hookSpecificOutput.permissionDecision: "deny"` (not the deprecated top-level `decision: "block"`).
 
 Cursor may not always enforce `beforeReadFile` deny (known IDE limitation; open tabs can bypass the hook). Prefer `offsend prepare` / `.cursorignore` for hard blocks; treat read-gate as defense-in-depth.
 
