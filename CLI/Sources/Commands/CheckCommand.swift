@@ -195,8 +195,9 @@ struct Check: AsyncParsableCommand {
         )
 
         let service = OffsendCheckService(context: context!)
+        let scanText = promptScanText(payload: promptPayload, fallback: rawText)
         let textResult = await service.runText(
-            promptPayload?.prompt ?? rawText,
+            scanText,
             failPolicy: resolved.failPolicy,
             disabledDetectors: resolved.disabledDetectors,
             customDictionaries: resolved.customDictionaries
@@ -270,6 +271,24 @@ struct Check: AsyncParsableCommand {
     private struct ParsedPromptPayload {
         let prompt: String
         let attachmentPaths: [String]
+        let cwd: String?
+    }
+
+    /// Prompt text plus bounded contents of `@mentions` / attachments so secrets in
+    /// referenced files are caught before the model turn starts.
+    private func promptScanText(payload: ParsedPromptPayload?, fallback: String) -> String {
+        guard let payload else { return fallback }
+        let cwd = payload.cwd
+            ?? workingDirectory
+            ?? FileManager.default.currentDirectoryPath
+        var parts = [payload.prompt]
+        for path in payload.attachmentPaths {
+            let resolved = PromptReadGate.resolveFilesystemPath(path, cwd: cwd)
+            if let content = PromptReadGate.loadContentPrefix(fromPath: resolved) {
+                parts.append(content)
+            }
+        }
+        return parts.joined(separator: "\n")
     }
 
     private func parsePromptPayload(
@@ -281,7 +300,11 @@ struct Check: AsyncParsableCommand {
 
         do {
             let payload = try PromptHookInput.payload(fromJSON: rawText, adapter: adapter)
-            return ParsedPromptPayload(prompt: payload.prompt, attachmentPaths: payload.attachmentPaths)
+            return ParsedPromptPayload(
+                prompt: payload.prompt,
+                attachmentPaths: payload.attachmentPaths,
+                cwd: payload.cwd
+            )
         } catch let error as PromptHookInputError {
             hookEmitter().emitFailOpen(
                 adapter: adapter,

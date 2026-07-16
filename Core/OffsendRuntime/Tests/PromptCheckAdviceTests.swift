@@ -131,6 +131,20 @@ final class PromptHookInputTests: XCTestCase {
         XCTAssertEqual(try PromptHookInput.prompt(fromJSON: json, adapter: .windsurf), "cascade hi")
     }
 
+    func testMentionPathsFromAtRefs() {
+        XCTAssertEqual(PromptHookInput.mentionPaths(in: "fix bug @index.js"), ["index.js"])
+        XCTAssertEqual(PromptHookInput.mentionPaths(in: "see @src/app.ts please"), ["src/app.ts"])
+        XCTAssertEqual(PromptHookInput.mentionPaths(in: "open @./.env"), ["./.env"])
+        XCTAssertEqual(PromptHookInput.mentionPaths(in: "mail user@example.com"), [])
+    }
+
+    func testMergesMentionsIntoAttachmentPathsAndReadsCwd() throws {
+        let json = #"{"prompt":"fix @index.js","cwd":"/repo","attachments":[{"type":"file","file_path":"/tmp/.env"}]}"#
+        let payload = try PromptHookInput.payload(fromJSON: json, adapter: .claude)
+        XCTAssertEqual(payload.cwd, "/repo")
+        XCTAssertEqual(payload.attachmentPaths, ["/tmp/.env", "index.js"])
+    }
+
     func testMissingPromptFails() {
         XCTAssertThrowsError(try PromptHookInput.prompt(fromJSON: #"{"foo":1}"#, adapter: .claude)) { error in
             XCTAssertEqual(error as? PromptHookInputError, .missingPrompt(adapter: .claude))

@@ -360,12 +360,15 @@ Offsend checks prompts **before** they reach Cursor, Claude Code, Windsurf, or C
 
 ### Read-gate (on by default)
 
-The read gate protects Cursor `beforeReadFile` and Claude `PreToolUse` (Read); it is installed by default for these targets (disable with `--no-read-gate`). It:
+The read gate protects Cursor `beforeReadFile` and Claude `PreToolUse` (`Read|Edit|Write`); it is installed by default for these targets (disable with `--no-read-gate`). It:
 
 1. **Denies sensitive paths** — `.env`, `*.pem`, credentials-like names, and files under `.ssh`, `.aws`, `.kube`, `.docker`, `.gnupg`, `.azure`, `.fly`, …
 2. **Scans file content for secrets** — uses the same secret detectors as the prompt gate (`--secrets-only` by default). Cursor supplies `content` in the hook JSON; Claude’s PreToolUse has no body, so Offsend reads a bounded UTF-8 prefix from disk (up to 50k characters). Binary / unreadable files skip the content step (path rules still apply).
+3. **Claude Edit/Write** — same gate runs before edits so a model that already saw a secret cannot “proceed with the fix” via `Edit` after a later `Read` deny.
 
-On a secret hit the editor receives deny with a short remediation message (detector type names only — no secret values). Claude PreToolUse uses `hookSpecificOutput.permissionDecision: "deny"` (not the deprecated top-level `decision: "block"`).
+The prompt gate also scans file-like `@mentions` (for example `@index.js`) by reading a bounded prefix from disk, so attaching a secret file in the prompt can be blocked before the model turn starts.
+
+On a secret hit the editor receives deny with a short remediation message (detector type names only — no secret values). Claude PreToolUse uses `hookSpecificOutput.permissionDecision: "deny"` (not the deprecated top-level `decision: "block"`). Hook command timeout defaults to 30s to avoid cold-start fail-open.
 
 Cursor may not always enforce `beforeReadFile` deny (known IDE limitation; open tabs can bypass the hook). Prefer `offsend prepare` / `.cursorignore` for hard blocks; treat read-gate as defense-in-depth.
 

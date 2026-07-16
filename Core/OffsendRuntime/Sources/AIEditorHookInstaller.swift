@@ -98,7 +98,7 @@ public struct AIEditorHookInstaller: Sendable {
     public static let wrapperRelativePath = ".offsend/hooks/check-prompt.sh"
     public static let readWrapperRelativePath = ".offsend/hooks/check-read.sh"
     public static let shellWrapperRelativePath = ".offsend/hooks/check-shell.sh"
-    public static let managedVersion = 1
+    public static let managedVersion = 2
 
     public enum WrapperValidation: Equatable, Sendable {
         case ok
@@ -665,7 +665,10 @@ public struct AIEditorHookInstaller: Sendable {
         let toolEvent = "PreToolUse"
         var toolGroups = removeManagedFromGroups((hooks[toolEvent] as? [[String: Any]]) ?? [])
         if let readCommand {
-            toolGroups.append(managedClaudeToolGroup(matcher: "Read", command: readCommand))
+            // Gate Read plus Edit/Write so a prior leaked read cannot be "fixed" via Edit.
+            toolGroups.append(
+                managedClaudeToolGroup(matcher: "Read|Edit|Write", command: readCommand)
+            )
         }
         if let shellCommand {
             toolGroups.append(managedClaudeToolGroup(matcher: "Bash", command: shellCommand))

@@ -17,10 +17,13 @@ public enum PromptHookInputError: Error, Equatable, LocalizedError {
 public struct PromptHookPayload: Equatable, Sendable {
     public let prompt: String
     public let attachmentPaths: [String]
+    /// Editor working directory from hook JSON (`cwd`), when present.
+    public let cwd: String?
 
-    public init(prompt: String, attachmentPaths: [String] = []) {
+    public init(prompt: String, attachmentPaths: [String] = [], cwd: String? = nil) {
         self.prompt = prompt
         self.attachmentPaths = attachmentPaths
+        self.cwd = cwd
     }
 }
 
@@ -56,9 +59,20 @@ public enum PromptHookInput {
         guard let prompt else {
             throw PromptHookInputError.missingPrompt(adapter: adapter)
         }
+        let attachments = attachmentPaths(from: root)
+        let mentions = mentionPaths(in: prompt)
+        var paths: [String] = []
+        var seen = Set<String>()
+        for path in attachments + mentions {
+            if seen.insert(path).inserted {
+                paths.append(path)
+            }
+        }
+        let cwd = (root["cwd"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         return PromptHookPayload(
             prompt: prompt,
-            attachmentPaths: attachmentPaths(from: root)
+            attachmentPaths: paths,
+            cwd: cwd
         )
     }
 
@@ -71,6 +85,19 @@ public enum PromptHookInput {
             if let path = item["file_path"] as? String, !path.isEmpty { return path }
             if let path = item["filePath"] as? String, !path.isEmpty { return path }
             return nil
+        }
+    }
+
+    /// File-like `@mentions` in the prompt (`@index.js`, `@src/a.ts`). Skips emails (`a@b.co`).
+    public static func mentionPaths(in prompt: String) -> [String] {
+        let pattern = #"(?<![\w.-])@((?:(?:\./|\.\./|/)[\w./+-]+)|(?:[\w.-]+/[\w./+-]+)|(?:[\w.-]+\.[A-Za-z0-9]{1,12}))"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let range = NSRange(prompt.startIndex..<prompt.endIndex, in: prompt)
+        return regex.matches(in: prompt, range: range).compactMap { match in
+            guard match.numberOfRanges >= 2,
+                  let pathRange = Range(match.range(at: 1), in: prompt) else { return nil }
+            let path = String(prompt[pathRange])
+            return path.isEmpty ? nil : path
         }
     }
 }

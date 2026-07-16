@@ -413,7 +413,7 @@ final class AIEditorHookInstallerTests: XCTestCase {
         let hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
         let preToolUse = try XCTUnwrap(hooks["PreToolUse"] as? [[String: Any]])
         let matchers = preToolUse.compactMap { $0["matcher"] as? String }
-        XCTAssertTrue(matchers.contains("Read"))
+        XCTAssertTrue(matchers.contains("Read|Edit|Write"))
         XCTAssertTrue(matchers.contains("Bash"))
 
         try installer.uninstall(target: .claude, repositoryPath: root)

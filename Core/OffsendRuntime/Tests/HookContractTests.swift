@@ -161,6 +161,15 @@ final class HookContractTests: XCTestCase {
         XCTAssertNil(decision)
     }
 
+    func testReadGateResolvesRelativePathAgainstCwd() {
+        let resolved = PromptReadGate.resolveFilesystemPath("index.js", cwd: "/Users/me/repo")
+        XCTAssertEqual(resolved, "/Users/me/repo/index.js")
+        XCTAssertEqual(
+            PromptReadGate.resolveFilesystemPath("/abs/file.env", cwd: "/Users/me/repo"),
+            "/abs/file.env"
+        )
+    }
+
     func testReadGateIgnoresHighEntropyWhenSecretsOnly() {
         let value = String(repeating: "Ab1+", count: 20)
         let entity = SensitiveEntity(

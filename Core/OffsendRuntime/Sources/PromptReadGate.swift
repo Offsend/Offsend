@@ -37,8 +37,21 @@ public enum PromptReadGate {
         guard let path = extractPath(from: object, adapter: adapter) else {
             throw PromptHookInputError.invalidJSON
         }
+        let cwd = (object["cwd"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         let content = extractContent(from: object, adapter: adapter)
-        return PromptReadGateInput(path: path, content: content)
+        return PromptReadGateInput(path: resolveFilesystemPath(path, cwd: cwd), content: content)
+    }
+
+    /// Absolute paths pass through; relative paths resolve against `cwd` or the process cwd.
+    public static func resolveFilesystemPath(_ path: String, cwd: String?) -> String {
+        if path.hasPrefix("/") {
+            return URL(fileURLWithPath: path).standardizedFileURL.path
+        }
+        let base = cwd.flatMap { $0.isEmpty ? nil : $0 }
+            ?? FileManager.default.currentDirectoryPath
+        // `isDirectory: true` keeps the last cwd segment (Foundation otherwise treats it as a file).
+        let baseURL = URL(fileURLWithPath: base, isDirectory: true)
+        return URL(fileURLWithPath: path, relativeTo: baseURL).standardizedFileURL.path
     }
 
     /// Path denylist only (no content scan). Prefer `evaluate` with entities for full gate behavior.
