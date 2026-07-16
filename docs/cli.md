@@ -276,6 +276,10 @@ offsend hook install --target all
 
 offsend hook install --target cursor --hook-policy advise
 offsend hook install --target claude --no-read-gate
+
+# Recommended for Cursor / Claude: prompt + read gates, plus opt-in shell gate
+offsend hook install --target cursor --shell-gate
+offsend hook install --target claude --shell-gate
 ```
 
 | Flag | Description |
@@ -283,7 +287,7 @@ offsend hook install --target claude --no-read-gate
 | `--target cursor\|claude\|windsurf\|codex\|all` | AI editor target |
 | `--hook-policy advise\|soft-block\|block` | Override default policy (`soft-block`) |
 | `--read-gate` / `--no-read-gate` | File-read path gates (**Cursor + Claude only**). **On by default**; `--no-read-gate` disables |
-| `--shell-gate` | Shell-command gate (**Cursor + Claude only**). **Opt-in**; findings ask for confirmation instead of blocking |
+| `--shell-gate` | Shell-command gate (**Cursor + Claude only**). **Opt-in**; findings ask for confirmation instead of blocking. Recommended when agents can run shell |
 | `--cli-path PATH` | CLI for wrapper scripts |
 | `--force` | Overwrite a foreign git hook or AI wrapper; managed files refresh automatically |
 
@@ -298,12 +302,12 @@ Existing AI wrappers are updated only when they contain a valid Offsend managed 
 
 Commit `.offsend/hooks/` and the editor config to share with the team.
 
-| Target | Config file | Default `--hook-policy` | Read gate |
-| --- | --- | --- | --- |
-| `cursor` | `.cursor/hooks.json` | `soft-block` | on by default |
-| `claude` | `.claude/settings.json` | `soft-block` | on by default |
-| `windsurf` | `.windsurf/hooks.json` | `soft-block` | not supported |
-| `codex` | `.codex/hooks.json` | `soft-block` | not supported |
+| Target | Config file | Default `--hook-policy` | Read gate | Shell gate |
+| --- | --- | --- | --- | --- |
+| `cursor` | `.cursor/hooks.json` | `soft-block` | on by default | opt-in (`--shell-gate`) |
+| `claude` | `.claude/settings.json` | `soft-block` | on by default | opt-in (`--shell-gate`) |
+| `windsurf` | `.windsurf/hooks.json` | `soft-block` | not supported | not supported |
+| `codex` | `.codex/hooks.json` | `soft-block` | not supported | not supported |
 
 ### `hook uninstall`
 
@@ -348,6 +352,35 @@ offsend hook status --target all --format json
 
 Offsend checks prompts **before** they reach Cursor, Claude Code, Windsurf, or Codex. Editors cannot rewrite prompt text via hooks — Offsend **advises** or **soft-blocks** and recommends moving secrets to env / ignore files.
 
+Treat editor hooks as **defense-in-depth**, not a hard perimeter. Prefer this stack:
+
+1. **No plaintext secrets in the workspace** — env vars, a secret manager, or `offsend seal`
+2. **AI ignore files** — `offsend prepare` / `offsend ignore` (primary hard exclusion from indexing and context)
+3. **Prompt + read gates** — friction on known editor paths (`@file`, Read/Edit/Write)
+4. **Shell-gate (opt-in)** — friction when the agent runs shell (`cat` / `grep` / `sed` and similar)
+5. **Git pre-commit + CI** — catch secrets if they leave via git
+
+### What hooks cover
+
+| Path into agent context | Gate | Notes |
+| --- | --- | --- |
+| Prompt text / pasted secrets | Prompt gate | Default on install |
+| `@file` / file-like mentions in the prompt | Prompt gate | Bounded disk read of the mentioned path |
+| Editor Read / Edit / Write tools | Read-gate | Cursor `beforeReadFile`; Claude `PreToolUse` (`Read\|Edit\|Write`) |
+| Agent shell (`Bash` / `beforeShellExecution`) | Shell-gate | **Opt-in** (`--shell-gate`); returns `ask`, not hard deny |
+
+### What hooks do not cover
+
+These walk past a path-based file hook by design. Close them with ignore rules and by keeping secrets off disk — not by expecting the read-gate alone to catch them:
+
+| Bypass | Why the hook misses it | What to use instead |
+| --- | --- | --- |
+| **Shell without shell-gate** | `cat` / `grep` / `sed` read the file outside the Read tool | `offsend hook install --target cursor\|claude --shell-gate` |
+| **MCP / other tools** | Tool response payloads can include file content on a different pipe than file-reference hooks | Restrict MCP access; keep secrets out of the workspace; rely on AI ignore |
+| **Subagents** | A subagent may run with its own context and hook config (or none), independent of the parent turn | Project-level AI ignore; do not store plaintext secrets where any agent can reach them |
+| **Symlinks / renamed copies** | Path heuristics match names and path segments; a copy or symlink under a benign name can skip the denylist | Content scan on the gated read path may still catch secret-shaped values; ignore patterns + no plaintext remain the real control |
+| **Open editor tabs (Cursor)** | Cursor may not always enforce `beforeReadFile` deny | `offsend prepare` / `.cursorignore` for hard blocks |
+
 ### Hook policies
 
 | Policy | Behavior |
@@ -366,7 +399,7 @@ The read gate protects Cursor `beforeReadFile` and Claude `PreToolUse` (`Read|Ed
 2. **Scans file content for secrets** — uses the same secret detectors as the prompt gate (`--secrets-only` by default). Cursor supplies `content` in the hook JSON; Claude’s PreToolUse has no body, so Offsend reads a bounded UTF-8 prefix from disk (up to 50k characters). Binary / unreadable files skip the content step (path rules still apply).
 3. **Claude Edit/Write** — same gate runs before edits so a model that already saw a secret cannot “proceed with the fix” via `Edit` after a later `Read` deny.
 
-The prompt gate also scans file-like `@mentions` (for example `@index.js`) by reading a bounded prefix from disk, so attaching a secret file in the prompt can be blocked before the model turn starts.
+The prompt gate also scans file-like `@mentions` (for example `@index.js`) by reading a bounded prefix from disk, so attaching a secret file in the prompt can be blocked before the model turn starts. That is a **different pipe** from the read-gate: `@file` is checked at prompt submit; Read/Edit/Write are checked when those tools run.
 
 On a secret hit the editor receives deny with a short remediation message (detector type names only — no secret values). Claude PreToolUse uses `hookSpecificOutput.permissionDecision: "deny"` (not the deprecated top-level `decision: "block"`). Hook command timeout defaults to 30s to avoid cold-start fail-open.
 
@@ -374,7 +407,9 @@ Cursor may not always enforce `beforeReadFile` deny (known IDE limitation; open 
 
 ### Shell-gate (opt-in)
 
-`offsend hook install --target cursor --shell-gate` adds a gate for agent shell commands (Cursor `beforeShellExecution`, Claude `PreToolUse` matcher `Bash`). The command line is tokenized and checked against the same sensitive-path heuristics as the read-gate (`cat .env`, `cp ~/.ssh/id_rsa …`, `--key-file=prod.key`). Findings return **`ask`** — the editor requests user confirmation instead of blocking, which keeps false positives cheap. No shell grammar parsing, no file contents read; treat it as defense-in-depth.
+`offsend hook install --target cursor --shell-gate` (same for `claude`) adds a gate for agent shell commands (Cursor `beforeShellExecution`, Claude `PreToolUse` matcher `Bash`). Recommended when the agent can run shell — without it, `cat` / `grep` / `sed` on a sensitive file bypass the read-gate entirely.
+
+The command line is tokenized and checked against the same sensitive-path heuristics as the read-gate (`cat .env`, `cp ~/.ssh/id_rsa …`, `--key-file=prod.key`). Findings return **`ask`** — the editor requests user confirmation instead of blocking, which keeps false positives cheap. This is useful friction, not an airtight shell sandbox: no shell grammar parsing, no file contents read, and no hard deny.
 
 Note: Cursor currently enforces only `deny` reliably; `ask` may not pause the command in all versions (known IDE limitation).
 
@@ -387,6 +422,7 @@ Note: Cursor currently enforces only `deny` reliably; `ask` may not pause the co
 - Cursor `attachments` paths checked by name/extension (files not opened).
 - Project `.offsend.yml` detector disables / dictionaries apply; macOS app settings also affect detection.
 - `hook-debug.log` rotates at ~512 KiB; home paths redacted in log fields.
+- Hooks are an additional check — not a replacement for permissions, AI ignore files, or keeping secrets out of the workspace. See [What hooks do not cover](#what-hooks-do-not-cover).
 
 ### Verify
 
@@ -530,8 +566,13 @@ offsend hook install
 ### AI-editor protection
 
 ```bash
-offsend hook install          # git hook + prompt/read gates for detected editors
-offsend hook status
+offsend show
+offsend prepare
+offsend ignore .env secrets/ '*.pem'   # harden ignore rules first
+offsend hook install                   # git + prompt/read gates for detected editors
+offsend hook install --target cursor --shell-gate
+offsend hook install --target claude --shell-gate
+offsend hook status --target all
 offsend doctor
 ```
 

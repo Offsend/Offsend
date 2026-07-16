@@ -127,7 +127,7 @@ Invalid patterns and unknown kinds are ignored. Entries merge with dictionaries 
 
 ### AI-editor prompt hooks
 
-Separate from git hooks. See [cli.md — AI editor hooks](cli.md#ai-editor-hooks) and [`offsend hook install --target …`](cli.md#hook-install).
+Separate from git hooks. See [cli.md — AI editor hooks](cli.md#ai-editor-hooks) (including [what hooks cover / do not cover](cli.md#what-hooks-cover)) and [`offsend hook install --target …`](cli.md#hook-install).
 
 ### `hooks.type`
 
