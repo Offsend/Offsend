@@ -788,12 +788,12 @@ if [[ "$combined_status" -ne 3 ]]; then
   exit 1
 fi
 
-# offsend ignore: append patterns to existing AI ignore files, create the set when absent.
+# offsend ignore --local: append patterns to existing AI ignore files, create the set when absent.
 ignore_dir="$workdir/ignore-proj"
 mkdir -p "$ignore_dir/secrets"
 printf '%s\n' "# mine" > "$ignore_dir/.cursorignore"
 
-"$CLI_PATH" ignore --path "$ignore_dir" secrets 'config/prod.json'
+"$CLI_PATH" ignore --local --path "$ignore_dir" secrets 'config/prod.json'
 if ! grep -q "secrets/" "$ignore_dir/.cursorignore"; then
   echo "Expected ignore to append the directory pattern with a trailing slash" >&2
   cat "$ignore_dir/.cursorignore" >&2
@@ -810,7 +810,7 @@ fi
 
 ignore_fresh="$workdir/ignore-fresh"
 mkdir -p "$ignore_fresh"
-"$CLI_PATH" ignore --path "$ignore_fresh" '*.pem' --format json | grep -q '"createdRelativePaths"'
+"$CLI_PATH" ignore --local --path "$ignore_fresh" '*.pem' --format json | grep -q '"createdRelativePaths"'
 if ! grep -q '\*.pem' "$ignore_fresh/.cursorignore" || ! grep -q '\*.pem' "$ignore_fresh/.claudeignore"; then
   echo "Expected ignore to create the standard set with the pattern" >&2
   exit 1
