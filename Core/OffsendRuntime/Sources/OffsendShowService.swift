@@ -97,6 +97,8 @@ public struct ShowReport: Sendable, Equatable {
     /// True when the workspace walk hit a file/time limit, so results may be incomplete.
     public let scanIncomplete: Bool
     public let errors: [String]
+    /// Non-fatal issues (e.g. managed ignore drift); do not affect the exit code.
+    public let warnings: [String]
     public let mcp: ShowMCPSection
     public let history: ShowHistorySection
 
@@ -106,6 +108,7 @@ public struct ShowReport: Sendable, Equatable {
         totalExposedCount: Int,
         scanIncomplete: Bool,
         errors: [String],
+        warnings: [String] = [],
         mcp: ShowMCPSection = ShowMCPSection(),
         history: ShowHistorySection = ShowHistorySection()
     ) {
@@ -114,6 +117,7 @@ public struct ShowReport: Sendable, Equatable {
         self.totalExposedCount = totalExposedCount
         self.scanIncomplete = scanIncomplete
         self.errors = errors
+        self.warnings = warnings
         self.mcp = mcp
         self.history = history
     }
@@ -200,12 +204,27 @@ public struct OffsendShowService: Sendable {
                 return lhs.typeTitle < rhs.typeTitle
             }
 
+        var warnings: [String] = []
+        if let patterns = config?.ignore?.patterns, !patterns.isEmpty {
+            let drift = OffsendManagedIgnoreDrift.findings(
+                directoryURL: standardizedURL,
+                patterns: patterns,
+                configuration: configuration
+            )
+            for item in drift {
+                warnings.append(
+                    "Managed ignore drift in \(item.relativePath): missing \(item.missingPatterns.joined(separator: ", ")). Run: offsend sync"
+                )
+            }
+        }
+
         return ShowReport(
             directoryPath: standardizedURL.path,
             groups: groups,
             totalExposedCount: audit.allExposedRelativePaths.count,
             scanIncomplete: !audit.exposureScanCompletion.isComplete,
             errors: audit.errors.map(\.message),
+            warnings: warnings,
             mcp: mcpSection,
             history: historySection
         )

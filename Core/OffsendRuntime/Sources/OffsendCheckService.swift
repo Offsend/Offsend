@@ -90,6 +90,23 @@ public struct OffsendCheckService: Sendable {
                 directoryURL: policyDirectoryURL,
                 configuration: OffsendConfiguration.directoryCheckConfiguration(context: context)
             )
+            if let config = try? ProjectConfigLoader().load(from: policyDirectoryURL),
+               let patterns = config.ignore?.patterns,
+               !patterns.isEmpty {
+                let drift = OffsendManagedIgnoreDrift.findings(
+                    directoryURL: policyDirectoryURL,
+                    patterns: patterns,
+                    configuration: OffsendConfiguration.directoryCheckConfiguration(context: context)
+                )
+                for item in drift {
+                    policyFindings.append(
+                        PolicyCheckFinding(
+                            message: "Managed ignore drift in \(item.relativePath): missing \(item.missingPatterns.joined(separator: ", ")). Run: offsend sync",
+                            status: .warning
+                        )
+                    )
+                }
+            }
         }
 
         return CheckReport(

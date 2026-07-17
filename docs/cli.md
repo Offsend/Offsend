@@ -2,7 +2,7 @@
 
 The `offsend` command runs locally on **macOS and Linux** (x86_64 / arm64). Product overview: [README](../README.md).
 
-Project rules live in [`.offsend.yml`](configuration.md) at the repository root. CLI flags override config when passed explicitly.
+Project rules live in [`.offsend.yml`](configuration.md) at the repository root — including the team AI-ignore patterns (`ignore.patterns`) that `offsend sync` materializes into every AI ignore file. CLI flags override config when passed explicitly.
 
 ---
 
@@ -44,11 +44,12 @@ The package is `offsend-cli`; the command is `offsend`. The macOS app also ships
 | [`offsend doctor`](#offsend-doctor) | Verify CLI, git, settings, hooks, seal key |
 | [`offsend show`](#offsend-show) | List sensitive paths visible to AI tools (no file contents) |
 | [`offsend prepare`](#offsend-prepare) | Create missing AI ignore files |
-| [`offsend protect`](#offsend-protect) | Hide exposed sensitive paths from AI (prepare + ignore required) |
-| [`offsend ignore`](#offsend-ignore) | Add paths or patterns to every AI ignore file |
+| [`offsend protect`](#offsend-protect) | Hide exposed sensitive paths from AI (promote to `.offsend.yml` + sync) |
+| [`offsend ignore`](#offsend-ignore) | Add patterns to team policy (`.offsend.yml`) or locally |
+| [`offsend sync`](#offsend-sync) | Materialize `ignore.patterns` into AI ignore files |
 | [`offsend check`](#offsend-check) | Scan files, staged changes, stdin, or editor hook JSON |
 | [`offsend history`](#agent-history) | Audit / scrub secrets in local Cursor & Claude transcripts |
-| [`offsend init`](#offsend-init) | Create `.offsend.yml` (+ optional baseline check) |
+| [`offsend init`](#offsend-init) | Create `.offsend.yml` (wizard + sync + optional baseline check) |
 | [`offsend edit`](#offsend-edit) | Open `.offsend.yml` in `$EDITOR` |
 | [`offsend hook`](#offsend-hook) | Install / remove / status for git and AI-editor hooks |
 | [`offsend seal`](#offsend-seal) | Replace secrets with reversible seal tokens |
@@ -157,11 +158,12 @@ Exits `2` on write errors.
 
 ## `offsend ignore`
 
-Add paths or glob patterns to every AI ignore file in the project. Updates all ignore files that already exist (`.cursorignore`, `.claudeignore`, `.aiexclude`, …); if the project has none yet, the standard set is created first (same files as `offsend prepare`). `.gitignore` is never modified.
+Add paths or globs to the **team** AI-ignore policy in `.offsend.yml` (`ignore.patterns`), then materialize them with sync. Commit `.offsend.yml` to share rules with the team.
 
 ```bash
-offsend ignore secrets/prod.json
+offsend ignore secrets/prod.json          # → .offsend.yml + sync
 offsend ignore secrets/ '*.pem'
+offsend ignore --local config/prod.json   # local ignore files only (not published)
 offsend ignore config/prod.json --dry-run
 offsend ignore '*.tfstate' --format json
 ```
@@ -169,15 +171,36 @@ offsend ignore '*.tfstate' --format json
 | Argument / flag | Description |
 | --- | --- |
 | `<pattern...>` | Paths or gitignore-style globs to add |
+| `--local` | Write only to AI ignore files on this machine; do **not** update `.offsend.yml` |
 | `--path DIR` | Project directory (default: current directory) |
 | `--dry-run` | Preview without writing |
 | `--format text\|json` | Output format |
 
-Patterns are normalized against the project root: existing directories gain a trailing slash, absolute paths under the root become relative, globs pass through as-is. Lines already present are skipped, so the command is idempotent.
+With `--local`, the CLI prints a warning that the rule will not be shared. To publish later, re-run without `--local`.
 
-Note: this manages *editor* ignore files. Scanner exclusions live in `.offsend.yml` under `check.exclude`.
+Requires an existing `.offsend.yml` (run `offsend init` first) unless `--local` is used. Scanner exclusions remain under `check.exclude`.
 
-Exits `2` on write errors or paths outside the project.
+Exits `2` on write errors, paths outside the project, or missing project config (non-local).
+
+---
+
+## `offsend sync`
+
+Materialize `ignore.patterns` from `.offsend.yml` into every known AI ignore file as a managed block (`# >>> offsend managed` … `# <<< offsend managed`). User lines outside the block are preserved. When `ignore.commit` is `false` (default), also updates `.git/info/exclude` so those files stay untracked; when it is `true`, stale offsend entries are removed from `.git/info/exclude` so the files can be committed again.
+
+Requires an existing `.offsend.yml` (run `offsend init` first). Inside a git repository, files are always materialized at the repository root, regardless of the current directory. Outside a git repository, `.git/info/exclude` is left alone.
+
+```bash
+offsend sync
+offsend sync --dry-run
+offsend sync --format json
+```
+
+| Flag | Description |
+| --- | --- |
+| `--path DIR` | Project directory (default: current directory) |
+| `--dry-run` | Preview without writing |
+| `--format text\|json` | Output format |
 
 ---
 
@@ -259,26 +282,29 @@ Prompt scanning does **not** honor inline `offsend:ignore` bypasses.
 
 ## `offsend init`
 
-Create a starter [`.offsend.yml`](configuration.md) at the git repository root (or current directory if not in a repo). After writing the file, runs a **baseline `check .`** (advise-only; does not fail `init`) with remediation hints (`# offsend:ignore` for fixtures, rotate/env for real secrets).
+Create a starter [`.offsend.yml`](configuration.md) at the git repository root (or current directory if not in a repo). In a TTY, prompts for stack template(s), whether to keep AI ignore files out of git (`ignore.commit`), and whether AI editor hooks may be committed (`hooks.publish`). Then runs **`sync`** and a **baseline `check .`** (advise-only; does not fail `init`).
 
 ```bash
-offsend init                      # TTY: prompts for template; then baseline check
-offsend init --template node
+offsend init                      # TTY: prompts; then sync + baseline check
+offsend init --template node --no-ignore-commit --no-hooks-publish
 offsend init --template js,swift
 offsend init --template python --merge-exclude
 offsend init --list-templates
 offsend init --force
-offsend init --template node --no-check
+offsend init --template node --no-check --no-sync
 ```
 
 | Flag | Description |
 | --- | --- |
 | `--path DIR` | Directory to initialize (default: current directory) |
 | `--template NAME` | Exclude preset(s); repeatable or comma-separated. Aliases: `js`/`ts` → `node`, `ios` → `swift`. Always includes `common`. **Required in non-TTY**; in a TTY, omit to be prompted (Enter = common only) |
+| `--ignore-commit` / `--no-ignore-commit` | Set `ignore.commit` (default outside TTY: false) |
+| `--hooks-publish` / `--no-hooks-publish` | Set `hooks.publish` (default outside TTY: false) |
 | `--list-templates` | Print preset catalog and exit |
-| `--merge-exclude` | Add template patterns to existing config (no overwrite) |
+| `--merge-exclude` | Add template patterns to existing config (does not change `ignore` / `hooks.publish`) |
 | `--force` | Overwrite existing file |
-| `--no-check` | Skip the baseline content scan after writing the config |
+| `--no-check` | Skip the baseline content scan |
+| `--no-sync` | Skip materializing AI ignore files after writing the config |
 
 Next steps printed: `offsend protect && offsend show && offsend hook install`.
 

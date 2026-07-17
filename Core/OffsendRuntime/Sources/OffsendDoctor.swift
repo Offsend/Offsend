@@ -120,6 +120,7 @@ public struct OffsendDoctor: Sendable {
         let configLoader = ProjectConfigLoader(fileManager: fileManager)
         let cwd = URL(fileURLWithPath: fileManager.currentDirectoryPath)
         checks.append(projectConfigCheck(loader: configLoader, directory: cwd))
+        checks.append(contentsOf: ignorePolicyChecks(loader: configLoader, directory: cwd))
 
         let installer = AIEditorHookInstaller(fileManager: fileManager)
         var installedCount = 0
@@ -623,6 +624,106 @@ public struct OffsendDoctor: Sendable {
         case .unsupportedVersion(let version):
             return "\(path): unsupported version \(version); expected 1."
         }
+    }
+
+    private func ignorePolicyChecks(loader: ProjectConfigLoader, directory: URL) -> [DoctorCheck] {
+        guard let config = try? loader.load(from: directory) else { return [] }
+        var checks: [DoctorCheck] = []
+
+        let commitIgnore = config.ignore?.commitsIgnoreFiles ?? false
+        checks.append(
+            DoctorCheck(
+                name: "ignore-commit",
+                status: .ok,
+                message: commitIgnore
+                    ? "ignore.commit: true — AI ignore files may be tracked in git."
+                    : "ignore.commit: false — AI ignore files stay local (.git/info/exclude)."
+            )
+        )
+
+        let publishHooks = config.hooks?.publishesHooks ?? false
+        checks.append(
+            DoctorCheck(
+                name: "hooks-publish",
+                status: .ok,
+                message: publishHooks
+                    ? "hooks.publish: true — AI editor hooks may be committed."
+                    : "hooks.publish: false — AI editor hooks stay local."
+            )
+        )
+
+        if let patterns = config.ignore?.patterns, !patterns.isEmpty {
+            let drift = OffsendManagedIgnoreDrift.findings(
+                directoryURL: directory,
+                patterns: patterns
+            )
+            if drift.isEmpty {
+                checks.append(
+                    DoctorCheck(
+                        name: "ignore-sync",
+                        status: .ok,
+                        message: "Existing AI ignore files include managed patterns from .offsend.yml."
+                    )
+                )
+            } else {
+                let summary = drift.map { "\($0.relativePath) (-\($0.missingPatterns.count))" }.joined(separator: ", ")
+                checks.append(
+                    DoctorCheck(
+                        name: "ignore-sync",
+                        status: .warn,
+                        message: "Managed ignore drift: \(summary). Run: offsend sync"
+                    )
+                )
+            }
+        }
+
+        let resolver = GitRepositoryResolver(fileManager: fileManager, gitExecutable: gitExecutable)
+        let repoRoot = try? resolver.repositoryRoot(startingAt: directory)
+        let excludeService = OffsendLocalGitExcludeService(fileManager: fileManager, gitResolver: resolver)
+
+        if commitIgnore {
+            // Stale local exclusion contradicts commit: true — files can never be added.
+            if excludeService.hasSection(
+                OffsendLocalGitExcludeService.ignoreFilesSection,
+                repositoryURL: directory
+            ) {
+                checks.append(
+                    DoctorCheck(
+                        name: "ignore-commit-conflict",
+                        status: .warn,
+                        message: "ignore.commit is true but .git/info/exclude still hides AI ignore files. Run: offsend sync"
+                    )
+                )
+            }
+        } else if let repoRoot {
+            let ignorePaths = OffsendIgnoreSyncService.managedIgnoreRelativePaths()
+            let tracked = (try? resolver.trackedRelativePaths(matching: ignorePaths, in: repoRoot)) ?? []
+            if !tracked.isEmpty {
+                checks.append(
+                    DoctorCheck(
+                        name: "ignore-commit-conflict",
+                        status: .warn,
+                        message: "ignore.commit is false but git tracks: \(tracked.joined(separator: ", ")). Remove them with `git rm --cached <path>` to keep them local."
+                    )
+                )
+            }
+        }
+
+        if !publishHooks, let repoRoot {
+            let hookPaths = OffsendLocalGitExcludeService.allKnownHookRelativePaths
+            let tracked = (try? resolver.trackedRelativePaths(matching: hookPaths, in: repoRoot)) ?? []
+            if !tracked.isEmpty {
+                checks.append(
+                    DoctorCheck(
+                        name: "hooks-local",
+                        status: .warn,
+                        message: "hooks.publish is false but git tracks: \(tracked.joined(separator: ", ")). Remove them with `git rm --cached <path>` to keep them local."
+                    )
+                )
+            }
+        }
+
+        return checks
     }
 
     private static var cliPathSuffix: String {

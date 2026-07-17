@@ -24,8 +24,14 @@ public struct ProtectReporter: Sendable {
             lines.append(prepareText)
         }
 
+        if !report.addedToConfig.isEmpty {
+            if !lines.isEmpty { lines.append("") }
+            let verb = report.dryRun ? "Would add" : "Added"
+            lines.append("\(verb) to \(ProjectConfigLoader.filename): \(report.addedToConfig.joined(separator: ", "))")
+        }
+
         if report.patterns.isEmpty {
-            if report.errors.isEmpty {
+            if report.errors.isEmpty, report.sync == nil {
                 lines.append("No required sensitive paths were exposed; nothing to add to AI ignore files.")
             }
         } else if let ignore = report.ignore {
@@ -34,6 +40,14 @@ public struct ProtectReporter: Sendable {
                 if !lines.isEmpty { lines.append("") }
                 lines.append("Patterns: \(report.patterns.joined(separator: ", "))")
                 lines.append(ignoreText)
+            }
+        }
+
+        if let sync = report.sync {
+            let syncText = IgnoreSyncReporter().render(sync, format: .text)
+            if !syncText.isEmpty {
+                if !lines.isEmpty { lines.append("") }
+                lines.append(syncText)
             }
         }
 
@@ -72,6 +86,7 @@ public struct ProtectReporter: Sendable {
             let dryRun: Bool
             let includeRecommended: Bool
             let patterns: [String]
+            let addedToConfig: [String]
             let remainingRequiredCount: Int
             let remainingRecommendedCount: Int
             let scanIncomplete: Bool
@@ -79,6 +94,8 @@ public struct ProtectReporter: Sendable {
             let prepareUpdated: [String]
             let ignoreCreated: [String]
             let ignoreUpdated: [String]
+            let syncCreated: [String]
+            let syncUpdated: [String]
             let errors: [String]
         }
 
@@ -87,6 +104,7 @@ public struct ProtectReporter: Sendable {
             dryRun: report.dryRun,
             includeRecommended: report.includeRecommended,
             patterns: report.patterns,
+            addedToConfig: report.addedToConfig,
             remainingRequiredCount: report.remainingRequiredCount,
             remainingRecommendedCount: report.remainingRecommendedCount,
             scanIncomplete: report.scanIncomplete,
@@ -98,6 +116,8 @@ public struct ProtectReporter: Sendable {
                 : report.prepare.updatedRelativePaths,
             ignoreCreated: report.ignore.map { $0.dryRun ? $0.plannedCreates : $0.createdRelativePaths } ?? [],
             ignoreUpdated: report.ignore.map { $0.dryRun ? $0.plannedUpdates.map(\.relativePath) : $0.updatedRelativePaths } ?? [],
+            syncCreated: report.sync?.createdRelativePaths ?? [],
+            syncUpdated: report.sync?.updatedRelativePaths ?? [],
             errors: report.errors
         )
         let encoder = JSONEncoder()

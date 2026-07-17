@@ -1,18 +1,27 @@
 import Foundation
 
+public enum IgnoreCommandScope: String, Sendable {
+    case local
+    case project
+}
+
 public struct IgnoreReporter: Sendable {
     public init() {}
 
-    public func render(_ report: IgnoreReport, format: CheckOutputFormat) -> String {
+    public func render(
+        _ report: IgnoreReport,
+        format: CheckOutputFormat,
+        scope: IgnoreCommandScope = .project
+    ) -> String {
         switch format {
         case .text:
-            return renderText(report)
+            return renderText(report, scope: scope)
         case .json:
-            return renderJSON(report)
+            return renderJSON(report, scope: scope)
         }
     }
 
-    private func renderText(_ report: IgnoreReport) -> String {
+    private func renderText(_ report: IgnoreReport, scope: IgnoreCommandScope) -> String {
         var lines: [String] = []
 
         for error in report.errors {
@@ -25,6 +34,7 @@ public struct IgnoreReporter: Sendable {
         if report.dryRun {
             if report.plannedCreates.isEmpty && report.plannedUpdates.isEmpty {
                 lines.append("Nothing to do; every AI ignore file already covers: \(report.patterns.joined(separator: ", "))")
+                appendLocalWarning(to: &lines, scope: scope)
                 return lines.joined(separator: "\n")
             }
             if !report.plannedCreates.isEmpty {
@@ -39,6 +49,7 @@ public struct IgnoreReporter: Sendable {
                     lines.append("  ~ \(update.relativePath)  (+\(update.addedLines.joined(separator: ", ")))")
                 }
             }
+            appendLocalWarning(to: &lines, scope: scope)
             return lines.joined(separator: "\n")
         }
 
@@ -57,11 +68,20 @@ public struct IgnoreReporter: Sendable {
         if report.createdRelativePaths.isEmpty, report.updatedRelativePaths.isEmpty, report.errors.isEmpty {
             lines.append("Nothing to do; every AI ignore file already covers: \(report.patterns.joined(separator: ", "))")
         }
+        appendLocalWarning(to: &lines, scope: scope)
 
         return lines.joined(separator: "\n")
     }
 
-    private func renderJSON(_ report: IgnoreReport) -> String {
+    private func appendLocalWarning(to lines: inout [String], scope: IgnoreCommandScope) {
+        guard scope == .local else { return }
+        lines.append(
+            "warning: Local only — not written to .offsend.yml and will not be shared with the team."
+        )
+        lines.append("To publish: offsend ignore <pattern>")
+    }
+
+    private func renderJSON(_ report: IgnoreReport, scope: IgnoreCommandScope) -> String {
         struct PlannedUpdatePayload: Encodable {
             let relativePath: String
             let addedLines: [String]
@@ -69,6 +89,8 @@ public struct IgnoreReporter: Sendable {
         struct Payload: Encodable {
             let directory: String
             let dryRun: Bool
+            let scope: String
+            let published: Bool
             let patterns: [String]
             let plannedCreates: [String]
             let plannedUpdates: [PlannedUpdatePayload]
@@ -81,6 +103,8 @@ public struct IgnoreReporter: Sendable {
         let payload = Payload(
             directory: report.directoryPath,
             dryRun: report.dryRun,
+            scope: scope.rawValue,
+            published: scope == .project,
             patterns: report.patterns,
             plannedCreates: report.plannedCreates,
             plannedUpdates: report.plannedUpdates.map {

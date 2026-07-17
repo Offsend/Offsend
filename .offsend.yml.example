@@ -67,10 +67,19 @@ check:
     - kind: regex
       value: "ACME-\\d{4,}"
 
+# Team AI-ignore rules (source of truth). Materialize with `offsend sync`.
+# `offsend ignore <pattern>` adds here; `offsend ignore --local` skips this file.
+ignore:
+  commit: false          # false = keep .cursorignore etc. out of git via .git/info/exclude
+  patterns: []
+  # - "secrets/"
+  # - "**/.env"
+
 hooks:
   type: pre-commit
   fail_on: block
   policy: false
+  publish: false         # false = AI editor hooks stay local (not for commit)
 
 # Optional AI-context controls used by `show`, `doctor`, and the editor gates
 # (`offsend hook install`). See docs/configuration.md#contextmcp.

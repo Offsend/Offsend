@@ -72,6 +72,26 @@ final class OffsendShowServiceTests: XCTestCase {
         XCTAssertTrue(report.groups.isEmpty)
     }
 
+    func testManagedIgnoreDriftIsWarningNotError() throws {
+        try write(
+            ".offsend.yml",
+            """
+            version: 1
+            ignore:
+              commit: true
+              patterns:
+                - "team-secret/"
+            """
+        )
+        // Existing ignore file without the managed pattern → drift.
+        try write(".cursorignore", "personal/\n")
+
+        let report = makeService().run(directoryURL: root)
+
+        XCTAssertTrue(report.errors.isEmpty, "drift must not fail `offsend show`")
+        XCTAssertTrue(report.warnings.contains { $0.contains("team-secret/") && $0.contains("offsend sync") })
+    }
+
     func testRequiredSeverityGroupsSortFirst() throws {
         try write("secrets.json")
         try write(".env")

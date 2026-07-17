@@ -1,21 +1,23 @@
 # Configuration
 
-Offsend looks for a project config file named `.offsend.yml` at the repository root. Commit it so the same rules apply locally, in git hooks, and in CI.
+Offsend looks for a project config file named `.offsend.yml` at the repository root. Commit it so the same rules apply locally, in git hooks, and in CI — including the AI-context boundary: `ignore.patterns` is the source of truth that `offsend sync` materializes into `.cursorignore`, `.claudeignore`, and other AI ignore files.
 
 Create a starter file:
 
 ```bash
-offsend init                      # TTY prompts for template; then baseline check
-offsend init --template node
+offsend init                      # TTY prompts: stack, ignore.commit, hooks.publish; then sync + baseline check
+offsend init --template node --no-ignore-commit --no-hooks-publish
 offsend init --template js,swift
 offsend init --template python --merge-exclude
 offsend init --list-templates
-offsend init --template node --no-check
+offsend init --template node --no-check --no-sync
 # or copy the example:
 cp .offsend.yml.example .offsend.yml
 ```
 
-`offsend init` expands exclude presets into a concrete `check.exclude` list (no `preset` field in the YAML). The `common` preset is always included. Template names are case-insensitive; aliases: `js`/`ts` → `node`, `ios` → `swift`. Without `--template`, a TTY prompts for the stack; non-TTY requires `--template` explicitly. After writing the file, init runs a baseline `check .` unless `--no-check` is set. Use `--merge-exclude` to add patterns to an existing file without overwriting the rest.
+`offsend init` expands exclude presets into a concrete `check.exclude` list (no `preset` field in the YAML). The `common` preset is always included. Template names are case-insensitive; aliases: `js`/`ts` → `node`, `ios` → `swift`. Without `--template`, a TTY prompts for the stack; non-TTY requires `--template` explicitly.
+
+In a TTY, init also asks whether to keep AI ignore files out of git (`ignore.commit`) and whether AI editor hooks may be committed (`hooks.publish`). Flags (`--ignore-commit` / `--no-ignore-commit`, `--hooks-publish` / `--no-hooks-publish`) skip those prompts. After writing the file, init runs `sync` (unless `--no-sync`) and a baseline `check .` (unless `--no-check`). Use `--merge-exclude` to add patterns to an existing file without overwriting `ignore` / `hooks.publish`.
 
 Recommended follow-up: `offsend protect && offsend show && offsend hook install`.
 
@@ -54,10 +56,15 @@ check:
     - kind: regex
       value: "ACME-\\d{4,}"
 
+ignore:
+  commit: false
+  patterns: []
+
 hooks:
   type: pre-commit
   fail_on: block
   policy: false
+  publish: false
 
 # Optional AI-context controls (MCP policy, etc.)
 # context:
@@ -76,6 +83,23 @@ A fuller annotated example lives in [`.offsend.yml.example`](../.offsend.yml.exa
 ### `version`
 
 Config schema version. Use `1`; other versions are rejected.
+
+### `ignore.commit`
+
+When `false` (default), `offsend sync` keeps AI ignore files (`.cursorignore`, `.claudeignore`, …) out of git by writing their paths into `.git/info/exclude`. Team rules still live in `ignore.patterns`. Set `true` only if the team wants those files tracked; the next `offsend sync` then removes the stale offsend entries from `.git/info/exclude`.
+
+### `ignore.patterns`
+
+Mandatory AI-ignore patterns for the repository. Source of truth for the managed block in editor ignore files.
+
+- `offsend ignore <pattern>` appends here, then runs sync
+- `offsend ignore --local <pattern>` writes only to local ignore files (not shared)
+- `offsend sync` materializes the managed block into every known AI ignore file
+- User-authored lines outside the managed markers are preserved
+
+### `hooks.publish`
+
+When `false` (default), `offsend hook install` keeps AI editor hook files local (updates `.git/info/exclude`) and warns that they will not be shared. When `true`, wrappers are written without a machine-specific `PREFERRED_BIN` so they are safer to commit.
 
 ### `check.fail_on`
 
@@ -150,6 +174,10 @@ Exit policy used by installed hooks. If omitted, falls back to `check.fail_on`, 
 ### `hooks.policy`
 
 Whether installed hooks include workspace policy checks. If omitted, falls back to `check.policy`, then `false`. For faster commits that check only staged files, keep this `false`.
+
+### `hooks.publish`
+
+Whether AI editor hook files (`.cursor/hooks.json`, `.offsend/hooks/`, …) are intended to be committed. Default `false`: `offsend hook install` keeps them local via `.git/info/exclude`. When `true`, wrappers omit machine-specific absolute paths so they are safer to share.
 
 ### `context.mcp`
 

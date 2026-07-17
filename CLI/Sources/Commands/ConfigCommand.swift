@@ -29,6 +29,30 @@ struct Init: AsyncParsableCommand {
     )
     var template: [String] = []
 
+    @Flag(
+        name: .customLong("ignore-commit"),
+        help: "Commit AI ignore files to git (sets ignore.commit: true)."
+    )
+    var ignoreCommit = false
+
+    @Flag(
+        name: .customLong("no-ignore-commit"),
+        help: "Keep AI ignore files local (sets ignore.commit: false). Default outside TTY."
+    )
+    var noIgnoreCommit = false
+
+    @Flag(
+        name: .customLong("hooks-publish"),
+        help: "Allow committing AI editor hooks (sets hooks.publish: true)."
+    )
+    var hooksPublish = false
+
+    @Flag(
+        name: .customLong("no-hooks-publish"),
+        help: "Keep AI editor hooks local (sets hooks.publish: false). Default outside TTY."
+    )
+    var noHooksPublish = false
+
     @Flag(name: .long, help: "Overwrite an existing \(ProjectConfigLoader.filename).")
     var force = false
 
@@ -47,6 +71,12 @@ struct Init: AsyncParsableCommand {
     )
     var noCheck = false
 
+    @Flag(
+        name: .customLong("no-sync"),
+        help: "Skip materializing AI ignore files after writing \(ProjectConfigLoader.filename)."
+    )
+    var noSync = false
+
     mutating func run() async throws {
         if listTemplates {
             print(ProjectConfigTemplates.listTemplatesText())
@@ -55,6 +85,12 @@ struct Init: AsyncParsableCommand {
 
         if force, mergeExclude {
             CLIError.exit(.error, message: "Use either --force or --merge-exclude, not both.")
+        }
+        if ignoreCommit, noIgnoreCommit {
+            CLIError.exit(.error, message: "Use either --ignore-commit or --no-ignore-commit, not both.")
+        }
+        if hooksPublish, noHooksPublish {
+            CLIError.exit(.error, message: "Use either --hooks-publish or --no-hooks-publish, not both.")
         }
 
         let configURL = Self.configURL(forDirectory: path)
@@ -99,7 +135,7 @@ struct Init: AsyncParsableCommand {
             } else {
                 print("Updated \(configURL.path) — added \(merged.added.count) exclude pattern(s) (templates: \(labels))")
             }
-            try await finishInit(directoryURL: directoryURL)
+            try await finishInit(directoryURL: directoryURL, ranSync: false)
             return
         }
 
@@ -110,7 +146,12 @@ struct Init: AsyncParsableCommand {
             )
         }
 
-        let contents = ProjectConfigTemplates.renderYAML(templates: templates)
+        let options = resolveWizardOptionsOrExit()
+        let contents = ProjectConfigTemplates.renderYAML(
+            templates: templates,
+            ignoreCommit: options.ignoreCommit,
+            hooksPublish: options.hooksPublish
+        )
 
         do {
             try contents.write(to: configURL, atomically: true, encoding: .utf8)
@@ -119,14 +160,96 @@ struct Init: AsyncParsableCommand {
         }
 
         print("Created \(configURL.path) (templates: \(labels))")
-        try await finishInit(directoryURL: directoryURL)
+        print("  ignore.commit: \(options.ignoreCommit)")
+        print("  hooks.publish: \(options.hooksPublish)")
+
+        var ranSync = false
+        if !noSync {
+            ranSync = runSync(directoryURL: directoryURL)
+        }
+        try await finishInit(directoryURL: directoryURL, ranSync: ranSync)
     }
 
-    private func finishInit(directoryURL: URL) async throws {
+    private struct WizardOptions {
+        var ignoreCommit: Bool
+        var hooksPublish: Bool
+    }
+
+    private func resolveWizardOptionsOrExit() -> WizardOptions {
+        let resolvedIgnoreCommit: Bool
+        if self.ignoreCommit {
+            resolvedIgnoreCommit = true
+        } else if noIgnoreCommit {
+            resolvedIgnoreCommit = false
+        } else if Self.isInteractiveTTY {
+            // Yes (default) = keep out of git → ignore.commit: false
+            let keepOutOfGit = Self.promptYesNo(
+                question: "Keep AI ignore files (.cursorignore, .claudeignore, …) out of git?",
+                hint: "Recommended. Team patterns live in .offsend.yml; ignore files stay local.",
+                defaultYes: true
+            )
+            resolvedIgnoreCommit = !keepOutOfGit
+        } else {
+            resolvedIgnoreCommit = false
+        }
+
+        let resolvedHooksPublish: Bool
+        if self.hooksPublish {
+            resolvedHooksPublish = true
+        } else if noHooksPublish {
+            resolvedHooksPublish = false
+        } else if Self.isInteractiveTTY {
+            resolvedHooksPublish = Self.promptYesNo(
+                question: "Allow committing AI editor hooks to the repo?",
+                hint: "Usually no — hooks can include machine-specific paths or personal settings.",
+                defaultYes: false
+            )
+        } else {
+            resolvedHooksPublish = false
+        }
+
+        return WizardOptions(ignoreCommit: resolvedIgnoreCommit, hooksPublish: resolvedHooksPublish)
+    }
+
+    private static func promptYesNo(question: String, hint: String, defaultYes: Bool) -> Bool {
+        fputs("\(question)\n", stderr)
+        fputs("  \(hint)\n", stderr)
+        let suffix = defaultYes ? "Y/n" : "y/N"
+        fputs("[\(suffix)]: ", stderr)
+        for _ in 1...3 {
+            let line = readLine() ?? ""
+            if let value = ProjectConfigTemplates.parseYesNo(line, defaultYes: defaultYes) {
+                return value
+            }
+            fputs("Please answer y or n: ", stderr)
+        }
+        return defaultYes
+    }
+
+    private func runSync(directoryURL: URL) -> Bool {
+        let context: OffsendRuntimeContext
+        do {
+            context = try OffsendRuntimeContext.load()
+        } catch {
+            fputs("warning: sync skipped (settings): \(error.localizedDescription)\n", stderr)
+            return false
+        }
+        let report = OffsendIgnoreSyncService(context: context).run(directoryURL: directoryURL)
+        let text = IgnoreSyncReporter().render(report, format: .text)
+        if !text.isEmpty {
+            print(text)
+        }
+        if report.hasErrors {
+            fputs("warning: sync finished with errors\n", stderr)
+        }
+        return true
+    }
+
+    private func finishInit(directoryURL: URL, ranSync: Bool) async throws {
         if !noCheck {
             await runBaselineCheck(directoryURL: directoryURL)
         }
-        printNextSteps()
+        printNextSteps(ranSync: ranSync)
     }
 
     private func resolveTemplatesOrExit() -> [ProjectConfigTemplateID] {
@@ -243,9 +366,13 @@ struct Init: AsyncParsableCommand {
         }
     }
 
-    private func printNextSteps() {
+    private func printNextSteps(ranSync: Bool) {
         print("Commit \(ProjectConfigLoader.filename) so hooks and CI share the same rules.")
-        print("Next: offsend protect && offsend show && offsend hook install")
+        if ranSync {
+            print("Next: offsend protect && offsend show && offsend hook install")
+        } else {
+            print("Next: offsend sync && offsend protect && offsend show && offsend hook install")
+        }
     }
 
     /// Resolves the config path at the git repository root, falling back to the

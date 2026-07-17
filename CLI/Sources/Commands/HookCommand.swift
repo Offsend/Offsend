@@ -232,6 +232,12 @@ struct HookInstall: ParsableCommand {
                 )
             }
         }
+        let projectConfig = CLIParse.projectConfig(from: repositoryURL)
+        let publishHooks = OptionsResolver.resolveHookOptions(
+            overrides: CLIHookOverrides(),
+            projectConfig: projectConfig
+        ).publishHooks
+
         do {
             for aiTarget in aiTargets {
                 let result = try installer.install(
@@ -243,7 +249,8 @@ struct HookInstall: ParsableCommand {
                     withReadGate: enableReadGate,
                     withShellGate: enableShellGate,
                     withMCPGate: enableMCPGate,
-                    withSubagentGate: enableSubagentGate
+                    withSubagentGate: enableSubagentGate,
+                    portableWrappers: publishHooks
                 )
                 print(
                     "Installed \(result.target.rawValue) hook (\(result.hookPolicy.rawValue)) at \(result.configPath)"
@@ -263,7 +270,31 @@ struct HookInstall: ParsableCommand {
                 }
                 print("Command: \(result.command)")
             }
-            print("Next: commit `.offsend/hooks/` and the editor config to share with the team.")
+            if publishHooks {
+                print("hooks.publish: true — commit `.offsend/hooks/` and the editor config to share with the team.")
+            } else {
+                // Exclude only what this run installed; merge keeps entries from
+                // earlier installs of other targets.
+                let repoRootPrefix = repositoryURL.standardizedFileURL.path + "/"
+                let configRelativePaths = aiTargets.map { target in
+                    let path = installer.configURL(for: target, repositoryPath: repositoryURL).path
+                    return path.hasPrefix(repoRootPrefix) ? String(path.dropFirst(repoRootPrefix.count)) : path
+                }
+                let excludeReport = OffsendLocalGitExcludeService().upsertPatterns(
+                    OffsendLocalGitExcludeService.aiHookExcludePatterns(configRelativePaths: configRelativePaths),
+                    repositoryURL: repositoryURL,
+                    section: OffsendLocalGitExcludeService.hooksSection,
+                    merge: true
+                )
+                if excludeReport.updated {
+                    print("Updated local git exclude so AI hooks stay untracked.")
+                }
+                for error in excludeReport.errors {
+                    fputs("warning: \(error)\n", stderr)
+                }
+                print("warning: hooks.publish is false — AI hooks are local only and will not be shared.")
+                print("To publish hooks for the team, set hooks.publish: true in .offsend.yml and re-run install.")
+            }
         } catch let error as AIEditorHookInstallerError {
             CLIError.exit(.error, message: error.localizedDescription)
         } catch {
@@ -515,9 +546,15 @@ struct HookStatus: ParsableCommand {
         }
         let anyBroken = statuses.contains { $0.status.broken }
 
+        let publishHooks = OptionsResolver.resolveHookOptions(
+            overrides: CLIHookOverrides(),
+            projectConfig: CLIParse.projectConfig(from: repositoryURL)
+        ).publishHooks
+
         switch outputFormat {
         case .text:
             print("\(gitOK ? "✓" : "✗") git (\(hookType.rawValue)): \(gitState) (\(gitPath))")
+            print("hooks.publish: \(publishHooks) (\(publishHooks ? "AI hooks may be committed" : "AI hooks stay local"))")
             for entry in statuses {
                 print(Self.formatAIStatusLine(target: entry.target, status: entry.status))
             }
@@ -531,6 +568,7 @@ struct HookStatus: ParsableCommand {
                     "path": gitPath,
                     "status": gitState,
                 ],
+                "hooksPublish": publishHooks,
                 "targets": targets,
             ]
             if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),

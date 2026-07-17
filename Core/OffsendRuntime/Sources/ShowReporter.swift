@@ -23,6 +23,9 @@ public struct ShowReporter: Sendable {
         for error in report.errors {
             lines.append("! \(error)")
         }
+        for warning in report.warnings {
+            lines.append("warning: \(warning)")
+        }
 
         if report.hasErrors, !report.hasExposure {
             return lines.joined(separator: "\n")
@@ -163,6 +166,7 @@ public struct ShowReporter: Sendable {
             let scanIncomplete: Bool
             let groups: [GroupPayload]
             let errors: [String]
+            let warnings: [String]
             let mcp: MCPPayload
             let history: HistoryPayload
         }
@@ -181,6 +185,7 @@ public struct ShowReporter: Sendable {
                 )
             },
             errors: report.errors,
+            warnings: report.warnings,
             mcp: MCPPayload(
                 servers: report.mcp.servers.map {
                     MCPServerPayload(

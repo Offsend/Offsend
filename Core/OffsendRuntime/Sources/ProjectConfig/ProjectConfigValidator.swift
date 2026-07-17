@@ -11,7 +11,7 @@ public enum ProjectConfigValidator {
         }
 
         var issues: [String] = []
-        issues.append(contentsOf: unknownKeys(in: root, allowed: ["version", "check", "hooks", "context"], path: "root"))
+        issues.append(contentsOf: unknownKeys(in: root, allowed: ["version", "check", "ignore", "hooks", "context"], path: "root"))
 
         if let check = root["check"] as? [String: Any] {
             issues.append(
@@ -37,11 +37,21 @@ public enum ProjectConfigValidator {
             }
         }
 
+        if let ignore = root["ignore"] as? [String: Any] {
+            issues.append(
+                contentsOf: unknownKeys(
+                    in: ignore,
+                    allowed: ["commit", "patterns"],
+                    path: "ignore"
+                )
+            )
+        }
+
         if let hooks = root["hooks"] as? [String: Any] {
             issues.append(
                 contentsOf: unknownKeys(
                     in: hooks,
-                    allowed: ["type", "fail_on", "policy"],
+                    allowed: ["type", "fail_on", "policy", "publish"],
                     path: "hooks"
                 )
             )

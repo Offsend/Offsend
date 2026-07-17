@@ -186,7 +186,9 @@ public struct AIEditorHookInstaller: Sendable {
         withReadGate: Bool = true,
         withShellGate: Bool = true,
         withMCPGate: Bool = true,
-        withSubagentGate: Bool = true
+        withSubagentGate: Bool = true,
+        /// When true, wrappers omit machine-specific PREFERRED_BIN (portable for git).
+        portableWrappers: Bool = false
     ) throws -> AIEditorHookInstallResult {
         let policy = hookPolicy ?? Self.defaultHookPolicy(for: target)
         let root = repositoryPath.standardizedFileURL
@@ -216,6 +218,7 @@ public struct AIEditorHookInstaller: Sendable {
         let subagentWrapperURL = enableSubagentGate
             ? root.appendingPathComponent(Self.subagentWrapperRelativePath)
             : nil
+        let preferredCLIPath = portableWrappers ? "" : cliExecutablePath
 
         // Validate every existing destination before changing any wrapper.
         _ = try loadJSONObject(at: configURL)
@@ -233,18 +236,18 @@ public struct AIEditorHookInstaller: Sendable {
             try validateWrapperDestination(subagentWrapperURL, force: force)
         }
 
-        try writeWrapper(to: wrapperURL, preferredCLIPath: cliExecutablePath)
+        try writeWrapper(to: wrapperURL, preferredCLIPath: preferredCLIPath)
         if let readWrapperURL {
-            try writeReadWrapper(to: readWrapperURL, preferredCLIPath: cliExecutablePath)
+            try writeReadWrapper(to: readWrapperURL, preferredCLIPath: preferredCLIPath)
         }
         if let shellWrapperURL {
-            try writeShellWrapper(to: shellWrapperURL, preferredCLIPath: cliExecutablePath)
+            try writeShellWrapper(to: shellWrapperURL, preferredCLIPath: preferredCLIPath)
         }
         if let mcpWrapperURL {
-            try writeMCPWrapper(to: mcpWrapperURL, preferredCLIPath: cliExecutablePath)
+            try writeMCPWrapper(to: mcpWrapperURL, preferredCLIPath: preferredCLIPath)
         }
         if let subagentWrapperURL {
-            try writeSubagentWrapper(to: subagentWrapperURL, preferredCLIPath: cliExecutablePath)
+            try writeSubagentWrapper(to: subagentWrapperURL, preferredCLIPath: preferredCLIPath)
         }
 
         try fileManager.createDirectory(

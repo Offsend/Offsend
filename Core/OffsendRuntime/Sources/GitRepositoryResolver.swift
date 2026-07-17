@@ -130,21 +130,46 @@ public struct GitRepositoryResolver: Sendable {
     /// Resolves the hooks directory, honoring `core.hooksPath`, worktrees, and submodules.
     /// Falls back to `.git/hooks` when git cannot be invoked.
     public func hooksDirectory(in repositoryRoot: URL) -> URL {
-        if let output = try? runGit(
-            arguments: ["rev-parse", "--git-path", "hooks"],
-            workingDirectory: repositoryRoot
-        ) {
-            let path = output.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !path.isEmpty {
-                if path.hasPrefix("/") {
-                    return URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
-                }
-                return repositoryRoot.appendingPathComponent(path, isDirectory: true).standardizedFileURL
-            }
+        gitPath("hooks", in: repositoryRoot)
+            ?? repositoryRoot
+                .appendingPathComponent(".git", isDirectory: true)
+                .appendingPathComponent("hooks", isDirectory: true)
+    }
+
+    /// Resolves `.git/info/exclude` (worktrees/submodules aware). Falls back to
+    /// `repositoryRoot/.git/info/exclude` when git cannot be invoked.
+    public func infoExcludeURL(in repositoryRoot: URL) -> URL {
+        if let resolved = gitPath("info/exclude", in: repositoryRoot) {
+            return resolved
         }
         return repositoryRoot
             .appendingPathComponent(".git", isDirectory: true)
-            .appendingPathComponent("hooks", isDirectory: true)
+            .appendingPathComponent("info", isDirectory: true)
+            .appendingPathComponent("exclude", isDirectory: false)
+    }
+
+    /// Repository-relative paths from `paths` that git currently tracks.
+    public func trackedRelativePaths(matching paths: [String], in repositoryRoot: URL) throws -> [String] {
+        let output = try runGit(
+            arguments: ["ls-files", "-z", "--"] + paths,
+            workingDirectory: repositoryRoot
+        )
+        return output.split(separator: "\0", omittingEmptySubsequences: true).map(String.init)
+    }
+
+    private func gitPath(_ path: String, in repositoryRoot: URL) -> URL? {
+        guard let output = try? runGit(
+            arguments: ["rev-parse", "--git-path", path],
+            workingDirectory: repositoryRoot
+        ) else {
+            return nil
+        }
+        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if trimmed.hasPrefix("/") {
+            return URL(fileURLWithPath: trimmed).standardizedFileURL
+        }
+        return repositoryRoot.appendingPathComponent(trimmed).standardizedFileURL
     }
 
     @discardableResult

@@ -4,22 +4,27 @@ import OffsendRuntime
 
 struct Ignore: ParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Add paths or patterns to every AI ignore file (.cursorignore, .claudeignore, …).",
+        abstract: "Add paths or patterns to team ignore policy (.offsend.yml) or locally.",
         discussion: """
-        Appends each pattern to all AI ignore files that already exist in the project. \
-        If the project has none yet, the standard set is created first (same files as \
-        `offsend prepare`). `.gitignore` is never modified.
+        By default, patterns are added to ignore.patterns in .offsend.yml and then \
+        materialized into AI ignore files via sync (published to the team when you \
+        commit .offsend.yml).
 
-        Patterns are gitignore-style: existing directories gain a trailing slash, \
-        absolute paths under the project root become relative, globs pass through as-is.
+        Use --local to append patterns only to AI ignore files on this machine. \
+        Local rules are not written to .offsend.yml and will not be shared.
 
-        Note: this manages editor ignore files. Scanner exclusions live in .offsend.yml \
-        under check.exclude.
+        Scanner exclusions remain under check.exclude in .offsend.yml.
         """
     )
 
     @Argument(help: "Paths or glob patterns to ignore (e.g. secrets/, *.pem, config/prod.json).")
     var patterns: [String]
+
+    @Flag(
+        name: .long,
+        help: "Add patterns only to local AI ignore files; do not update .offsend.yml."
+    )
+    var local = false
 
     @Option(name: .long, help: "Project directory. Defaults to the current directory.")
     var path: String?
@@ -50,18 +55,82 @@ struct Ignore: ParsableCommand {
             fileURLWithPath: path ?? FileManager.default.currentDirectoryPath
         ).standardizedFileURL
 
-        let report = OffsendIgnoreService(context: context).run(
+        if local {
+            let report = OffsendIgnoreService(context: context).run(
+                directoryURL: directoryURL,
+                patterns: patterns,
+                dryRun: dryRun
+            )
+            let output = IgnoreReporter().render(report, format: outputFormat, scope: .local)
+            if !output.isEmpty {
+                print(output)
+            }
+            if report.hasErrors {
+                throw ExitCode(OffsendExitCode.error.rawValue)
+            }
+            return
+        }
+
+        let result = OffsendIgnoreSyncService(context: context).promotePatterns(
+            patterns,
             directoryURL: directoryURL,
-            patterns: patterns,
             dryRun: dryRun
         )
 
-        let output = IgnoreReporter().render(report, format: outputFormat)
-        if !output.isEmpty {
-            print(output)
+        if outputFormat == .json {
+            struct Payload: Encodable {
+                let scope: String
+                let published: Bool
+                let addedToConfig: [String]
+                let configPath: String?
+                let dryRun: Bool
+                let sync: IgnoreSyncJSON
+            }
+            struct IgnoreSyncJSON: Encodable {
+                let patterns: [String]
+                let createdRelativePaths: [String]
+                let updatedRelativePaths: [String]
+                let unchangedRelativePaths: [String]
+                let excludeUpdated: Bool
+                let errors: [String]
+            }
+            let payload = Payload(
+                scope: "project",
+                published: true,
+                addedToConfig: result.added,
+                configPath: result.configPath,
+                dryRun: dryRun,
+                sync: IgnoreSyncJSON(
+                    patterns: result.sync.patterns,
+                    createdRelativePaths: result.sync.createdRelativePaths,
+                    updatedRelativePaths: result.sync.updatedRelativePaths,
+                    unchangedRelativePaths: result.sync.unchangedRelativePaths,
+                    excludeUpdated: result.sync.excludeUpdated,
+                    errors: result.sync.errors
+                )
+            )
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            if let data = try? encoder.encode(payload), let json = String(data: data, encoding: .utf8) {
+                print(json)
+            }
+        } else {
+            if let configPath = result.configPath {
+                if result.added.isEmpty {
+                    print("No new patterns for \(configPath) (already present or unchanged)")
+                } else if dryRun {
+                    print("Would add to \(ProjectConfigLoader.filename): \(result.added.joined(separator: ", "))")
+                } else {
+                    print("Added to \(ProjectConfigLoader.filename): \(result.added.joined(separator: ", "))")
+                }
+            }
+            let syncText = IgnoreSyncReporter().render(result.sync, format: .text)
+            if !syncText.isEmpty {
+                print(syncText)
+            }
         }
 
-        if report.hasErrors {
+        if result.sync.hasErrors {
             throw ExitCode(OffsendExitCode.error.rawValue)
         }
     }

@@ -364,7 +364,11 @@ public enum ProjectConfigTemplates {
     }
 
     /// Full starter `.offsend.yml` contents for `offsend init`.
-    public static func renderYAML(templates: [ProjectConfigTemplateID]) -> String {
+    public static func renderYAML(
+        templates: [ProjectConfigTemplateID],
+        ignoreCommit: Bool = false,
+        hooksPublish: Bool = false
+    ) -> String {
         let ids = templates.contains(.common) ? templates : [.common] + templates
         let labels = ids.map(\.rawValue).joined(separator: ", ")
         let generatedBy: String = {
@@ -380,6 +384,11 @@ public enum ProjectConfigTemplates {
             "    # Optional — uncomment only if these dirs never hold secrets:",
         ] + commentedOptionalExcludePatterns.map { "    # - \"\($0)\"" })
             .joined(separator: "\n")
+        let ignoreSection = ProjectConfigIgnoreMutator.renderIgnoreSection(
+            commit: ignoreCommit,
+            patterns: []
+        )
+        let hooksPublishLine = "  publish: \(hooksPublish ? "true" : "false")"
 
         return """
         version: 1
@@ -422,11 +431,28 @@ public enum ProjectConfigTemplates {
           # For `regex`, `value` is used as a regular expression pattern verbatim.
           dictionaries: []
 
+        \(ignoreSection)
+
         hooks:
           type: pre-commit
           fail_on: block
           policy: false
+        \(hooksPublishLine)
 
         """
+    }
+
+    /// Parses a yes/no prompt answer. Empty input uses `defaultYes`.
+    public static func parseYesNo(_ raw: String, defaultYes: Bool) -> Bool? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if trimmed.isEmpty { return defaultYes }
+        switch trimmed {
+        case "y", "yes", "true", "1":
+            return true
+        case "n", "no", "false", "0":
+            return false
+        default:
+            return nil
+        }
     }
 }

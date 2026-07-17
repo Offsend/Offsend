@@ -27,15 +27,19 @@ public struct ResolvedHookOptions: Equatable, Sendable {
     public let hookType: HookType
     public let failPolicy: CheckFailPolicy
     public let includePolicyCheck: Bool
+    /// When false (default), AI editor hook files should stay out of git.
+    public let publishHooks: Bool
 
     public init(
         hookType: HookType = .preCommit,
         failPolicy: CheckFailPolicy = .block,
-        includePolicyCheck: Bool = false
+        includePolicyCheck: Bool = false,
+        publishHooks: Bool = false
     ) {
         self.hookType = hookType
         self.failPolicy = failPolicy
         self.includePolicyCheck = includePolicyCheck
+        self.publishHooks = publishHooks
     }
 }
 
@@ -125,7 +129,8 @@ public enum OptionsResolver {
         return ResolvedHookOptions(
             hookType: hookType,
             failPolicy: failPolicy,
-            includePolicyCheck: includePolicyCheck
+            includePolicyCheck: includePolicyCheck,
+            publishHooks: hookConfig?.publishesHooks ?? false
         )
     }
 

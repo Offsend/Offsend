@@ -7,7 +7,10 @@ No. App and CLI scan locally. [Check](https://check.offsend.io) only analyzes a 
 Yes — terminal, git hooks, AI-editor hooks, scripts, and CI.
 
 **Does Offsend replace `.gitignore`?**  
-No. `.gitignore` controls Git. Offsend helps with AI ignore files (`.cursorignore`, `.claudeignore`, …).
+No. `.gitignore` controls Git. Offsend controls AI context: rules live in `.offsend.yml`, and `offsend sync` maintains the AI ignore files (`.cursorignore`, `.claudeignore`, …) from it.
+
+**Do I edit `.cursorignore` / `.claudeignore` by hand?**  
+You can — lines outside the offsend managed block are preserved. But the recommended flow is `offsend protect` or `offsend ignore <pattern>`, so the rule lands in `.offsend.yml` once and syncs to every tool.
 
 **Is Offsend a secret scanner?**  
 Partly. It also checks AI-context boundaries: what AI tools can read, whether ignore rules exist, MCP exposure, and local agent history.

@@ -237,9 +237,16 @@ final class ProjectConfigTests: XCTestCase {
     }
 
     func testTemplatesRenderYAMLContainsExcludeAndLoads() throws {
-        let yaml = ProjectConfigTemplates.renderYAML(templates: [.node])
+        let yaml = ProjectConfigTemplates.renderYAML(
+            templates: [.node],
+            ignoreCommit: false,
+            hooksPublish: false
+        )
         XCTAssertTrue(yaml.contains("**/node_modules/**"))
         XCTAssertTrue(yaml.contains("# templates: common, node"))
+        XCTAssertTrue(yaml.contains("ignore:"))
+        XCTAssertTrue(yaml.contains("commit: false"))
+        XCTAssertTrue(yaml.contains("publish: false"))
 
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -252,6 +259,15 @@ final class ProjectConfigTests: XCTestCase {
         let config = try XCTUnwrap(ProjectConfigLoader().load(from: root))
         XCTAssertTrue(config.check?.exclude?.contains("**/node_modules/**") == true)
         XCTAssertTrue(config.check?.exclude?.contains("*.lock") == true)
+        XCTAssertEqual(config.ignore?.commit, false)
+        XCTAssertEqual(config.hooks?.publish, false)
+    }
+
+    func testParseYesNoDefaults() {
+        XCTAssertEqual(ProjectConfigTemplates.parseYesNo("", defaultYes: true), true)
+        XCTAssertEqual(ProjectConfigTemplates.parseYesNo("n", defaultYes: true), false)
+        XCTAssertEqual(ProjectConfigTemplates.parseYesNo("yes", defaultYes: false), true)
+        XCTAssertNil(ProjectConfigTemplates.parseYesNo("maybe", defaultYes: true))
     }
 
     func testTemplatesListTextIncludesAliases() {

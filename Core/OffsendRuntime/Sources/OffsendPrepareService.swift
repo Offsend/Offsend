@@ -98,7 +98,8 @@ public struct OffsendPrepareService: Sendable {
     public func run(
         directoryURL: URL,
         dryRun: Bool = false,
-        syncPatterns: Bool = false
+        syncPatterns: Bool = false,
+        materializeManagedIgnore: Bool = true
     ) -> PrepareReport {
         let standardizedURL = directoryURL.standardizedFileURL
         let audit = auditor.audit(directoryURL: standardizedURL, configuration: configuration)
@@ -163,12 +164,30 @@ public struct OffsendPrepareService: Sendable {
         }
 
         let fixResult = fixer.fix(result: audit, configuration: configuration, selection: selection)
+        var errors = fixResult.errors.map(\.message)
+        var created = fixResult.createdRelativePaths
+        var updated = fixResult.updatedRelativePaths
+
+        // When project config defines ignore.patterns, materialize the managed block.
+        // Callers that sync themselves right after (protect) opt out.
+        if materializeManagedIgnore,
+           let config = try? ProjectConfigLoader().load(from: standardizedURL),
+           config.ignore != nil {
+            let sync = OffsendIgnoreSyncService(configuration: configuration).run(
+                directoryURL: standardizedURL,
+                dryRun: false
+            )
+            errors.append(contentsOf: sync.errors)
+            created = Array(Set(created + sync.createdRelativePaths)).sorted()
+            updated = Array(Set(updated + sync.updatedRelativePaths)).sorted()
+        }
+
         return report(
             directoryPath: standardizedURL.path,
             dryRun: false,
-            createdRelativePaths: fixResult.createdRelativePaths,
-            updatedRelativePaths: fixResult.updatedRelativePaths,
-            errors: fixResult.errors.map(\.message)
+            createdRelativePaths: created,
+            updatedRelativePaths: updated,
+            errors: errors
         )
     }
 
