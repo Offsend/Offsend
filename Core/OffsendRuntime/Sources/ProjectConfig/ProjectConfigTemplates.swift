@@ -56,6 +56,14 @@ public enum ProjectConfigTemplateID: String, CaseIterable, Sendable {
                 ".eslintcache",
                 ".stylelintcache",
                 ".offsend/hooks/**",
+                // Non-text assets: check cannot scan them and treats skips as exit 2.
+                "**/*.png",
+                "**/*.gif",
+                "**/*.jpg",
+                "**/*.jpeg",
+                "**/*.ico",
+                "**/*.webp",
+                "**/*.icns",
             ]
         case .node:
             [
@@ -150,6 +158,7 @@ public enum ProjectConfigTemplateID: String, CaseIterable, Sendable {
                 "**/Tuist/.build/**",
                 "**/Tuist/Dependencies/**",
                 "**/.tuist-bin/**",
+                "**/.tuist-generated",
                 ".package.resolved",
             ]
         }

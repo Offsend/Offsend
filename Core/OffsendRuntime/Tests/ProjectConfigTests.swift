@@ -237,6 +237,8 @@ final class ProjectConfigTests: XCTestCase {
         XCTAssertTrue(patterns.contains("pnpm-lock.yaml"))
         XCTAssertTrue(patterns.contains("bun.lock"))
         XCTAssertTrue(patterns.contains(".offsend/hooks/**"))
+        XCTAssertTrue(patterns.contains("**/*.png"))
+        XCTAssertTrue(patterns.contains("**/*.icns"))
         XCTAssertEqual(patterns.first, "*.lock")
     }
 
@@ -246,6 +248,7 @@ final class ProjectConfigTests: XCTestCase {
         XCTAssertTrue(patterns.contains("Package.resolved"))
         XCTAssertFalse(patterns.contains("**/Info.plist"))
         XCTAssertTrue(patterns.contains("**/Tuist/.build/**"))
+        XCTAssertTrue(patterns.contains("**/.tuist-generated"))
         XCTAssertTrue(patterns.contains(".package.resolved"))
         XCTAssertEqual(patterns.filter { $0 == "**/.gradle/**" }.count, 1)
         XCTAssertEqual(patterns.filter { $0 == "**/build/**" }.count, 1)
