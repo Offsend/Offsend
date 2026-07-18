@@ -30,14 +30,25 @@ public final class AIWorkspacePrivacyFixer: @unchecked Sendable {
         var updatedRelativePaths: Set<String> = []
         var errors: [AIWorkspacePrivacyAuditError] = []
 
-        for finding in result.ruleFindings where !finding.isSatisfied && finding.rule.severity != .informational {
+        for finding in result.ruleFindings where finding.rule.severity != .informational {
             if let selection, !selection.ruleIDs.contains(finding.rule.id) {
                 continue
             }
             guard let fix = configuration.rules.first(where: { $0.id == finding.rule.id })?.fix ?? finding.rule.fix else {
                 continue
             }
-            switch applyFix(fix, in: rootURL) {
+            let outcome: FileWriteOutcome
+            if !finding.isSatisfied {
+                outcome = applyFix(fix, in: rootURL)
+            } else if fix.strategy == .keepManagedContent {
+                // Satisfied rule whose managed file may have drifted. Restore only when
+                // the managed file itself exists: a rule satisfied by a legacy path
+                // (e.g. .cursor/rules/privacy.mdc) must not gain a duplicate.
+                outcome = restoreManagedContent(fix, in: rootURL, onlyIfFileExists: true)
+            } else {
+                continue
+            }
+            switch outcome {
             case .created(let relativePath):
                 createdRelativePaths.insert(relativePath)
             case .updated(let relativePath):
@@ -136,6 +147,49 @@ public final class AIWorkspacePrivacyFixer: @unchecked Sendable {
             return createFileIfMissing(fix, in: rootURL)
         case .mergeLines:
             return mergeLines(from: fix, in: rootURL)
+        case .keepManagedContent:
+            return restoreManagedContent(fix, in: rootURL, onlyIfFileExists: false)
+        }
+    }
+
+    /// Creates the managed file, or rewrites it when its contents differ from the
+    /// template. With `onlyIfFileExists`, a missing file is left alone (used when the
+    /// rule is satisfied by another path, e.g. a legacy rule file).
+    private func restoreManagedContent(
+        _ fix: AIWorkspacePrivacyFileFix,
+        in rootURL: URL,
+        onlyIfFileExists: Bool
+    ) -> FileWriteOutcome {
+        guard let url = safeURL(for: fix.relativePath, in: rootURL) else {
+            return .failed(invalidPathError(fix.relativePath))
+        }
+
+        do {
+            try fileManager.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            return try coordinateFileWrite(at: url) { coordinatedURL in
+                let expected = normalizedContents(fix.contents)
+                let exists = fileManager.fileExists(atPath: coordinatedURL.path)
+                if !exists, onlyIfFileExists {
+                    return .unchanged
+                }
+                if exists,
+                   let existing = try? String(contentsOf: coordinatedURL, encoding: .utf8),
+                   normalizedContents(existing) == expected {
+                    return .unchanged
+                }
+                try expected.write(to: coordinatedURL, atomically: true, encoding: .utf8)
+                return exists ? .updated(fix.relativePath) : .created(fix.relativePath)
+            }
+        } catch {
+            return .failed(
+                AIWorkspacePrivacyAuditError(
+                    id: "restore-managed-file-failed",
+                    message: "Could not restore \(fix.relativePath): \(error.localizedDescription)"
+                )
+            )
         }
     }
 

@@ -28,12 +28,18 @@ final class AIWorkspacePrivacyAuditorTests: XCTestCase {
     func testCompleteDefaultPolicyPasses() throws {
         let directoryURL = try makeTemporaryDirectory()
         try writeIgnoreFile(at: ".cursorignore", in: directoryURL)
+        // Legacy rule file from older releases still satisfies cursor-project-rules.
         try writeFile(".cursor/rules/privacy.mdc", in: directoryURL, contents: """
         ---
         alwaysApply: true
         ---
         Never send secrets, credentials, or environment files to AI tools.
         """)
+        try writeFile(
+            ".claude/rules/offsend_privacy.md",
+            in: directoryURL,
+            contents: AIWorkspacePrivacyDefaultFixes.claudePrivacyRuleContents
+        )
 
         let recommendedIgnoreFiles = [
             ".aiexclude",
@@ -166,7 +172,8 @@ final class AIWorkspacePrivacyAuditorTests: XCTestCase {
 
         XCTAssertTrue(fixResult.errors.isEmpty, "\(fixResult.errors)")
         XCTAssertTrue(fixResult.createdRelativePaths.contains(".cursorignore"))
-        XCTAssertTrue(fixResult.createdRelativePaths.contains(".cursor/rules/privacy.mdc"))
+        XCTAssertTrue(fixResult.createdRelativePaths.contains(".cursor/rules/offsend_privacy.mdc"))
+        XCTAssertTrue(fixResult.createdRelativePaths.contains(".claude/rules/offsend_privacy.md"))
         XCTAssertEqual(fixedResult.status, .pass)
         XCTAssertTrue(fixedResult.missingRequiredRules.isEmpty)
         XCTAssertTrue(fixedResult.missingSensitivePatterns.isEmpty)
@@ -267,7 +274,7 @@ final class AIWorkspacePrivacyAuditorTests: XCTestCase {
         let fixResult = fixer.fix(result: initialResult, selection: selection)
 
         XCTAssertTrue(fixResult.errors.isEmpty, "\(fixResult.errors)")
-        XCTAssertTrue(fixResult.createdRelativePaths.contains(".cursor/rules/privacy.mdc"))
+        XCTAssertTrue(fixResult.createdRelativePaths.contains(".cursor/rules/offsend_privacy.mdc"))
         XCTAssertFalse(fixResult.createdRelativePaths.contains(".cursorignore"))
     }
 

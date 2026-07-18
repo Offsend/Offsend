@@ -1,4 +1,5 @@
 import Foundation
+import WorkspacePolicyCore
 
 /// Built-in exclude presets used by `offsend init --template`.
 public enum ProjectConfigTemplateID: String, CaseIterable, Sendable {
@@ -386,7 +387,7 @@ public enum ProjectConfigTemplates {
             .joined(separator: "\n")
         let ignoreSection = ProjectConfigIgnoreMutator.renderIgnoreSection(
             commit: ignoreCommit,
-            patterns: []
+            patterns: AIWorkspacePrivacyIgnoreTemplate.defaultPatterns
         )
         let hooksPublishLine = "  publish: \(hooksPublish ? "true" : "false")"
 

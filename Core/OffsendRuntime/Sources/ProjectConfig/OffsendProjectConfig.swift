@@ -1,4 +1,5 @@
 import Foundation
+import WorkspacePolicyCore
 
 public struct OffsendProjectConfig: Codable, Equatable, Sendable {
     public var version: Int
@@ -53,18 +54,39 @@ public struct OffsendProjectCheckConfig: Codable, Equatable, Sendable {
 }
 
 public struct OffsendProjectIgnoreConfig: Codable, Equatable, Sendable {
-    /// When `false` (default), AI ignore files are kept out of git via `.git/info/exclude`.
+    /// When `false` (default), AI ignore files are kept out of git via `.gitignore`.
     public var commit: Bool?
-    /// Team-mandatory patterns materialized into AI ignore files by `offsend sync`.
+    /// Optional tool slugs (e.g. `cursor`, `claude`) narrowing which AI tools get
+    /// managed ignore/rule files. Absent means every supported tool.
+    public var tools: [String]?
+    /// Team-mandatory patterns materialized into AI ignore files by `offsend ignore --sync`.
     public var patterns: [String]?
 
-    public init(commit: Bool? = nil, patterns: [String]? = nil) {
+    public init(commit: Bool? = nil, tools: [String]? = nil, patterns: [String]? = nil) {
         self.commit = commit
+        self.tools = tools
         self.patterns = patterns
     }
 
     /// Effective commit flag: absent means do not commit ignore files.
     public var commitsIgnoreFiles: Bool { commit ?? false }
+
+    /// Parsed `tools`. `nil` (no narrowing) when the key is absent, empty, or has
+    /// no valid slugs. Unknown slugs are reported separately by doctor.
+    public var toolIDs: Set<AIWorkspaceToolID>? {
+        guard let tools else { return nil }
+        let ids = Set(tools.compactMap { AIWorkspaceToolID(rawValue: normalizedToolSlug($0)) })
+        return ids.isEmpty ? nil : ids
+    }
+
+    /// Slugs in `tools` that do not match any supported tool.
+    public var unknownToolSlugs: [String] {
+        (tools ?? []).filter { AIWorkspaceToolID(rawValue: normalizedToolSlug($0)) == nil }
+    }
+
+    private func normalizedToolSlug(_ raw: String) -> String {
+        raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
 }
 
 public struct OffsendProjectDetectorsConfig: Codable, Equatable, Sendable {

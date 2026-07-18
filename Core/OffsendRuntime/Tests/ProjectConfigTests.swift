@@ -1,4 +1,5 @@
 import XCTest
+import WorkspacePolicyCore
 @testable import OffsendRuntime
 
 final class ProjectConfigTests: XCTestCase {
@@ -148,6 +149,29 @@ final class ProjectConfigTests: XCTestCase {
         XCTAssertTrue(issues.contains { $0.contains("customer") })
     }
 
+    func testIgnoreToolsParsing() {
+        XCTAssertNil(OffsendProjectIgnoreConfig().toolIDs)
+        XCTAssertNil(OffsendProjectIgnoreConfig(tools: []).toolIDs)
+        XCTAssertNil(OffsendProjectIgnoreConfig(tools: ["nope"]).toolIDs)
+        XCTAssertEqual(
+            OffsendProjectIgnoreConfig(tools: ["Cursor", " claude ", "nope"]).toolIDs,
+            [.cursor, .claude]
+        )
+        XCTAssertEqual(OffsendProjectIgnoreConfig(tools: ["nope", "cursor"]).unknownToolSlugs, ["nope"])
+    }
+
+    func testValidatorReportsUnknownIgnoreTools() {
+        let config = OffsendProjectConfig(
+            ignore: OffsendProjectIgnoreConfig(tools: ["cursor", "sublime"])
+        )
+
+        let issues = ProjectConfigValidator.validate(config)
+        XCTAssertTrue(issues.contains { $0.contains("ignore.tools") && $0.contains("sublime") })
+        XCTAssertTrue(ProjectConfigValidator.validate(
+            OffsendProjectConfig(ignore: OffsendProjectIgnoreConfig(tools: ["cursor", "claude"]))
+        ).isEmpty)
+    }
+
     func testValidatorReportsMisplacedDisableKey() {
         let yaml = """
         version: 1
@@ -261,6 +285,10 @@ final class ProjectConfigTests: XCTestCase {
         XCTAssertTrue(config.check?.exclude?.contains("*.lock") == true)
         XCTAssertEqual(config.ignore?.commit, false)
         XCTAssertEqual(config.hooks?.publish, false)
+        let ignorePatterns = try XCTUnwrap(config.ignore?.patterns)
+        XCTAssertEqual(ignorePatterns, AIWorkspacePrivacyIgnoreTemplate.defaultPatterns)
+        XCTAssertTrue(ignorePatterns.contains(".env*"))
+        XCTAssertTrue(ignorePatterns.contains("*.pem"))
     }
 
     func testParseYesNoDefaults() {

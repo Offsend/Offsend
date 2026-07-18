@@ -195,8 +195,8 @@ public struct OffsendMCPInventory: Sendable {
         return secretArgKeywords.contains { lower.contains($0) }
     }
 
-    /// Mask values of secret-looking flags (`--api-key sk-…`, `--token=abc`) so `show`/`doctor`
-    /// never print secret material from mcp.json args.
+    /// Mask values of secret-looking flags (`--api-key sk-…`, `--token=abc`) and env-style
+    /// assignments (`API_KEY="…"`) so `show`/`doctor` never print secret material from mcp.json args.
     static func maskSecretArgs(_ args: [String]) -> [String] {
         var masked: [String] = []
         var maskNext = false
@@ -206,7 +206,8 @@ public struct OffsendMCPInventory: Sendable {
                 maskNext = false
                 continue
             }
-            if arg.hasPrefix("-"), let eq = arg.firstIndex(of: "=") {
+            // `--token=abc` and `API_KEY="abc"` both carry the value after `=`.
+            if let eq = arg.firstIndex(of: "="), eq != arg.startIndex {
                 let name = String(arg[..<eq])
                 if looksLikeSecretArgName(name) {
                     masked.append(name + "=***")

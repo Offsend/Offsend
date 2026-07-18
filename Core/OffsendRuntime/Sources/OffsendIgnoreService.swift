@@ -55,7 +55,9 @@ public struct IgnoreReport: Sendable, Equatable {
 /// Adds paths or glob patterns to every AI ignore file in a project
 /// (`.cursorignore`, `.claudeignore`, `.aiexclude`, …). Only existing ignore
 /// files are updated; when the project has none yet, the standard set is
-/// created first (same files as `offsend prepare`). `.gitignore` is never touched.
+/// created first (same files as `OffsendPrepareService`). Does not write AI
+/// patterns into `.gitignore` (that file only lists AI ignore paths when
+/// `ignore.commit` is false, via `offsend ignore --sync`).
 public struct OffsendIgnoreService: Sendable {
     private let configuration: AIWorkspacePrivacyAuditConfiguration
     private let fixer: AIWorkspacePrivacyFixer

@@ -31,72 +31,120 @@ struct Check: AsyncParsableCommand {
     @Option(name: .long, help: "Output format (text, json). Ignored when --adapter is set.")
     var format: String = CheckOutputFormat.text.rawValue
 
+    // AI-editor hook plumbing below. These flags are used by installed hook
+    // wrappers (`offsend hook install`), not by people, so they are hidden
+    // from `check --help` while remaining fully functional.
     @Option(
         name: .long,
-        help: "AI-editor hook adapter (cursor, claude, windsurf, codex). Implies reading hook JSON from stdin."
+        help: ArgumentHelp(
+            "AI-editor hook adapter (cursor, claude, windsurf, codex). Implies reading hook JSON from stdin.",
+            visibility: .hidden
+        )
     )
     var adapter: String?
 
     @Option(
         name: .long,
-        help: "Hook policy when --adapter is set (advise, soft-block, block). block = soft-block UI plus seal-copy when a key is set."
+        help: ArgumentHelp(
+            "Hook policy when --adapter is set (advise, soft-block, block). block = soft-block UI plus seal-copy when a key is set.",
+            visibility: .hidden
+        )
     )
     var hookPolicy: String?
 
     @Flag(
         name: .long,
         inversion: .prefixedNo,
-        help: "Show a macOS notification when --adapter finds issues (default: on for Darwin)."
+        help: ArgumentHelp(
+            "Show a macOS notification when --adapter finds issues (default: on for Darwin).",
+            visibility: .hidden
+        )
     )
     var notify = true
 
     @Flag(
         name: .long,
         inversion: .prefixedNo,
-        help: "With --adapter, only report secret-shaped findings (default: on)."
+        help: "With --gate-secrets or --adapter, only report secret-shaped findings (default: on)."
     )
     var secretsOnly = true
 
-    @Flag(name: .long, help: "With --adapter, write a sealed copy to a private temp file + clipboard.")
+    @Flag(
+        name: .long,
+        help: ArgumentHelp(
+            "With --adapter, write a sealed copy to a private temp file + clipboard.",
+            visibility: .hidden
+        )
+    )
     var sealCopy = false
 
-    @Flag(name: .long, help: "Append adapter diagnostics to the Offsend hook debug log (no secret values).")
+    @Flag(
+        name: .long,
+        help: ArgumentHelp(
+            "Append adapter diagnostics to the Offsend hook debug log (no secret values).",
+            visibility: .hidden
+        )
+    )
     var debugHook = false
 
     @Flag(
         name: .long,
-        help: "With --stdin (no --adapter), print secret-gate JSON instead of the risk report."
+        help: "With --stdin, print secret-gate JSON instead of the risk report."
     )
     var gateSecrets = false
 
     @Flag(
         name: .long,
-        help: "File-read gate for editor hooks: sensitive paths + secret content scan (requires --adapter cursor|claude)."
+        help: ArgumentHelp(
+            "File-read gate for editor hooks: sensitive paths + secret content scan (requires --adapter cursor|claude).",
+            visibility: .hidden
+        )
     )
     var readGate = false
 
     @Flag(
         name: .long,
-        help: "Sensitive-path gate for editor shell hooks; findings ask for confirmation (requires --adapter cursor|claude)."
+        help: ArgumentHelp(
+            "Sensitive-path gate for editor shell hooks; findings ask for confirmation (requires --adapter cursor|claude).",
+            visibility: .hidden
+        )
     )
     var shellGate = false
 
     @Flag(
         name: .long,
-        help: "MCP tool-call gate for editor hooks: server policy + path/secret scan in args (requires --adapter cursor|claude)."
+        help: ArgumentHelp(
+            "MCP tool-call gate for editor hooks: server policy + path/secret scan in args (requires --adapter cursor|claude).",
+            visibility: .hidden
+        )
     )
     var mcpGate = false
 
     @Flag(
         name: .long,
-        help: "Subagent spawn gate: secret-scan the task prompt (requires --adapter cursor)."
+        help: ArgumentHelp(
+            "Subagent spawn gate: secret-scan the task prompt (requires --adapter cursor).",
+            visibility: .hidden
+        )
     )
     var subagentGate = false
 
-    @Option(name: .long, help: "Path to a seal key file (for --seal-copy / --hook-policy block).")
+    @Option(
+        name: .long,
+        help: ArgumentHelp(
+            "Path to a seal key file (for --seal-copy / --hook-policy block).",
+            visibility: .hidden
+        )
+    )
     var keyFile: String?
 
-    @Option(name: .long, help: "Named seal key in ~/.offsend/keys/NAME.key.")
+    @Option(
+        name: .long,
+        help: ArgumentHelp(
+            "Named seal key in ~/.offsend/keys/NAME.key.",
+            visibility: .hidden
+        )
+    )
     var keyName: String?
 
     @Flag(name: .long, help: "Only print findings and errors.")
@@ -483,9 +531,7 @@ struct Check: AsyncParsableCommand {
 
     private func renderStdinReport(_ textResult: OffsendTextCheckResult) throws {
         let outputFormat = CLIParse.outputFormat(format)
-        let useColor = outputFormat == .text
-            && ProcessInfo.processInfo.environment["NO_COLOR"] == nil
-            && isatty(STDOUT_FILENO) != 0
+        let useColor = CLIColor.enabled(for: outputFormat)
         let output = CheckReporter().render(
             textResult.report,
             format: outputFormat,
@@ -638,9 +684,7 @@ struct Check: AsyncParsableCommand {
             await service.run(request)
         }
 
-        let useColor = outputFormat == .text
-            && ProcessInfo.processInfo.environment["NO_COLOR"] == nil
-            && isatty(STDOUT_FILENO) != 0
+        let useColor = CLIColor.enabled(for: outputFormat)
         let output = CheckReporter().render(report, format: outputFormat, quiet: quiet, verbose: verbose, useColor: useColor)
         if !output.isEmpty {
             print(output)

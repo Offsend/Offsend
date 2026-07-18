@@ -32,7 +32,7 @@
 
 `.gitignore` protects Git. It does not define what AI tools should read.
 
-Offsend is that missing layer: audit what AI tools can see, describe what they must not see in one `.offsend.yml`, and let `offsend sync` maintain `.cursorignore`, `.claudeignore`, `.aiexclude`, and the rest for you. Everything runs **locally** — no cloud account, no upload of file contents for analysis. The CLI is free and open source.
+Offsend is that missing layer: audit what AI tools can see, describe what they must not see in one `.offsend.yml`, and let Offsend maintain `.cursorignore`, `.claudeignore`, `.aiexclude`, and the rest for you. Everything runs **locally** — no cloud account, no upload of file contents for analysis. The CLI is free and open source.
 
 No install yet? [Scan a public GitHub repo with Check](https://check.offsend.io).
 
@@ -98,7 +98,7 @@ Other installs: [CLI docs → Install](docs/cli.md#install) · macOS app: `brew 
 | --- | --- |
 | `offsend show` | Sensitive paths visible to AI (+ MCP inventory, agent-history hint) |
 | `offsend protect` | Promote exposed paths to `.offsend.yml` and sync AI ignore files |
-| `offsend sync` | Materialize `.offsend.yml` rules into every AI ignore file |
+| `offsend ignore` | Add ignore patterns to `.offsend.yml` (`--sync` re-materializes ignore files) |
 | `offsend check` | Scan contents (files, `--staged`, stdin, or editor hook JSON) |
 | `offsend hook install` | Git pre-commit + prompt / read / shell / MCP / subagent gates |
 | `offsend history audit` | Find secrets already written into local Cursor/Claude transcripts |

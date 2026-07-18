@@ -166,7 +166,7 @@ public enum PromptAttachmentAdvisor {
     public static func adviceLines(for paths: [String]) -> [String] {
         suspiciousPaths(in: paths).map { path in
             let name = URL(fileURLWithPath: path).lastPathComponent
-            return "attachment (\(name)): do not attach secret files; add to AI ignore (`offsend prepare`)."
+            return "attachment (\(name)): do not attach secret files; add to AI ignore (`offsend protect`)."
         }
     }
 

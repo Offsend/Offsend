@@ -11,74 +11,82 @@ public struct IgnoreReporter: Sendable {
     public func render(
         _ report: IgnoreReport,
         format: CheckOutputFormat,
-        scope: IgnoreCommandScope = .project
+        scope: IgnoreCommandScope = .project,
+        useColor: Bool = false
     ) -> String {
         switch format {
         case .text:
-            return renderText(report, scope: scope)
+            return renderText(report, scope: scope, ui: CLIText(useColor: useColor))
         case .json:
             return renderJSON(report, scope: scope)
         }
     }
 
-    private func renderText(_ report: IgnoreReport, scope: IgnoreCommandScope) -> String {
-        var lines: [String] = []
+    private func renderText(_ report: IgnoreReport, scope: IgnoreCommandScope, ui: CLIText) -> String {
+        var sections: [[String]] = []
 
-        for error in report.errors {
-            lines.append("! \(error)")
-        }
+        let errors = report.errors.map { ui.warn($0) }
+        if !errors.isEmpty { sections.append(errors) }
+
         guard !report.patterns.isEmpty else {
-            return lines.joined(separator: "\n")
+            return CLIText.joinSections(sections)
         }
+
+        let header = report.dryRun ? "Ignore (dry run)" : "Ignore"
+        var body: [String] = [ui.section(header)]
 
         if report.dryRun {
             if report.plannedCreates.isEmpty && report.plannedUpdates.isEmpty {
-                lines.append("Nothing to do; every AI ignore file already covers: \(report.patterns.joined(separator: ", "))")
-                appendLocalWarning(to: &lines, scope: scope)
-                return lines.joined(separator: "\n")
+                body = [ui.ok("Nothing to do; every AI ignore file already covers: \(report.patterns.joined(separator: ", "))")]
+                appendLocalWarning(to: &body, scope: scope, ui: ui)
+                sections.append(body)
+                return CLIText.joinSections(sections)
             }
             if !report.plannedCreates.isEmpty {
-                lines.append("Would create \(report.plannedCreates.count) file(s):")
+                body.append(ui.note("Would create \(report.plannedCreates.count) file(s):"))
                 for path in report.plannedCreates {
-                    lines.append("  + \(path)")
+                    body.append(ui.add(path))
                 }
             }
             if !report.plannedUpdates.isEmpty {
-                lines.append("Would update \(report.plannedUpdates.count) file(s):")
+                body.append(ui.note("Would update \(report.plannedUpdates.count) file(s):"))
                 for update in report.plannedUpdates {
-                    lines.append("  ~ \(update.relativePath)  (+\(update.addedLines.joined(separator: ", ")))")
+                    body.append(ui.update(update.relativePath, detail: "(+\(update.addedLines.joined(separator: ", ")))"))
                 }
             }
-            appendLocalWarning(to: &lines, scope: scope)
-            return lines.joined(separator: "\n")
+            appendLocalWarning(to: &body, scope: scope, ui: ui)
+            sections.append(body)
+            return CLIText.joinSections(sections)
+        }
+
+        if report.createdRelativePaths.isEmpty, report.updatedRelativePaths.isEmpty, report.errors.isEmpty {
+            body = [ui.ok("Nothing to do; every AI ignore file already covers: \(report.patterns.joined(separator: ", "))")]
+            appendLocalWarning(to: &body, scope: scope, ui: ui)
+            sections.append(body)
+            return CLIText.joinSections(sections)
         }
 
         if !report.createdRelativePaths.isEmpty {
-            lines.append("Created \(report.createdRelativePaths.count) file(s):")
+            body.append(ui.note("Created \(report.createdRelativePaths.count) file(s):"))
             for path in report.createdRelativePaths {
-                lines.append("  + \(path)")
+                body.append(ui.add(path))
             }
         }
         if !report.updatedRelativePaths.isEmpty {
-            lines.append("Updated \(report.updatedRelativePaths.count) file(s):")
+            body.append(ui.note("Updated \(report.updatedRelativePaths.count) file(s):"))
             for path in report.updatedRelativePaths {
-                lines.append("  ~ \(path)")
+                body.append(ui.update(path))
             }
         }
-        if report.createdRelativePaths.isEmpty, report.updatedRelativePaths.isEmpty, report.errors.isEmpty {
-            lines.append("Nothing to do; every AI ignore file already covers: \(report.patterns.joined(separator: ", "))")
-        }
-        appendLocalWarning(to: &lines, scope: scope)
-
-        return lines.joined(separator: "\n")
+        appendLocalWarning(to: &body, scope: scope, ui: ui)
+        sections.append(body)
+        return CLIText.joinSections(sections)
     }
 
-    private func appendLocalWarning(to lines: inout [String], scope: IgnoreCommandScope) {
+    private func appendLocalWarning(to lines: inout [String], scope: IgnoreCommandScope, ui: CLIText) {
         guard scope == .local else { return }
-        lines.append(
-            "warning: Local only — not written to .offsend.yml and will not be shared with the team."
-        )
-        lines.append("To publish: offsend ignore <pattern>")
+        lines.append(ui.warn("Local only — not written to .offsend.yml and will not be shared with the team."))
+        lines.append(ui.next("offsend ignore <pattern>"))
     }
 
     private func renderJSON(_ report: IgnoreReport, scope: IgnoreCommandScope) -> String {

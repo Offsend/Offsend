@@ -1,7 +1,7 @@
 import Foundation
 
 enum IgnoreFileParser {
-    static let defaultHeader = "# Offsend AI privacy defaults"
+    static let defaultHeader = AIWorkspacePrivacyIgnoreTemplate.header
 
     static func normalizedPattern(_ line: String) -> String? {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)

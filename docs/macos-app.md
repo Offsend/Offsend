@@ -58,7 +58,7 @@ macOS may ask for Accessibility (to paste into the front app) and folder access 
 | Safe Paste | No | Yes |
 | File preparation | Path-based scans | Drag-and-drop UI, review, copy/save |
 | Documents | Plain text (+ PDF/RTF/Word on macOS CLI) | Plain text, PDF, RTF, Word |
-| Project checks | `show`, `prepare`, `check --policy` | UI checks, watched folders |
+| Project checks | `show`, `protect`, `check --policy` | UI checks, watched folders |
 | Git hooks | `offsend hook …` | Settings → Hooks |
 | AI prompt hooks | `hook install --target …` ([docs](cli.md#ai-editor-hooks)) | — |
 | AI models | Not used by the CLI | Download / import / manage |

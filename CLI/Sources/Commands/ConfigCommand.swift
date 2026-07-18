@@ -159,9 +159,12 @@ struct Init: AsyncParsableCommand {
             CLIError.exit(.error, message: "Failed to write \(configURL.path): \(error.localizedDescription)")
         }
 
-        print("Created \(configURL.path) (templates: \(labels))")
-        print("  ignore.commit: \(options.ignoreCommit)")
-        print("  hooks.publish: \(options.hooksPublish)")
+        let ui = CLIText(useColor: CLIColor.enabled(for: .text))
+        print(ui.ok("Created \(ProjectConfigLoader.filename)"))
+        print(ui.hint("  path: \(configURL.path)"))
+        print(ui.hint("  templates: \(labels)"))
+        print(ui.hint("  ignore.commit: \(options.ignoreCommit)"))
+        print(ui.hint("  hooks.publish: \(options.hooksPublish)"))
 
         var ranSync = false
         if !noSync {
@@ -181,9 +184,9 @@ struct Init: AsyncParsableCommand {
             resolvedIgnoreCommit = true
         } else if noIgnoreCommit {
             resolvedIgnoreCommit = false
-        } else if Self.isInteractiveTTY {
+        } else if CLIPrompt.isInteractiveTTY {
             // Yes (default) = keep out of git → ignore.commit: false
-            let keepOutOfGit = Self.promptYesNo(
+            let keepOutOfGit = CLIPrompt.yesNo(
                 question: "Keep AI ignore files (.cursorignore, .claudeignore, …) out of git?",
                 hint: "Recommended. Team patterns live in .offsend.yml; ignore files stay local.",
                 defaultYes: true
@@ -198,8 +201,8 @@ struct Init: AsyncParsableCommand {
             resolvedHooksPublish = true
         } else if noHooksPublish {
             resolvedHooksPublish = false
-        } else if Self.isInteractiveTTY {
-            resolvedHooksPublish = Self.promptYesNo(
+        } else if CLIPrompt.isInteractiveTTY {
+            resolvedHooksPublish = CLIPrompt.yesNo(
                 question: "Allow committing AI editor hooks to the repo?",
                 hint: "Usually no — hooks can include machine-specific paths or personal settings.",
                 defaultYes: false
@@ -211,21 +214,6 @@ struct Init: AsyncParsableCommand {
         return WizardOptions(ignoreCommit: resolvedIgnoreCommit, hooksPublish: resolvedHooksPublish)
     }
 
-    private static func promptYesNo(question: String, hint: String, defaultYes: Bool) -> Bool {
-        fputs("\(question)\n", stderr)
-        fputs("  \(hint)\n", stderr)
-        let suffix = defaultYes ? "Y/n" : "y/N"
-        fputs("[\(suffix)]: ", stderr)
-        for _ in 1...3 {
-            let line = readLine() ?? ""
-            if let value = ProjectConfigTemplates.parseYesNo(line, defaultYes: defaultYes) {
-                return value
-            }
-            fputs("Please answer y or n: ", stderr)
-        }
-        return defaultYes
-    }
-
     private func runSync(directoryURL: URL) -> Bool {
         let context: OffsendRuntimeContext
         do {
@@ -235,7 +223,7 @@ struct Init: AsyncParsableCommand {
             return false
         }
         let report = OffsendIgnoreSyncService(context: context).run(directoryURL: directoryURL)
-        let text = IgnoreSyncReporter().render(report, format: .text)
+        let text = IgnoreSyncReporter().render(report, format: .text, useColor: CLIColor.enabled(for: .text))
         if !text.isEmpty {
             print(text)
         }
@@ -261,7 +249,7 @@ struct Init: AsyncParsableCommand {
             }
         }
 
-        if Self.isInteractiveTTY {
+        if CLIPrompt.isInteractiveTTY {
             do {
                 let prompted = try Self.promptForTemplates()
                 return try ProjectConfigTemplates.resolve(rawValues: prompted)
@@ -308,10 +296,6 @@ struct Init: AsyncParsableCommand {
             .error,
             message: "Could not parse templates. Pass --template explicitly (see --list-templates)."
         )
-    }
-
-    private static var isInteractiveTTY: Bool {
-        isatty(STDIN_FILENO) != 0 && isatty(STDERR_FILENO) != 0
     }
 
     private func runBaselineCheck(directoryURL: URL) async {
@@ -367,11 +351,12 @@ struct Init: AsyncParsableCommand {
     }
 
     private func printNextSteps(ranSync: Bool) {
-        print("Commit \(ProjectConfigLoader.filename) so hooks and CI share the same rules.")
+        let ui = CLIText(useColor: CLIColor.enabled(for: .text))
+        print(ui.hint("Commit \(ProjectConfigLoader.filename) so hooks and CI share the same rules."))
         if ranSync {
-            print("Next: offsend protect && offsend show && offsend hook install")
+            print(ui.next("offsend setup   # or: offsend protect && offsend show && offsend hook install"))
         } else {
-            print("Next: offsend sync && offsend protect && offsend show && offsend hook install")
+            print(ui.next("offsend ignore --sync && offsend protect && offsend show && offsend hook install"))
         }
     }
 

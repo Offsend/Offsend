@@ -376,10 +376,14 @@ public struct OffsendHistoryService: Sendable {
 }
 
 public enum OffsendHistoryReporter {
-    public static func renderAudit(_ report: OffsendHistoryAuditReport, format: CheckOutputFormat) -> String {
+    public static func renderAudit(
+        _ report: OffsendHistoryAuditReport,
+        format: CheckOutputFormat,
+        useColor: Bool = false
+    ) -> String {
         switch format {
         case .text:
-            return renderAuditText(report)
+            return renderAuditText(report, ui: CLIText(useColor: useColor))
         case .json:
             return encodeJSON(AuditPayload(
                 filesScanned: report.filesScanned,
@@ -397,10 +401,14 @@ public enum OffsendHistoryReporter {
         }
     }
 
-    public static func renderScrub(_ report: OffsendHistoryScrubReport, format: CheckOutputFormat) -> String {
+    public static func renderScrub(
+        _ report: OffsendHistoryScrubReport,
+        format: CheckOutputFormat,
+        useColor: Bool = false
+    ) -> String {
         switch format {
         case .text:
-            return renderScrubText(report)
+            return renderScrubText(report, ui: CLIText(useColor: useColor))
         case .json:
             return encodeJSON(ScrubPayload(
                 dryRun: report.dryRun,
@@ -419,14 +427,14 @@ public enum OffsendHistoryReporter {
         }
     }
 
-    private static func renderAuditText(_ report: OffsendHistoryAuditReport) -> String {
-        var lines: [String] = []
+    private static func renderAuditText(_ report: OffsendHistoryAuditReport, ui: CLIText) -> String {
+        var lines: [String] = [ui.section("History audit")]
         for error in report.errors {
-            lines.append("! \(error)")
+            lines.append(ui.warn(error))
         }
-        lines.append("Scanned \(report.filesScanned) agent transcript file(s).")
+        lines.append(ui.note("Scanned \(report.filesScanned) agent transcript file(s)."))
         if report.findings.isEmpty {
-            lines.append("No secret-shaped findings in local agent history.")
+            lines.append(ui.ok("No secret-shaped findings in local agent history."))
             return lines.joined(separator: "\n")
         }
         lines.append("\(report.filesWithFindings) file(s) with secret-shaped findings:")
@@ -435,16 +443,16 @@ public enum OffsendHistoryReporter {
             lines.append("  - \(finding.path) [\(finding.source)] (\(finding.findingCount): \(types))")
         }
         if report.findings.count > 50 {
-            lines.append("  … and \(report.findings.count - 50) more (use --format json)")
+            lines.append(ui.note("… and \(report.findings.count - 50) more (use --format json)"))
         }
-        lines.append("Next: offsend history scrub --apply")
+        lines.append(ui.next("offsend history scrub --apply"))
         return lines.joined(separator: "\n")
     }
 
-    private static func renderScrubText(_ report: OffsendHistoryScrubReport) -> String {
-        var lines: [String] = []
+    private static func renderScrubText(_ report: OffsendHistoryScrubReport, ui: CLIText) -> String {
+        var lines: [String] = [ui.section("History scrub")]
         for error in report.errors {
-            lines.append("! \(error)")
+            lines.append(ui.warn(error))
         }
         let mode = report.dryRun ? "Dry-run" : "Applied"
         lines.append("\(mode): \(report.redactionCount) redaction(s) across \(report.filesTouched.count) file(s).")
@@ -452,10 +460,10 @@ public enum OffsendHistoryReporter {
             lines.append("  - \(path)")
         }
         if report.filesTouched.count > 50 {
-            lines.append("  … and \(report.filesTouched.count - 50) more (use --format json)")
+            lines.append(ui.note("… and \(report.filesTouched.count - 50) more (use --format json)"))
         }
         if report.dryRun, report.redactionCount > 0 {
-            lines.append("Re-run with --apply to write redactions.")
+            lines.append(ui.next("offsend history scrub --apply"))
         }
         return lines.joined(separator: "\n")
     }

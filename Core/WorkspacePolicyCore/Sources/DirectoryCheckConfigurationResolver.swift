@@ -33,10 +33,13 @@ public enum DirectoryCheckConfigurationResolver {
             if rule.severity != .required, input.disabledRuleIDs.contains(rule.id) {
                 return nil
             }
-            guard let customTemplate, let fix = rule.fix else { return rule }
+            // The custom template is an ignore-file template; managed editor rule files
+            // (offsend_privacy.*) keep their own contents.
+            guard let customTemplate, let fix = rule.fix, fix.strategy != .keepManagedContent else { return rule }
             return AIWorkspacePrivacyRule(
                 id: rule.id,
                 toolName: rule.toolName,
+                tool: rule.tool,
                 title: rule.title,
                 relativePathPatterns: rule.relativePathPatterns,
                 severity: rule.severity,

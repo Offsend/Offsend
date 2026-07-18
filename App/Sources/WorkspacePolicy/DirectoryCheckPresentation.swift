@@ -171,7 +171,7 @@ enum DirectoryCheckPresentation {
         switch item.kind {
         case let .ruleFile(relativePath, strategy):
             switch strategy {
-            case .createIfMissing:
+            case .createIfMissing, .keepManagedContent:
                 return OffsendStrings.directoryCheckFixSelectionRuleCreate(relativePath)
             case .mergeLines:
                 return OffsendStrings.directoryCheckFixSelectionRuleUpdate(relativePath)

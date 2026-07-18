@@ -1,9 +1,23 @@
-private enum AIWorkspacePrivacyDefaultFixes {
-    static let cursorPrivacyRuleContents = """
+public enum AIWorkspacePrivacyDefaultFixes {
+    /// Canonical privacy rule text. Rendered per editor below so every editor's
+    /// rule file carries the same guidance and cannot drift between editors.
+    static let privacyRuleText = "Keep secrets, credentials, private keys, and environment files out of AI context. Respect .cursorignore and other AI ignore files before reading or summarizing project contents."
+
+    static let managedHeader = "<!-- Managed by Offsend. Do not edit: changes are overwritten on sync. Add your own rules in a separate file. -->"
+
+    /// Cursor project rule: native `.mdc` with `alwaysApply` frontmatter.
+    public static let cursorPrivacyRuleContents = """
     ---
     alwaysApply: true
     ---
-    Keep secrets, credentials, private keys, and environment files out of AI context. Respect .cursorignore and other AI ignore files before reading or summarizing project contents.
+    \(managedHeader)
+    \(privacyRuleText)
+    """
+
+    /// Claude Code project rule: plain markdown, no frontmatter (loads every session).
+    public static let claudePrivacyRuleContents = """
+    \(managedHeader)
+    \(privacyRuleText)
     """
 }
 
@@ -12,6 +26,7 @@ public extension AIWorkspacePrivacyRule {
         AIWorkspacePrivacyRule(
             id: "cursor-ignore",
             toolName: "Cursor",
+            tool: .cursor,
             title: ".cursorignore",
             relativePathPatterns: [".cursorignore"],
             severity: .required,
@@ -25,6 +40,7 @@ public extension AIWorkspacePrivacyRule {
         AIWorkspacePrivacyRule(
             id: "cursor-indexing-ignore",
             toolName: "Cursor",
+            tool: .cursor,
             title: ".cursorindexingignore",
             relativePathPatterns: [".cursorindexingignore"],
             severity: .informational,
@@ -38,20 +54,39 @@ public extension AIWorkspacePrivacyRule {
         AIWorkspacePrivacyRule(
             id: "cursor-project-rules",
             toolName: "Cursor",
+            tool: .cursor,
             title: ".cursor/rules",
-            relativePathPatterns: [".cursor/rules/*.md", ".cursor/rules/*.mdc"],
+            // Legacy privacy.mdc (created by older releases) still satisfies the rule
+            // so upgrades do not create a duplicate offsend_privacy.mdc next to it.
+            relativePathPatterns: [".cursor/rules/offsend_privacy.mdc", ".cursor/rules/privacy.mdc"],
             severity: .recommended,
             scansForSensitivePatterns: false,
-            remediation: "Add .cursor/rules/*.mdc project rules that describe how AI tools should handle sensitive files.",
+            remediation: "Add a .cursor/rules/offsend_privacy.mdc project rule that describes how AI tools should handle sensitive files.",
             fix: AIWorkspacePrivacyFileFix(
-                relativePath: ".cursor/rules/privacy.mdc",
+                relativePath: ".cursor/rules/offsend_privacy.mdc",
                 contents: AIWorkspacePrivacyDefaultFixes.cursorPrivacyRuleContents,
-                strategy: .createIfMissing
+                strategy: .keepManagedContent
+            )
+        ),
+        AIWorkspacePrivacyRule(
+            id: "claude-project-rules",
+            toolName: "Claude Code",
+            tool: .claude,
+            title: ".claude/rules",
+            relativePathPatterns: [".claude/rules/offsend_privacy.md"],
+            severity: .recommended,
+            scansForSensitivePatterns: false,
+            remediation: "Add a .claude/rules/offsend_privacy.md project rule that describes how AI tools should handle sensitive files.",
+            fix: AIWorkspacePrivacyFileFix(
+                relativePath: ".claude/rules/offsend_privacy.md",
+                contents: AIWorkspacePrivacyDefaultFixes.claudePrivacyRuleContents,
+                strategy: .keepManagedContent
             )
         ),
         AIWorkspacePrivacyRule(
             id: "copilot-exclude",
             toolName: "GitHub Copilot",
+            tool: .copilot,
             title: ".aiexclude",
             relativePathPatterns: [".aiexclude"],
             severity: .recommended,
@@ -65,6 +100,7 @@ public extension AIWorkspacePrivacyRule {
         AIWorkspacePrivacyRule(
             id: "continue-ignore",
             toolName: "Continue",
+            tool: .continue,
             title: ".continueignore",
             relativePathPatterns: [".continueignore"],
             severity: .recommended,
@@ -78,6 +114,7 @@ public extension AIWorkspacePrivacyRule {
         AIWorkspacePrivacyRule(
             id: "codeium-ignore",
             toolName: "Windsurf / Codeium",
+            tool: .windsurf,
             title: ".codeiumignore",
             relativePathPatterns: [".codeiumignore"],
             severity: .recommended,
@@ -91,6 +128,7 @@ public extension AIWorkspacePrivacyRule {
         AIWorkspacePrivacyRule(
             id: "claude-ignore",
             toolName: "Claude Code",
+            tool: .claude,
             title: ".claudeignore",
             relativePathPatterns: [".claudeignore"],
             severity: .recommended,
@@ -104,6 +142,7 @@ public extension AIWorkspacePrivacyRule {
         AIWorkspacePrivacyRule(
             id: "gemini-ignore",
             toolName: "Gemini Code Assist",
+            tool: .gemini,
             title: ".geminiignore",
             relativePathPatterns: [".geminiignore"],
             severity: .recommended,
@@ -117,6 +156,7 @@ public extension AIWorkspacePrivacyRule {
         AIWorkspacePrivacyRule(
             id: "llm-ignore",
             toolName: "LLM tools",
+            tool: .llm,
             title: ".llmignore",
             relativePathPatterns: [".llmignore"],
             severity: .recommended,
@@ -130,6 +170,7 @@ public extension AIWorkspacePrivacyRule {
         AIWorkspacePrivacyRule(
             id: "aider-ignore",
             toolName: "Aider",
+            tool: .aider,
             title: ".aiderignore",
             relativePathPatterns: [".aiderignore"],
             severity: .recommended,
@@ -143,6 +184,7 @@ public extension AIWorkspacePrivacyRule {
         AIWorkspacePrivacyRule(
             id: "cline-ignore",
             toolName: "Cline",
+            tool: .cline,
             title: ".clineignore",
             relativePathPatterns: [".clineignore"],
             severity: .recommended,
@@ -156,6 +198,7 @@ public extension AIWorkspacePrivacyRule {
         AIWorkspacePrivacyRule(
             id: "roo-ignore",
             toolName: "Roo Code",
+            tool: .roo,
             title: ".rooignore",
             relativePathPatterns: [".rooignore"],
             severity: .recommended,
@@ -169,6 +212,7 @@ public extension AIWorkspacePrivacyRule {
         AIWorkspacePrivacyRule(
             id: "zed-ignore",
             toolName: "Zed",
+            tool: .zed,
             title: ".zedignore",
             relativePathPatterns: [".zedignore"],
             severity: .recommended,
@@ -182,6 +226,7 @@ public extension AIWorkspacePrivacyRule {
         AIWorkspacePrivacyRule(
             id: "cody-ignore",
             toolName: "Sourcegraph Cody",
+            tool: .cody,
             title: ".codyignore",
             relativePathPatterns: [".codyignore"],
             severity: .recommended,
@@ -204,6 +249,7 @@ public extension AIWorkspacePrivacyRule {
         AIWorkspacePrivacyRule(
             id: "claude-md",
             toolName: "Claude Code",
+            tool: .claude,
             title: "CLAUDE.md",
             relativePathPatterns: ["CLAUDE.md"],
             severity: .informational,

@@ -10,6 +10,9 @@ public struct IgnoreSyncReport: Sendable, Equatable {
     public let createdRelativePaths: [String]
     public let updatedRelativePaths: [String]
     public let unchangedRelativePaths: [String]
+    public let gitignoreUpdated: Bool
+    public let gitignorePath: String?
+    /// True when a leftover `.git/info/exclude` ignore-files section was removed.
     public let excludeUpdated: Bool
     public let excludePath: String?
     public let errors: [String]
@@ -22,6 +25,8 @@ public struct IgnoreSyncReport: Sendable, Equatable {
         createdRelativePaths: [String] = [],
         updatedRelativePaths: [String] = [],
         unchangedRelativePaths: [String] = [],
+        gitignoreUpdated: Bool = false,
+        gitignorePath: String? = nil,
         excludeUpdated: Bool = false,
         excludePath: String? = nil,
         errors: [String] = []
@@ -33,6 +38,8 @@ public struct IgnoreSyncReport: Sendable, Equatable {
         self.createdRelativePaths = createdRelativePaths
         self.updatedRelativePaths = updatedRelativePaths
         self.unchangedRelativePaths = unchangedRelativePaths
+        self.gitignoreUpdated = gitignoreUpdated
+        self.gitignorePath = gitignorePath
         self.excludeUpdated = excludeUpdated
         self.excludePath = excludePath
         self.errors = errors
@@ -43,12 +50,13 @@ public struct IgnoreSyncReport: Sendable, Equatable {
 
 /// Materializes `ignore.patterns` from `.offsend.yml` into AI ignore files (managed
 /// block) and, when `ignore.commit` is false, keeps those paths out of git via
-/// `.git/info/exclude`.
+/// a managed block in `.gitignore`.
 public struct OffsendIgnoreSyncService: Sendable {
     private let configuration: AIWorkspacePrivacyAuditConfiguration
     private let fileManager: FileManager
     private let gitResolver: GitRepositoryResolver
     private let configLoader: ProjectConfigLoader
+    private let gitignoreService: OffsendGitignoreService
     private let excludeService: OffsendLocalGitExcludeService
 
     public init(
@@ -75,19 +83,38 @@ public struct OffsendIgnoreSyncService: Sendable {
         self.fileManager = fileManager
         self.gitResolver = gitResolver
         self.configLoader = configLoader
+        self.gitignoreService = OffsendGitignoreService(fileManager: fileManager)
         self.excludeService = OffsendLocalGitExcludeService(
             fileManager: fileManager,
             gitResolver: gitResolver
         )
     }
 
-    /// Relative paths of gitignore-style AI ignore files Offsend manages.
+    /// Relative paths of gitignore-style AI ignore files Offsend manages,
+    /// optionally narrowed to the given tools (`ignore.tools`).
     public static func managedIgnoreRelativePaths(
-        configuration: AIWorkspacePrivacyAuditConfiguration = .default
+        configuration: AIWorkspacePrivacyAuditConfiguration = .default,
+        tools: Set<AIWorkspaceToolID>? = nil
     ) -> [String] {
-        configuration.rules
+        configuration.filtered(tools: tools).rules
             .filter(\.scansForSensitivePatterns)
             .compactMap(\.fix?.relativePath)
+            .sorted()
+    }
+
+    /// Exact relative paths of managed editor rule files (offsend_privacy.*).
+    /// Offsend owns these generated artifacts, so with `ignore.commit: false` they
+    /// are kept out of git together with the ignore files. Only exact file paths —
+    /// never `.cursor/rules/` or other user-owned directories.
+    public static func managedRuleRelativePaths(
+        configuration: AIWorkspacePrivacyAuditConfiguration = .default,
+        tools: Set<AIWorkspaceToolID>? = nil
+    ) -> [String] {
+        configuration.filtered(tools: tools).rules
+            .compactMap { rule -> String? in
+                guard let fix = rule.fix, fix.strategy == .keepManagedContent else { return nil }
+                return fix.relativePath
+            }
             .sorted()
     }
 
@@ -136,6 +163,7 @@ public struct OffsendIgnoreSyncService: Sendable {
             directoryURL: root,
             patterns: config.ignore?.patterns ?? [],
             commitIgnoreFiles: config.ignore?.commitsIgnoreFiles ?? false,
+            tools: config.ignore?.toolIDs,
             dryRun: dryRun
         )
     }
@@ -144,12 +172,13 @@ public struct OffsendIgnoreSyncService: Sendable {
         directoryURL: URL,
         patterns rawPatterns: [String],
         commitIgnoreFiles: Bool,
+        tools: Set<AIWorkspaceToolID>? = nil,
         dryRun: Bool = false
     ) -> IgnoreSyncReport {
         let root = directoryURL.standardizedFileURL
         var errors: [String] = []
         let patterns = OffsendManagedIgnoreBlock.normalizePatterns(rawPatterns)
-        let targets = Self.managedIgnoreRelativePaths(configuration: configuration)
+        let targets = Self.managedIgnoreRelativePaths(configuration: configuration, tools: tools)
 
         var created: [String] = []
         var updated: [String] = []
@@ -159,7 +188,7 @@ public struct OffsendIgnoreSyncService: Sendable {
             let url = root.appendingPathComponent(relativePath)
             let fileExists = fileManager.fileExists(atPath: url.path)
             let existing = fileExists ? (try? String(contentsOf: url, encoding: .utf8)) : nil
-            let seed = existing ?? AIWorkspacePrivacyIgnoreTemplate.contents
+            let seed = Self.seedForManagedUpsert(existing: existing, patterns: patterns)
             let upsert = OffsendManagedIgnoreBlock.upsert(patterns: patterns, into: seed)
 
             switch upsert.result {
@@ -198,23 +227,35 @@ public struct OffsendIgnoreSyncService: Sendable {
             }
         }
 
-        let exclude: OffsendLocalGitExcludeService.Report
+        let section = OffsendLocalGitExcludeService.ignoreFilesSection
+        let gitignore: OffsendGitignoreService.Report
         if commitIgnoreFiles {
-            // commit: true means the files may be tracked; drop any stale local
-            // exclusion left over from a previous commit: false configuration.
-            exclude = excludeService.removeSection(
-                OffsendLocalGitExcludeService.ignoreFilesSection,
-                repositoryURL: root,
+            // commit: true means the files may be tracked; drop the shared
+            // .gitignore exclusion left over from a previous commit: false.
+            gitignore = gitignoreService.removeSection(
+                section,
+                directoryURL: root,
                 dryRun: dryRun
             )
         } else {
-            exclude = excludeService.upsertPatterns(
-                targets,
-                repositoryURL: root,
-                section: OffsendLocalGitExcludeService.ignoreFilesSection,
+            // Managed rule files (offsend_privacy.*) are generated artifacts owned by
+            // Offsend, so they stay out of git together with the ignore files.
+            let rulePaths = Self.managedRuleRelativePaths(configuration: configuration, tools: tools)
+            gitignore = gitignoreService.upsertPatterns(
+                (targets + rulePaths).sorted(),
+                directoryURL: root,
+                section: section,
                 dryRun: dryRun
             )
         }
+        errors.append(contentsOf: gitignore.errors)
+
+        // Migrate: older releases wrote ignore-files into .git/info/exclude.
+        let exclude = excludeService.removeSection(
+            section,
+            repositoryURL: root,
+            dryRun: dryRun
+        )
         errors.append(contentsOf: exclude.errors)
 
         return IgnoreSyncReport(
@@ -225,6 +266,8 @@ public struct OffsendIgnoreSyncService: Sendable {
             createdRelativePaths: created.sorted(),
             updatedRelativePaths: updated.sorted(),
             unchangedRelativePaths: unchanged.sorted(),
+            gitignoreUpdated: gitignore.updated,
+            gitignorePath: gitignore.gitignorePath,
             excludeUpdated: exclude.updated,
             excludePath: exclude.excludePath,
             errors: errors
@@ -297,6 +340,7 @@ public struct OffsendIgnoreSyncService: Sendable {
                 directoryURL: repoRoot,
                 patterns: mergedPatterns,
                 commitIgnoreFiles: commitIgnoreFiles,
+                tools: decoded.ignore?.toolIDs,
                 dryRun: dryRun
             )
             return (merged.added, configURL.path, sync)
@@ -333,5 +377,55 @@ public struct OffsendIgnoreSyncService: Sendable {
             try fileManager.createDirectory(at: parent, withIntermediateDirectories: true)
         }
         try contents.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    /// When `ignore.patterns` owns the defaults, new files get a header-only seed so
+    /// patterns are not duplicated outside the managed block. Stock plain-line
+    /// templates from older prepare/init runs are rewritten the same way, while
+    /// user-authored extras outside the defaults are preserved.
+    static func seedForManagedUpsert(existing: String?, patterns: [String]) -> String? {
+        guard !patterns.isEmpty else {
+            return existing ?? AIWorkspacePrivacyIgnoreTemplate.contents
+        }
+        guard let existing else {
+            return AIWorkspacePrivacyIgnoreTemplate.managedSeedContents
+        }
+        if OffsendManagedIgnoreBlock.patterns(in: existing) != nil {
+            return existing
+        }
+        return stripPatternsOwnedByManagedBlock(from: existing, patterns: patterns)
+    }
+
+    private static func stripPatternsOwnedByManagedBlock(
+        from existing: String,
+        patterns: [String]
+    ) -> String {
+        let owned = Set(OffsendManagedIgnoreBlock.normalizePatterns(
+            patterns + AIWorkspacePrivacyIgnoreTemplate.defaultPatterns
+        ))
+        var kept: [String] = []
+        var sawHeader = false
+        for line in existing.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { continue }
+            if trimmed == AIWorkspacePrivacyIgnoreTemplate.header {
+                sawHeader = true
+                kept.append(AIWorkspacePrivacyIgnoreTemplate.header)
+                continue
+            }
+            if trimmed.hasPrefix("#") {
+                kept.append(line)
+                continue
+            }
+            if owned.contains(trimmed) { continue }
+            kept.append(line)
+        }
+        if kept.isEmpty {
+            return AIWorkspacePrivacyIgnoreTemplate.managedSeedContents
+        }
+        if !sawHeader {
+            kept.insert(AIWorkspacePrivacyIgnoreTemplate.header, at: 0)
+        }
+        return kept.joined(separator: "\n") + "\n"
     }
 }

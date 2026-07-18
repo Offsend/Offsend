@@ -56,7 +56,8 @@ struct HistoryAudit: AsyncParsableCommand {
             )
         }
 
-        let output = OffsendHistoryReporter.renderAudit(report, format: outputFormat)
+        let useColor = CLIColor.enabled(for: outputFormat)
+        let output = OffsendHistoryReporter.renderAudit(report, format: outputFormat, useColor: useColor)
         if !output.isEmpty {
             print(output)
         }
@@ -119,7 +120,8 @@ struct HistoryScrub: AsyncParsableCommand {
             )
         }
 
-        let output = OffsendHistoryReporter.renderScrub(report, format: outputFormat)
+        let useColor = CLIColor.enabled(for: outputFormat)
+        let output = OffsendHistoryReporter.renderScrub(report, format: outputFormat, useColor: useColor)
         if !output.isEmpty {
             print(output)
         }

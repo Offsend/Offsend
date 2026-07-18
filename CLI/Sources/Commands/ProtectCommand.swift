@@ -7,8 +7,8 @@ struct Protect: AsyncParsableCommand {
         commandName: "protect",
         abstract: "Hide exposed sensitive paths from AI tools (create ignore files + add required patterns).",
         discussion: """
-        Runs the same path audit as `offsend show`, creates missing AI ignore files \
-        (like `offsend prepare`), then appends canonical ignore lines for every \
+        Runs the same path audit as `offsend show`, creates missing AI ignore files, \
+        then appends canonical ignore lines for every \
         required exposed pattern (like `offsend ignore`). Use --include-recommended \
         to also cover recommended exposures. Preview with --dry-run, then verify with \
         `offsend show`. When `.offsend.yml` has `context.history.scrub_on_protect: true`, \
@@ -53,7 +53,8 @@ struct Protect: AsyncParsableCommand {
             )
         }
 
-        let output = ProtectReporter().render(report, format: outputFormat)
+        let useColor = CLIColor.enabled(for: outputFormat)
+        let output = ProtectReporter().render(report, format: outputFormat, useColor: useColor)
         if !output.isEmpty {
             print(output)
         }
@@ -80,7 +81,7 @@ struct Protect: AsyncParsableCommand {
                 disabledDetectors: resolved.disabledDetectors,
                 customDictionaries: resolved.customDictionaries
             )
-            let scrubOut = OffsendHistoryReporter.renderScrub(scrub, format: outputFormat)
+            let scrubOut = OffsendHistoryReporter.renderScrub(scrub, format: outputFormat, useColor: useColor)
             if !scrubOut.isEmpty {
                 print(scrubOut)
             }

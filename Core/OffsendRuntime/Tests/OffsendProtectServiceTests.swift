@@ -34,8 +34,7 @@ final class OffsendProtectServiceTests: XCTestCase {
         let report = makeService().run(directoryURL: root)
 
         XCTAssertTrue(report.errors.isEmpty)
-        // prepare seeds ignore templates that often already cover .env*; otherwise
-        // protect appends the canonical line via ignore.
+        // Without .offsend.yml, prepare seeds the full ignore template (covers .env*).
         XCTAssertFalse(report.prepare.createdRelativePaths.isEmpty)
         XCTAssertEqual(report.remainingRequiredCount, 0)
 

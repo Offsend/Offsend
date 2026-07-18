@@ -24,6 +24,21 @@ public struct AIWorkspacePrivacyAuditConfiguration: Equatable, Sendable {
         rules: AIWorkspacePrivacyRule.defaultRules,
         sensitivePatterns: AIWorkspaceSensitivePattern.defaultPatterns
     )
+
+    /// Configuration limited to the given tools. Tool-agnostic rules (`tool == nil`)
+    /// are always kept. `nil` means no narrowing (all tools).
+    public func filtered(tools: Set<AIWorkspaceToolID>?) -> AIWorkspacePrivacyAuditConfiguration {
+        guard let tools else { return self }
+        return AIWorkspacePrivacyAuditConfiguration(
+            rules: rules.filter { rule in
+                guard let tool = rule.tool else { return true }
+                return tools.contains(tool)
+            },
+            sensitivePatterns: sensitivePatterns,
+            additionalSkippedDirectoryNames: additionalSkippedDirectoryNames,
+            exposureScanLimits: exposureScanLimits
+        )
+    }
 }
 
 public enum AIWorkspacePrivacyFixScenario: Equatable, Sendable {
@@ -33,9 +48,29 @@ public enum AIWorkspacePrivacyFixScenario: Equatable, Sendable {
     case noPolicyFiles
 }
 
+/// Stable slug identifying an AI tool/editor Offsend manages files for.
+/// Used by `ignore.tools` in `.offsend.yml` to narrow which tools get files.
+public enum AIWorkspaceToolID: String, CaseIterable, Equatable, Sendable {
+    case cursor
+    case claude
+    case copilot
+    case `continue`
+    case windsurf
+    case gemini
+    case llm
+    case aider
+    case cline
+    case roo
+    case zed
+    case cody
+}
+
 public struct AIWorkspacePrivacyRule: Equatable, Identifiable, Sendable {
     public let id: String
     public let toolName: String
+    /// Stable tool slug for `ignore.tools` filtering. `nil` means the rule is
+    /// tool-agnostic and always applies (e.g. `.gitignore`, `AGENTS.md`).
+    public let tool: AIWorkspaceToolID?
     public let title: String
     public let relativePathPatterns: [String]
     public let severity: AIWorkspacePrivacyRuleSeverity
@@ -46,6 +81,7 @@ public struct AIWorkspacePrivacyRule: Equatable, Identifiable, Sendable {
     public init(
         id: String,
         toolName: String,
+        tool: AIWorkspaceToolID? = nil,
         title: String,
         relativePathPatterns: [String],
         severity: AIWorkspacePrivacyRuleSeverity,
@@ -55,6 +91,7 @@ public struct AIWorkspacePrivacyRule: Equatable, Identifiable, Sendable {
     ) {
         self.id = id
         self.toolName = toolName
+        self.tool = tool
         self.title = title
         self.relativePathPatterns = relativePathPatterns
         self.severity = severity
@@ -253,6 +290,9 @@ public struct AIWorkspacePrivacyAuditError: Equatable, Identifiable, Sendable {
 public enum AIWorkspacePrivacyFileFixStrategy: Equatable, Sendable {
     case createIfMissing
     case mergeLines
+    /// The file is fully owned by Offsend: created when the rule is unsatisfied and
+    /// restored to the template contents whenever the file on disk drifts.
+    case keepManagedContent
 }
 
 public struct AIWorkspacePrivacyFileFix: Equatable, Sendable {

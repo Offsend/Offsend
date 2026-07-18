@@ -1,6 +1,6 @@
 # Configuration
 
-Offsend looks for a project config file named `.offsend.yml` at the repository root. Commit it so the same rules apply locally, in git hooks, and in CI — including the AI-context boundary: `ignore.patterns` is the source of truth that `offsend sync` materializes into `.cursorignore`, `.claudeignore`, and other AI ignore files.
+Offsend looks for a project config file named `.offsend.yml` at the repository root. Commit it so the same rules apply locally, in git hooks, and in CI — including the AI-context boundary: `ignore.patterns` is the source of truth that `offsend ignore --sync` materializes into `.cursorignore`, `.claudeignore`, and other AI ignore files.
 
 Create a starter file:
 
@@ -17,7 +17,7 @@ cp .offsend.yml.example .offsend.yml
 
 `offsend init` expands exclude presets into a concrete `check.exclude` list (no `preset` field in the YAML). The `common` preset is always included. Template names are case-insensitive; aliases: `js`/`ts` → `node`, `ios` → `swift`. Without `--template`, a TTY prompts for the stack; non-TTY requires `--template` explicitly.
 
-In a TTY, init also asks whether to keep AI ignore files out of git (`ignore.commit`) and whether AI editor hooks may be committed (`hooks.publish`). Flags (`--ignore-commit` / `--no-ignore-commit`, `--hooks-publish` / `--no-hooks-publish`) skip those prompts. After writing the file, init runs `sync` (unless `--no-sync`) and a baseline `check .` (unless `--no-check`). Use `--merge-exclude` to add patterns to an existing file without overwriting `ignore` / `hooks.publish`.
+In a TTY, init also asks whether to keep AI ignore files out of git (`ignore.commit`) and whether AI editor hooks may be committed (`hooks.publish`). Flags (`--ignore-commit` / `--no-ignore-commit`, `--hooks-publish` / `--no-hooks-publish`) skip those prompts. After writing the file, init materializes AI ignore files (unless `--no-sync`) and runs a baseline `check .` (unless `--no-check`). Use `--merge-exclude` to add patterns to an existing file without overwriting `ignore` / `hooks.publish`.
 
 Recommended follow-up: `offsend protect && offsend show && offsend hook install`.
 
@@ -58,6 +58,7 @@ check:
 
 ignore:
   commit: false
+  # tools: [cursor, claude]   # optional; absent = all supported tools
   patterns: []
 
 hooks:
@@ -86,16 +87,39 @@ Config schema version. Use `1`; other versions are rejected.
 
 ### `ignore.commit`
 
-When `false` (default), `offsend sync` keeps AI ignore files (`.cursorignore`, `.claudeignore`, …) out of git by writing their paths into `.git/info/exclude`. Team rules still live in `ignore.patterns`. Set `true` only if the team wants those files tracked; the next `offsend sync` then removes the stale offsend entries from `.git/info/exclude`.
+When `false` (default), ignore-file sync keeps AI ignore files (`.cursorignore`, `.claudeignore`, …) out of git by writing their paths into a managed block in `.gitignore`. Team rules still live in `ignore.patterns`. Set `true` only if the team wants those files tracked; the next `offsend ignore --sync` then removes the stale offsend entries from `.gitignore`.
+
+### `ignore.tools`
+
+Optional list of tool slugs narrowing which AI tools get managed ignore and rule files. When absent (default), Offsend creates files for every supported tool — you rarely control which editor a teammate opens the repo with, so the default is defense in depth.
+
+Supported slugs: `cursor`, `claude`, `copilot`, `continue`, `windsurf`, `gemini`, `llm`, `aider`, `cline`, `roo`, `zed`, `cody`. Unknown slugs are reported by `offsend doctor` and ignored; if no valid slug remains, all tools are used.
+
+```yaml
+ignore:
+  tools: [cursor, claude]
+```
+
+Files already created for other tools are not deleted — remove them manually if needed.
 
 ### `ignore.patterns`
 
-Mandatory AI-ignore patterns for the repository. Source of truth for the managed block in editor ignore files.
+Mandatory AI-ignore patterns for the repository. Source of truth for the managed block in editor ignore files (`.cursorignore`, `.claudeignore`, …).
 
+- `offsend init` seeds this list with the default AI privacy patterns (`.env*`, `*.pem`, credentials files, …)
 - `offsend ignore <pattern>` appends here, then runs sync
 - `offsend ignore --local <pattern>` writes only to local ignore files (not shared)
-- `offsend sync` materializes the managed block into every known AI ignore file
+- `offsend ignore --sync` materializes the managed block into every known AI ignore file
 - User-authored lines outside the managed markers are preserved
+
+### Managed editor privacy rules
+
+`offsend protect` also creates an editor privacy rule per supported editor, rendered from one canonical text in the editor's native format:
+
+- Cursor — `.cursor/rules/offsend_privacy.mdc` (`.mdc` with `alwaysApply: true`)
+- Claude Code — `.claude/rules/offsend_privacy.md` (plain markdown, loaded every session)
+
+These `offsend_privacy.*` files are fully owned by Offsend: manual edits are restored on the next `offsend protect` (and reported by `offsend doctor`). Put your own rules in separate files in the same directory — Offsend never touches them. As generated artifacts they follow `ignore.commit`: with `commit: false` (default) their exact paths join the managed `.gitignore` block next to the ignore files — never `.cursor/rules/` or other user-owned directories, so your own rule files remain committable as usual. A legacy `.cursor/rules/privacy.mdc` from older releases keeps satisfying the check and is never overwritten.
 
 ### `hooks.publish`
 

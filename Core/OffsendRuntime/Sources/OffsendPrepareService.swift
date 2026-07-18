@@ -1,7 +1,7 @@
 import Foundation
 import WorkspacePolicyCore
 
-/// One AI ignore/rule file that `offsend prepare` can create.
+/// One AI ignore/rule file that `OffsendPrepareService` can create.
 public struct PreparePlannedFile: Sendable, Equatable {
     public let relativePath: String
     public let toolName: String
@@ -102,6 +102,9 @@ public struct OffsendPrepareService: Sendable {
         materializeManagedIgnore: Bool = true
     ) -> PrepareReport {
         let standardizedURL = directoryURL.standardizedFileURL
+        let projectConfig = try? ProjectConfigLoader().load(from: standardizedURL)
+        // `ignore.tools` narrows which AI tools get managed files; absent = all.
+        let configuration = self.configuration.filtered(tools: projectConfig?.ignore?.toolIDs)
         let audit = auditor.audit(directoryURL: standardizedURL, configuration: configuration)
 
         if audit.isDirectoryUnavailable {
@@ -133,6 +136,15 @@ public struct OffsendPrepareService: Sendable {
         // created. When syncing patterns, also select existing scanning ignore files so
         // their missing pattern lines are appended.
         var ruleIDs = Set(missingFindings.map(\.rule.id))
+
+        // Managed rule files (offsend_privacy.*) that exist but drifted from the
+        // template are selected too, so the fixer restores their contents.
+        let driftedManagedRules = Self.driftedManagedRules(
+            configuration: configuration,
+            rootURL: standardizedURL,
+            fileManager: fileManager
+        )
+        ruleIDs.formUnion(driftedManagedRules.map(\.id))
         var patternIDs: Set<String> = []
         let missingPatterns = syncPatterns ? audit.missingSensitivePatterns : []
         if !missingPatterns.isEmpty {
@@ -154,6 +166,7 @@ public struct OffsendPrepareService: Sendable {
                     missingPatterns: missingPatterns,
                     selection: selection,
                     audit: audit,
+                    configuration: configuration,
                     rootURL: standardizedURL
                 )
             )
@@ -171,7 +184,7 @@ public struct OffsendPrepareService: Sendable {
         // When project config defines ignore.patterns, materialize the managed block.
         // Callers that sync themselves right after (protect) opt out.
         if materializeManagedIgnore,
-           let config = try? ProjectConfigLoader().load(from: standardizedURL),
+           let config = projectConfig,
            config.ignore != nil {
             let sync = OffsendIgnoreSyncService(configuration: configuration).run(
                 directoryURL: standardizedURL,
@@ -191,12 +204,39 @@ public struct OffsendPrepareService: Sendable {
         )
     }
 
+    /// Managed-content rules (offsend_privacy.*) whose file on disk exists but
+    /// differs from the template (user edits are restored, not merged).
+    public static func driftedManagedRules(
+        configuration: AIWorkspacePrivacyAuditConfiguration,
+        rootURL: URL,
+        fileManager: FileManager = .default
+    ) -> [(id: String, relativePath: String)] {
+        var drifted: [(id: String, relativePath: String)] = []
+        for rule in configuration.rules {
+            guard let fix = rule.fix, fix.strategy == .keepManagedContent else { continue }
+            let url = rootURL.appendingPathComponent(fix.relativePath)
+            guard fileManager.fileExists(atPath: url.path),
+                  let existing = try? String(contentsOf: url, encoding: .utf8) else {
+                continue
+            }
+            if normalizedFileContents(existing) != normalizedFileContents(fix.contents) {
+                drifted.append((id: rule.id, relativePath: fix.relativePath))
+            }
+        }
+        return drifted.sorted { $0.relativePath < $1.relativePath }
+    }
+
+    private static func normalizedFileContents(_ contents: String) -> String {
+        contents.hasSuffix("\n") ? contents : contents + "\n"
+    }
+
     /// Existing ignore files that would receive new pattern lines, with the exact lines
     /// that are missing from each file on disk (so dry-run output is accurate).
     private func plannedPatternUpdates(
         missingPatterns: [AIWorkspaceSensitivePatternFinding],
         selection: AIWorkspacePrivacyFixSelection,
         audit: AIWorkspacePrivacyAuditResult,
+        configuration: AIWorkspacePrivacyAuditConfiguration,
         rootURL: URL
     ) -> [PreparePlannedPatternUpdate] {
         guard !missingPatterns.isEmpty else { return [] }

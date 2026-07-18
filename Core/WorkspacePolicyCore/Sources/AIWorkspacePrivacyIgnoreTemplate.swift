@@ -1,6 +1,10 @@
 import Foundation
 
 public enum AIWorkspacePrivacyIgnoreTemplate {
+    public static let header = "# Offsend AI privacy defaults"
+
+    /// Default AI-ignore patterns. Seeded into `.offsend.yml` `ignore.patterns` by
+    /// `offsend init`, then materialized into editor ignore files by `offsend ignore --sync`.
     public static let defaultPatterns: [String] = [
         ".env*",
         "*.pem",
@@ -76,7 +80,14 @@ public enum AIWorkspacePrivacyIgnoreTemplate {
         "*.dump"
     ]
 
+    /// Header-only seed when patterns come from `ignore.patterns` (managed block).
+    public static var managedSeedContents: String {
+        header + "\n"
+    }
+
+    /// Full plain-line template (header + defaults). Used when there is no project
+    /// config / empty `ignore.patterns`. Prefer managed seed + sync when config exists.
     public static var contents: String {
-        ([IgnoreFileParser.defaultHeader] + defaultPatterns).joined(separator: "\n") + "\n"
+        ([header] + defaultPatterns).joined(separator: "\n") + "\n"
     }
 }

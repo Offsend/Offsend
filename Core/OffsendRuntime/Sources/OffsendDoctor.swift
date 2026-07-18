@@ -22,13 +22,30 @@ public struct DoctorCheck: Equatable, Sendable {
 
 public struct DoctorReport: Equatable, Sendable {
     public let checks: [DoctorCheck]
+    /// Ranked setup commands (e.g. `offsend init`), for interactive follow-up.
+    public let suggestedActions: [String]
 
     public var isHealthy: Bool {
         !checks.contains { $0.status == .fail }
     }
 
-    public init(checks: [DoctorCheck]) {
+    public init(checks: [DoctorCheck], suggestedActions: [String] = []) {
         self.checks = checks
+        self.suggestedActions = suggestedActions
+    }
+
+    /// First suggested shell command (comment stripped).
+    public var primarySuggestedCommand: String? {
+        guard let action = suggestedActions.first else { return nil }
+        return Self.command(from: action)
+    }
+
+    public static func command(from action: String) -> String {
+        let trimmed = action.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let hash = trimmed.firstIndex(of: "#") {
+            return trimmed[..<hash].trimmingCharacters(in: .whitespaces)
+        }
+        return trimmed
     }
 }
 
@@ -473,16 +490,15 @@ public struct OffsendDoctor: Sendable {
             )
         }
 
-        checks.append(
-            nextActionsCheck(
-                cwd: cwd,
-                configLoader: configLoader,
-                installer: installer,
-                context: context
-            )
+        let next = nextActionsCheck(
+            cwd: cwd,
+            configLoader: configLoader,
+            installer: installer,
+            context: context
         )
+        checks.append(next.check)
 
-        return DoctorReport(checks: checks)
+        return DoctorReport(checks: checks, suggestedActions: next.actions)
     }
 
     /// Ranked setup hints: project config → AI boundary → shell/MCP gates → git hook.
@@ -491,7 +507,7 @@ public struct OffsendDoctor: Sendable {
         configLoader: ProjectConfigLoader,
         installer: AIEditorHookInstaller,
         context: OffsendRuntimeContext?
-    ) -> DoctorCheck {
+    ) -> (check: DoctorCheck, actions: [String]) {
         var actions: [String] = []
 
         if configLoader.configURL(for: cwd) == nil {
@@ -555,20 +571,26 @@ public struct OffsendDoctor: Sendable {
         }
 
         if actions.isEmpty {
-            return DoctorCheck(
-                name: "next-actions",
-                status: .ok,
-                message: "No urgent setup steps. Optional: offsend check --staged --policy"
+            return (
+                DoctorCheck(
+                    name: "next-actions",
+                    status: .ok,
+                    message: "No urgent setup steps. Optional: offsend check --staged --policy"
+                ),
+                []
             )
         }
 
         let numbered = actions.enumerated().map { index, action in
             "\(index + 1). \(action)"
         }
-        return DoctorCheck(
-            name: "next-actions",
-            status: .warn,
-            message: numbered.joined(separator: " ")
+        return (
+            DoctorCheck(
+                name: "next-actions",
+                status: .warn,
+                message: numbered.joined(separator: "\n")
+            ),
+            actions
         )
     }
 
@@ -631,13 +653,14 @@ public struct OffsendDoctor: Sendable {
         var checks: [DoctorCheck] = []
 
         let commitIgnore = config.ignore?.commitsIgnoreFiles ?? false
+        let toolIDs = config.ignore?.toolIDs
         checks.append(
             DoctorCheck(
                 name: "ignore-commit",
                 status: .ok,
                 message: commitIgnore
                     ? "ignore.commit: true — AI ignore files may be tracked in git."
-                    : "ignore.commit: false — AI ignore files stay local (.git/info/exclude)."
+                    : "ignore.commit: false — AI ignore files stay local (.gitignore)."
             )
         )
 
@@ -671,7 +694,7 @@ public struct OffsendDoctor: Sendable {
                     DoctorCheck(
                         name: "ignore-sync",
                         status: .warn,
-                        message: "Managed ignore drift: \(summary). Run: offsend sync"
+                        message: "Managed ignore drift: \(summary). Run: offsend ignore --sync"
                     )
                 )
             }
@@ -679,34 +702,70 @@ public struct OffsendDoctor: Sendable {
 
         let resolver = GitRepositoryResolver(fileManager: fileManager, gitExecutable: gitExecutable)
         let repoRoot = try? resolver.repositoryRoot(startingAt: directory)
+        let gitignoreService = OffsendGitignoreService(fileManager: fileManager)
         let excludeService = OffsendLocalGitExcludeService(fileManager: fileManager, gitResolver: resolver)
+        let ignoreFilesSection = OffsendLocalGitExcludeService.ignoreFilesSection
+        let gitignoreRoot = repoRoot ?? directory
 
         if commitIgnore {
-            // Stale local exclusion contradicts commit: true — files can never be added.
-            if excludeService.hasSection(
-                OffsendLocalGitExcludeService.ignoreFilesSection,
-                repositoryURL: directory
-            ) {
+            // Stale exclusion contradicts commit: true — files can never be added.
+            if gitignoreService.hasSection(ignoreFilesSection, directoryURL: gitignoreRoot) {
                 checks.append(
                     DoctorCheck(
                         name: "ignore-commit-conflict",
                         status: .warn,
-                        message: "ignore.commit is true but .git/info/exclude still hides AI ignore files. Run: offsend sync"
+                        message: "ignore.commit is true but .gitignore still hides AI ignore files. Run: offsend ignore --sync"
                     )
                 )
-            }
-        } else if let repoRoot {
-            let ignorePaths = OffsendIgnoreSyncService.managedIgnoreRelativePaths()
-            let tracked = (try? resolver.trackedRelativePaths(matching: ignorePaths, in: repoRoot)) ?? []
-            if !tracked.isEmpty {
+            } else if excludeService.hasSection(ignoreFilesSection, repositoryURL: directory) {
                 checks.append(
                     DoctorCheck(
                         name: "ignore-commit-conflict",
                         status: .warn,
-                        message: "ignore.commit is false but git tracks: \(tracked.joined(separator: ", ")). Remove them with `git rm --cached <path>` to keep them local."
+                        message: "ignore.commit is true but .git/info/exclude still hides AI ignore files. Run: offsend ignore --sync"
                     )
                 )
             }
+        } else {
+            if !gitignoreService.hasSection(ignoreFilesSection, directoryURL: gitignoreRoot) {
+                checks.append(
+                    DoctorCheck(
+                        name: "ignore-commit-conflict",
+                        status: .warn,
+                        message: "ignore.commit is false but .gitignore does not list AI ignore files. Run: offsend ignore --sync"
+                    )
+                )
+            }
+            if let repoRoot {
+                let ignorePaths = OffsendIgnoreSyncService.managedIgnoreRelativePaths(tools: toolIDs)
+                    + OffsendIgnoreSyncService.managedRuleRelativePaths(tools: toolIDs)
+                let tracked = (try? resolver.trackedRelativePaths(matching: ignorePaths, in: repoRoot)) ?? []
+                if !tracked.isEmpty {
+                    checks.append(
+                        DoctorCheck(
+                            name: "ignore-commit-conflict",
+                            status: .warn,
+                            message: "ignore.commit is false but git tracks: \(tracked.joined(separator: ", ")). Remove them with `git rm --cached <path>` to keep them local."
+                        )
+                    )
+                }
+            }
+        }
+
+        let driftedRules = OffsendPrepareService.driftedManagedRules(
+            configuration: AIWorkspacePrivacyAuditConfiguration.default.filtered(tools: toolIDs),
+            rootURL: repoRoot ?? directory,
+            fileManager: fileManager
+        )
+        if !driftedRules.isEmpty {
+            let paths = driftedRules.map(\.relativePath).joined(separator: ", ")
+            checks.append(
+                DoctorCheck(
+                    name: "rules-drift",
+                    status: .warn,
+                    message: "Managed rule files were edited: \(paths). Offsend owns these files; run `offsend protect` to restore them and keep custom rules in separate files."
+                )
+            )
         }
 
         if !publishHooks, let repoRoot {
@@ -783,32 +842,69 @@ public struct OffsendDoctor: Sendable {
 public struct DoctorReporter: Sendable {
     public init() {}
 
-    public func render(_ report: DoctorReport, format: CheckOutputFormat) -> String {
+    public func render(_ report: DoctorReport, format: CheckOutputFormat, useColor: Bool = false) -> String {
         switch format {
         case .text:
-            return renderText(report)
+            return renderText(report, ui: CLIText(useColor: useColor))
         case .json:
             return renderJSON(report)
         }
     }
 
-    private func renderText(_ report: DoctorReport) -> String {
-        report.checks.map { check in
-            let marker: String
-            switch check.status {
-            case .ok: marker = "✓"
-            case .warn: marker = "!"
-            case .fail: marker = "✗"
+    private func renderText(_ report: DoctorReport, ui: CLIText) -> String {
+        var sections: [[String]] = [[ui.section("Doctor")]]
+        var checks: [String] = []
+        var nextActions: [String] = []
+
+        for check in report.checks {
+            if check.name == "next-actions" {
+                nextActions = renderNextActions(check, ui: ui)
+                continue
             }
-            return "\(marker) \(check.name): \(check.message)"
+            let line: String
+            switch check.status {
+            case .ok:
+                line = ui.ok("\(check.name): \(check.message)")
+            case .warn:
+                line = ui.warn("\(check.name): \(check.message)")
+            case .fail:
+                line = ui.fail("\(check.name): \(check.message)")
+            }
+            checks.append(line)
         }
-        .joined(separator: "\n")
+
+        if !checks.isEmpty {
+            sections.append(checks)
+        }
+        if !nextActions.isEmpty {
+            sections.append(nextActions)
+        }
+        return CLIText.joinSections(sections)
+    }
+
+    private func renderNextActions(_ check: DoctorCheck, ui: CLIText) -> [String] {
+        var lines = [ui.section("Next actions")]
+        if check.status == .ok {
+            lines.append(ui.ok(check.message))
+            return lines
+        }
+        for line in check.message.split(separator: "\n", omittingEmptySubsequences: false) {
+            let text = String(line)
+            if text.range(of: #"^\d+\.\s+"#, options: .regularExpression) != nil {
+                lines.append(ui.palette.cyan("  \(text)"))
+            } else {
+                lines.append("  \(text)")
+            }
+        }
+        lines.append(ui.hint("Tip: offsend setup   # guided init → protect → hooks"))
+        return lines
     }
 
     private func renderJSON(_ report: DoctorReport) -> String {
         struct Payload: Encodable {
             let isHealthy: Bool
             let checks: [CheckPayload]
+            let suggestedActions: [String]
         }
         struct CheckPayload: Encodable {
             let name: String
@@ -820,7 +916,8 @@ public struct DoctorReporter: Sendable {
             isHealthy: report.isHealthy,
             checks: report.checks.map {
                 CheckPayload(name: $0.name, status: $0.status.rawValue, message: $0.message)
-            }
+            },
+            suggestedActions: report.suggestedActions
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

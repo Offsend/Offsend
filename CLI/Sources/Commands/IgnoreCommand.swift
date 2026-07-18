@@ -7,24 +7,34 @@ struct Ignore: ParsableCommand {
         abstract: "Add paths or patterns to team ignore policy (.offsend.yml) or locally.",
         discussion: """
         By default, patterns are added to ignore.patterns in .offsend.yml and then \
-        materialized into AI ignore files via sync (published to the team when you \
+        materialized into AI ignore files (published to the team when you \
         commit .offsend.yml).
 
         Use --local to append patterns only to AI ignore files on this machine. \
         Local rules are not written to .offsend.yml and will not be shared.
+
+        Use --sync (without patterns) to re-materialize ignore.patterns from \
+        .offsend.yml into every AI ignore file, e.g. after editing the config \
+        by hand.
 
         Scanner exclusions remain under check.exclude in .offsend.yml.
         """
     )
 
     @Argument(help: "Paths or glob patterns to ignore (e.g. secrets/, *.pem, config/prod.json).")
-    var patterns: [String]
+    var patterns: [String] = []
 
     @Flag(
         name: .long,
         help: "Add patterns only to local AI ignore files; do not update .offsend.yml."
     )
     var local = false
+
+    @Flag(
+        name: .long,
+        help: "Materialize ignore.patterns from .offsend.yml into AI ignore files (no patterns allowed)."
+    )
+    var sync = false
 
     @Option(name: .long, help: "Project directory. Defaults to the current directory.")
     var path: String?
@@ -36,8 +46,17 @@ struct Ignore: ParsableCommand {
     var format: String = CheckOutputFormat.text.rawValue
 
     func validate() throws {
-        guard !patterns.isEmpty else {
-            throw ValidationError("Provide at least one path or pattern to ignore.")
+        if sync {
+            guard patterns.isEmpty else {
+                throw ValidationError("--sync does not take patterns. Run 'offsend ignore --sync' alone, or pass patterns without --sync.")
+            }
+            guard !local else {
+                throw ValidationError("--sync cannot be combined with --local.")
+            }
+        } else {
+            guard !patterns.isEmpty else {
+                throw ValidationError("Provide at least one path or pattern to ignore, or use --sync to re-materialize .offsend.yml.")
+            }
         }
     }
 
@@ -55,13 +74,30 @@ struct Ignore: ParsableCommand {
             fileURLWithPath: path ?? FileManager.default.currentDirectoryPath
         ).standardizedFileURL
 
+        if sync {
+            let report = OffsendIgnoreSyncService(context: context).run(
+                directoryURL: directoryURL,
+                dryRun: dryRun
+            )
+            let useColor = CLIColor.enabled(for: outputFormat)
+            let output = IgnoreSyncReporter().render(report, format: outputFormat, useColor: useColor)
+            if !output.isEmpty {
+                print(output)
+            }
+            if report.hasErrors {
+                throw ExitCode(OffsendExitCode.error.rawValue)
+            }
+            return
+        }
+
         if local {
             let report = OffsendIgnoreService(context: context).run(
                 directoryURL: directoryURL,
                 patterns: patterns,
                 dryRun: dryRun
             )
-            let output = IgnoreReporter().render(report, format: outputFormat, scope: .local)
+            let useColor = CLIColor.enabled(for: outputFormat)
+            let output = IgnoreReporter().render(report, format: outputFormat, scope: .local, useColor: useColor)
             if !output.isEmpty {
                 print(output)
             }
@@ -91,6 +127,7 @@ struct Ignore: ParsableCommand {
                 let createdRelativePaths: [String]
                 let updatedRelativePaths: [String]
                 let unchangedRelativePaths: [String]
+                let gitignoreUpdated: Bool
                 let excludeUpdated: Bool
                 let errors: [String]
             }
@@ -105,6 +142,7 @@ struct Ignore: ParsableCommand {
                     createdRelativePaths: result.sync.createdRelativePaths,
                     updatedRelativePaths: result.sync.updatedRelativePaths,
                     unchangedRelativePaths: result.sync.unchangedRelativePaths,
+                    gitignoreUpdated: result.sync.gitignoreUpdated,
                     excludeUpdated: result.sync.excludeUpdated,
                     errors: result.sync.errors
                 )
@@ -115,16 +153,26 @@ struct Ignore: ParsableCommand {
                 print(json)
             }
         } else {
+            let useColor = CLIColor.enabled(for: .text)
+            let ui = CLIText(useColor: useColor)
             if let configPath = result.configPath {
                 if result.added.isEmpty {
-                    print("No new patterns for \(configPath) (already present or unchanged)")
+                    print(ui.ok("No new patterns for \(configPath) (already present or unchanged)"))
                 } else if dryRun {
-                    print("Would add to \(ProjectConfigLoader.filename): \(result.added.joined(separator: ", "))")
+                    print(ui.section("Config"))
+                    print(ui.hint("Would add to \(ProjectConfigLoader.filename):"))
+                    for pattern in result.added {
+                        print(ui.add(pattern))
+                    }
                 } else {
-                    print("Added to \(ProjectConfigLoader.filename): \(result.added.joined(separator: ", "))")
+                    print(ui.section("Config"))
+                    print(ui.hint("Added to \(ProjectConfigLoader.filename):"))
+                    for pattern in result.added {
+                        print(ui.add(pattern))
+                    }
                 }
             }
-            let syncText = IgnoreSyncReporter().render(result.sync, format: .text)
+            let syncText = IgnoreSyncReporter().render(result.sync, format: .text, useColor: useColor)
             if !syncText.isEmpty {
                 print(syncText)
             }

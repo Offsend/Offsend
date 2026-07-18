@@ -52,7 +52,7 @@ public struct CheckReporter: Sendable {
         }
 
         if lines.isEmpty {
-            return quiet ? "" : "No sensitive data issues found."
+            return quiet ? "" : palette.green("✓ No sensitive data issues found.")
         }
 
         if !quiet, let summary = summaryLine(report, palette: palette) {

@@ -159,7 +159,7 @@ public enum PromptCheckAdviceBuilder {
         case .moveToEnv:
             return "\(label): move to .env / secret manager; reference the variable name in the prompt."
         case .addToIgnore:
-            return "\(label): do not paste key material; keep files in AI ignore (`offsend prepare`)."
+            return "\(label): do not paste key material; keep files in AI ignore (`offsend protect`)."
         case .dontPaste:
             return "\(label): avoid pasting this value; describe the need without the secret/PII."
         }

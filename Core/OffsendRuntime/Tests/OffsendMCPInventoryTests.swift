@@ -74,6 +74,7 @@ final class OffsendMCPInventoryTests: XCTestCase {
         {
           "mcpServers": {
             "acme": { "command": "npx", "args": ["acme-mcp", "--api-key", "sk-secret-value", "--token=tok-value", "--verbose"] },
+            "magic": { "command": "npx", "args": ["-y", "@21st-dev/magic@latest", "API_KEY=\\"035bbd-secret\\""] },
             "remote": { "url": "https://user:hunter2@mcp.example.com/path" }
           }
         }
@@ -91,6 +92,10 @@ final class OffsendMCPInventoryTests: XCTestCase {
         XCTAssertTrue(acme.detail.contains("--api-key ***"))
         XCTAssertTrue(acme.detail.contains("--token=***"))
         XCTAssertTrue(acme.detail.contains("--verbose"))
+
+        let magic = try XCTUnwrap(report.servers.first { $0.name == "magic" })
+        XCTAssertFalse(magic.detail.contains("035bbd-secret"))
+        XCTAssertTrue(magic.detail.contains("API_KEY=***"))
 
         let remote = try XCTUnwrap(report.servers.first { $0.name == "remote" })
         XCTAssertFalse(remote.detail.contains("hunter2"))

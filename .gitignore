@@ -21,3 +21,20 @@ xcuserdata/
 **/Secrets.xcconfig
 
 .env
+
+# >>> offsend managed: ignore-files
+.aiderignore
+.aiexclude
+.claude/rules/offsend_privacy.md
+.claudeignore
+.clineignore
+.codeiumignore
+.codyignore
+.continueignore
+.cursor/rules/offsend_privacy.mdc
+.cursorignore
+.geminiignore
+.llmignore
+.rooignore
+.zedignore
+# <<< offsend managed: ignore-files

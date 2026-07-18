@@ -81,13 +81,15 @@ final class OffsendIgnoreServiceTests: XCTestCase {
         XCTAssertTrue(report.errors.isEmpty)
         XCTAssertTrue(report.createdRelativePaths.contains(".cursorignore"))
         XCTAssertTrue(report.createdRelativePaths.contains(".claudeignore"))
-        // Created files carry the full template plus the requested pattern.
+        // Without project config, created files still get the full template plus the pattern.
+        // With `.offsend.yml`, sync owns defaults via ignore.patterns managed block.
         let cursorignore = try contents(".cursorignore")
-        XCTAssertTrue(cursorignore.contains(".env"))
+        XCTAssertTrue(cursorignore.contains(".env*"))
         XCTAssertTrue(cursorignore.contains("secrets/prod.json"))
         // Non-ignore files are not created.
         XCTAssertFalse(fileExists(".gitignore"))
-        XCTAssertFalse(fileExists(".cursor/rules/privacy.mdc"))
+        XCTAssertFalse(fileExists(".cursor/rules/offsend_privacy.mdc"))
+        XCTAssertFalse(fileExists(".claude/rules/offsend_privacy.md"))
     }
 
     // MARK: - Pattern normalization

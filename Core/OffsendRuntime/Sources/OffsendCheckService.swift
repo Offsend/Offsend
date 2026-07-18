@@ -101,7 +101,7 @@ public struct OffsendCheckService: Sendable {
                 for item in drift {
                     policyFindings.append(
                         PolicyCheckFinding(
-                            message: "Managed ignore drift in \(item.relativePath): missing \(item.missingPatterns.joined(separator: ", ")). Run: offsend sync",
+                            message: "Managed ignore drift in \(item.relativePath): missing \(item.missingPatterns.joined(separator: ", ")). Run: offsend ignore --sync",
                             status: .warning
                         )
                     )

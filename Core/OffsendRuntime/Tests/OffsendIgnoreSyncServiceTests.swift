@@ -1,4 +1,5 @@
 import XCTest
+import WorkspacePolicyCore
 @testable import OffsendRuntime
 
 final class OffsendIgnoreSyncServiceTests: XCTestCase {
@@ -31,12 +32,11 @@ final class OffsendIgnoreSyncServiceTests: XCTestCase {
         let cursor = try String(contentsOf: root.appendingPathComponent(".cursorignore"), encoding: .utf8)
         XCTAssertTrue(cursor.contains(OffsendManagedIgnoreBlock.startMarker))
         XCTAssertTrue(cursor.contains("secrets/"))
+        XCTAssertEqual(report.gitignoreUpdated, false)
         XCTAssertEqual(report.excludeUpdated, false)
     }
 
-    func testSyncUpdatesGitExcludeWhenCommitFalse() throws {
-        // Initialize a real git repo so info/exclude resolves.
-        try runGit(["init"])
+    func testSyncUpdatesGitignoreWhenCommitFalse() throws {
         try writeConfig(
             """
             version: 1
@@ -49,11 +49,18 @@ final class OffsendIgnoreSyncServiceTests: XCTestCase {
 
         let report = OffsendIgnoreSyncService().run(directoryURL: root)
         XCTAssertTrue(report.errors.isEmpty, report.errors.joined(separator: "; "))
-        XCTAssertTrue(report.excludeUpdated)
-        XCTAssertNotNil(report.excludePath)
-        let exclude = try String(contentsOf: URL(fileURLWithPath: report.excludePath!), encoding: .utf8)
-        XCTAssertTrue(exclude.contains(".cursorignore"))
-        XCTAssertTrue(exclude.contains(OffsendManagedIgnoreBlock.startMarker))
+        XCTAssertTrue(report.gitignoreUpdated)
+        XCTAssertNotNil(report.gitignorePath)
+        let gitignore = try String(contentsOf: URL(fileURLWithPath: report.gitignorePath!), encoding: .utf8)
+        XCTAssertTrue(gitignore.contains(".cursorignore"))
+        // Managed rule files are generated artifacts: exact paths only, no directories.
+        XCTAssertTrue(gitignore.contains(".cursor/rules/offsend_privacy.mdc"))
+        XCTAssertTrue(gitignore.contains(".claude/rules/offsend_privacy.md"))
+        XCTAssertFalse(gitignore.contains(".cursor/rules/\n"))
+        XCTAssertFalse(gitignore.contains(".claude/rules/\n"))
+        XCTAssertTrue(gitignore.contains(
+            OffsendManagedIgnoreBlock.startMarker(section: OffsendLocalGitExcludeService.ignoreFilesSection)
+        ))
     }
 
     func testPromotePatternsUpdatesYAMLThenSync() throws {
@@ -107,7 +114,6 @@ final class OffsendIgnoreSyncServiceTests: XCTestCase {
     }
 
     func testSyncIsIdempotent() throws {
-        try runGit(["init"])
         try writeConfig(
             """
             version: 1
@@ -125,6 +131,7 @@ final class OffsendIgnoreSyncServiceTests: XCTestCase {
         XCTAssertTrue(second.errors.isEmpty, second.errors.joined(separator: "; "))
         XCTAssertTrue(second.createdRelativePaths.isEmpty)
         XCTAssertTrue(second.updatedRelativePaths.isEmpty)
+        XCTAssertFalse(second.gitignoreUpdated)
         XCTAssertFalse(second.excludeUpdated)
         XCTAssertFalse(second.unchangedRelativePaths.isEmpty)
     }
@@ -151,7 +158,6 @@ final class OffsendIgnoreSyncServiceTests: XCTestCase {
     }
 
     func testDryRunWritesNothing() throws {
-        try runGit(["init"])
         try writeConfig(
             """
             version: 1
@@ -165,15 +171,13 @@ final class OffsendIgnoreSyncServiceTests: XCTestCase {
         let report = OffsendIgnoreSyncService().run(directoryURL: root, dryRun: true)
         XCTAssertTrue(report.errors.isEmpty, report.errors.joined(separator: "; "))
         XCTAssertFalse(report.createdRelativePaths.isEmpty)
-        XCTAssertTrue(report.excludeUpdated)
+        XCTAssertTrue(report.gitignoreUpdated)
         XCTAssertFalse(
             FileManager.default.fileExists(atPath: root.appendingPathComponent(".cursorignore").path)
         )
-        // `git init` may pre-create .git/info/exclude; dry run must not add the block.
-        let excludeURL = root.appendingPathComponent(".git/info/exclude")
-        if let exclude = try? String(contentsOf: excludeURL, encoding: .utf8) {
-            XCTAssertFalse(exclude.contains(OffsendManagedIgnoreBlock.startMarker))
-        }
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: root.appendingPathComponent(".gitignore").path)
+        )
     }
 
     func testPromotePatternsDryRunDoesNotModifyConfig() throws {
@@ -227,7 +231,7 @@ final class OffsendIgnoreSyncServiceTests: XCTestCase {
         )
     }
 
-    func testSyncOutsideGitRepositoryDoesNotCreateGitDirectory() throws {
+    func testSyncOutsideGitRepositoryStillUpdatesGitignore() throws {
         try writeConfig(
             """
             version: 1
@@ -240,15 +244,18 @@ final class OffsendIgnoreSyncServiceTests: XCTestCase {
 
         let report = OffsendIgnoreSyncService().run(directoryURL: root)
         XCTAssertTrue(report.errors.isEmpty, report.errors.joined(separator: "; "))
+        XCTAssertTrue(report.gitignoreUpdated)
+        XCTAssertNotNil(report.gitignorePath)
         XCTAssertFalse(report.excludeUpdated)
         XCTAssertNil(report.excludePath)
         XCTAssertFalse(
             FileManager.default.fileExists(atPath: root.appendingPathComponent(".git").path)
         )
+        let gitignore = try String(contentsOf: root.appendingPathComponent(".gitignore"), encoding: .utf8)
+        XCTAssertTrue(gitignore.contains(".cursorignore"))
     }
 
-    func testSyncRemovesExcludeSectionWhenCommitFlipsTrue() throws {
-        try runGit(["init"])
+    func testSyncRemovesGitignoreSectionWhenCommitFlipsTrue() throws {
         try writeConfig(
             """
             version: 1
@@ -259,9 +266,9 @@ final class OffsendIgnoreSyncServiceTests: XCTestCase {
             """
         )
         let first = OffsendIgnoreSyncService().run(directoryURL: root)
-        XCTAssertTrue(first.excludeUpdated)
-        let excludeURL = URL(fileURLWithPath: try XCTUnwrap(first.excludePath))
-        XCTAssertTrue(try String(contentsOf: excludeURL, encoding: .utf8).contains(".cursorignore"))
+        XCTAssertTrue(first.gitignoreUpdated)
+        let gitignoreURL = URL(fileURLWithPath: try XCTUnwrap(first.gitignorePath))
+        XCTAssertTrue(try String(contentsOf: gitignoreURL, encoding: .utf8).contains(".cursorignore"))
 
         try writeConfig(
             """
@@ -274,10 +281,48 @@ final class OffsendIgnoreSyncServiceTests: XCTestCase {
         )
         let second = OffsendIgnoreSyncService().run(directoryURL: root)
         XCTAssertTrue(second.errors.isEmpty, second.errors.joined(separator: "; "))
-        XCTAssertTrue(second.excludeUpdated)
+        XCTAssertTrue(second.gitignoreUpdated)
+        let gitignore = try String(contentsOf: gitignoreURL, encoding: .utf8)
+        XCTAssertFalse(gitignore.contains(".cursorignore"))
+        XCTAssertFalse(gitignore.contains(
+            OffsendManagedIgnoreBlock.startMarker(section: OffsendLocalGitExcludeService.ignoreFilesSection)
+        ))
+    }
+
+    func testSyncMigratesIgnoreFilesOutOfLocalExclude() throws {
+        try runGit(["init"])
+        try writeConfig(
+            """
+            version: 1
+            ignore:
+              commit: false
+              patterns:
+                - "secrets/"
+            """
+        )
+
+        // Simulate a leftover exclude section from an older offsend release.
+        let seed = OffsendLocalGitExcludeService().upsertPatterns(
+            [".cursorignore", ".claudeignore"],
+            repositoryURL: root,
+            section: OffsendLocalGitExcludeService.ignoreFilesSection
+        )
+        XCTAssertTrue(seed.updated)
+        let excludeURL = URL(fileURLWithPath: try XCTUnwrap(seed.excludePath))
+        XCTAssertTrue(try String(contentsOf: excludeURL, encoding: .utf8).contains(".cursorignore"))
+
+        let report = OffsendIgnoreSyncService().run(directoryURL: root)
+        XCTAssertTrue(report.errors.isEmpty, report.errors.joined(separator: "; "))
+        XCTAssertTrue(report.gitignoreUpdated)
+        XCTAssertTrue(report.excludeUpdated)
+
+        let gitignore = try String(contentsOf: root.appendingPathComponent(".gitignore"), encoding: .utf8)
+        XCTAssertTrue(gitignore.contains(".cursorignore"))
         let exclude = try String(contentsOf: excludeURL, encoding: .utf8)
         XCTAssertFalse(exclude.contains(".cursorignore"))
-        XCTAssertFalse(exclude.contains(OffsendManagedIgnoreBlock.startMarker(section: "ignore-files")))
+        XCTAssertFalse(exclude.contains(
+            OffsendManagedIgnoreBlock.startMarker(section: OffsendLocalGitExcludeService.ignoreFilesSection)
+        ))
     }
 
     func testSyncAndHookExcludeSectionsCoexist() throws {
@@ -293,7 +338,7 @@ final class OffsendIgnoreSyncServiceTests: XCTestCase {
         )
 
         let sync = OffsendIgnoreSyncService().run(directoryURL: root)
-        XCTAssertTrue(sync.excludeUpdated)
+        XCTAssertTrue(sync.gitignoreUpdated)
 
         // Simulate `offsend hook install` with hooks.publish: false.
         let hookReport = OffsendLocalGitExcludeService().upsertPatterns(
@@ -304,16 +349,22 @@ final class OffsendIgnoreSyncServiceTests: XCTestCase {
         )
         XCTAssertTrue(hookReport.updated)
 
-        let excludeURL = URL(fileURLWithPath: try XCTUnwrap(sync.excludePath))
+        let excludeURL = URL(fileURLWithPath: try XCTUnwrap(hookReport.excludePath))
         var exclude = try String(contentsOf: excludeURL, encoding: .utf8)
-        XCTAssertTrue(exclude.contains(".cursorignore"), "hook install must not wipe sync entries")
         XCTAssertTrue(exclude.contains(".offsend/hooks/"))
+        XCTAssertFalse(
+            exclude.contains(
+                OffsendManagedIgnoreBlock.startMarker(section: OffsendLocalGitExcludeService.ignoreFilesSection)
+            ),
+            "sync must migrate ignore-files out of exclude"
+        )
 
-        // Re-running sync must not wipe the hooks section either.
+        // Re-running sync must not wipe the hooks section.
         _ = OffsendIgnoreSyncService().run(directoryURL: root)
         exclude = try String(contentsOf: excludeURL, encoding: .utf8)
-        XCTAssertTrue(exclude.contains(".cursorignore"))
         XCTAssertTrue(exclude.contains(".offsend/hooks/"))
+        let gitignore = try String(contentsOf: root.appendingPathComponent(".gitignore"), encoding: .utf8)
+        XCTAssertTrue(gitignore.contains(".cursorignore"))
     }
 
     func testHookExcludeMergeAccumulatesTargets() throws {
@@ -424,6 +475,123 @@ final class OffsendIgnoreSyncServiceTests: XCTestCase {
         XCTAssertFalse(
             FileManager.default.fileExists(atPath: sub.appendingPathComponent(".cursorignore").path)
         )
+    }
+
+    func testSyncPutsDefaultsInManagedBlockWithoutDuplicatingPlainLines() throws {
+        try writeConfig(
+            """
+            version: 1
+            ignore:
+              commit: true
+              patterns:
+                - ".env*"
+                - "*.pem"
+            """
+        )
+
+        let report = OffsendIgnoreSyncService().run(directoryURL: root)
+        XCTAssertTrue(report.errors.isEmpty, report.errors.joined(separator: "; "))
+        let cursor = try String(contentsOf: root.appendingPathComponent(".cursorignore"), encoding: .utf8)
+        XCTAssertTrue(cursor.contains(OffsendManagedIgnoreBlock.startMarker))
+        XCTAssertTrue(cursor.contains(".env*"))
+        XCTAssertTrue(cursor.contains("*.pem"))
+        // Patterns must appear once (inside managed block), not also as plain seed lines.
+        XCTAssertEqual(cursor.components(separatedBy: ".env*").count - 1, 1)
+        XCTAssertEqual(cursor.components(separatedBy: "*.pem").count - 1, 1)
+    }
+
+    func testSyncMigratesStockPlainTemplateIntoManagedBlock() throws {
+        try AIWorkspacePrivacyIgnoreTemplate.contents.write(
+            to: root.appendingPathComponent(".cursorignore"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try writeConfig(
+            """
+            version: 1
+            ignore:
+              commit: true
+              patterns:
+                - ".env*"
+                - "*.pem"
+                - "custom-secret/"
+            """
+        )
+
+        _ = OffsendIgnoreSyncService().run(directoryURL: root)
+        let cursor = try String(contentsOf: root.appendingPathComponent(".cursorignore"), encoding: .utf8)
+        XCTAssertTrue(cursor.contains("custom-secret/"))
+        XCTAssertTrue(cursor.contains(OffsendManagedIgnoreBlock.startMarker))
+        XCTAssertEqual(cursor.components(separatedBy: ".env*").count - 1, 1)
+    }
+
+    func testSyncHonorsIgnoreTools() throws {
+        try writeConfig(
+            """
+            version: 1
+            ignore:
+              commit: false
+              tools: [cursor]
+              patterns:
+                - "secrets/"
+            """
+        )
+
+        let report = OffsendIgnoreSyncService().run(directoryURL: root)
+
+        XCTAssertTrue(report.errors.isEmpty, report.errors.joined(separator: "; "))
+        XCTAssertTrue(report.createdRelativePaths.contains(".cursorignore"))
+        XCTAssertFalse(report.createdRelativePaths.contains(".claudeignore"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(".claudeignore").path))
+
+        // The managed .gitignore section only lists files Offsend actually manages here.
+        let gitignore = try String(contentsOf: root.appendingPathComponent(".gitignore"), encoding: .utf8)
+        XCTAssertTrue(gitignore.contains(".cursorignore"))
+        XCTAssertTrue(gitignore.contains(".cursor/rules/offsend_privacy.mdc"))
+        XCTAssertFalse(gitignore.contains(".claudeignore"))
+        XCTAssertFalse(gitignore.contains(".claude/rules/offsend_privacy.md"))
+    }
+
+    func testSyncTreatsUnknownToolsAsAllTools() throws {
+        try writeConfig(
+            """
+            version: 1
+            ignore:
+              commit: true
+              tools: [nonexistent-editor]
+              patterns:
+                - "secrets/"
+            """
+        )
+
+        let report = OffsendIgnoreSyncService().run(directoryURL: root)
+
+        XCTAssertTrue(report.errors.isEmpty, report.errors.joined(separator: "; "))
+        XCTAssertTrue(report.createdRelativePaths.contains(".cursorignore"))
+        XCTAssertTrue(report.createdRelativePaths.contains(".claudeignore"))
+    }
+
+    func testGitignorePreservesUserLines() throws {
+        try "# keep me\nbuild/\n".write(
+            to: root.appendingPathComponent(".gitignore"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try writeConfig(
+            """
+            version: 1
+            ignore:
+              commit: false
+              patterns:
+                - "secrets/"
+            """
+        )
+
+        _ = OffsendIgnoreSyncService().run(directoryURL: root)
+        let gitignore = try String(contentsOf: root.appendingPathComponent(".gitignore"), encoding: .utf8)
+        XCTAssertTrue(gitignore.contains("# keep me"))
+        XCTAssertTrue(gitignore.contains("build/"))
+        XCTAssertTrue(gitignore.contains(".cursorignore"))
     }
 
     private func writeConfig(_ yaml: String) throws {

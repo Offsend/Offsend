@@ -4,7 +4,9 @@ import Foundation
 /// Each caller writes its own named section so independent writers (ignore-file
 /// sync vs hook install) never overwrite each other's entries.
 public struct OffsendLocalGitExcludeService: Sendable {
-    /// Section holding AI ignore-file paths kept local by `ignore.commit: false`.
+    /// Section name shared with `.gitignore` managed blocks. Formerly written to
+    /// `.git/info/exclude` when `ignore.commit` was false; sync now uses
+    /// `.gitignore` and removes any leftover exclude section on migrate.
     public static let ignoreFilesSection = "ignore-files"
     /// Section holding AI editor hook paths kept local by `hooks.publish: false`.
     public static let hooksSection = "hooks"

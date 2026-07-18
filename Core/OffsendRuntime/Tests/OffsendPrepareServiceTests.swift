@@ -116,4 +116,73 @@ final class OffsendPrepareServiceTests: XCTestCase {
         XCTAssertTrue(report.plannedUpdates.contains { $0.relativePath == ".cursorignore" })
         XCTAssertEqual(try contents(".cursorignore"), original)
     }
+
+    // MARK: - Managed privacy rule files
+
+    func testCreatesManagedPrivacyRuleFilesPerEditor() throws {
+        _ = makeService().run(directoryURL: root)
+
+        XCTAssertEqual(
+            try contents(".cursor/rules/offsend_privacy.mdc"),
+            AIWorkspacePrivacyDefaultFixes.cursorPrivacyRuleContents + "\n"
+        )
+        XCTAssertEqual(
+            try contents(".claude/rules/offsend_privacy.md"),
+            AIWorkspacePrivacyDefaultFixes.claudePrivacyRuleContents + "\n"
+        )
+        XCTAssertFalse(try contents(".claude/rules/offsend_privacy.md").contains("alwaysApply"))
+    }
+
+    func testRestoresEditedManagedPrivacyRuleFile() throws {
+        _ = makeService().run(directoryURL: root)
+        let path = ".cursor/rules/offsend_privacy.mdc"
+        try "my edits\n".write(to: root.appendingPathComponent(path), atomically: true, encoding: .utf8)
+
+        let report = makeService().run(directoryURL: root)
+
+        XCTAssertTrue(report.updatedRelativePaths.contains(path))
+        XCTAssertEqual(try contents(path), AIWorkspacePrivacyDefaultFixes.cursorPrivacyRuleContents + "\n")
+    }
+
+    func testLegacyPrivacyRuleFileIsKeptAndNoDuplicateIsCreated() throws {
+        let legacy = "# my legacy rule\n"
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent(".cursor/rules"),
+            withIntermediateDirectories: true
+        )
+        try legacy.write(
+            to: root.appendingPathComponent(".cursor/rules/privacy.mdc"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        _ = makeService().run(directoryURL: root)
+
+        XCTAssertEqual(try contents(".cursor/rules/privacy.mdc"), legacy)
+        XCTAssertFalse(fileExists(".cursor/rules/offsend_privacy.mdc"))
+    }
+
+    // MARK: - ignore.tools narrowing
+
+    func testIgnoreToolsLimitsCreatedFiles() throws {
+        try """
+        version: 1
+        ignore:
+          commit: false
+          tools: [cursor]
+        """.write(
+            to: root.appendingPathComponent(ProjectConfigLoader.filename),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let report = makeService().run(directoryURL: root, materializeManagedIgnore: false)
+
+        XCTAssertTrue(report.errors.isEmpty, "\(report.errors)")
+        XCTAssertTrue(fileExists(".cursorignore"))
+        XCTAssertTrue(fileExists(".cursor/rules/offsend_privacy.mdc"))
+        XCTAssertFalse(fileExists(".claudeignore"))
+        XCTAssertFalse(fileExists(".claude/rules/offsend_privacy.md"))
+        XCTAssertFalse(fileExists(".aiexclude"))
+    }
 }

@@ -3,81 +3,113 @@ import Foundation
 public struct ProtectReporter: Sendable {
     public init() {}
 
-    public func render(_ report: ProtectReport, format: CheckOutputFormat) -> String {
+    public func render(_ report: ProtectReport, format: CheckOutputFormat, useColor: Bool = false) -> String {
         switch format {
         case .text:
-            return renderText(report)
+            return renderText(report, useColor: useColor)
         case .json:
             return renderJSON(report)
         }
     }
 
-    private func renderText(_ report: ProtectReport) -> String {
-        var lines: [String] = []
+    private func renderText(_ report: ProtectReport, useColor: Bool) -> String {
+        let ui = CLIText(useColor: useColor)
+        var sections: [[String]] = []
 
-        for error in report.errors {
-            lines.append("! \(error)")
-        }
+        let errors = report.errors.map { ui.warn($0) }
+        if !errors.isEmpty { sections.append(errors) }
 
-        let prepareText = PrepareReporter().render(report.prepare, format: .text)
+        let prepareText = PrepareReporter().render(report.prepare, format: .text, useColor: useColor)
         if !prepareText.isEmpty {
-            lines.append(prepareText)
+            sections.append([prepareText])
         }
 
         if !report.addedToConfig.isEmpty {
-            if !lines.isEmpty { lines.append("") }
             let verb = report.dryRun ? "Would add" : "Added"
-            lines.append("\(verb) to \(ProjectConfigLoader.filename): \(report.addedToConfig.joined(separator: ", "))")
+            var configLines = [ui.section("Config")]
+            configLines.append(ui.note("\(verb) to \(ProjectConfigLoader.filename):"))
+            for pattern in report.addedToConfig {
+                configLines.append(ui.add(pattern))
+            }
+            sections.append(configLines)
         }
 
         if report.patterns.isEmpty {
             if report.errors.isEmpty, report.sync == nil {
-                lines.append("No required sensitive paths were exposed; nothing to add to AI ignore files.")
+                sections.append([ui.ok("No required sensitive paths were exposed; nothing to add to AI ignore files.")])
             }
         } else if let ignore = report.ignore {
-            let ignoreText = IgnoreReporter().render(ignore, format: .text)
+            let ignoreText = IgnoreReporter().render(ignore, format: .text, useColor: useColor)
             if !ignoreText.isEmpty {
-                if !lines.isEmpty { lines.append("") }
-                lines.append("Patterns: \(report.patterns.joined(separator: ", "))")
-                lines.append(ignoreText)
+                var patternLines = [ui.section("Patterns")]
+                patternLines.append(ui.note(report.patterns.joined(separator: ", ")))
+                sections.append(patternLines)
+                sections.append([ignoreText])
             }
         }
 
         if let sync = report.sync {
-            let syncText = IgnoreSyncReporter().render(sync, format: .text)
+            let syncText = IgnoreSyncReporter().render(sync, format: .text, useColor: useColor)
             if !syncText.isEmpty {
-                if !lines.isEmpty { lines.append("") }
-                lines.append(syncText)
+                sections.append([syncText])
             }
         }
 
-        if !lines.isEmpty { lines.append("") }
+        sections.append(statusLines(report, ui: ui))
+
+        return CLIText.joinSections(sections)
+    }
+
+    /// One state-aware status block: markers describe the boundary, and there is
+    /// exactly one `→ Next:` suggestion, chosen from the actual remaining state.
+    private func statusLines(_ report: ProtectReport, ui: CLIText) -> [String] {
+        var status: [String] = [ui.section("Status")]
+
+        let boundaryClean = report.remainingRequiredCount == 0 && report.remainingRecommendedCount == 0
+        let syncHasChanges = report.sync.map {
+            !$0.createdRelativePaths.isEmpty || !$0.updatedRelativePaths.isEmpty
+                || $0.gitignoreUpdated || $0.excludeUpdated
+        } ?? false
+        let wouldChangeAnything = !report.patterns.isEmpty || !report.addedToConfig.isEmpty || syncHasChanges
 
         if report.dryRun {
-            lines.append(
-                "Dry run — would leave \(report.remainingRequiredCount) required, \(report.remainingRecommendedCount) recommended exposed."
-            )
-            lines.append("Next: offsend protect   # apply, then offsend show to verify")
+            if boundaryClean, !wouldChangeAnything {
+                status.append(ui.ok("AI boundary OK — nothing to protect."))
+                status.append(ui.next("offsend show   # verify, then offsend hook install"))
+            } else if boundaryClean {
+                status.append(ui.ok("AI boundary OK — only ignore-file housekeeping pending."))
+                status.append(ui.next("offsend protect   # apply housekeeping"))
+            } else {
+                status.append(
+                    ui.note(
+                        "Dry run — would leave \(report.remainingRequiredCount) required, \(report.remainingRecommendedCount) recommended exposed."
+                    )
+                )
+                status.append(ui.next("offsend protect   # apply, then offsend show to verify"))
+            }
         } else if report.remainingRequiredCount == 0 {
-            lines.append("AI boundary OK — no required sensitive paths exposed to AI tools.")
+            status.append(ui.ok("AI boundary OK — no required sensitive paths exposed to AI tools."))
             if report.remainingRecommendedCount > 0 {
-                lines.append(
-                    "Still exposed (recommended): \(report.remainingRecommendedCount). Re-run with --include-recommended or offsend ignore <path>."
+                status.append(
+                    ui.warn(
+                        "Still exposed (recommended): \(report.remainingRecommendedCount). Re-run with --include-recommended or offsend ignore <path>."
+                    )
                 )
             }
-            lines.append("Next: offsend show   # verify, then offsend hook install")
+            status.append(ui.next("offsend show   # verify, then offsend hook install"))
         } else {
-            lines.append(
-                "Still exposed: \(report.remainingRequiredCount) required, \(report.remainingRecommendedCount) recommended."
+            status.append(
+                ui.warn(
+                    "Still exposed: \(report.remainingRequiredCount) required, \(report.remainingRecommendedCount) recommended."
+                )
             )
-            lines.append("Next: offsend show   # inspect, or offsend ignore <path>")
+            status.append(ui.next("offsend show   # inspect, or offsend ignore <path>"))
         }
 
         if report.scanIncomplete {
-            lines.append("! Scan incomplete — results may be partial.")
+            status.append(ui.warn("Scan incomplete — results may be partial."))
         }
-
-        return lines.joined(separator: "\n")
+        return status
     }
 
     private func renderJSON(_ report: ProtectReport) -> String {

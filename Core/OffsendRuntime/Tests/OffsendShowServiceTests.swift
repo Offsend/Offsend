@@ -89,7 +89,7 @@ final class OffsendShowServiceTests: XCTestCase {
         let report = makeService().run(directoryURL: root)
 
         XCTAssertTrue(report.errors.isEmpty, "drift must not fail `offsend show`")
-        XCTAssertTrue(report.warnings.contains { $0.contains("team-secret/") && $0.contains("offsend sync") })
+        XCTAssertTrue(report.warnings.contains { $0.contains("team-secret/") && $0.contains("offsend ignore --sync") })
     }
 
     func testRequiredSeverityGroupsSortFirst() throws {

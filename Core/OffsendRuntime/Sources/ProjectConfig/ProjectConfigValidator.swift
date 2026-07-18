@@ -1,5 +1,6 @@
 import DetectionCore
 import Foundation
+import WorkspacePolicyCore
 import Yams
 
 /// Surfaces values that `OptionsResolver` would silently drop (typos in detector
@@ -41,7 +42,7 @@ public enum ProjectConfigValidator {
             issues.append(
                 contentsOf: unknownKeys(
                     in: ignore,
-                    allowed: ["commit", "patterns"],
+                    allowed: ["commit", "tools", "patterns"],
                     path: "ignore"
                 )
             )
@@ -123,6 +124,12 @@ public enum ProjectConfigValidator {
             .filter { CustomDictionaryKind(rawValue: $0) == nil }
         if !unknownKinds.isEmpty {
             issues.append("Unknown dictionary kind(s) in check.dictionaries: \(unknownKinds.joined(separator: ", ")).")
+        }
+
+        if let unknownTools = config.ignore?.unknownToolSlugs, !unknownTools.isEmpty {
+            issues.append(
+                "Unknown tool(s) in ignore.tools: \(unknownTools.joined(separator: ", ")) (use \(validValues(AIWorkspaceToolID.self)))."
+            )
         }
 
         if let mcpMode = config.context?.mcp?.mode,

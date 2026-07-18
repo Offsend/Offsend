@@ -14,8 +14,7 @@ Product overview and quick start live in the [main README](../README.md). Use th
 ## Suggested path
 
 1. Install and run `offsend show` — [README → Quick Start](../README.md#quick-start)
-2. Create the config — `offsend init` (template + first sync)
-3. Fix the boundary — `offsend protect` (rules land in `.offsend.yml` and sync to every AI ignore file)
-4. Install gates — `offsend hook install`
-5. Tune rules — [configuration.md](configuration.md)
-6. Understand limits — [What hooks cover / do not cover](cli.md#what-hooks-cover)
+2. Guided setup — `offsend setup` (doctor → init → protect → hooks → show), or the steps below
+3. Or manually: `offsend init` → `offsend protect` → `offsend hook install`
+4. Tune rules — [configuration.md](configuration.md)
+5. Understand limits — [What hooks cover / do not cover](cli.md#what-hooks-cover)

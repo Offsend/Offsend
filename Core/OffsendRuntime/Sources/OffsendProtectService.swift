@@ -100,6 +100,10 @@ public struct OffsendProtectService: Sendable {
     ) -> ProtectReport {
         let root = directoryURL.standardizedFileURL
         var errors: [String] = []
+        // `ignore.tools` narrows which AI tools get managed files; absent = all.
+        let configuration = self.configuration.filtered(
+            tools: (try? configLoader.load(from: root))?.ignore?.toolIDs
+        )
 
         // Protect syncs the managed block itself below, so prepare skips it.
         let prepare = prepareService.run(

@@ -3,30 +3,42 @@ import Foundation
 public struct HookStatusReporter: Sendable {
     public init() {}
 
-    public func render(_ report: HookStatusReport, format: CheckOutputFormat) -> String {
+    public func render(_ report: HookStatusReport, format: CheckOutputFormat, useColor: Bool = false) -> String {
         switch format {
         case .text:
-            return renderText(report)
+            return renderText(report, ui: CLIText(useColor: useColor))
         case .json:
             return renderJSON(report)
         }
     }
 
-    private func renderText(_ report: HookStatusReport) -> String {
+    private func renderText(_ report: HookStatusReport, ui: CLIText) -> String {
+        let statusLine: String
+        switch report.state {
+        case .installed:
+            statusLine = ui.ok("installed")
+        case .notInstalled:
+            statusLine = ui.warn("not installed")
+        case .modified:
+            statusLine = ui.fail("modified")
+        }
+
         var lines = [
-            "repository: \(report.repositoryPath)",
-            "hook: \(report.hookType.rawValue)",
-            "path: \(report.hookPath)",
-            "status: \(report.state.rawValue)"
+            ui.section("Hook status"),
+            ui.note("repository: \(report.repositoryPath)"),
+            "  hook: \(report.hookType.rawValue)",
+            "  path: \(report.hookPath)",
+            "  status: \(statusLine)",
         ]
         if let configPath = report.projectConfigPath {
-            lines.append("project-config: \(configPath)")
+            lines.append("  project-config: \(configPath)")
         }
         if let script = report.scriptPreview {
             lines.append("")
+            lines.append(ui.note("preview:"))
             lines.append(script)
         }
-        return lines.joined(separator: "\n")
+        return CLIText.join(lines)
     }
 
     private func renderJSON(_ report: HookStatusReport) -> String {

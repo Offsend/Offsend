@@ -321,7 +321,7 @@ final class DirectoryCheckViewModel: ObservableObject {
 
         let createsNewFilesOnly = !selectedRuleItems.isEmpty && selectedRuleItems.allSatisfy { item in
             guard case .ruleFile(_, let strategy) = item.kind else { return false }
-            return strategy == .createIfMissing
+            return strategy == .createIfMissing || strategy == .keepManagedContent
         }
         let updatesExistingFiles = selectedRuleItems.contains {
             isUpdatingExistingIgnoreFile($0, result: result)

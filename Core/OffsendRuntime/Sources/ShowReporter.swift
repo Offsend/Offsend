@@ -18,80 +18,94 @@ public struct ShowReporter: Sendable {
     }
 
     private func renderText(_ report: ShowReport, palette: CLIPalette) -> String {
-        var lines: [String] = []
+        let ui = CLIText(palette: palette)
+        var sections: [[String]] = []
 
+        var notices: [String] = []
         for error in report.errors {
-            lines.append("! \(error)")
+            notices.append(ui.warn(error))
         }
         for warning in report.warnings {
-            lines.append("warning: \(warning)")
+            notices.append(ui.warn(warning))
         }
+        if !notices.isEmpty { sections.append(notices) }
 
         if report.hasErrors, !report.hasExposure {
-            return lines.joined(separator: "\n")
+            return CLIText.joinSections(sections)
         }
 
         if !report.hasExposure {
-            lines.append("AI boundary OK — no sensitive files are exposed to AI tools.")
-            lines.append(contentsOf: renderMCPLines(report.mcp, palette: palette))
-            lines.append(contentsOf: renderHistoryLines(report.history, palette: palette))
-            lines.append(palette.dim("Next (optional): offsend hook install   # prompt/read/shell/MCP/subagent gates + git pre-commit"))
-            lines.append(palette.dim("CI tip: offsend check --staged --policy --fail-on block"))
-            return lines.joined(separator: "\n")
+            sections.append([ui.ok("AI boundary OK — no sensitive files are exposed to AI tools.")])
+            let mcpLines = renderMCPLines(report.mcp, ui: ui)
+            if !mcpLines.isEmpty { sections.append(mcpLines) }
+            let historyLines = renderHistoryLines(report.history, ui: ui)
+            if !historyLines.isEmpty { sections.append(historyLines) }
+            sections.append([
+                ui.next("offsend hook install   # prompt/read/shell/MCP/subagent gates + git pre-commit"),
+                ui.hint("CI tip: offsend check --staged --policy --fail-on block"),
+            ])
+            return CLIText.joinSections(sections)
         }
 
-        lines.append(palette.dim("Scanned: \(report.directoryPath)"))
+        var exposure: [String] = [
+            ui.section("Exposure"),
+            ui.note("Scanned: \(report.directoryPath)"),
+        ]
 
         let fileWord = Self.pluralize(report.totalExposedCount, singular: "file")
         let summary = Self.severitySummary(for: report.groups)
         let suffix = summary.isEmpty ? "" : " (\(summary))"
-        lines.append("\(report.totalExposedCount) \(fileWord) would be sent to AI tools\(suffix):")
+        exposure.append("\(report.totalExposedCount) \(fileWord) would be sent to AI tools\(suffix):")
 
         for group in report.groups {
-            lines.append("")
+            exposure.append("")
             let header = "\(Self.marker(for: group.severity)) \(group.typeTitle) [\(group.severity)]"
-            lines.append(Self.colorize(header, severity: group.severity, palette: palette))
+            exposure.append(Self.colorize(header, severity: group.severity, palette: palette))
 
             if !group.remediation.isEmpty {
-                lines.append(palette.dim("    \(group.remediation)"))
+                exposure.append(palette.dim("    \(group.remediation)"))
             }
 
             for path in group.relativePaths.prefix(Self.maxPathsPerGroup) {
-                lines.append("  - \(path)")
+                exposure.append("  - \(path)")
             }
             let overflow = group.relativePaths.count - Self.maxPathsPerGroup
             if overflow > 0 {
-                lines.append(palette.dim("  … and \(overflow) more (use --format json for the full list)"))
+                exposure.append(palette.dim("  … and \(overflow) more (use --format json for the full list)"))
             }
         }
+        sections.append(exposure)
 
-        lines.append(contentsOf: renderMCPLines(report.mcp, palette: palette))
-        lines.append(contentsOf: renderHistoryLines(report.history, palette: palette))
-        return lines.joined(separator: "\n")
+        let mcpLines = renderMCPLines(report.mcp, ui: ui)
+        if !mcpLines.isEmpty { sections.append(mcpLines) }
+        let historyLines = renderHistoryLines(report.history, ui: ui)
+        if !historyLines.isEmpty { sections.append(historyLines) }
+        sections.append([ui.next("offsend protect   # hide required paths from AI, then re-run offsend show")])
+        return CLIText.joinSections(sections)
     }
 
-    private func renderHistoryLines(_ history: ShowHistorySection, palette: CLIPalette) -> [String] {
+    private func renderHistoryLines(_ history: ShowHistorySection, ui: CLIText) -> [String] {
         if history.skipped {
             return []
         }
         guard history.filesScanned > 0 || history.hasFindings else { return [] }
-        var lines: [String] = ["", "Agent history"]
+        var lines: [String] = [ui.section("Agent history")]
         lines.append("  \(history.filesScanned) local transcript file(s)")
         if history.hasFindings {
             lines.append("  \(history.filesWithFindings) with secret-shaped findings")
             if !history.secretTypes.isEmpty {
-                lines.append(palette.dim("  types: \(history.secretTypes.joined(separator: ", "))"))
+                lines.append(ui.note("types: \(history.secretTypes.joined(separator: ", "))"))
             }
-            lines.append(palette.dim("  → offsend history scrub --apply"))
+            lines.append(ui.note("scrub with: offsend history scrub --apply"))
         } else if let message = history.message {
-            lines.append(palette.dim("  → \(message)"))
+            lines.append(ui.note(message))
         }
         return lines
     }
 
-    private func renderMCPLines(_ mcp: ShowMCPSection, palette: CLIPalette) -> [String] {
+    private func renderMCPLines(_ mcp: ShowMCPSection, ui: CLIText) -> [String] {
         guard !mcp.isEmpty else { return [] }
-        var lines: [String] = ["", "MCP"]
+        var lines: [String] = [ui.section("MCP")]
         let riskCount = mcp.servers.filter(\.highRisk).count
         var summary = "\(mcp.servers.count) server\(mcp.servers.count == 1 ? "" : "s")"
         if riskCount > 0 {
@@ -121,13 +135,13 @@ public struct ShowReporter: Sendable {
         }
         let overflow = mcp.servers.count - 20
         if overflow > 0 {
-            lines.append(palette.dim("  … and \(overflow) more (use --format json for the full list)"))
+            lines.append(ui.note("… and \(overflow) more (use --format json for the full list)"))
         }
         if mcp.gateTargets.isEmpty {
-            lines.append(palette.dim("  → offsend hook install   # add MCP gate (on by default)"))
+            lines.append(ui.note("no MCP gate installed — offsend hook install adds it (on by default)"))
         }
         if mcp.policyMode == nil {
-            lines.append(palette.dim("  → set context.mcp in .offsend.yml to observe|ask|deny"))
+            lines.append(ui.note("set context.mcp in .offsend.yml to observe|ask|deny"))
         }
         return lines
     }
