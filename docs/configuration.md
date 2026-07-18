@@ -161,7 +161,7 @@ Use `offsend init --template …` to seed a useful exclude list for your stack. 
 | `java` | `**/.gradle/**`, `**/out/**`, `**/.idea/**`, `**/target/**`, `*.class`, `*.jar` |
 | `android` | `**/.cxx/**`, `**/.externalNativeBuild/**`, `*.apk`, `*.aab`, `*.dex`, `*.class`, `*.jar` |
 | `swift` (alias: `ios`) | `**/DerivedData/**`, `**/.build/**`, `Package.resolved`, `**/Info.plist`, `**/Pods/**`, `*.ipa`, `**/*.dSYM/**`, … |
-| `tuist` | `**/Derived/**`, `**/Tuist/.build/**`, `**/Tuist/Dependencies/**`, `**/.tuist-bin/**` |
+| `tuist` | `**/Derived/**`, `**/Tuist/.build/**`, `**/Tuist/Dependencies/**`, `**/.tuist-bin/**`, `.package.resolved` |
 
 Do not exclude secret-bearing files (for example `.env`, `*.pem`) — those should stay in the scan.
 ### `check.detectors.disable`

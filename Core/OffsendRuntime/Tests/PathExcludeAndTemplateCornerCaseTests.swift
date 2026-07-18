@@ -252,7 +252,11 @@ final class ProjectConfigTemplateCornerCaseTests: XCTestCase {
                 "App.ipa",
                 "App.app.dSYM/Contents/Resources/DWARF/App",
             ],
-            .tuist: ["Derived/Sources/TuistBundle+X.swift", "Tuist/.build/checkouts/A"],
+            .tuist: [
+                "Derived/Sources/TuistBundle+X.swift",
+                "Tuist/.build/checkouts/A",
+                ".package.resolved",
+            ],
         ]
 
         for id in ProjectConfigTemplateID.allCases {

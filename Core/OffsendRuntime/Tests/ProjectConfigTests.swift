@@ -229,6 +229,7 @@ final class ProjectConfigTests: XCTestCase {
         XCTAssertTrue(patterns.contains("Package.resolved"))
         XCTAssertTrue(patterns.contains("**/Info.plist"))
         XCTAssertTrue(patterns.contains("**/Tuist/.build/**"))
+        XCTAssertTrue(patterns.contains(".package.resolved"))
         XCTAssertEqual(patterns.filter { $0 == "**/.gradle/**" }.count, 1)
         XCTAssertEqual(patterns.filter { $0 == "**/build/**" }.count, 1)
         XCTAssertEqual(Set(patterns).count, patterns.count)

@@ -35,7 +35,7 @@ public enum ProjectConfigTemplateID: String, CaseIterable, Sendable {
         case .swift:
             "DerivedData, SPM .build/Package.resolved, Info.plist, Pods, Carthage, archives"
         case .tuist:
-            "Derived/, Tuist build and dependencies"
+            "Derived/, Tuist build/dependencies, .package.resolved"
         }
     }
 
@@ -151,6 +151,7 @@ public enum ProjectConfigTemplateID: String, CaseIterable, Sendable {
                 "**/Tuist/.build/**",
                 "**/Tuist/Dependencies/**",
                 "**/.tuist-bin/**",
+                ".package.resolved",
             ]
         }
     }
