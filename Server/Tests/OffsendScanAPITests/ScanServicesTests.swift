@@ -60,7 +60,7 @@ final class RepositoryScannerTests: XCTestCase {
         )
         XCTAssertEqual(presenceByRule["cursor-ignore"], true)
         XCTAssertEqual(presenceByRule["claude-ignore"], true)
-        // Context files not materialized by `offsend ignore --sync` keep real presence.
+        // Context files not materialized by `offsend sync` keep real presence.
         XCTAssertEqual(presenceByRule["agents-md"], false)
     }
 

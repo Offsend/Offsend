@@ -42,7 +42,7 @@ No install yet? [Scan a public GitHub repo with Check](https://check.offsend.io)
 | --- | --- | --- |
 | **Boundary** | Show sensitive paths AI can see; keep them out via `.offsend.yml` synced to all AI ignore files | `show`, `protect`, `ignore`, `sync` |
 | **Content** | Scan files, staged diffs, or stdin for secrets and custom terms | `check` |
-| **Runtime** | Gate prompts, file reads, shell, MCP calls, and Cursor subagents in the editor; audit local agent history | `hook install`, `history` |
+| **Runtime** | Gate prompts, file reads, shell, MCP calls, and Cursor subagents in the editor; audit local agent history | `sync`, `hook install`, `history` |
 
 Defense-in-depth: ignore files first, then hooks. Hooks do not replace keeping secrets out of the workspace — see [what hooks cover](docs/cli.md#what-hooks-cover).
 
@@ -72,10 +72,13 @@ Scanned: /path/to/project
 Recommended onboarding:
 
 ```bash
-offsend init --template node   # .offsend.yml + first sync + baseline check
+# new project
+offsend init --template node   # .offsend.yml + ignore files + baseline check
 offsend protect                # promote exposed paths to .offsend.yml, sync AI ignore files
-offsend show                   # verify boundary (+ MCP / history hints)
-offsend hook install           # git pre-commit + AI editor gates
+offsend sync                   # git pre-commit + AI editor gates (idempotent)
+
+# cloned a repo that already has .offsend.yml
+offsend sync                   # materialize AI ignore files + install hooks
 ```
 
 Rules live in `.offsend.yml` — commit it and the whole team gets the same boundary. AI ignore files are generated artifacts and stay out of git by default (`ignore.commit: false`).
@@ -97,8 +100,9 @@ Other installs: [CLI docs → Install](docs/cli.md#install) · macOS app: `brew 
 | Command | Purpose |
 | --- | --- |
 | `offsend show` | Sensitive paths visible to AI (+ MCP inventory, agent-history hint) |
+| `offsend sync` | Apply `.offsend.yml`: materialize AI ignore files + install hooks (post-clone, idempotent) |
 | `offsend protect` | Promote exposed paths to `.offsend.yml` and sync AI ignore files |
-| `offsend ignore` | Add ignore patterns to `.offsend.yml` (`--sync` re-materializes ignore files) |
+| `offsend ignore` | Add ignore patterns to `.offsend.yml` (auto-materializes; use `sync` after hand-edits) |
 | `offsend check` | Scan contents (files, `--staged`, stdin, or editor hook JSON) |
 | `offsend hook install` | Git pre-commit + prompt / read / shell / MCP / subagent gates |
 | `offsend history audit` | Find secrets already written into local Cursor/Claude transcripts |

@@ -116,7 +116,7 @@ public struct OffsendPrepareService: Sendable {
         }
 
         // Missing, fixable, non-informational ignore/rule files. Informational
-        // suggestions (.gitignore, AGENTS.md, .cursorindexingignore) are not auto-created.
+        // suggestions (.gitignore, AGENTS.md) are not auto-created.
         let missingFindings = audit.ruleFindings.filter {
             !$0.isSatisfied && $0.rule.severity != .informational && $0.rule.fix != nil
         }

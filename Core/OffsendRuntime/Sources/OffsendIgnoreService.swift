@@ -57,7 +57,7 @@ public struct IgnoreReport: Sendable, Equatable {
 /// files are updated; when the project has none yet, the standard set is
 /// created first (same files as `OffsendPrepareService`). Does not write AI
 /// patterns into `.gitignore` (that file only lists AI ignore paths when
-/// `ignore.commit` is false, via `offsend ignore --sync`).
+/// `ignore.commit` is false, via `offsend sync`).
 public struct OffsendIgnoreService: Sendable {
     private let configuration: AIWorkspacePrivacyAuditConfiguration
     private let fixer: AIWorkspacePrivacyFixer

@@ -34,6 +34,7 @@ final class OffsendPrepareServiceTests: XCTestCase {
         XCTAssertTrue(report.createdRelativePaths.contains(".cursorignore"))
         XCTAssertTrue(fileExists(".cursorignore"))
         XCTAssertTrue(fileExists(".claudeignore"))
+        XCTAssertTrue(fileExists(".cursorindexingignore"))
     }
 
     func testSkipsInformationalFiles() throws {
@@ -42,7 +43,6 @@ final class OffsendPrepareServiceTests: XCTestCase {
         // Informational suggestions must not be auto-created.
         XCTAssertFalse(fileExists(".gitignore"))
         XCTAssertFalse(fileExists("AGENTS.md"))
-        XCTAssertFalse(fileExists(".cursorindexingignore"))
     }
 
     func testDryRunDoesNotWriteFiles() throws {

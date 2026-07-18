@@ -5,7 +5,7 @@ import OffsendRuntime
 struct Protect: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "protect",
-        abstract: "Hide exposed sensitive paths from AI tools (create ignore files + add required patterns).",
+        abstract: "Close gaps: hide exposed sensitive paths from AI tools (add required patterns to .offsend.yml + sync).",
         discussion: """
         Runs the same path audit as `offsend show`, creates missing AI ignore files, \
         then appends canonical ignore lines for every \
@@ -13,6 +13,8 @@ struct Protect: AsyncParsableCommand {
         to also cover recommended exposures. Preview with --dry-run, then verify with \
         `offsend show`. When `.offsend.yml` has `context.history.scrub_on_protect: true`, \
         also dry-runs (or applies, unless --dry-run) a local agent-history scrub.
+
+        For applying an existing config after a clone, use `offsend sync` instead.
         """
     )
 

@@ -59,7 +59,7 @@ public struct OffsendProjectIgnoreConfig: Codable, Equatable, Sendable {
     /// Optional tool slugs (e.g. `cursor`, `claude`) narrowing which AI tools get
     /// managed ignore/rule files. Absent means every supported tool.
     public var tools: [String]?
-    /// Team-mandatory patterns materialized into AI ignore files by `offsend ignore --sync`.
+    /// Team-mandatory patterns materialized into AI ignore files by `offsend sync`.
     public var patterns: [String]?
 
     public init(commit: Bool? = nil, tools: [String]? = nil, patterns: [String]? = nil) {
@@ -113,26 +113,35 @@ public struct OffsendProjectHooksConfig: Codable, Equatable, Sendable {
     public var policy: Bool?
     /// When `false` (default), AI editor hook files are kept out of git via `.git/info/exclude`.
     public var publish: Bool?
+    /// When `true`, editor hook gates (read-gate) ignore `check.exclude` and
+    /// check every path. Default `false`: gates skip excluded project paths.
+    public var ignoreExclude: Bool?
 
     enum CodingKeys: String, CodingKey {
         case type
         case failOn = "fail_on"
         case policy
         case publish
+        case ignoreExclude = "ignore_exclude"
     }
 
     public init(
         type: String? = nil,
         failOn: String? = nil,
         policy: Bool? = nil,
-        publish: Bool? = nil
+        publish: Bool? = nil,
+        ignoreExclude: Bool? = nil
     ) {
         self.type = type
         self.failOn = failOn
         self.policy = policy
         self.publish = publish
+        self.ignoreExclude = ignoreExclude
     }
 
     /// Effective publish flag: absent means do not publish hooks to the repo.
     public var publishesHooks: Bool { publish ?? false }
+
+    /// Effective ignore-exclude flag: absent means gates honor `check.exclude`.
+    public var ignoresCheckExclude: Bool { ignoreExclude ?? false }
 }

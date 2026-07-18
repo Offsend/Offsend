@@ -878,4 +878,130 @@ else
   exit 1
 fi
 
+
+# --- offsend sync orchestration ---
+sync_repo="$workdir/sync-repo"
+sync_home="$workdir/sync-home"
+mkdir -p "$sync_repo" "$sync_home"
+git -C "$sync_repo" init >/dev/null
+git -C "$sync_repo" config user.email "ci@example.com"
+git -C "$sync_repo" config user.name "Offsend CI"
+
+printf '%s\n' \
+  "version: 1" \
+  "" \
+  "ignore:" \
+  "  commit: true" \
+  "  patterns:" \
+  "    - \"secrets/\"" \
+  "hooks:" \
+  "  publish: false" > "$sync_repo/.offsend.yml"
+
+set +e
+HOME="$sync_home" "$CLI_PATH" sync --path "$sync_repo" --dry-run --format json >/tmp/offsend-sync-dry.$$ 2>/tmp/offsend-sync-dry-err.$$
+sync_dry_status="$?"
+set -e
+if [[ "$sync_dry_status" -ne 0 ]]; then
+  echo "Expected sync --dry-run to exit 0, got $sync_dry_status" >&2
+  cat /tmp/offsend-sync-dry-err.$$ >&2
+  exit 1
+fi
+if [[ -f "$sync_repo/.cursorignore" ]]; then
+  echo "Expected sync --dry-run not to write .cursorignore" >&2
+  exit 1
+fi
+if ! grep -q '"dryRun"[[:space:]]*:[[:space:]]*true' /tmp/offsend-sync-dry.$$; then
+  echo "Expected sync --dry-run JSON dryRun:true" >&2
+  cat /tmp/offsend-sync-dry.$$ >&2
+  exit 1
+fi
+if ! grep -q '"skipped"[[:space:]]*:[[:space:]]*true' /tmp/offsend-sync-dry.$$; then
+  echo "Expected sync --dry-run JSON hooks.skipped:true" >&2
+  cat /tmp/offsend-sync-dry.$$ >&2
+  exit 1
+fi
+rm -f /tmp/offsend-sync-dry.$$ /tmp/offsend-sync-dry-err.$$
+
+HOME="$sync_home" "$CLI_PATH" sync --path "$sync_repo" --no-hooks --format json >/tmp/offsend-sync-nohooks.$$
+if [[ ! -f "$sync_repo/.cursorignore" ]]; then
+  echo "Expected sync --no-hooks to materialize .cursorignore" >&2
+  exit 1
+fi
+if [[ -f "$sync_repo/.git/hooks/pre-commit" ]]; then
+  echo "Expected sync --no-hooks not to install git pre-commit hook" >&2
+  exit 1
+fi
+if ! grep -q '"reason"[[:space:]]*:[[:space:]]*"--no-hooks"' /tmp/offsend-sync-nohooks.$$; then
+  echo "Expected sync --no-hooks JSON reason --no-hooks" >&2
+  cat /tmp/offsend-sync-nohooks.$$ >&2
+  exit 1
+fi
+rm -f /tmp/offsend-sync-nohooks.$$
+
+HOME="$sync_home" "$CLI_PATH" sync --path "$sync_repo" --format json >/tmp/offsend-sync-full.$$ 2>/tmp/offsend-sync-full-err.$$
+if [[ ! -f "$sync_repo/.git/hooks/pre-commit" ]]; then
+  echo "Expected sync to install git pre-commit hook" >&2
+  cat /tmp/offsend-sync-full-err.$$ >&2
+  exit 1
+fi
+if ! grep -q '"skipped"[[:space:]]*:[[:space:]]*false' /tmp/offsend-sync-full.$$; then
+  echo "Expected sync JSON hooks.skipped:false" >&2
+  cat /tmp/offsend-sync-full.$$ >&2
+  exit 1
+fi
+# Idempotent second run should succeed.
+HOME="$sync_home" "$CLI_PATH" sync --path "$sync_repo" --format json >/tmp/offsend-sync-idem.$$
+rm -f /tmp/offsend-sync-full.$$ /tmp/offsend-sync-full-err.$$ /tmp/offsend-sync-idem.$$
+
+# Foreign git hook: warn + skip git, still install AI hooks, exit 0.
+foreign_repo="$workdir/sync-foreign"
+mkdir -p "$foreign_repo/.git/hooks"
+git -C "$foreign_repo" init >/dev/null
+git -C "$foreign_repo" config user.email "ci@example.com"
+git -C "$foreign_repo" config user.name "Offsend CI"
+printf '%s\n' '#!/bin/sh' 'echo foreign-pre-commit' > "$foreign_repo/.git/hooks/pre-commit"
+chmod +x "$foreign_repo/.git/hooks/pre-commit"
+cp "$sync_repo/.offsend.yml" "$foreign_repo/.offsend.yml"
+
+set +e
+HOME="$sync_home" "$CLI_PATH" sync --path "$foreign_repo" --format json >/tmp/offsend-sync-foreign.$$ 2>/tmp/offsend-sync-foreign-err.$$
+foreign_status="$?"
+set -e
+if [[ "$foreign_status" -ne 0 ]]; then
+  echo "Expected sync with foreign git hook to exit 0, got $foreign_status" >&2
+  cat /tmp/offsend-sync-foreign-err.$$ >&2
+  exit 1
+fi
+if ! grep -q 'foreign-pre-commit' "$foreign_repo/.git/hooks/pre-commit"; then
+  echo "Expected foreign git hook to be preserved" >&2
+  exit 1
+fi
+if ! grep -qi 'git hook skipped' /tmp/offsend-sync-foreign-err.$$ \
+  && ! grep -q '"warning"' /tmp/offsend-sync-foreign.$$; then
+  echo "Expected warning about skipped git hook (stderr or JSON)" >&2
+  cat /tmp/offsend-sync-foreign-err.$$ >&2
+  cat /tmp/offsend-sync-foreign.$$ >&2
+  exit 1
+fi
+if [[ ! -f "$foreign_repo/.cursor/hooks.json" && ! -f "$foreign_repo/.claude/settings.json" ]]; then
+  echo "Expected AI-editor hooks to install despite foreign git hook" >&2
+  exit 1
+fi
+rm -f /tmp/offsend-sync-foreign.$$ /tmp/offsend-sync-foreign-err.$$
+
+# Missing config should fail.
+empty_repo="$workdir/sync-empty"
+mkdir -p "$empty_repo"
+git -C "$empty_repo" init >/dev/null
+set +e
+HOME="$sync_home" "$CLI_PATH" sync --path "$empty_repo" >/dev/null 2>/tmp/offsend-sync-missing.$$
+missing_status="$?"
+set -e
+if [[ "$missing_status" -ne 2 ]]; then
+  echo "Expected sync without .offsend.yml to exit 2, got $missing_status" >&2
+  cat /tmp/offsend-sync-missing.$$ >&2
+  exit 1
+fi
+rm -f /tmp/offsend-sync-missing.$$
+
 echo "CLI E2E smoke passed."

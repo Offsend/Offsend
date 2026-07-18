@@ -75,7 +75,7 @@ public struct ProtectReporter: Sendable {
         if report.dryRun {
             if boundaryClean, !wouldChangeAnything {
                 status.append(ui.ok("AI boundary OK — nothing to protect."))
-                status.append(ui.next("offsend show   # verify, then offsend hook install"))
+                status.append(ui.next("offsend show   # verify, then offsend sync"))
             } else if boundaryClean {
                 status.append(ui.ok("AI boundary OK — only ignore-file housekeeping pending."))
                 status.append(ui.next("offsend protect   # apply housekeeping"))
@@ -96,7 +96,7 @@ public struct ProtectReporter: Sendable {
                     )
                 )
             }
-            status.append(ui.next("offsend show   # verify, then offsend hook install"))
+            status.append(ui.next("offsend show   # verify, then offsend sync"))
         } else {
             status.append(
                 ui.warn(

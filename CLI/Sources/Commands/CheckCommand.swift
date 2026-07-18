@@ -211,6 +211,14 @@ struct Check: AsyncParsableCommand {
                 projectConfig: projectConfig,
                 staged: false
             )
+            // Gates honor check.exclude unless hooks.ignore_exclude: true.
+            let gateExcludePatterns = (projectConfig?.hooks?.ignoresCheckExclude ?? false)
+                ? []
+                : resolved.excludePatterns
+            let workingURL = URL(
+                fileURLWithPath: workingDirectory ?? FileManager.default.currentDirectoryPath
+            ).standardizedFileURL
+            let projectRoot = (try? GitRepositoryResolver().repositoryRoot(startingAt: workingURL)) ?? workingURL
             await hookEmitter().emitReadGate(
                 adapter: adapter,
                 rawJSON: rawText,
@@ -218,7 +226,9 @@ struct Check: AsyncParsableCommand {
                 policy: resolvedHookPolicy(for: adapter),
                 context: context,
                 disabledDetectors: resolved.disabledDetectors,
-                customDictionaries: resolved.customDictionaries
+                customDictionaries: resolved.customDictionaries,
+                excludePatterns: gateExcludePatterns,
+                projectRoot: projectRoot
             )
             return
         }

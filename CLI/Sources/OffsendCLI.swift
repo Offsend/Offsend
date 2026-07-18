@@ -8,9 +8,9 @@ struct OffsendCLI: AsyncParsableCommand {
         abstract: "Local sensitive data checks for developers.",
         version: CLIVersion.marketing,
         subcommands: [
-            Setup.self,
             Init.self,
             Edit.self,
+            Sync.self,
             Protect.self,
             Show.self,
             Ignore.self,

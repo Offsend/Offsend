@@ -52,7 +52,7 @@ public enum ProjectConfigValidator {
             issues.append(
                 contentsOf: unknownKeys(
                     in: hooks,
-                    allowed: ["type", "fail_on", "policy", "publish"],
+                    allowed: ["type", "fail_on", "policy", "publish", "ignore_exclude"],
                     path: "hooks"
                 )
             )

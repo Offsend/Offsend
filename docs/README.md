@@ -14,7 +14,7 @@ Product overview and quick start live in the [main README](../README.md). Use th
 ## Suggested path
 
 1. Install and run `offsend show` — [README → Quick Start](../README.md#quick-start)
-2. Guided setup — `offsend setup` (doctor → init → protect → hooks → show), or the steps below
-3. Or manually: `offsend init` → `offsend protect` → `offsend hook install`
+2. Cloned a repo with `.offsend.yml`? One command: `offsend sync` (ignore files + hooks)
+3. New project: `offsend init` → `offsend protect` → `offsend sync`
 4. Tune rules — [configuration.md](configuration.md)
 5. Understand limits — [What hooks cover / do not cover](cli.md#what-hooks-cover)

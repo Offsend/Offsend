@@ -65,6 +65,25 @@ public enum PromptReadGate {
         return paths
     }
 
+    /// True when the read target falls under `check.exclude` (unless
+    /// `hooks.ignore_exclude` disabled this, which callers handle by passing
+    /// empty patterns). Both the presented path and its symlink-resolved target
+    /// must be inside the project root and excluded, so a benign excluded link
+    /// name cannot smuggle a sensitive target past the gate.
+    public static func isExcluded(
+        path: String,
+        excludePatterns: [String],
+        projectRoot: URL
+    ) -> Bool {
+        guard !excludePatterns.isEmpty else { return false }
+        let rootPath = projectRoot.standardizedFileURL.path
+        return sensitivityCheckPaths(for: path).allSatisfy { candidate in
+            guard candidate.hasPrefix(rootPath + "/") else { return false }
+            let relative = String(candidate.dropFirst(rootPath.count + 1))
+            return PathExcludeMatcher.isExcluded(relativePath: relative, patterns: excludePatterns)
+        }
+    }
+
     /// Path denylist only (no content scan). Prefer `evaluate` with entities for full gate behavior.
     public static func evaluate(json: String, adapter: CheckHookAdapter) throws -> PromptReadGateDecision {
         let input = try parse(json: json, adapter: adapter)

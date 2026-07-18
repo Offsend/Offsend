@@ -42,6 +42,7 @@ final class AIWorkspacePrivacyAuditorTests: XCTestCase {
         )
 
         let recommendedIgnoreFiles = [
+            ".cursorindexingignore",
             ".aiexclude",
             ".continueignore",
             ".codeiumignore",

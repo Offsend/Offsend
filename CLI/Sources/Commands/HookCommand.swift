@@ -185,37 +185,28 @@ struct HookInstall: ParsableCommand {
         }
         let validatedFailOn = CLIParse.failPolicy(failOn)
 
-        let projectConfig = CLIParse.projectConfig(from: repositoryURL)
-        let resolved = OptionsResolver.resolveHookOptions(
-            overrides: CLIHookOverrides(
-                hookType: type,
-                policySpecified: policy,
-                policyValue: policy,
-                failOn: validatedFailOn
-            ),
-            projectConfig: projectConfig
-        )
-
-        let manager = HookManager()
         do {
-            let hookURL = try manager.install(
-                HookInstallOptions(
-                    repositoryPath: repositoryURL,
-                    hookType: resolved.hookType,
-                    failPolicy: resolved.failPolicy,
-                    includePolicyCheck: resolved.includePolicyCheck,
-                    force: force,
-                    cliExecutablePath: executable
-                )
+            let outcome = try HookInstallRunner.installGitHook(
+                repositoryURL: repositoryURL,
+                executable: executable,
+                overrides: CLIHookOverrides(
+                    hookType: type,
+                    policySpecified: policy,
+                    policyValue: policy,
+                    failOn: validatedFailOn
+                ),
+                force: force,
+                tolerateFailure: tolerateFailure
             )
-            let ui = CLIText(useColor: CLIColor.enabled(for: .text))
-            print(ui.ok("Installed \(resolved.hookType.rawValue) hook"))
-            print(ui.hint("  \(hookURL.path)"))
-        } catch let error as HookManagerError {
-            guard tolerateFailure else {
-                CLIError.exit(for: error)
+            if let warning = outcome.warning {
+                fputs("warning: \(warning)\n", stderr)
+            } else if let hookURL = outcome.hookURL {
+                let ui = CLIText(useColor: CLIColor.enabled(for: .text))
+                print(ui.ok("Installed \(outcome.hookType.rawValue) hook"))
+                print(ui.hint("  \(hookURL.path)"))
             }
-            fputs("warning: git hook skipped: \(CLIError.message(for: error))\n", stderr)
+        } catch let error as HookManagerError {
+            CLIError.exit(for: error)
         } catch {
             CLIError.exit(.error, message: error.localizedDescription)
         }
@@ -227,7 +218,6 @@ struct HookInstall: ParsableCommand {
         executable: String
     ) {
         let policyOverride = hookPolicy.map { CLIParse.checkHookPolicy($0) }
-        let installer = AIEditorHookInstaller()
         let gateSupported: Set<AIEditorHookTarget> = [.cursor, .claude]
         // Read/shell/MCP gates are on by default for supported targets; --no-*-gate opts out.
         let enableReadGate = readGate ?? true
@@ -270,27 +260,19 @@ struct HookInstall: ParsableCommand {
                 )
             }
         }
-        let projectConfig = CLIParse.projectConfig(from: repositoryURL)
-        let publishHooks = OptionsResolver.resolveHookOptions(
-            overrides: CLIHookOverrides(),
-            projectConfig: projectConfig
-        ).publishHooks
-
         do {
-            for aiTarget in aiTargets {
-                let result = try installer.install(
-                    target: aiTarget,
-                    repositoryPath: repositoryURL,
-                    cliExecutablePath: executable,
-                    hookPolicy: policyOverride,
-                    force: force,
-                    withReadGate: enableReadGate,
-                    withShellGate: enableShellGate,
-                    withMCPGate: enableMCPGate,
-                    withSubagentGate: enableSubagentGate,
-                    portableWrappers: publishHooks
-                )
-                let ui = CLIText(useColor: CLIColor.enabled(for: .text))
+            let ui = CLIText(useColor: CLIColor.enabled(for: .text))
+            let outcome = try HookInstallRunner.installAIHooks(
+                aiTargets,
+                repositoryURL: repositoryURL,
+                executable: executable,
+                hookPolicy: policyOverride,
+                force: force,
+                withReadGate: enableReadGate,
+                withShellGate: enableShellGate,
+                withMCPGate: enableMCPGate,
+                withSubagentGate: enableSubagentGate
+            ) { result in
                 print(ui.ok("Installed \(result.target.rawValue) hook (\(result.hookPolicy.rawValue))"))
                 print(ui.hint("  config: \(result.configPath)"))
                 print(ui.hint("  wrapper: \(result.wrapperPath)"))
@@ -307,34 +289,20 @@ struct HookInstall: ParsableCommand {
                     print(ui.hint("  subagent gate: \(subagentPath)"))
                 }
             }
-            let ui = CLIText(useColor: CLIColor.enabled(for: .text))
-            if publishHooks {
+            if outcome.publishHooks {
                 print(ui.hint("hooks.publish: true — commit `.offsend/hooks/` and the editor config to share with the team."))
             } else {
-                // Exclude only what this run installed; merge keeps entries from
-                // earlier installs of other targets.
-                let repoRootPrefix = repositoryURL.standardizedFileURL.path + "/"
-                let configRelativePaths = aiTargets.map { target in
-                    let path = installer.configURL(for: target, repositoryPath: repositoryURL).path
-                    return path.hasPrefix(repoRootPrefix) ? String(path.dropFirst(repoRootPrefix.count)) : path
-                }
-                let excludeReport = OffsendLocalGitExcludeService().upsertPatterns(
-                    OffsendLocalGitExcludeService.aiHookExcludePatterns(configRelativePaths: configRelativePaths),
-                    repositoryURL: repositoryURL,
-                    section: OffsendLocalGitExcludeService.hooksSection,
-                    merge: true
-                )
-                if excludeReport.updated {
+                if outcome.excludeUpdated {
                     print(ui.hint("Updated local git exclude so AI hooks stay untracked."))
                 }
-                for error in excludeReport.errors {
-                    fputs("warning: \(error)\n", stderr)
+                for warning in outcome.warnings {
+                    fputs("warning: \(warning)\n", stderr)
                 }
                 print(ui.warn("hooks.publish is false — AI hooks are local only and will not be shared."))
                 print(ui.hint("To publish: set hooks.publish: true in .offsend.yml and re-run install."))
             }
-        } catch let error as AIEditorHookInstallerError {
-            CLIError.exit(.error, message: error.localizedDescription)
+        } catch let failure as HookInstallRunner.AIHookFailure {
+            CLIError.exit(.error, message: failure.message)
         } catch {
             CLIError.exit(.error, message: error.localizedDescription)
         }

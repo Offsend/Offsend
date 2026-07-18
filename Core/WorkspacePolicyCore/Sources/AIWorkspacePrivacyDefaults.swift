@@ -43,9 +43,9 @@ public extension AIWorkspacePrivacyRule {
             tool: .cursor,
             title: ".cursorindexingignore",
             relativePathPatterns: [".cursorindexingignore"],
-            severity: .informational,
-            scansForSensitivePatterns: false,
-            remediation: "Add .cursorindexingignore if you also want to exclude files from Cursor indexing.",
+            severity: .recommended,
+            scansForSensitivePatterns: true,
+            remediation: "Add .cursorindexingignore to exclude sensitive files from Cursor indexing.",
             fix: AIWorkspacePrivacyFileFix(
                 relativePath: ".cursorindexingignore",
                 contents: AIWorkspacePrivacyIgnoreTemplate.contents

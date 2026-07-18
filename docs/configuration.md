@@ -1,11 +1,11 @@
 # Configuration
 
-Offsend looks for a project config file named `.offsend.yml` at the repository root. Commit it so the same rules apply locally, in git hooks, and in CI — including the AI-context boundary: `ignore.patterns` is the source of truth that `offsend ignore --sync` materializes into `.cursorignore`, `.claudeignore`, and other AI ignore files.
+Offsend looks for a project config file named `.offsend.yml` at the repository root. Commit it so the same rules apply locally, in git hooks, and in CI — including the AI-context boundary: `ignore.patterns` is the source of truth that `offsend sync` materializes into `.cursorignore`, `.claudeignore`, and other AI ignore files.
 
 Create a starter file:
 
 ```bash
-offsend init                      # TTY prompts: stack, ignore.commit, hooks.publish; then sync + baseline check
+offsend init                      # TTY prompts: stack, ignore.commit, hooks.publish; then ignore files + baseline check
 offsend init --template node --no-ignore-commit --no-hooks-publish
 offsend init --template js,swift
 offsend init --template python --merge-exclude
@@ -19,7 +19,7 @@ cp .offsend.yml.example .offsend.yml
 
 In a TTY, init also asks whether to keep AI ignore files out of git (`ignore.commit`) and whether AI editor hooks may be committed (`hooks.publish`). Flags (`--ignore-commit` / `--no-ignore-commit`, `--hooks-publish` / `--no-hooks-publish`) skip those prompts. After writing the file, init materializes AI ignore files (unless `--no-sync`) and runs a baseline `check .` (unless `--no-check`). Use `--merge-exclude` to add patterns to an existing file without overwriting `ignore` / `hooks.publish`.
 
-Recommended follow-up: `offsend protect && offsend show && offsend hook install`.
+Recommended follow-up: `offsend protect && offsend sync && offsend show`.
 
 CLI flags override config values when provided explicitly. For example, `offsend check --policy` enables policy checks even if `check.policy` is `false`.
 
@@ -87,7 +87,7 @@ Config schema version. Use `1`; other versions are rejected.
 
 ### `ignore.commit`
 
-When `false` (default), ignore-file sync keeps AI ignore files (`.cursorignore`, `.claudeignore`, …) out of git by writing their paths into a managed block in `.gitignore`. Team rules still live in `ignore.patterns`. Set `true` only if the team wants those files tracked; the next `offsend ignore --sync` then removes the stale offsend entries from `.gitignore`.
+When `false` (default), ignore-file sync keeps AI ignore files (`.cursorignore`, `.claudeignore`, …) out of git by writing their paths into a managed block in `.gitignore`. Team rules still live in `ignore.patterns`. Set `true` only if the team wants those files tracked; the next `offsend sync` then removes the stale offsend entries from `.gitignore`.
 
 ### `ignore.tools`
 
@@ -107,9 +107,9 @@ Files already created for other tools are not deleted — remove them manually i
 Mandatory AI-ignore patterns for the repository. Source of truth for the managed block in editor ignore files (`.cursorignore`, `.claudeignore`, …).
 
 - `offsend init` seeds this list with the default AI privacy patterns (`.env*`, `*.pem`, credentials files, …)
-- `offsend ignore <pattern>` appends here, then runs sync
+- `offsend ignore <pattern>` appends here, then materializes ignore files
 - `offsend ignore --local <pattern>` writes only to local ignore files (not shared)
-- `offsend ignore --sync` materializes the managed block into every known AI ignore file
+- After editing this list by hand, run `offsend sync` (or `sync --no-hooks` for ignore files only)
 - User-authored lines outside the managed markers are preserved
 
 ### Managed editor privacy rules
@@ -121,9 +121,16 @@ Mandatory AI-ignore patterns for the repository. Source of truth for the managed
 
 These `offsend_privacy.*` files are fully owned by Offsend: manual edits are restored on the next `offsend protect` (and reported by `offsend doctor`). Put your own rules in separate files in the same directory — Offsend never touches them. As generated artifacts they follow `ignore.commit`: with `commit: false` (default) their exact paths join the managed `.gitignore` block next to the ignore files — never `.cursor/rules/` or other user-owned directories, so your own rule files remain committable as usual. A legacy `.cursor/rules/privacy.mdc` from older releases keeps satisfying the check and is never overwritten.
 
-### `hooks.publish`
+### `hooks.ignore_exclude`
 
-When `false` (default), `offsend hook install` keeps AI editor hook files local (updates `.git/info/exclude`) and warns that they will not be shared. When `true`, wrappers are written without a machine-specific `PREFERRED_BIN` so they are safer to commit.
+When `false` (default), the editor **read-gate** honors `check.exclude`: reading a project file that matches an exclude pattern is allowed without the sensitive-path check or content scan (useful for docs and test fixtures containing example keys). The presented path **and** its symlink-resolved target must both be inside the repository and excluded — a benign excluded link name cannot smuggle a sensitive target past the gate. Paths outside the repository are never treated as excluded.
+
+Set `true` to make the read-gate check every path regardless of `check.exclude` (strictest defense-in-depth):
+
+```yaml
+hooks:
+  ignore_exclude: true
+```
 
 ### `check.fail_on`
 
@@ -201,11 +208,11 @@ Whether installed hooks include workspace policy checks. If omitted, falls back 
 
 ### `hooks.publish`
 
-Whether AI editor hook files (`.cursor/hooks.json`, `.offsend/hooks/`, …) are intended to be committed. Default `false`: `offsend hook install` keeps them local via `.git/info/exclude`. When `true`, wrappers omit machine-specific absolute paths so they are safer to share.
+Whether AI editor hook files (`.cursor/hooks.json`, `.offsend/hooks/`, …) are intended to be committed. Default `false`: `offsend sync` / `offsend hook install` keep them local via `.git/info/exclude`. When `true`, wrappers omit machine-specific absolute paths so they are safer to share.
 
 ### `context.mcp`
 
-Optional MCP policy used by `offsend show`, `offsend doctor`, and the MCP-gate (`offsend hook install` / `check --mcp-gate`):
+Optional MCP policy used by `offsend show`, `offsend doctor`, and the MCP-gate (`offsend sync` / `offsend hook install` / `check --mcp-gate`):
 
 | Field | Description |
 | --- | --- |

@@ -24,6 +24,7 @@ final class ProjectConfigTests: XCTestCase {
         hooks:
           fail_on: block
           policy: false
+          ignore_exclude: true
         """
         try yaml.write(to: root.appendingPathComponent(".offsend.yml"), atomically: true, encoding: .utf8)
 
@@ -34,6 +35,22 @@ final class ProjectConfigTests: XCTestCase {
         XCTAssertEqual(config.check?.exclude, ["*.lock"])
         XCTAssertEqual(config.check?.detectors?.disable, ["email"])
         XCTAssertEqual(config.hooks?.failOn, "block")
+        XCTAssertEqual(config.hooks?.ignoreExclude, true)
+        XCTAssertTrue(config.hooks?.ignoresCheckExclude ?? false)
+    }
+
+    func testHooksIgnoreExcludeDefaultsToFalse() {
+        XCTAssertFalse(OffsendProjectHooksConfig().ignoresCheckExclude)
+        XCTAssertFalse(OffsendProjectHooksConfig(ignoreExclude: false).ignoresCheckExclude)
+        // ignore_exclude must be a known key for the structure validator.
+        let issues = ProjectConfigValidator.validateYAMLStructure(
+            """
+            version: 1
+            hooks:
+              ignore_exclude: false
+            """
+        )
+        XCTAssertFalse(issues.contains { $0.contains("ignore_exclude") }, issues.joined(separator: "; "))
     }
 
     func testOptionsResolverPrefersCLIOverridesOverConfig() {

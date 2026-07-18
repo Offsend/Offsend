@@ -2,7 +2,7 @@
 
 The `offsend` command runs locally on **macOS and Linux** (x86_64 / arm64). Product overview: [README](../README.md).
 
-Project rules live in [`.offsend.yml`](configuration.md) at the repository root — including the team AI-ignore patterns (`ignore.patterns`) that `offsend ignore --sync` materializes into every AI ignore file. CLI flags override config when passed explicitly.
+Project rules live in [`.offsend.yml`](configuration.md) at the repository root — including the team AI-ignore patterns (`ignore.patterns`) that `offsend sync` materializes into every AI ignore file (and installs hooks). CLI flags override config when passed explicitly.
 
 ---
 
@@ -10,7 +10,7 @@ Project rules live in [`.offsend.yml`](configuration.md) at the repository root 
 
 ```bash
 curl -fsSL https://install.offsend.io/cli | bash
-offsend setup   # or: offsend doctor
+offsend doctor
 ```
 
 ```bash
@@ -41,12 +41,12 @@ The package is `offsend-cli`; the command is `offsend`. The macOS app also ships
 
 | Command | Purpose |
 | --- | --- |
-| [`offsend setup`](#offsend-setup) | Guided onboarding: doctor → init → protect → hooks → show |
 | [`offsend init`](#offsend-init) | Create `.offsend.yml` (wizard + ignore-file sync + optional baseline check) |
+| [`offsend sync`](#offsend-sync) | Apply `.offsend.yml`: materialize AI ignore files + install hooks (post-clone) |
 | [`offsend edit`](#offsend-edit) | Open `.offsend.yml` in `$EDITOR` |
 | [`offsend protect`](#offsend-protect) | Hide exposed sensitive paths from AI (promote to `.offsend.yml` + sync) |
 | [`offsend show`](#offsend-show) | List sensitive paths visible to AI tools (no file contents); `--report` for anonymized JSON |
-| [`offsend ignore`](#offsend-ignore) | Add patterns to team policy (`.offsend.yml`) or locally; `--sync` to re-materialize |
+| [`offsend ignore`](#offsend-ignore) | Add patterns to team policy (`.offsend.yml`) or locally (auto-materializes) |
 | [`offsend check`](#offsend-check) | Scan files, staged changes, stdin, or editor hook JSON |
 | [`offsend hook`](#offsend-hook) | Install / remove / status for git and AI-editor hooks |
 | [`offsend history`](#agent-history) | Audit / scrub secrets in local Cursor & Claude transcripts |
@@ -68,27 +68,32 @@ The package is `offsend-cli`; the command is `offsend`. The macOS app also ships
 
 ---
 
-## `offsend setup`
+## `offsend sync`
 
-Guided project onboarding. In a TTY, confirms each step; with `--yes`, runs non-interactively.
+Apply an existing `.offsend.yml`: materialize `ignore.patterns` into every AI ignore file, then install the git pre-commit hook plus AI-editor hooks for detected editors. Idempotent — safe to re-run after clone or config edits. Requires `.offsend.yml` (run `offsend init` first).
 
 ```bash
-offsend setup
-offsend setup --yes --template node
-offsend setup --skip-hooks --include-recommended
+offsend sync
+offsend sync --path /path/to/repo
+offsend sync --no-hooks          # ignore files only
+offsend sync --dry-run           # preview ignore-file changes; hooks are not installed
+offsend sync --format json
 ```
 
 | Flag | Description |
 | --- | --- |
 | `--path DIR` | Project directory (default: current directory) |
-| `--template NAME` | Passed to `init` when `.offsend.yml` is missing; **required with `--yes`** |
-| `--yes` | No prompts (CI-friendly) |
-| `--skip-protect` / `--skip-hooks` | Omit those steps |
-| `--include-recommended` | Also protect recommended exposures |
-| `--ignore-commit` / `--no-ignore-commit` | Passed through to `init` |
-| `--hooks-publish` / `--no-hooks-publish` | Passed through to `init` |
+| `--no-hooks` | Only materialize AI ignore files; skip git and AI-editor hook install |
+| `--dry-run` | Show what ignore-file sync would change without writing; hooks are not installed |
+| `--format text\|json` | Output format (default: `text`) |
 
-Steps: doctor → init (if needed) → protect → `hook install` → show.
+Behavior notes:
+
+- If ignore sync reports errors, hooks are skipped and the command exits `2`.
+- A foreign (non-Offsend) git pre-commit hook is skipped with a warning; AI-editor hooks still install. AI-hook failures exit `2`.
+- When `hooks.publish` is `false` (default), installed editor hook configs are added to the local git exclude so they stay untracked.
+- Ignore materialization writes a managed block (`# >>> offsend managed` … `# <<< offsend managed`) into each AI ignore file; user lines outside the block are preserved. When `ignore.commit` is `false` (default), also updates `.gitignore` so those files stay untracked; when it is `true`, stale offsend entries are removed from `.gitignore`.
+- Prefer `sync` after clone or after editing `.offsend.yml` by hand. For ignore files only (no hooks), use `--no-hooks`. Fine-grained hook control remains on [`hook install`](#hook-install).
 
 ---
 
@@ -109,7 +114,7 @@ offsend doctor --no-follow
 
 Exits `2` when any check has status `fail`. AI hooks and seal key warnings are informational (`warn`).
 
-Checks include `ai-wrapper-prompt` / `ai-wrapper-read` / `ai-wrapper-shell` / `ai-wrapper-mcp` (managed marker + version) when those wrappers exist, `ai-shell-gate` / `ai-mcp-gate` (warn) when Cursor/Claude are installed without those gates, `mcp-inventory` (configured MCP servers + policy), and `next-actions` (ranked setup hints: init → protect → hooks). In a TTY, doctor may offer to run the first suggested command. JSON includes `suggestedActions`.
+Checks include `ai-wrapper-prompt` / `ai-wrapper-read` / `ai-wrapper-shell` / `ai-wrapper-mcp` (managed marker + version) when those wrappers exist, `ai-shell-gate` / `ai-mcp-gate` (warn) when Cursor/Claude are installed without those gates, `mcp-inventory` (configured MCP servers + policy), and `next-actions` (ranked hints: init → protect → sync / hook install). In a TTY, doctor may offer to run the first suggested command. JSON includes `suggestedActions`.
 
 ---
 
@@ -140,7 +145,7 @@ See also: [`context.mcp` / `context.history`](configuration.md#contextmcp), [`of
 
 ## `offsend protect`
 
-Hide exposed sensitive paths from AI tools in one step: create missing AI ignore files (`.cursorignore`, `.claudeignore`, `.aiexclude`, `.geminiignore`, …), then append canonical ignore lines for every **required** exposure from the same audit as `show`.
+Close gaps from the same path audit as `show`: add **required** exposures to `ignore.patterns` in `.offsend.yml`, then materialize AI ignore files (`.cursorignore`, `.claudeignore`, `.aiexclude`, …). Creates missing ignore files as needed.
 
 ```bash
 offsend protect
@@ -156,7 +161,7 @@ offsend protect ./my-project --format json
 | `--include-recommended` | Also ignore recommended exposures (SSH, AWS paths, …) |
 | `--format text\|json` | Output format |
 
-Prefer this after `offsend init`. Verify with `offsend show`. Low-level alternative: `ignore`.
+Prefer this after `offsend init`. Verify with `offsend show`, then run `offsend sync` to install hooks. Low-level alternative: `ignore`. For applying an existing config after a clone (no new patterns), use `sync` alone.
 
 Exits `2` on write errors.
 
@@ -172,27 +177,25 @@ offsend ignore secrets/ '*.pem'
 offsend ignore --local config/prod.json   # local ignore files only (not published)
 offsend ignore config/prod.json --dry-run
 offsend ignore '*.tfstate' --format json
-offsend ignore --sync                     # re-materialize after editing .offsend.yml
+
+# after editing .offsend.yml by hand (e.g. via offsend edit):
+offsend sync                              # re-materialize + hooks
+offsend sync --no-hooks                   # ignore files only
 ```
 
 | Argument / flag | Description |
 | --- | --- |
-| `<pattern...>` | Paths or gitignore-style globs to add |
+| `<pattern...>` | Paths or gitignore-style globs to add (required) |
 | `--local` | Write only to AI ignore files on this machine; do **not** update `.offsend.yml` |
-| `--sync` | No patterns: re-materialize `ignore.patterns` from `.offsend.yml` into every AI ignore file (see below) |
 | `--path DIR` | Project directory (default: current directory) |
 | `--dry-run` | Preview without writing |
-| `--format text\|json` | Output format |
+| `--format text|json` | Output format |
 
 With `--local`, the CLI prints a warning that the rule will not be shared. To publish later, re-run without `--local`.
 
+Adding patterns already materializes ignore files. After editing `.offsend.yml` by hand, or when doctor/check report managed ignore drift, run [`offsend sync`](#offsend-sync) (or `sync --no-hooks` for ignore files only). Inside a git repository, files are always materialized at the repository root, regardless of the current directory.
+
 Requires an existing `.offsend.yml` (run `offsend init` first) unless `--local` is used. Scanner exclusions remain under `check.exclude`.
-
-### `ignore --sync`
-
-`offsend ignore --sync` materializes `ignore.patterns` from `.offsend.yml` into every known AI ignore file as a managed block (`# >>> offsend managed` … `# <<< offsend managed`). User lines outside the block are preserved. When `ignore.commit` is `false` (default), also updates `.gitignore` so those files stay untracked; when it is `true`, stale offsend entries are removed from `.gitignore` so the files can be committed again.
-
-Adding patterns already syncs automatically — run `--sync` after editing `.offsend.yml` by hand (e.g. via `offsend edit`) or when doctor/check report managed ignore drift. `--sync` takes no patterns and cannot be combined with `--local`. Inside a git repository, files are always materialized at the repository root, regardless of the current directory.
 
 Exits `2` on write errors, paths outside the project, or missing project config (non-local).
 
@@ -229,7 +232,7 @@ If any file cannot be read or scanned, `check` exits `2` even with `--fail-on no
 ### Stdin (raw text)
 
 ```bash
-printf '%s' 'AWS_ACCESS_KEY_ID=AKIA…' | offsend check --stdin
+printf '%s' 'AWS_ACCESS_KEY_ID=<redacted>' | offsend check --stdin
 printf '%s' '…' | offsend check --stdin --format json --fail-on none
 printf '%s' '…' | offsend check --stdin --gate-secrets
 ```
@@ -276,7 +279,7 @@ Prompt scanning does **not** honor inline `offsend:ignore` bypasses.
 
 ## `offsend init`
 
-Create a starter [`.offsend.yml`](configuration.md) at the git repository root (or current directory if not in a repo). In a TTY, prompts for stack template(s), whether to keep AI ignore files out of git (`ignore.commit`), and whether AI editor hooks may be committed (`hooks.publish`). Then **materializes AI ignore files** (same as `offsend ignore --sync`) and runs a **baseline `check .`** (advise-only; does not fail `init`).
+Create a starter [`.offsend.yml`](configuration.md) at the git repository root (or current directory if not in a repo). In a TTY, prompts for stack template(s), whether to keep AI ignore files out of git (`ignore.commit`), and whether AI editor hooks may be committed (`hooks.publish`). Then **materializes AI ignore files** (ignore-file half of `offsend sync`; does not install hooks) and runs a **baseline `check .`** (advise-only; does not fail `init`).
 
 ```bash
 offsend init                      # TTY: prompts; then ignore-file sync + baseline check
@@ -300,7 +303,7 @@ offsend init --template node --no-check --no-sync
 | `--no-check` | Skip the baseline content scan |
 | `--no-sync` | Skip materializing AI ignore files after writing the config |
 
-Next steps printed: prefer `offsend setup`, or `offsend protect && offsend show && offsend hook install`.
+Next steps printed: prefer `offsend protect` then `offsend sync`, or `offsend show` to verify the AI boundary.
 
 ---
 
@@ -562,7 +565,7 @@ Scrub limits: files larger than 2 MB are scanned (bounded prefix) but skipped by
 ```bash
 offsend doctor
 offsend hook status --target all
-printf '%s' '{"prompt":"AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF"}' \
+printf '%s' '{"prompt":"AWS_ACCESS_KEY_ID=<example-access-key-id>"}' \
   | offsend check --adapter cursor --hook-policy advise --no-notify --debug-hook
 ```
 
@@ -672,21 +675,23 @@ Use only one target: stdout, `--default`, `--name`, or `--output`.
 ### Repository hygiene (ignore-first)
 
 ```bash
-offsend setup --template node         # guided: doctor → init → protect → hooks → show
-# or step by step:
+# new project
 offsend doctor
-offsend init --template node          # .offsend.yml + baseline check
-offsend protect                       # hide required paths from AI
+offsend init --template node          # .offsend.yml + first ignore sync + baseline check
+offsend protect                       # promote exposed paths to .offsend.yml
+offsend sync                          # re-materialize ignore files + install hooks
 offsend show                          # verify AI boundary OK
-offsend hook install --yes            # prompt/read/shell/MCP/subagent + git pre-commit
+
+# cloned a repo that already has .offsend.yml
+offsend sync                          # materialize AI ignore files + install hooks
 ```
 
 ### AI-editor protection
 
 ```bash
 offsend protect                       # or: ignore …
+offsend sync                          # ignore files + hooks
 offsend show
-offsend hook install
 offsend hook status --target all
 offsend history audit                 # secrets already in local transcripts
 offsend doctor

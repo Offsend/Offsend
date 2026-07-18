@@ -4,7 +4,7 @@ public enum AIWorkspacePrivacyIgnoreTemplate {
     public static let header = "# Offsend AI privacy defaults"
 
     /// Default AI-ignore patterns. Seeded into `.offsend.yml` `ignore.patterns` by
-    /// `offsend init`, then materialized into editor ignore files by `offsend ignore --sync`.
+    /// `offsend init`, then materialized into editor ignore files by `offsend sync`.
     public static let defaultPatterns: [String] = [
         ".env*",
         "*.pem",

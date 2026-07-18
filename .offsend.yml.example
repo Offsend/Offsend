@@ -82,9 +82,10 @@ hooks:
   fail_on: block
   policy: false
   publish: false         # false = AI editor hooks stay local (not for commit)
+  # ignore_exclude: true # true = read-gate checks every path, ignoring check.exclude (default: false)
 
 # Optional AI-context controls used by `show`, `doctor`, and the editor gates
-# (`offsend hook install`). See docs/configuration.md#contextmcp.
+# (`offsend sync` / `offsend hook install`). See docs/configuration.md#contextmcp.
 # context:
 #   mcp:
 #     mode: ask               # observe | ask | deny (deny also fails closed on bad hook input)

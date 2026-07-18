@@ -53,6 +53,7 @@ final class OffsendIgnoreSyncServiceTests: XCTestCase {
         XCTAssertNotNil(report.gitignorePath)
         let gitignore = try String(contentsOf: URL(fileURLWithPath: report.gitignorePath!), encoding: .utf8)
         XCTAssertTrue(gitignore.contains(".cursorignore"))
+        XCTAssertTrue(gitignore.contains(".cursorindexingignore"))
         // Managed rule files are generated artifacts: exact paths only, no directories.
         XCTAssertTrue(gitignore.contains(".cursor/rules/offsend_privacy.mdc"))
         XCTAssertTrue(gitignore.contains(".claude/rules/offsend_privacy.md"))

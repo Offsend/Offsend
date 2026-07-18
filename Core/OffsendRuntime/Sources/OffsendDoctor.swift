@@ -512,6 +512,13 @@ public struct OffsendDoctor: Sendable {
 
         if configLoader.configURL(for: cwd) == nil {
             actions.append("offsend init --template <stack>   # create .offsend.yml")
+        } else if Self.needsIgnoreMaterialization(
+            configLoader: configLoader,
+            directory: cwd,
+            fileManager: fileManager,
+            gitResolver: GitRepositoryResolver(fileManager: fileManager, gitExecutable: gitExecutable)
+        ) {
+            actions.append("offsend sync   # materialize ignore files + hooks")
         }
 
         let showReport = context.map { OffsendShowService(context: $0).run(directoryURL: cwd) }
@@ -592,6 +599,22 @@ public struct OffsendDoctor: Sendable {
             ),
             actions
         )
+    }
+
+    /// Fresh-clone detection: `.offsend.yml` exists but some managed AI ignore
+    /// files (narrowed to `ignore.tools`) are not materialized locally —
+    /// `offsend sync` fixes this.
+    static func needsIgnoreMaterialization(
+        configLoader: ProjectConfigLoader,
+        directory: URL,
+        fileManager: FileManager = .default,
+        gitResolver: GitRepositoryResolver = GitRepositoryResolver()
+    ) -> Bool {
+        guard let config = (try? configLoader.load(from: directory)) ?? nil else { return false }
+        let root = (try? gitResolver.repositoryRoot(startingAt: directory)) ?? directory
+        let targets = OffsendIgnoreSyncService.managedIgnoreRelativePaths(tools: config.ignore?.toolIDs)
+        guard !targets.isEmpty else { return false }
+        return targets.contains { !fileManager.fileExists(atPath: root.appendingPathComponent($0).path) }
     }
 
     private func projectConfigCheck(loader: ProjectConfigLoader, directory: URL) -> DoctorCheck {
@@ -694,7 +717,7 @@ public struct OffsendDoctor: Sendable {
                     DoctorCheck(
                         name: "ignore-sync",
                         status: .warn,
-                        message: "Managed ignore drift: \(summary). Run: offsend ignore --sync"
+                        message: "Managed ignore drift: \(summary). Run: offsend sync"
                     )
                 )
             }
@@ -714,7 +737,7 @@ public struct OffsendDoctor: Sendable {
                     DoctorCheck(
                         name: "ignore-commit-conflict",
                         status: .warn,
-                        message: "ignore.commit is true but .gitignore still hides AI ignore files. Run: offsend ignore --sync"
+                        message: "ignore.commit is true but .gitignore still hides AI ignore files. Run: offsend sync"
                     )
                 )
             } else if excludeService.hasSection(ignoreFilesSection, repositoryURL: directory) {
@@ -722,7 +745,7 @@ public struct OffsendDoctor: Sendable {
                     DoctorCheck(
                         name: "ignore-commit-conflict",
                         status: .warn,
-                        message: "ignore.commit is true but .git/info/exclude still hides AI ignore files. Run: offsend ignore --sync"
+                        message: "ignore.commit is true but .git/info/exclude still hides AI ignore files. Run: offsend sync"
                     )
                 )
             }
@@ -732,7 +755,7 @@ public struct OffsendDoctor: Sendable {
                     DoctorCheck(
                         name: "ignore-commit-conflict",
                         status: .warn,
-                        message: "ignore.commit is false but .gitignore does not list AI ignore files. Run: offsend ignore --sync"
+                        message: "ignore.commit is false but .gitignore does not list AI ignore files. Run: offsend sync"
                     )
                 )
             }
@@ -855,10 +878,13 @@ public struct DoctorReporter: Sendable {
         var sections: [[String]] = [[ui.section("Doctor")]]
         var checks: [String] = []
         var nextActions: [String] = []
+        let hasProjectConfig = !report.checks.contains {
+            $0.name == "project-config" && $0.message.contains("No \(ProjectConfigLoader.filename)")
+        }
 
         for check in report.checks {
             if check.name == "next-actions" {
-                nextActions = renderNextActions(check, ui: ui)
+                nextActions = renderNextActions(check, ui: ui, hasProjectConfig: hasProjectConfig)
                 continue
             }
             let line: String
@@ -882,7 +908,7 @@ public struct DoctorReporter: Sendable {
         return CLIText.joinSections(sections)
     }
 
-    private func renderNextActions(_ check: DoctorCheck, ui: CLIText) -> [String] {
+    private func renderNextActions(_ check: DoctorCheck, ui: CLIText, hasProjectConfig: Bool) -> [String] {
         var lines = [ui.section("Next actions")]
         if check.status == .ok {
             lines.append(ui.ok(check.message))
@@ -896,7 +922,11 @@ public struct DoctorReporter: Sendable {
                 lines.append("  \(text)")
             }
         }
-        lines.append(ui.hint("Tip: offsend setup   # guided init → protect → hooks"))
+        if hasProjectConfig {
+            lines.append(ui.hint("Tip: offsend sync   # materialize ignore files + hooks"))
+        } else {
+            lines.append(ui.hint("Tip: offsend init   # create .offsend.yml, then offsend sync"))
+        }
         return lines
     }
 

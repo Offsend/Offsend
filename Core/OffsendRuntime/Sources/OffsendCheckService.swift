@@ -91,7 +91,7 @@ public struct OffsendCheckService: Sendable {
                 .filtered(tools: projectConfig?.ignore?.toolIDs)
             // With `.offsend.yml` present and `ignore.commit: false` (the default),
             // AI ignore files are gitignored and materialized locally by
-            // `offsend ignore --sync`, so their absence (fresh clone, CI checkout)
+            // `offsend sync`, so their absence (fresh clone, CI checkout)
             // is expected — not a policy failure.
             let managedFilesExpectedMissing = projectConfig != nil
                 && !(projectConfig?.ignore?.commitsIgnoreFiles ?? false)
@@ -110,7 +110,7 @@ public struct OffsendCheckService: Sendable {
                 for item in drift {
                     policyFindings.append(
                         PolicyCheckFinding(
-                            message: "Managed ignore drift in \(item.relativePath): missing \(item.missingPatterns.joined(separator: ", ")). Run: offsend ignore --sync",
+                            message: "Managed ignore drift in \(item.relativePath): missing \(item.missingPatterns.joined(separator: ", ")). Run: offsend sync",
                             status: .warning
                         )
                     )

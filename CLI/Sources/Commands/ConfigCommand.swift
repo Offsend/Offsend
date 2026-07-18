@@ -354,9 +354,9 @@ struct Init: AsyncParsableCommand {
         let ui = CLIText(useColor: CLIColor.enabled(for: .text))
         print(ui.hint("Commit \(ProjectConfigLoader.filename) so hooks and CI share the same rules."))
         if ranSync {
-            print(ui.next("offsend setup   # or: offsend protect && offsend show && offsend hook install"))
+            print(ui.next("offsend protect && offsend sync   # close exposures, then install hooks"))
         } else {
-            print(ui.next("offsend ignore --sync && offsend protect && offsend show && offsend hook install"))
+            print(ui.next("offsend protect && offsend sync   # protect exposures, materialize ignore files + hooks"))
         }
     }
 
@@ -423,3 +423,4 @@ struct Edit: ParsableCommand {
         }
     }
 }
+

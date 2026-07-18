@@ -48,7 +48,9 @@ struct CheckHookEmitter {
         policy: CheckHookPolicy,
         context: OffsendRuntimeContext,
         disabledDetectors: Set<SensitiveEntityType> = [],
-        customDictionaries: [CustomDictionaryItem] = []
+        customDictionaries: [CustomDictionaryItem] = [],
+        excludePatterns: [String] = [],
+        projectRoot: URL? = nil
     ) async {
         let input: PromptReadGateInput
         do {
@@ -60,6 +62,28 @@ struct CheckHookEmitter {
                 started: started,
                 policy: policy,
                 kind: .readGate
+            )
+            return
+        }
+
+        // check.exclude opts project paths out of the gate (fixtures, docs with
+        // example keys, …) unless hooks.ignore_exclude re-enables full checks.
+        if let projectRoot,
+           PromptReadGate.isExcluded(
+               path: input.path,
+               excludePatterns: excludePatterns,
+               projectRoot: projectRoot
+           ) {
+            let allowed = PromptReadGateDecision(path: input.path, allowed: true, reason: "")
+            let rendered = PromptReadGateRenderer.render(decision: allowed, adapter: adapter)
+            writeHookOutput(rendered)
+            logDebug(
+                adapter: adapter,
+                policy: policy,
+                advice: nil,
+                exitCode: rendered.exitCode,
+                started: started,
+                error: "read_gate_excluded_path"
             )
             return
         }

@@ -10,7 +10,7 @@ public struct OffsendProjectIgnoreSettings: Equatable, Sendable {
     public static let configFilename = ".offsend.yml"
 
     /// `ignore.commit` — false/absent means AI ignore files are kept out of git
-    /// and materialized locally by `offsend ignore --sync`.
+    /// and materialized locally by `offsend sync`.
     public let commitIgnoreFiles: Bool
     /// `ignore.tools` narrowing. `nil` means all supported tools.
     public let toolIDs: Set<AIWorkspaceToolID>?
@@ -120,7 +120,7 @@ public struct OffsendProjectIgnoreSettings: Equatable, Sendable {
 }
 
 public extension AIWorkspacePrivacyRule {
-    /// True when `offsend ignore --sync` materializes this rule's file locally
+    /// True when `offsend sync` materializes this rule's file locally
     /// (managed ignore files and `keepManagedContent` rule files). With
     /// `ignore.commit: false` these are gitignored, so their absence from a
     /// fresh clone or CI checkout is expected — not a missing protection.

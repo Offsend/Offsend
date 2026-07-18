@@ -139,10 +139,10 @@ final class OffsendProjectIgnoreSettingsTests: XCTestCase {
         // Ignore files with sensitive-pattern coverage are materialized.
         XCTAssertTrue(byID["cursor-ignore"]?.isMaterializedByIgnoreSync ?? false)
         XCTAssertTrue(byID["claude-ignore"]?.isMaterializedByIgnoreSync ?? false)
+        XCTAssertTrue(byID["cursor-indexing-ignore"]?.isMaterializedByIgnoreSync ?? false)
         // Managed editor rule files (keepManagedContent) are materialized.
         XCTAssertTrue(byID["cursor-project-rules"]?.isMaterializedByIgnoreSync ?? false)
         // Context files without a sync fix are not.
-        XCTAssertFalse(byID["cursor-indexing-ignore"]?.isMaterializedByIgnoreSync ?? true)
         XCTAssertFalse(byID["agents-md"]?.isMaterializedByIgnoreSync ?? true)
         XCTAssertFalse(byID["git-ignore"]?.isMaterializedByIgnoreSync ?? true)
     }

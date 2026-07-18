@@ -18,7 +18,7 @@ public struct ScanReportService {
         let standardizedURL = directoryURL.standardizedFileURL
         // Repositories managed via `.offsend.yml` gitignore their AI ignore files
         // (`ignore.commit: false`) and materialize them locally with
-        // `offsend ignore --sync`, so their absence from a clone is expected.
+        // `offsend sync`, so their absence from a clone is expected.
         let ignoreSettings = OffsendProjectIgnoreSettings.read(directoryURL: standardizedURL)
         let configuration = self.configuration.filtered(tools: ignoreSettings?.toolIDs)
         let managedFilesExpectedMissing = ignoreSettings.map { !$0.commitIgnoreFiles } ?? false

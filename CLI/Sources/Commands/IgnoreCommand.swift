@@ -13,9 +13,8 @@ struct Ignore: ParsableCommand {
         Use --local to append patterns only to AI ignore files on this machine. \
         Local rules are not written to .offsend.yml and will not be shared.
 
-        Use --sync (without patterns) to re-materialize ignore.patterns from \
-        .offsend.yml into every AI ignore file, e.g. after editing the config \
-        by hand.
+        To re-materialize ignore.patterns after editing .offsend.yml by hand, \
+        run `offsend sync` (or `offsend sync --no-hooks` for ignore files only).
 
         Scanner exclusions remain under check.exclude in .offsend.yml.
         """
@@ -30,12 +29,6 @@ struct Ignore: ParsableCommand {
     )
     var local = false
 
-    @Flag(
-        name: .long,
-        help: "Materialize ignore.patterns from .offsend.yml into AI ignore files (no patterns allowed)."
-    )
-    var sync = false
-
     @Option(name: .long, help: "Project directory. Defaults to the current directory.")
     var path: String?
 
@@ -46,17 +39,8 @@ struct Ignore: ParsableCommand {
     var format: String = CheckOutputFormat.text.rawValue
 
     func validate() throws {
-        if sync {
-            guard patterns.isEmpty else {
-                throw ValidationError("--sync does not take patterns. Run 'offsend ignore --sync' alone, or pass patterns without --sync.")
-            }
-            guard !local else {
-                throw ValidationError("--sync cannot be combined with --local.")
-            }
-        } else {
-            guard !patterns.isEmpty else {
-                throw ValidationError("Provide at least one path or pattern to ignore, or use --sync to re-materialize .offsend.yml.")
-            }
+        guard !patterns.isEmpty else {
+            throw ValidationError("Provide at least one path or pattern to ignore. To re-materialize .offsend.yml, run `offsend sync`.")
         }
     }
 
@@ -73,22 +57,6 @@ struct Ignore: ParsableCommand {
         let directoryURL = URL(
             fileURLWithPath: path ?? FileManager.default.currentDirectoryPath
         ).standardizedFileURL
-
-        if sync {
-            let report = OffsendIgnoreSyncService(context: context).run(
-                directoryURL: directoryURL,
-                dryRun: dryRun
-            )
-            let useColor = CLIColor.enabled(for: outputFormat)
-            let output = IgnoreSyncReporter().render(report, format: outputFormat, useColor: useColor)
-            if !output.isEmpty {
-                print(output)
-            }
-            if report.hasErrors {
-                throw ExitCode(OffsendExitCode.error.rawValue)
-            }
-            return
-        }
 
         if local {
             let report = OffsendIgnoreService(context: context).run(

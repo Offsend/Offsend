@@ -46,7 +46,7 @@ macOS may ask for Accessibility (to paste into the front app) and folder access 
   <img src="../assets/safe_paste.gif" alt="Safe Paste: scan clipboard, mask secrets, paste" width="100%">
 </p>
 
-**Git hooks** — **Settings → Hooks** to install and manage pre-commit checks. From the terminal: [`offsend hook install`](cli.md#hook-install) (git) or [`--target cursor|claude|…`](cli.md#ai-editor-hooks) for AI-editor hooks.
+**Git hooks** — **Settings → Hooks** to install and manage pre-commit checks. From the terminal: [`offsend sync`](cli.md#offsend-sync) (ignore files + hooks) or [`offsend hook install`](cli.md#hook-install) for git / a specific editor.
 
 **Detection & local AI** — toggle built-in detectors and custom dictionaries in **Settings → Detection** (also via [`.offsend.yml`](configuration.md)). Optional NER/PII models in **Settings → AI** stay on your Mac.
 
@@ -60,7 +60,7 @@ macOS may ask for Accessibility (to paste into the front app) and folder access 
 | Documents | Plain text (+ PDF/RTF/Word on macOS CLI) | Plain text, PDF, RTF, Word |
 | Project checks | `show`, `protect`, `check --policy` | UI checks, watched folders |
 | Git hooks | `offsend hook …` | Settings → Hooks |
-| AI prompt hooks | `hook install --target …` ([docs](cli.md#ai-editor-hooks)) | — |
+| AI prompt hooks | `sync` or `hook install --target …` ([docs](cli.md#ai-editor-hooks)) | — |
 | AI models | Not used by the CLI | Download / import / manage |
 | Automation | Scriptable text / JSON | Background watcher + notifications |
 
