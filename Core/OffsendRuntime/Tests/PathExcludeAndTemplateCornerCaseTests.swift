@@ -219,6 +219,7 @@ final class ProjectConfigTemplateCornerCaseTests: XCTestCase {
                 "bundle.min.js",
                 "app.js.map",
                 ".eslintcache",
+                ".offsend/hooks/check-prompt.sh",
             ],
             .node: [
                 "packages/ui/node_modules/x/index.js",
@@ -247,6 +248,7 @@ final class ProjectConfigTemplateCornerCaseTests: XCTestCase {
                 ".build/debug/App",
                 "Pods/Alamofire/x.swift",
                 "Package.resolved",
+                "App/Resources/Info.plist",
                 "App.ipa",
                 "App.app.dSYM/Contents/Resources/DWARF/App",
             ],

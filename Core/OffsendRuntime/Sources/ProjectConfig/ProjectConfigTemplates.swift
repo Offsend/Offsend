@@ -17,7 +17,7 @@ public enum ProjectConfigTemplateID: String, CaseIterable, Sendable {
     public var summary: String {
         switch self {
         case .common:
-            "Lockfiles, OS junk, dist/build/coverage, minified/maps, linter caches"
+            "Lockfiles, OS junk, dist/build/coverage, minified/maps, linter caches, .offsend/hooks"
         case .node:
             "node_modules, lockfiles, bundler/Storybook caches, Next/Nuxt/Turbo/Vercel"
         case .python:
@@ -33,7 +33,7 @@ public enum ProjectConfigTemplateID: String, CaseIterable, Sendable {
         case .android:
             "NDK/CXX build dirs, APK/AAB/DEX/class/jar artifacts"
         case .swift:
-            "DerivedData, SPM .build/Package.resolved, Pods, Carthage, archives"
+            "DerivedData, SPM .build/Package.resolved, Info.plist, Pods, Carthage, archives"
         case .tuist:
             "Derived/, Tuist build and dependencies"
         }
@@ -55,6 +55,7 @@ public enum ProjectConfigTemplateID: String, CaseIterable, Sendable {
                 "*.min.css",
                 ".eslintcache",
                 ".stylelintcache",
+                ".offsend/hooks/**",
             ]
         case .node:
             [
@@ -140,6 +141,7 @@ public enum ProjectConfigTemplateID: String, CaseIterable, Sendable {
                 "*.xcuserstate",
                 "*.xcarchive/**",
                 "Package.resolved",
+                "**/Info.plist",
                 "*.ipa",
                 "**/*.dSYM/**",
             ]

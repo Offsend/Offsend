@@ -17,5 +17,6 @@
 
 ### Changed (CLI)
 
+- `check.exclude` defaults: `common` now includes `.offsend/hooks/**`; `swift` also includes `**/Info.plist` (alongside existing `Package.resolved`).
 - `offsend check --help` no longer lists AI-editor hook plumbing flags (`--adapter`, `--hook-policy`, gates, seal-key options). The flags still work and installed hooks are unaffected.
 - Top-level help reordered around the main journey: setup → init → edit → protect → show → ignore → check → hook → history → seal → unseal → keygen → doctor.

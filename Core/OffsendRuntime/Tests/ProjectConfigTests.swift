@@ -219,12 +219,15 @@ final class ProjectConfigTests: XCTestCase {
         XCTAssertTrue(patterns.contains("package-lock.json"))
         XCTAssertTrue(patterns.contains("pnpm-lock.yaml"))
         XCTAssertTrue(patterns.contains("bun.lock"))
+        XCTAssertTrue(patterns.contains(".offsend/hooks/**"))
         XCTAssertEqual(patterns.first, "*.lock")
     }
 
     func testTemplatesExcludePatternsUnionDedupe() {
         let patterns = ProjectConfigTemplates.excludePatterns(for: [.swift, .tuist, .java, .android])
         XCTAssertTrue(patterns.contains("**/DerivedData/**"))
+        XCTAssertTrue(patterns.contains("Package.resolved"))
+        XCTAssertTrue(patterns.contains("**/Info.plist"))
         XCTAssertTrue(patterns.contains("**/Tuist/.build/**"))
         XCTAssertEqual(patterns.filter { $0 == "**/.gradle/**" }.count, 1)
         XCTAssertEqual(patterns.filter { $0 == "**/build/**" }.count, 1)

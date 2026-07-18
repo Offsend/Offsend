@@ -21,6 +21,7 @@ check:
     - "*.min.css"
     - ".eslintcache"
     - ".stylelintcache"
+    - ".offsend/hooks/**"
     # Optional — uncomment only if these dirs never hold secrets:
     # - "**/.cache/**"
     # - "**/tmp/**"

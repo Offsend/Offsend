@@ -152,7 +152,7 @@ Use `offsend init --template …` to seed a useful exclude list for your stack. 
 
 | Template | Typical excludes |
 | --- | --- |
-| `common` (always) | `*.lock`, `.DS_Store`, `Thumbs.db`, `Desktop.ini`, `**/dist/**`, `**/build/**`, `**/coverage/**`, `*.map`, `*.min.js`, `*.min.css`, linter caches (optional commented: `**/.cache/**`, `**/tmp/**`, `**/temp/**`) |
+| `common` (always) | `*.lock`, `.DS_Store`, `Thumbs.db`, `Desktop.ini`, `**/dist/**`, `**/build/**`, `**/coverage/**`, `*.map`, `*.min.js`, `*.min.css`, linter caches, `.offsend/hooks/**` (optional commented: `**/.cache/**`, `**/tmp/**`, `**/temp/**`) |
 | `node` (aliases: `js`, `ts`) | `**/node_modules/**`, lockfiles (`package-lock.json`, `pnpm-lock.yaml`, …), bundler/Storybook caches, `**/.next/**`, `**/.turbo/**`, … |
 | `python` | `**/.venv/**`, `**/__pycache__/**`, `**/*.egg-info/**`, `**/.ipynb_checkpoints/**`, `*.pyc`, … |
 | `go` | `**/vendor/**`, `go.sum` |
@@ -160,7 +160,7 @@ Use `offsend init --template …` to seed a useful exclude list for your stack. 
 | `ruby` | `**/vendor/bundle/**`, `**/.bundle/**` |
 | `java` | `**/.gradle/**`, `**/out/**`, `**/.idea/**`, `**/target/**`, `*.class`, `*.jar` |
 | `android` | `**/.cxx/**`, `**/.externalNativeBuild/**`, `*.apk`, `*.aab`, `*.dex`, `*.class`, `*.jar` |
-| `swift` (alias: `ios`) | `**/DerivedData/**`, `**/.build/**`, `Package.resolved`, `**/Pods/**`, `*.ipa`, `**/*.dSYM/**`, … |
+| `swift` (alias: `ios`) | `**/DerivedData/**`, `**/.build/**`, `Package.resolved`, `**/Info.plist`, `**/Pods/**`, `*.ipa`, `**/*.dSYM/**`, … |
 | `tuist` | `**/Derived/**`, `**/Tuist/.build/**`, `**/Tuist/Dependencies/**`, `**/.tuist-bin/**` |
 
 Do not exclude secret-bearing files (for example `.env`, `*.pem`) — those should stay in the scan.
