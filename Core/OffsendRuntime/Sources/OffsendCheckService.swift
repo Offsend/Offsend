@@ -86,17 +86,26 @@ public struct OffsendCheckService: Sendable {
 
         var policyFindings: [PolicyCheckFinding] = []
         if let policyDirectoryURL = request.policyDirectoryURL {
+            let projectConfig = try? ProjectConfigLoader().load(from: policyDirectoryURL)
+            let configuration = OffsendConfiguration.directoryCheckConfiguration(context: context)
+                .filtered(tools: projectConfig?.ignore?.toolIDs)
+            // With `.offsend.yml` present and `ignore.commit: false` (the default),
+            // AI ignore files are gitignored and materialized locally by
+            // `offsend ignore --sync`, so their absence (fresh clone, CI checkout)
+            // is expected — not a policy failure.
+            let managedFilesExpectedMissing = projectConfig != nil
+                && !(projectConfig?.ignore?.commitsIgnoreFiles ?? false)
             policyFindings = makePolicyFindings(
                 directoryURL: policyDirectoryURL,
-                configuration: OffsendConfiguration.directoryCheckConfiguration(context: context)
+                configuration: configuration,
+                skipMissingManagedFiles: managedFilesExpectedMissing
             )
-            if let config = try? ProjectConfigLoader().load(from: policyDirectoryURL),
-               let patterns = config.ignore?.patterns,
+            if let patterns = projectConfig?.ignore?.patterns,
                !patterns.isEmpty {
                 let drift = OffsendManagedIgnoreDrift.findings(
                     directoryURL: policyDirectoryURL,
                     patterns: patterns,
-                    configuration: OffsendConfiguration.directoryCheckConfiguration(context: context)
+                    configuration: configuration
                 )
                 for item in drift {
                     policyFindings.append(
@@ -267,7 +276,8 @@ public struct OffsendCheckService: Sendable {
 
     private func makePolicyFindings(
         directoryURL: URL,
-        configuration: AIWorkspacePrivacyAuditConfiguration
+        configuration: AIWorkspacePrivacyAuditConfiguration,
+        skipMissingManagedFiles: Bool = false
     ) -> [PolicyCheckFinding] {
         let result = auditor.audit(directoryURL: directoryURL, configuration: configuration)
         var findings: [PolicyCheckFinding] = []
@@ -277,6 +287,9 @@ public struct OffsendCheckService: Sendable {
         }
 
         for finding in result.ruleFindings where !finding.isSatisfied {
+            if skipMissingManagedFiles, finding.rule.isMaterializedByIgnoreSync {
+                continue
+            }
             let severity: AIWorkspacePrivacyAuditStatus = finding.rule.severity == .required ? .fail : .warning
             findings.append(
                 PolicyCheckFinding(
@@ -298,12 +311,19 @@ public struct OffsendCheckService: Sendable {
         }
 
         if findings.isEmpty, result.status != .pass {
-            findings.append(
-                PolicyCheckFinding(
-                    message: "Workspace policy status: \(result.status.rawValue)",
-                    status: result.status
+            // Suppress the fallback when the non-pass status comes only from
+            // managed ignore files intentionally skipped above.
+            let onlySkippedManagedFiles = skipMissingManagedFiles
+                && result.ruleFindings.allSatisfy { $0.isSatisfied || $0.rule.isMaterializedByIgnoreSync }
+                && result.sensitivePatternFindings.allSatisfy(\.isSatisfied)
+            if !onlySkippedManagedFiles {
+                findings.append(
+                    PolicyCheckFinding(
+                        message: "Workspace policy status: \(result.status.rawValue)",
+                        status: result.status
+                    )
                 )
-            )
+            }
         }
 
         return findings

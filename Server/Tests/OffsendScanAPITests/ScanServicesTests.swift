@@ -37,6 +37,33 @@ final class RepositoryScannerTests: XCTestCase {
         XCTAssertNotNil(object["ignoreFilesPresent"])
     }
 
+    func testScanTreatsOffsendManagedIgnoreFilesAsPresent() throws {
+        // `.offsend.yml` with `ignore.commit: false` keeps AI ignore files out of
+        // git, so their absence from a clone is expected — not a missing protection.
+        try """
+        version: 1
+
+        ignore:
+          commit: false
+          patterns:
+            - ".env*"
+        """.write(
+            to: fixtureDirectory.appendingPathComponent(".offsend.yml"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let scanner = RepositoryScanner()
+        let report = scanner.scan(directoryURL: fixtureDirectory)
+        let presenceByRule = Dictionary(
+            uniqueKeysWithValues: report.ignoreFiles.map { ($0.ruleID, $0.present) }
+        )
+        XCTAssertEqual(presenceByRule["cursor-ignore"], true)
+        XCTAssertEqual(presenceByRule["claude-ignore"], true)
+        // Context files not materialized by `offsend ignore --sync` keep real presence.
+        XCTAssertEqual(presenceByRule["agents-md"], false)
+    }
+
     func testScanEmptyDirectoryCompletesWithoutExposure() throws {
         let emptyDir = TestSupport.temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: emptyDir) }

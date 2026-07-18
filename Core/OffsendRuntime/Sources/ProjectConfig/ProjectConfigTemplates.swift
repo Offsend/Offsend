@@ -141,7 +141,6 @@ public enum ProjectConfigTemplateID: String, CaseIterable, Sendable {
                 "*.xcuserstate",
                 "*.xcarchive/**",
                 "Package.resolved",
-                "**/Info.plist",
                 "*.ipa",
                 "**/*.dSYM/**",
             ]
