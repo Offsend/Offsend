@@ -347,6 +347,19 @@ jobs:
             "build/linux-cli/offsend-cli-${VERSION}-linux-x86_64.tar.gz" \
             "build/linux-cli/offsend-cli-${VERSION}-linux-aarch64.tar.gz"
 
+      - name: Update ai-hygiene GitHub Action
+        env:
+          AI_HYGIENE_TOKEN: ${{ secrets.AI_HYGIENE_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ steps.app_version.outputs.version }}
+        run: |
+          set -euo pipefail
+          bash Scripts/update_ai_hygiene_action.sh \
+            "$VERSION" \
+            "build/offsend-cli-${VERSION}.zip" \
+            "build/linux-cli/offsend-cli-${VERSION}-linux-x86_64.tar.gz" \
+            "build/linux-cli/offsend-cli-${VERSION}-linux-aarch64.tar.gz"
+
       - name: Rebuild website
         env:
           DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
