@@ -28,7 +28,6 @@ check:
     - "*.xcarchive/**"
     - "Package.resolved"
     - ".package.resolved"
-    - "**/Info.plist"
     - "*.ipa"
     - "**/*.dSYM/**"
     - "**/Derived/**"

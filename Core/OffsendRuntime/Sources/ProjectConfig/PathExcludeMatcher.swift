@@ -68,6 +68,13 @@ public enum PathExcludeMatcher {
             return matchesDirectoryTree(body: body, relativePath: relativePath)
         }
 
+        // `**/Info.plist` / `**/*.pem` — file at any depth (fnmatch alone
+        // does not treat `**` as recursive under FNM_PATHNAME).
+        if pattern.hasPrefix("**/") {
+            let rest = String(pattern.dropFirst(3))
+            return matchesAnyDepth(rest: rest, relativePath: relativePath)
+        }
+
         if pattern.contains("/") {
             return fnmatch(pattern, relativePath, FNM_PATHNAME) == 0
         }
@@ -79,6 +86,22 @@ public enum PathExcludeMatcher {
         }
 
         return fnmatch(pattern, relativePath, 0) == 0
+    }
+
+    /// Patterns like `**/Info.plist` or `**/foo/bar.txt`.
+    private static func matchesAnyDepth(rest: String, relativePath: String) -> Bool {
+        if rest.contains("/") {
+            return relativePath == rest
+                || relativePath.hasSuffix("/" + rest)
+        }
+
+        let fileName: String
+        if let slash = relativePath.lastIndex(of: "/") {
+            fileName = String(relativePath[relativePath.index(after: slash)...])
+        } else {
+            fileName = relativePath
+        }
+        return fnmatch(rest, fileName, 0) == 0
     }
 
     /// Patterns like `vendor/**`, `**/build/**`, `*.egg-info/**`, `**/node_modules/**`.

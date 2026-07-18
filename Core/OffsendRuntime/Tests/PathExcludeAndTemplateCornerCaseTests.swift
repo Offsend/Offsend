@@ -168,6 +168,24 @@ final class PathExcludeMatcherCornerCaseTests: XCTestCase {
             patterns: ["config/*.env"]
         ))
     }
+
+    func testDoubleStarFilePatternMatchesAtAnyDepth() {
+        let patterns = ["**/Info.plist"]
+        XCTAssertTrue(PathExcludeMatcher.isExcluded(relativePath: "Info.plist", patterns: patterns))
+        XCTAssertTrue(PathExcludeMatcher.isExcluded(relativePath: "App/Resources/Info.plist", patterns: patterns))
+        XCTAssertTrue(PathExcludeMatcher.isExcluded(relativePath: "ios/Foo/Info.plist", patterns: patterns))
+        XCTAssertFalse(PathExcludeMatcher.isExcluded(relativePath: "App/Resources/Info.plist.bak", patterns: patterns))
+        XCTAssertFalse(PathExcludeMatcher.isExcluded(relativePath: "App/Resources/GoogleService-Info.plist", patterns: patterns))
+
+        XCTAssertTrue(PathExcludeMatcher.isExcluded(
+            relativePath: "certs/prod.pem",
+            patterns: ["**/*.pem"]
+        ))
+        XCTAssertTrue(PathExcludeMatcher.isExcluded(
+            relativePath: "nested/foo/bar.txt",
+            patterns: ["**/foo/bar.txt"]
+        ))
+    }
 }
 
 final class ProjectConfigTemplateCornerCaseTests: XCTestCase {
