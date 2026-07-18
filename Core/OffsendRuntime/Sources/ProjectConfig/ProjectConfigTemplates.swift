@@ -33,7 +33,7 @@ public enum ProjectConfigTemplateID: String, CaseIterable, Sendable {
         case .android:
             "NDK/CXX build dirs, APK/AAB/DEX/class/jar artifacts"
         case .swift:
-            "DerivedData, SPM .build/Package.resolved, Info.plist, Pods, Carthage, archives"
+            "DerivedData, SPM .build/Package.resolved, Pods, Carthage, archives"
         case .tuist:
             "Derived/, Tuist build/dependencies, .package.resolved"
         }

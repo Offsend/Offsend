@@ -227,7 +227,7 @@ final class ProjectConfigTests: XCTestCase {
         let patterns = ProjectConfigTemplates.excludePatterns(for: [.swift, .tuist, .java, .android])
         XCTAssertTrue(patterns.contains("**/DerivedData/**"))
         XCTAssertTrue(patterns.contains("Package.resolved"))
-        XCTAssertTrue(patterns.contains("**/Info.plist"))
+        XCTAssertFalse(patterns.contains("**/Info.plist"))
         XCTAssertTrue(patterns.contains("**/Tuist/.build/**"))
         XCTAssertTrue(patterns.contains(".package.resolved"))
         XCTAssertEqual(patterns.filter { $0 == "**/.gradle/**" }.count, 1)

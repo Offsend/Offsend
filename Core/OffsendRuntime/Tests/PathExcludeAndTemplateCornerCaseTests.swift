@@ -266,7 +266,6 @@ final class ProjectConfigTemplateCornerCaseTests: XCTestCase {
                 ".build/debug/App",
                 "Pods/Alamofire/x.swift",
                 "Package.resolved",
-                "App/Resources/Info.plist",
                 "App.ipa",
                 "App.app.dSYM/Contents/Resources/DWARF/App",
             ],
