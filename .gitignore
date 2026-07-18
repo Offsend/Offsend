@@ -33,6 +33,7 @@ xcuserdata/
 .continueignore
 .cursor/rules/offsend_privacy.mdc
 .cursorignore
+.cursorindexingignore
 .geminiignore
 .llmignore
 .rooignore
