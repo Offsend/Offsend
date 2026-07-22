@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/image.jpg" alt="Offsend — one .offsend.yml defines your AI context boundary" width="100%">
+  <img src="assets/image.png" alt="Offsend — one .offsend.yml defines your AI context boundary" width="100%">
 </p>
 
 <p align="center">
