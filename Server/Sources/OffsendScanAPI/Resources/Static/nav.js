@@ -25,13 +25,6 @@
     backdrop.hidden = false;
   };
 
-  const onScroll = () => {
-    nav.classList.toggle('scrolled', window.scrollY > 8);
-  };
-
-  onScroll();
-  window.addEventListener('scroll', onScroll, { passive: true });
-
   burger.addEventListener('click', () => {
     if (nav.classList.contains('is-menu-open')) closeMenu();
     else openMenu();
@@ -48,6 +41,6 @@
   });
 
   window.addEventListener('resize', () => {
-    if (window.matchMedia('(min-width: 769px)').matches) closeMenu();
+    if (window.matchMedia('(min-width: 900px)').matches) closeMenu();
   });
 })();

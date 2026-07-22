@@ -1,8 +1,9 @@
-<h1 align="center"><code>*}• Offsend</code></h1>
+<p align="center">
+  <img src="assets/image.jpg" alt="Offsend — one .offsend.yml defines your AI context boundary" width="100%">
+</p>
 
 <p align="center">
   See and fix what AI tools can read.<br>
-  One <code>.offsend.yml</code> defines what stays out of AI context — synced to every AI ignore file.<br>
   Local-first checks for terminals, CI, and macOS — before Claude Code, Codex, Cursor, or Windsurf see your context.
 </p>
 
@@ -22,10 +23,6 @@
   <a href="https://www.apple.com/macos/"><img src="https://img.shields.io/badge/platform-macOS%2013%2B-000000?logo=apple&logoColor=white" alt="Platform"></a>
   <img src="https://img.shields.io/badge/local--first-yes-2ea44f" alt="Local-first">
   <a href="https://radar.offsend.io/participants/"><img src="https://radar.offsend.io/badge.svg" alt="AI Context Reviewed" height="20"></a>
-</p>
-
-<p align="center">
-  <img src="assets/cli.gif" alt="Offsend CLI: see what AI tools can read" width="100%">
 </p>
 
 ---
