@@ -67,7 +67,10 @@ struct HTMLTemplateRenderer: Sendable {
     }
 
     private func pageContext(_ values: [String: String] = [:], noindex: Bool = false, debug: Bool = false) -> [String: Any] {
-        var context: [String: Any] = ["navScanActive": true]
+        var context: [String: Any] = [
+            "navScanActive": true,
+            "assetVersion": StaticAssets.version,
+        ]
         if noindex {
             context["noindex"] = true
         }

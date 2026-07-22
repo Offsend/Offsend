@@ -41,12 +41,13 @@ final class RoutesTests: XCTestCase {
                 XCTAssertTrue(body.contains("name=\"description\""))
                 XCTAssertTrue(body.contains("rel=\"canonical\""))
                 XCTAssertTrue(body.contains("property=\"og:title\""))
-                XCTAssertTrue(body.contains("/assets/og.jpg"))
+                XCTAssertTrue(body.contains("/assets/og.jpg?v="))
                 XCTAssertTrue(body.contains("application/ld+json"))
                 XCTAssertTrue(body.contains("See what AI can read"))
-                XCTAssertTrue(body.contains("/assets/landing.js"))
+                XCTAssertTrue(body.contains("/assets/landing.js?v="))
                 XCTAssertTrue(body.contains("topnav"))
-                XCTAssertTrue(body.contains("/assets/site.css"))
+                XCTAssertTrue(body.contains("/assets/site.css?v="))
+                XCTAssertTrue(body.contains(StaticAssets.version))
             }
         }
     }
@@ -85,6 +86,7 @@ final class RoutesTests: XCTestCase {
             try await client.execute(uri: "/assets/site.css", method: .get) { response in
                 XCTAssertEqual(response.status, .ok)
                 XCTAssertEqual(response.headers[.contentType], "text/css; charset=utf-8")
+                XCTAssertEqual(response.headers[.cacheControl], "public, max-age=31536000, immutable")
                 let body = String(buffer: response.body)
                 XCTAssertTrue(body.contains("--brand-blue"))
             }
@@ -237,7 +239,8 @@ final class RoutesTests: XCTestCase {
                 let body = String(buffer: response.body)
                 XCTAssertTrue(body.contains("Scanning…"))
                 XCTAssertTrue(body.contains("data-debug=\"1\""))
-                XCTAssertTrue(body.contains("/assets/polling.js"))
+                XCTAssertTrue(body.contains("/assets/polling.js?v="))
+                XCTAssertTrue(body.contains(StaticAssets.version))
             }
         }
     }

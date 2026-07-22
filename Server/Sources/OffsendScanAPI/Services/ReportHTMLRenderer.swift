@@ -20,6 +20,7 @@ enum ReportHTMLRenderer {
         /// embedded verbatim so the "Fix it" modal can build platform-specific commands.
         let fixFilesJSON: String
         let errors: [String]
+        let assetVersion: String
         var navScanActive: Bool = false
         var noindex: Bool = true
 
@@ -95,7 +96,8 @@ enum ReportHTMLRenderer {
             fixes: fixes,
             hasFixes: !fixes.isEmpty,
             fixFilesJSON: fixFilesJSON(reportJSON: reportJSON),
-            errors: payload?.errors ?? []
+            errors: payload?.errors ?? [],
+            assetVersion: StaticAssets.version
         )
     }
 
