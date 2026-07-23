@@ -11,20 +11,20 @@ public enum HookCoverageGap: String, CaseIterable, Sendable {
     /// Gaps relevant for the current editor/MCP surface. `cloudSessions` always
     /// applies when any AI hook is installed (cannot be detected locally).
     ///
-    /// `mcpResponseGateClaude` narrows `mcpResponses`: Claude `PostToolUse` can
-    /// rewrite MCP output, so an installed response gate closes the gap there.
-    /// Cursor `afterMCPExecution` is observe-only — with Cursor installed the
-    /// gap stays even when the response gate is on.
+    /// An MCP response gap closes only when the installed target is actively
+    /// replacing and sealing responses, not merely observing them.
     public static func active(
         cursorInstalled: Bool,
         claudeInstalled: Bool,
         mcpSurfaceActive: Bool,
-        mcpResponseGateClaude: Bool = false
+        mcpResponseProtectedCursor: Bool = false,
+        mcpResponseProtectedClaude: Bool = false
     ) -> [HookCoverageGap] {
         var gaps: [HookCoverageGap] = []
         if mcpSurfaceActive {
-            let claudeCovered = !claudeInstalled || mcpResponseGateClaude
-            if cursorInstalled || !claudeCovered {
+            let cursorCovered = !cursorInstalled || mcpResponseProtectedCursor
+            let claudeCovered = !claudeInstalled || mcpResponseProtectedClaude
+            if !cursorCovered || !claudeCovered {
                 gaps.append(.mcpResponses)
             }
         }
@@ -48,5 +48,21 @@ public enum HookCoverageGap: String, CaseIterable, Sendable {
     /// stays informational (`.ok`) — every local install has that residual limit.
     public static func hasActionableGaps(_ gaps: [HookCoverageGap]) -> Bool {
         gaps.contains { $0 != .cloudSessions }
+    }
+}
+
+enum MCPResponseProtection {
+    static func isActive(
+        hookInstalled: Bool,
+        replacementEventInstalled: Bool,
+        wrapperHealthy: Bool,
+        configuredMode: String?,
+        sealKeyAvailable: Bool
+    ) -> Bool {
+        hookInstalled
+            && replacementEventInstalled
+            && wrapperHealthy
+            && configuredMode == OffsendMCPResponseMode.seal.rawValue
+            && sealKeyAvailable
     }
 }

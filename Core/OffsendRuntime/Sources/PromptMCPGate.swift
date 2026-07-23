@@ -149,6 +149,19 @@ public enum PromptMCPGate {
         return (server: server.isEmpty ? "unknown" : server, tool: tool.isEmpty ? toolName : tool)
     }
 
+    /// Cursor `postToolUse` identifies MCP tools as `MCP:<server>/<tool>`.
+    public static func parseCursorMCPToolName(_ toolName: String) -> (server: String, tool: String)? {
+        guard toolName.hasPrefix("MCP:") else { return nil }
+        let rest = String(toolName.dropFirst("MCP:".count))
+        let segments = rest.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false)
+        guard segments.count == 2 else {
+            return (server: "unknown", tool: rest.isEmpty ? toolName : rest)
+        }
+        let server = String(segments[0])
+        let tool = String(segments[1])
+        return (server: server.isEmpty ? "unknown" : server, tool: tool.isEmpty ? toolName : tool)
+    }
+
     // MARK: - Policy
 
     private struct PolicyHit {
@@ -199,13 +212,16 @@ public enum PromptMCPGate {
     // MARK: - Extraction
 
     private static func extractCursorCall(from root: [String: Any]) -> PromptMCPGateCall? {
-        let tool = nonEmptyString(root["tool_name"])
+        let rawTool = nonEmptyString(root["tool_name"])
             ?? nonEmptyString(root["toolName"])
             ?? ""
+        let parsedTool = parseCursorMCPToolName(rawTool)
         // Cursor may put the config key in `command` (known quirk) or a real `server` field.
-        let server = nonEmptyString(root["server"])
+        let server = parsedTool?.server
+            ?? nonEmptyString(root["server"])
             ?? nonEmptyString(root["command"])
             ?? "unknown"
+        let tool = parsedTool?.tool ?? rawTool
         guard !tool.isEmpty || server != "unknown" else { return nil }
         let toolInput = stringifyToolInput(root["tool_input"] ?? root["toolInput"])
         let cwd = nonEmptyString(root["cwd"])

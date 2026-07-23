@@ -125,6 +125,8 @@ public struct AIEditorHookTargetStatus: Equatable, Sendable {
     public let subagentGate: Bool
     /// Config references the MCP-response-gate wrapper (`check-mcp-out.sh`).
     public let mcpResponseGate: Bool
+    /// The response wrapper is attached to an event capable of replacing MCP output.
+    public let mcpResponseReplacement: Bool
 
     public init(
         installed: Bool,
@@ -134,7 +136,8 @@ public struct AIEditorHookTargetStatus: Equatable, Sendable {
         shellGate: Bool = false,
         mcpGate: Bool = false,
         subagentGate: Bool = false,
-        mcpResponseGate: Bool = false
+        mcpResponseGate: Bool = false,
+        mcpResponseReplacement: Bool = false
     ) {
         self.installed = installed
         self.configPath = configPath
@@ -144,6 +147,7 @@ public struct AIEditorHookTargetStatus: Equatable, Sendable {
         self.mcpGate = mcpGate
         self.subagentGate = subagentGate
         self.mcpResponseGate = mcpResponseGate
+        self.mcpResponseReplacement = mcpResponseReplacement
     }
 }
 
@@ -158,6 +162,8 @@ public struct AIEditorHookInstaller: Sendable {
     public static let mcpResponseWrapperRelativePath = ".offsend/hooks/check-mcp-out.sh"
     /// Claude PreToolUse matcher for MCP tools (`mcp__server__tool`).
     public static let claudeMCPMatcher = "mcp__.*"
+    /// Cursor generic tool matcher for MCP tools.
+    public static let cursorMCPMatcher = "MCP:.*"
     /// Cursor and Claude support read/shell/MCP gates; Windsurf/Codex do not.
     public static func supportsFileGates(_ target: AIEditorHookTarget) -> Bool {
         target == .cursor || target == .claude
@@ -405,8 +411,9 @@ public struct AIEditorHookInstaller: Sendable {
             let mcpRemoved = try removeManagedFromEventArray(at: configURL, event: "beforeMCPExecution")
             let subagentRemoved = try removeManagedFromEventArray(at: configURL, event: "subagentStart")
             let mcpResponseRemoved = try removeManagedFromEventArray(at: configURL, event: "afterMCPExecution")
+            let postToolRemoved = try removeManagedFromEventArray(at: configURL, event: "postToolUse")
             removed = promptRemoved || readRemoved || shellRemoved || mcpRemoved || subagentRemoved
-                || mcpResponseRemoved
+                || mcpResponseRemoved || postToolRemoved
         case .windsurf:
             removed = try removeManagedFromEventArray(at: configURL, event: "pre_user_prompt")
         case .codex:
@@ -476,6 +483,8 @@ public struct AIEditorHookInstaller: Sendable {
         let mcpResponseUsed = Self.configTextReferences(contents, relativePath: Self.mcpResponseWrapperRelativePath)
         let mcpResponseURL = repositoryPath.appendingPathComponent(Self.mcpResponseWrapperRelativePath)
         let mcpResponseOK = !mcpResponseUsed || validateWrapper(at: mcpResponseURL) == .ok
+        let mcpResponseReplacement = mcpResponseUsed
+            && configUsesReplacementEvent(contents: contents, target: target)
         return AIEditorHookTargetStatus(
             installed: installed,
             configPath: url.path,
@@ -484,8 +493,38 @@ public struct AIEditorHookInstaller: Sendable {
             shellGate: shellUsed,
             mcpGate: mcpUsed,
             subagentGate: subagentUsed,
-            mcpResponseGate: mcpResponseUsed
+            mcpResponseGate: mcpResponseUsed,
+            mcpResponseReplacement: mcpResponseReplacement
         )
+    }
+
+    private func configUsesReplacementEvent(
+        contents: String,
+        target: AIEditorHookTarget
+    ) -> Bool {
+        guard let data = contents.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let hooks = root["hooks"] as? [String: Any] else {
+            return false
+        }
+        switch target {
+        case .cursor:
+            let entries = hooks["postToolUse"] as? [[String: Any]] ?? []
+            return entries.contains { isMCPResponseHookObject($0) }
+        case .claude:
+            let groups = hooks["PostToolUse"] as? [[String: Any]] ?? []
+            return groups.contains { group in
+                let nested = group["hooks"] as? [[String: Any]] ?? []
+                return nested.contains { isMCPResponseHookObject($0) }
+            }
+        case .windsurf, .codex:
+            return false
+        }
+    }
+
+    private func isMCPResponseHookObject(_ object: [String: Any]) -> Bool {
+        guard let command = object["command"] as? String else { return false }
+        return command.contains(Self.mcpResponseWrapperRelativePath)
     }
 
     /// Validates a repo-local wrapper script (marker, version, executable bit).
@@ -885,8 +924,15 @@ public struct AIEditorHookInstaller: Sendable {
         // Security-critical: fail closed when the MCP hook crashes or times out.
         setManagedCursorGate(&hooks, event: "beforeMCPExecution", command: mcpCommand, failClosed: true)
         setManagedCursorGate(&hooks, event: "subagentStart", command: subagentCommand, failClosed: true)
-        // Post-hoc observation only (Cursor cannot rewrite MCP results); fail-open.
-        setManagedCursorGate(&hooks, event: "afterMCPExecution", command: mcpResponseCommand)
+        // Remove the legacy observe-only hook and use the generic event that
+        // can replace MCP output before the model consumes it.
+        setManagedCursorGate(&hooks, event: "afterMCPExecution", command: nil)
+        setManagedCursorGate(
+            &hooks,
+            event: "postToolUse",
+            command: mcpResponseCommand,
+            matcher: Self.cursorMCPMatcher
+        )
 
         root["hooks"] = hooks
         root["_offsend"] = managedMetadata(event: event)
@@ -898,12 +944,15 @@ public struct AIEditorHookInstaller: Sendable {
         _ hooks: inout [String: Any],
         event: String,
         command: String?,
-        failClosed: Bool = false
+        failClosed: Bool = false,
+        matcher: String? = nil
     ) {
         if let command {
             var entries = (hooks[event] as? [[String: Any]]) ?? []
             entries.removeAll { isManagedHookObject($0) }
-            entries.append(managedCursorEntry(command: command, failClosed: failClosed))
+            entries.append(
+                managedCursorEntry(command: command, failClosed: failClosed, matcher: matcher)
+            )
             hooks[event] = entries
         } else if var entries = hooks[event] as? [[String: Any]] {
             entries.removeAll { isManagedHookObject($0) }
@@ -1110,12 +1159,20 @@ public struct AIEditorHookInstaller: Sendable {
 
     // MARK: - Helpers
 
-    private func managedCursorEntry(command: String, failClosed: Bool = false) -> [String: Any] {
-        [
+    private func managedCursorEntry(
+        command: String,
+        failClosed: Bool = false,
+        matcher: String? = nil
+    ) -> [String: Any] {
+        var entry: [String: Any] = [
             "command": command,
             "failClosed": failClosed,
             "timeout": CheckHookLimits.recommendedTimeoutSeconds,
         ]
+        if let matcher {
+            entry["matcher"] = matcher
+        }
+        return entry
     }
 
     private func managedMetadata(event: String) -> [String: Any] {

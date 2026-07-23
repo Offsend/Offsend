@@ -132,7 +132,7 @@ struct Check: AsyncParsableCommand {
     @Flag(
         name: .long,
         help: ArgumentHelp(
-            "MCP tool-response gate: secret-scan responses; seal for Claude, observe for Cursor (requires --adapter cursor|claude).",
+            "MCP tool-response gate: secret-scan and optionally seal responses for Cursor or Claude (requires --adapter cursor|claude).",
             visibility: .hidden
         )
     )
@@ -196,6 +196,9 @@ struct Check: AsyncParsableCommand {
             rawText = try CLIStdin.readUTF8()
         } catch let error as CLIStdin.ReadError {
             if let adapter {
+                if case .tooLarge = error, emitStdinLimitExceeded(adapter: adapter, started: started) {
+                    return
+                }
                 hookEmitter().emitFailOpen(
                     adapter: adapter,
                     reason: error.failOpenReason,
@@ -449,6 +452,52 @@ struct Check: AsyncParsableCommand {
         if shellGate { return .shellGate }
         if readGate { return .readGate }
         return .promptSubmit
+    }
+
+    /// Gate-specific handling for stdin over the byte limit. Returns false when
+    /// the caller should fall back to the generic fail-open path (prompt/shell).
+    private func emitStdinLimitExceeded(adapter: CheckHookAdapter, started: Date) -> Bool {
+        let policy = resolvedHookPolicy(for: adapter)
+        if mcpResponseGate {
+            hookEmitter().emitMCPResponseLimitExceeded(
+                adapter: adapter,
+                started: started,
+                policy: policy
+            )
+            return true
+        }
+        if readGate {
+            // An unscannable read must not pass — same policy as oversized content.
+            hookEmitter().emitReadGateLimitExceeded(
+                adapter: adapter,
+                started: started,
+                policy: policy
+            )
+            return true
+        }
+        if mcpGate {
+            let (context, projectConfig) = loadStdinRuntime(adapter: adapter, started: started)
+            guard context != nil else { return true }
+            hookEmitter().emitMCPGateLimitExceeded(
+                adapter: adapter,
+                started: started,
+                policy: policy,
+                mcpConfig: projectConfig?.context?.mcp
+            )
+            return true
+        }
+        if subagentGate {
+            let (context, projectConfig) = loadStdinRuntime(adapter: adapter, started: started)
+            guard context != nil else { return true }
+            hookEmitter().emitSubagentGateLimitExceeded(
+                adapter: adapter,
+                started: started,
+                policy: policy,
+                subagentsConfig: projectConfig?.context?.subagents
+            )
+            return true
+        }
+        return false
     }
 
     private struct ParsedPromptPayload {

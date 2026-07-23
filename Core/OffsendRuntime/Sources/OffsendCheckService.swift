@@ -51,6 +51,15 @@ public struct OffsendCheckService: Sendable {
     private let auditor: AIWorkspacePrivacyAuditor
     private let detector: SensitiveDataDetecting
     private let riskScorer: RiskScoring
+    private let defaultSealEngine: SealEngine?
+
+    /// Resolved once per process: hook invocations build several services per
+    /// run, and the default-key lookup can touch the filesystem/Keychain.
+    private static let cachedDefaultSealEngine: SealEngine? = (try? SealKeyResolver.resolve(
+        key: nil,
+        keyFilePath: nil,
+        keyName: nil
+    ).data).flatMap { try? SealEngine(keyData: $0) }
 
     public init(
         context: OffsendRuntimeContext,
@@ -64,6 +73,7 @@ public struct OffsendCheckService: Sendable {
         self.auditor = auditor
         self.detector = detector
         self.riskScorer = riskScorer
+        self.defaultSealEngine = Self.cachedDefaultSealEngine
     }
 
     public func run(_ request: OffsendCheckRequest) async -> CheckReport {
@@ -150,7 +160,7 @@ public struct OffsendCheckService: Sendable {
         )
         // `{{TYPE:v1.…}}` seal tokens are already-protected values; their
         // ciphertext bodies must not re-trigger detectors.
-        let scannedEntities = SealTokenDetector.excludingTokenSpans(
+        let scannedEntities = filterSealTokenFindings(
             detection.entities,
             in: detection.scannedText
         )
@@ -263,7 +273,7 @@ public struct OffsendCheckService: Sendable {
         guard analysis.assessment.recommendedAction != .allow else { return [] }
 
         // Seal tokens in files (e.g. sealed copies) are not live secrets.
-        let entities = SealTokenDetector.excludingTokenSpans(
+        let entities = filterSealTokenFindings(
             analysis.detection.entities,
             in: analysis.detection.scannedText
         )
@@ -276,6 +286,18 @@ public struct OffsendCheckService: Sendable {
                 hasCriticalSecret: entity.type.countsAsCriticalSecret
             )
         }
+    }
+
+    private func filterSealTokenFindings(
+        _ entities: [SensitiveEntity],
+        in text: String
+    ) -> [SensitiveEntity] {
+        let syntacticallyFiltered = SealTokenDetector.excludingTokenSpans(entities, in: text)
+        guard let defaultSealEngine else { return syntacticallyFiltered }
+        return defaultSealEngine.excludingAuthenticatedTokenSpans(
+            syntacticallyFiltered,
+            in: text
+        )
     }
 
     private func action(

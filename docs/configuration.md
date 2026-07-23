@@ -278,7 +278,7 @@ Optional read-gate behavior when a file read is denied because of detected secre
 | --- | --- |
 | `on_secret` | `block` (default) — plain deny. `seal` — deny, but write a sealed copy (secrets replaced with `{{TYPE:v1.…}}` tokens) and hand the agent its path so work continues without plaintext in context. Requires a seal key (`offsend keygen --default`); without one, falls back to plain deny |
 
-Read at runtime by the read-gate — changing it does not require reinstalling hooks. Sealed copies live in a temp directory with `0600` permissions and are cleaned up after ~1 hour. The user can restore agent outputs containing tokens with `offsend unseal`. Note the honest boundary: seal mode keeps plaintext out of transcripts and model context, but a local agent with access to your seal key is not sandboxed by this.
+Read at runtime by the read-gate — changing it does not require reinstalling hooks. Sealed copies are exclusively created without following symlinks in a private temp directory, use `0600` permissions, and are cleaned up after ~1 hour. Tokens use fresh random AES-GCM nonces while remaining compatible with existing `v1` tokens. The user can restore agent outputs containing tokens with `offsend unseal`. Note the honest boundary: seal mode keeps plaintext out of transcripts and model context, but a local agent with access to your seal key is not sandboxed by this.
 
 ### `context.mcp`
 
@@ -290,7 +290,7 @@ Optional MCP policy used by `offsend show`, `offsend doctor`, and the MCP-gate (
 | `allow` | Server name patterns permitted. A non-empty list switches to allowlist mode: servers not matching are flagged |
 | `deny` | Server name patterns to block. `"*"` also enables allowlist mode |
 | `high_risk` | Patterns flagged in `show` / `doctor` (defaults include `filesystem`, `postgres`, …) |
-| `responses` | MCP **response** scanning (`check --mcp-response-gate`): `observe` (default; log/stderr only), `warn` (also warn the agent via `additionalContext` on Claude), or `seal` (Claude: replace the tool output with a sealed version before the model sees it; needs a seal key). Cursor `afterMCPExecution` cannot rewrite responses, so on Cursor every mode is observe-only |
+| `responses` | MCP **response** scanning (`check --mcp-response-gate`): `observe` (default; log/stderr only), `warn` (also warn the agent), or `seal` (Cursor/Claude: replace MCP output with a sealed version before the model sees it; needs a seal key). Cursor keeps the JSON object shape; Claude receives the sealed output as text (`updatedToolOutput` is a string). Responses above the 2 MiB safety limit, responses whose secrets fail to seal, and secret-bearing responses encountered without a seal key are withheld. Caveat: `warn` relies on hook-injected context (`additional_context` / `additionalContext`), which Cursor builds before 3.9.8 did not deliver to the model — for enforcement use `seal` with a seal key |
 
 ### `context.subagents`
 

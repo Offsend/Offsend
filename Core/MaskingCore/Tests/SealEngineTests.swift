@@ -33,10 +33,12 @@ final class SealEngineTests: XCTestCase {
         XCTAssertEqual(phone.plaintext, "+15551234567")
     }
 
-    func testDeterministicTokensForSameValueAndType() throws {
+    func testRandomNonceProducesDistinctTokensForSameValueAndType() throws {
         let a = try engine.seal(plaintext: "ivan@acme.com", type: "EMAIL")
         let b = try engine.seal(plaintext: "ivan@acme.com", type: "EMAIL")
-        XCTAssertEqual(a, b)
+        XCTAssertNotEqual(a, b)
+        XCTAssertEqual(try engine.open(token: a).plaintext, "ivan@acme.com")
+        XCTAssertEqual(try engine.open(token: b).plaintext, "ivan@acme.com")
     }
 
     func testDifferentTypesProduceDifferentTokens() throws {
@@ -117,7 +119,7 @@ final class SealEngineTests: XCTestCase {
         XCTAssertEqual(restored, text)
     }
 
-    func testIdenticalValuesShareDeterministicToken() throws {
+    func testIdenticalValuesUseDistinctTokensWithinSealedText() throws {
         let text = "ivan@acme.com and ivan@acme.com"
         let result = try engine.seal(text: text, entities: [
             entity(.email, "ivan@acme.com", in: text),
@@ -126,8 +128,9 @@ final class SealEngineTests: XCTestCase {
 
         let tokens = result.sealedText.components(separatedBy: " and ")
         XCTAssertEqual(tokens.count, 2)
-        XCTAssertEqual(tokens[0], tokens[1])
+        XCTAssertNotEqual(tokens[0], tokens[1])
         XCTAssertEqual(result.sealedCount, 2)
+        XCTAssertEqual(try engine.unseal(text: result.sealedText), text)
     }
 
     func testUnsealWithNoTokensReturnsOriginal() throws {
@@ -182,6 +185,64 @@ final class SealEngineTests: XCTestCase {
             source: .regex
         )
         XCTAssertEqual(SealTokenDetector.excludingTokenSpans([entity], in: text).count, 1)
+    }
+
+    func testFakeSealTokenDoesNotSuppressConcreteSecret() {
+        let key = "AKIA1234567890ABCDEF"
+        let text = "{{SECRET:v1.\(key)}}}"
+        let range = text.range(of: key)!
+        let entity = SensitiveEntity(
+            type: .awsAccessKeyId,
+            range: range,
+            value: key,
+            confidence: 1,
+            source: .secret
+        )
+
+        XCTAssertEqual(SealTokenDetector.excludingTokenSpans([entity], in: text), [entity])
+    }
+
+    func testPartiallyOverlappingEntropyFindingIsNotSuppressed() {
+        let text = "x{{SECRET:v1.ABCDEFGHIJKLMNOPQRSTUVWXYZ123456}}"
+        let payload = text.range(of: "ABCDEFGHIJKLMNOPQRSTUVWXYZ123456")!
+        let range = text.index(before: payload.lowerBound)..<payload.upperBound
+        let entity = SensitiveEntity(
+            type: .highEntropyString,
+            range: range,
+            value: String(text[range]),
+            confidence: 0.9,
+            source: .secret
+        )
+
+        XCTAssertEqual(SealTokenDetector.excludingTokenSpans([entity], in: text), [entity])
+    }
+
+    func testAuthenticatedTokenSuppressesContainedGenericFinding() throws {
+        let token = try engine.seal(plaintext: "secret", type: "SECRET")
+        let payload = token.range(of: "SECRET:v1.")!.lowerBound..<token.index(token.endIndex, offsetBy: -2)
+        let entity = SensitiveEntity(
+            type: .apiKeyGeneric,
+            range: payload,
+            value: String(token[payload]),
+            confidence: 0.9,
+            source: .secret
+        )
+
+        XCTAssertTrue(engine.excludingAuthenticatedTokenSpans([entity], in: token).isEmpty)
+    }
+
+    func testFakeTokenDoesNotPassAuthenticatedFiltering() {
+        let text = "{{SECRET:v1.AKIA1234567890ABCDEF}}"
+        let range = text.range(of: "AKIA1234567890ABCDEF")!
+        let entity = SensitiveEntity(
+            type: .awsAccessKeyId,
+            range: range,
+            value: String(text[range]),
+            confidence: 1,
+            source: .secret
+        )
+
+        XCTAssertEqual(engine.excludingAuthenticatedTokenSpans([entity], in: text), [entity])
     }
 
     func testUnsupportedVersion() throws {
@@ -338,18 +399,12 @@ final class SealEngineTests: XCTestCase {
         XCTAssertEqual(try engine.unseal(text: result.sealedText), text)
     }
 
-    func testFixedKeyProducesStableGoldenToken() throws {
+    func testOpensLegacyDeterministicV1Token() throws {
         let keyData = Data((0..<32).map { UInt8($0) })
-        let a = try SealEngine(keyData: keyData)
-        let b = try SealEngine(keyData: keyData)
-        let tokenA = try a.seal(plaintext: "a@b.com", type: "EMAIL")
-        let tokenB = try b.seal(plaintext: "a@b.com", type: "EMAIL")
-        XCTAssertEqual(tokenA, tokenB)
-        // Regression lock for nonce derivation + token framing (key bytes 0..<32).
-        XCTAssertEqual(
-            tokenA,
-            "{{EMAIL:v1.ay0pF8pgS30I1UA9cZxHpe-EDanFkPg3ybpjGzk-L3jor00}}"
-        )
+        let legacyToken = "{{EMAIL:v1.ay0pF8pgS30I1UA9cZxHpe-EDanFkPg3ybpjGzk-L3jor00}}"
+        let opened = try SealEngine(keyData: keyData).open(token: legacyToken)
+        XCTAssertEqual(opened.type, "EMAIL")
+        XCTAssertEqual(opened.plaintext, "a@b.com")
     }
 
     private func flipPayloadByte(in token: String) -> String {

@@ -14,8 +14,8 @@ public enum CheckHookResponseRenderer {
         case mcpGate
         /// Cursor `subagentStart`.
         case subagentGate
-        /// Cursor `afterMCPExecution` / Claude `PostToolUse` (MCP tools).
-        /// Post-hoc observation — fail-open is an empty object, never a permission.
+        /// Cursor `postToolUse` / Claude `PostToolUse` (MCP tools).
+        /// Post-execution transformation; never returns a permission shape.
         case mcpResponseGate
     }
 

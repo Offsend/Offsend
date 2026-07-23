@@ -418,6 +418,13 @@ public struct OffsendDoctor: Sendable {
         let home = ProcessInfo.processInfo.environment["HOME"]
             .flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
             ?? fileManager.homeDirectoryForCurrentUser
+        let sealKeyURL = SealKeyPaths.defaultKeyURL(fileManager: fileManager)
+        let sealKeyPath = sealKeyURL.path
+        let sealKeyAvailable = fileManager.fileExists(atPath: sealKeyPath)
+        let mcpResponseWrapperURL = cwd.appendingPathComponent(
+            AIEditorHookInstaller.mcpResponseWrapperRelativePath
+        )
+        let mcpResponseWrapperHealthy = installer.validateWrapper(at: mcpResponseWrapperURL) == .ok
         let projectConfig = try? configLoader.load(from: cwd)
         let mcpInventory = OffsendMCPInventory(fileManager: fileManager).collect(
             projectRoot: cwd,
@@ -459,7 +466,42 @@ public struct OffsendDoctor: Sendable {
                     DoctorCheck(
                         name: "ai-mcp-response-gate",
                         status: .warn,
-                        message: "MCP response gate not installed for \(names). Secrets in MCP tool responses go unnoticed (Claude can seal them; Cursor observes). Re-run: offsend hook install --target cursor|claude (mcp-response-gate is on by default; use --no-mcp-response-gate to opt out)"
+                        message: "MCP response gate not installed for \(names). Secrets in MCP tool responses go unnoticed (Cursor/Claude can seal them when configured). Re-run: offsend hook install --target cursor|claude (mcp-response-gate is on by default; use --no-mcp-response-gate to opt out)"
+                    )
+                )
+            } else {
+                let installedButNotProtecting = AIEditorHookTarget.allCases.filter { target in
+                    guard AIEditorHookInstaller.supportsFileGates(target) else { return false }
+                    let status = installer.status(target: target, repositoryPath: cwd)
+                    return status.installed && status.mcpResponseGate && !MCPResponseProtection.isActive(
+                        hookInstalled: true,
+                        replacementEventInstalled: status.mcpResponseReplacement,
+                        wrapperHealthy: mcpResponseWrapperHealthy,
+                        configuredMode: projectConfig?.context?.mcp?.responses,
+                        sealKeyAvailable: sealKeyAvailable
+                    )
+                }
+                if !installedButNotProtecting.isEmpty {
+                    let names = installedButNotProtecting.map(\.rawValue).joined(separator: ", ")
+                    checks.append(
+                        DoctorCheck(
+                            name: "ai-mcp-response-protection",
+                            status: .warn,
+                            message: "MCP response gate is installed for \(names) but is not actively sealing responses. Require a replacement-capable hook, context.mcp.responses: seal, a valid wrapper, and a default seal key."
+                        )
+                    )
+                }
+            }
+
+            // Cursor builds before 3.9.8 do not deliver postToolUse
+            // `additional_context` to the model — `warn` degrades to observe.
+            if projectConfig?.context?.mcp?.responses == "warn",
+               installer.status(target: .cursor, repositoryPath: cwd).installed {
+                checks.append(
+                    DoctorCheck(
+                        name: "ai-mcp-response-warn-cursor",
+                        status: .warn,
+                        message: "context.mcp.responses: warn may not reach the model on Cursor (additional_context is not delivered in builds before 3.9.8). Use responses: seal with a seal key for enforcement."
                     )
                 )
             }
@@ -524,7 +566,8 @@ public struct OffsendDoctor: Sendable {
         )
 
         if installedCount > 0 {
-            let cursorInstalled = installer.status(target: .cursor, repositoryPath: cwd).installed
+            let cursorStatus = installer.status(target: .cursor, repositoryPath: cwd)
+            let cursorInstalled = cursorStatus.installed
             let claudeStatus = installer.status(target: .claude, repositoryPath: cwd)
             let claudeInstalled = claudeStatus.installed
             let mcpGateInstalled = AIEditorHookTarget.allCases.contains {
@@ -532,11 +575,25 @@ public struct OffsendDoctor: Sendable {
                 return status.installed && status.mcpGate
             }
             let mcpSurfaceActive = mcpGateInstalled || !mcpInventory.servers.isEmpty
+            let mcpResponseMode = projectConfig?.context?.mcp?.responses
             let gaps = HookCoverageGap.active(
                 cursorInstalled: cursorInstalled,
                 claudeInstalled: claudeInstalled,
                 mcpSurfaceActive: mcpSurfaceActive,
-                mcpResponseGateClaude: claudeStatus.mcpResponseGate
+                mcpResponseProtectedCursor: MCPResponseProtection.isActive(
+                    hookInstalled: cursorStatus.mcpResponseGate,
+                    replacementEventInstalled: cursorStatus.mcpResponseReplacement,
+                    wrapperHealthy: mcpResponseWrapperHealthy,
+                    configuredMode: mcpResponseMode,
+                    sealKeyAvailable: sealKeyAvailable
+                ),
+                mcpResponseProtectedClaude: MCPResponseProtection.isActive(
+                    hookInstalled: claudeStatus.mcpResponseGate,
+                    replacementEventInstalled: claudeStatus.mcpResponseReplacement,
+                    wrapperHealthy: mcpResponseWrapperHealthy,
+                    configuredMode: mcpResponseMode,
+                    sealKeyAvailable: sealKeyAvailable
+                )
             )
             // Warn only when MCP/Claude/Cursor-specific gaps apply; cloud-only → ok note.
             checks.append(
@@ -548,8 +605,6 @@ public struct OffsendDoctor: Sendable {
             )
         }
 
-        let sealKeyURL = SealKeyPaths.defaultKeyURL(fileManager: fileManager)
-        let sealKeyPath = sealKeyURL.path
         if fileManager.fileExists(atPath: sealKeyPath) {
             let namedCount = SealKeyPaths.countNamedKeys(fileManager: fileManager)
             var message = namedCount > 0

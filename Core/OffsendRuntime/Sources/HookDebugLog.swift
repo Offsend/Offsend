@@ -1,5 +1,10 @@
 import Foundation
 import StorageCore
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 
 /// Append-only debug log for AI-editor hooks. Never writes secret values.
 public enum HookDebugLog {
@@ -45,9 +50,9 @@ public enum HookDebugLog {
         now: Date = Date()
     ) {
         do {
-            try fileManager.createDirectory(
-                at: url.deletingLastPathComponent(),
-                withIntermediateDirectories: true
+            try ensurePrivateDirectory(
+                url.deletingLastPathComponent(),
+                fileManager: fileManager
             )
             rotateIfNeeded(at: url, fileManager: fileManager)
 
@@ -64,21 +69,11 @@ public enum HookDebugLog {
                 object["error"] = sanitizeLogText(error)
             }
             guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]),
-                  var line = String(data: data, encoding: .utf8) else {
+                  let line = String(data: data, encoding: .utf8),
+                  let payload = (line + "\n").data(using: .utf8) else {
                 return
             }
-            line += "\n"
-            if fileManager.fileExists(atPath: url.path) {
-                let handle = try FileHandle(forWritingTo: url)
-                defer { try? handle.close() }
-                try handle.seekToEnd()
-                if let payload = line.data(using: .utf8) {
-                    try handle.write(contentsOf: payload)
-                }
-            } else {
-                try line.write(to: url, atomically: true, encoding: .utf8)
-                try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
-            }
+            try appendSecurely(payload, to: url)
         } catch {
             // Best-effort only.
         }
@@ -89,15 +84,18 @@ public enum HookDebugLog {
         fileManager: FileManager = .default,
         maxBytes: Int = maxLogBytes
     ) {
-        guard fileManager.fileExists(atPath: url.path),
-              let attrs = try? fileManager.attributesOfItem(atPath: url.path),
+        guard let attrs = try? fileManager.attributesOfItem(atPath: url.path),
+              attrs[.type] as? FileAttributeType == .typeRegular,
               let size = attrs[.size] as? NSNumber,
               size.intValue > maxBytes else {
             return
         }
+        try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         let rotated = url.appendingPathExtension("1")
         try? fileManager.removeItem(at: rotated)
-        try? fileManager.moveItem(at: url, to: rotated)
+        if (try? fileManager.moveItem(at: url, to: rotated)) != nil {
+            try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: rotated.path)
+        }
     }
 
     /// Redact home-directory prefixes from debug log fields.
@@ -108,5 +106,41 @@ public enum HookDebugLog {
             sanitized = sanitized.replacingOccurrences(of: home, with: "~")
         }
         return sanitized
+    }
+
+    private static func ensurePrivateDirectory(
+        _ directory: URL,
+        fileManager: FileManager
+    ) throws {
+        if !fileManager.fileExists(atPath: directory.path) {
+            try fileManager.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700]
+            )
+        }
+        let attributes = try fileManager.attributesOfItem(atPath: directory.path)
+        guard attributes[.type] as? FileAttributeType == .typeDirectory else {
+            throw CocoaError(.fileWriteInvalidFileName)
+        }
+        try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+    }
+
+    private static func appendSecurely(_ data: Data, to url: URL) throws {
+        let descriptor = open(
+            url.path,
+            O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW,
+            mode_t(0o600)
+        )
+        guard descriptor >= 0 else {
+            throw CocoaError(.fileWriteNoPermission)
+        }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        defer { try? handle.close() }
+        guard fchmod(descriptor, mode_t(0o600)) == 0 else {
+            throw CocoaError(.fileWriteNoPermission)
+        }
+        try handle.write(contentsOf: data)
+        try handle.close()
     }
 }

@@ -28,7 +28,7 @@ public struct OffsendProjectMCPConfig: Codable, Equatable, Sendable {
     /// Glob-ish server name patterns flagged as high-risk in show/doctor.
     public var highRisk: [String]?
     /// MCP **response** handling: `observe` (stderr only), `warn` (agent context note),
-    /// or `seal` (Claude: replace secrets with seal tokens; Cursor: observe-only surface).
+    /// or `seal` (replace secrets with seal tokens before the model sees them).
     public var responses: String?
 
     enum CodingKeys: String, CodingKey {

@@ -23,35 +23,73 @@ final class HookCoverageGapsTests: XCTestCase {
         )
     }
 
-    func testMCPResponseGateOnClaudeClosesResponseGap() {
-        // Claude-only + response gate: PostToolUse can rewrite output → gap closed.
+    func testActiveMCPResponseProtectionClosesResponseGap() {
         let covered = HookCoverageGap.active(
             cursorInstalled: false,
             claudeInstalled: true,
             mcpSurfaceActive: true,
-            mcpResponseGateClaude: true
+            mcpResponseProtectedClaude: true
         )
         XCTAssertFalse(covered.contains(.mcpResponses))
 
-        // Without the response gate the gap stays.
         let uncovered = HookCoverageGap.active(
             cursorInstalled: false,
             claudeInstalled: true,
             mcpSurfaceActive: true,
-            mcpResponseGateClaude: false
+            mcpResponseProtectedClaude: false
         )
         XCTAssertTrue(uncovered.contains(.mcpResponses))
     }
 
-    func testCursorKeepsResponseGapEvenWithResponseGate() {
-        // afterMCPExecution is observe-only; Cursor cannot rewrite responses.
-        let gaps = HookCoverageGap.active(
+    func testAllInstalledTargetsMustActivelyProtectResponses() {
+        let cursorUnprotected = HookCoverageGap.active(
             cursorInstalled: true,
             claudeInstalled: true,
             mcpSurfaceActive: true,
-            mcpResponseGateClaude: true
+            mcpResponseProtectedCursor: false,
+            mcpResponseProtectedClaude: true
         )
-        XCTAssertTrue(gaps.contains(.mcpResponses))
+        XCTAssertTrue(cursorUnprotected.contains(.mcpResponses))
+
+        let bothProtected = HookCoverageGap.active(
+            cursorInstalled: true,
+            claudeInstalled: true,
+            mcpSurfaceActive: true,
+            mcpResponseProtectedCursor: true,
+            mcpResponseProtectedClaude: true
+        )
+        XCTAssertFalse(bothProtected.contains(.mcpResponses))
+    }
+
+    func testMCPResponseProtectionRequiresCompleteRuntimeConditions() {
+        XCTAssertTrue(MCPResponseProtection.isActive(
+            hookInstalled: true,
+            replacementEventInstalled: true,
+            wrapperHealthy: true,
+            configuredMode: "seal",
+            sealKeyAvailable: true
+        ))
+        XCTAssertFalse(MCPResponseProtection.isActive(
+            hookInstalled: true,
+            replacementEventInstalled: true,
+            wrapperHealthy: true,
+            configuredMode: "warn",
+            sealKeyAvailable: true
+        ))
+        XCTAssertFalse(MCPResponseProtection.isActive(
+            hookInstalled: true,
+            replacementEventInstalled: true,
+            wrapperHealthy: true,
+            configuredMode: "seal",
+            sealKeyAvailable: false
+        ))
+        XCTAssertFalse(MCPResponseProtection.isActive(
+            hookInstalled: true,
+            replacementEventInstalled: false,
+            wrapperHealthy: true,
+            configuredMode: "seal",
+            sealKeyAvailable: true
+        ))
     }
 
     func testDoctorMessageListsGapsWithoutSandboxClaim() {

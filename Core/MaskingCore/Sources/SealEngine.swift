@@ -44,17 +44,22 @@ public enum SealTokenDetector: Sendable {
             .compactMap { Range($0.range, in: text) }
     }
 
-    /// Drops entities that overlap a seal-token span. Token bodies are base64url
-    /// ciphertext and trip generic detectors (api-key/entropy shapes), but they
-    /// are already-sealed values — not live secrets.
+    /// Drops entropy-only findings fully contained in a seal-token payload.
+    /// Token framing alone is not trusted: a live key can be wrapped in a fake
+    /// `{{TYPE:v1.…}}` string, so concrete secret detectors must still fire.
     public static func excludingTokenSpans(
         _ entities: [SensitiveEntity],
         in text: String
     ) -> [SensitiveEntity] {
         guard !entities.isEmpty, containsSealTokens(in: text) else { return entities }
-        let spans = tokenRanges(in: text)
+        let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
+        let payloadSpans = pattern.matches(in: text, options: [], range: nsRange)
+            .compactMap { Range($0.range(at: 2), in: text) }
         return entities.filter { entity in
-            !spans.contains { $0.overlaps(entity.range) }
+            guard entity.type == .highEntropyString else { return true }
+            return !payloadSpans.contains {
+                entity.range.lowerBound >= $0.lowerBound && entity.range.upperBound <= $0.upperBound
+            }
         }
     }
 }
@@ -62,8 +67,6 @@ public enum SealTokenDetector: Sendable {
 public struct SealEngine: TextSealing, Sendable {
     /// Default cap covers typical secrets (JWT, PEM, OpenSSH keys) without unbounded tokens.
     public static let defaultMaxPlaintextBytes = 65_536
-
-    private static let domainSeparation = Data("offsend-seal-v1".utf8)
 
     private let key: SymmetricKey
     private let maxPlaintextBytes: Int
@@ -88,7 +91,7 @@ public struct SealEngine: TextSealing, Sendable {
             throw SealError.plaintextTooLarge(byteCount: plainData.count, limit: maxPlaintextBytes)
         }
 
-        let nonce = try makeNonce(type: type, plaintext: plainData)
+        let nonce = AES.GCM.Nonce()
         let sealed: AES.GCM.SealedBox
         do {
             sealed = try AES.GCM.seal(
@@ -129,7 +132,6 @@ public struct SealEngine: TextSealing, Sendable {
     /// Replaces detected entities with sealed tokens. Fails closed if any value exceeds the size limit.
     public func seal(text: String, entities: [SensitiveEntity]) throws -> SealResult {
         let orderedEntities = entities.sorted { $0.range.lowerBound < $1.range.lowerBound }
-        var tokenByValueAndType: [String: String] = [:]
         var replacements: [(range: Range<String.Index>, token: String)] = []
         var coveredUpperBound: String.Index?
         var sealedCount = 0
@@ -142,14 +144,7 @@ public struct SealEngine: TextSealing, Sendable {
             if let upper = coveredUpperBound, entity.range.lowerBound < upper { continue }
 
             let type = entity.type.placeholderPrefix
-            let cacheKey = "\(type)\0\(entity.value)"
-            let token: String
-            if let existing = tokenByValueAndType[cacheKey] {
-                token = existing
-            } else {
-                token = try seal(plaintext: entity.value, type: type)
-                tokenByValueAndType[cacheKey] = token
-            }
+            let token = try seal(plaintext: entity.value, type: type)
 
             replacements.append((entity.range, token))
             sealedCount += 1
@@ -186,6 +181,30 @@ public struct SealEngine: TextSealing, Sendable {
         return result
     }
 
+    /// Removes detector findings only when they are fully contained in a token
+    /// authenticated by this engine's key. Syntactic lookalikes remain findings.
+    public func excludingAuthenticatedTokenSpans(
+        _ entities: [SensitiveEntity],
+        in text: String
+    ) -> [SensitiveEntity] {
+        guard !entities.isEmpty else { return entities }
+        let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
+        let authenticated = SealTokenDetector.pattern
+            .matches(in: text, options: [], range: nsRange)
+            .compactMap { match -> Range<String.Index>? in
+                guard let range = Range(match.range, in: text),
+                      (try? open(token: String(text[range]))) != nil else {
+                    return nil
+                }
+                return range
+            }
+        return entities.filter { entity in
+            !authenticated.contains {
+                entity.range.lowerBound >= $0.lowerBound && entity.range.upperBound <= $0.upperBound
+            }
+        }
+    }
+
     private func decrypt(type: String, payload: String) throws -> (type: String, plaintext: String) {
         guard let combined = Self.base64URLDecode(payload) else {
             throw SealError.invalidTokenFormat
@@ -208,19 +227,6 @@ public struct SealEngine: TextSealing, Sendable {
             throw SealError.decryptionFailed
         }
         return (type, plaintext)
-    }
-
-    private func makeNonce(type: String, plaintext: Data) throws -> AES.GCM.Nonce {
-        var message = Self.domainSeparation
-        message.append(Data(type.utf8))
-        message.append(0)
-        message.append(plaintext)
-        let mac = HMAC<SHA256>.authenticationCode(for: message, using: key)
-        do {
-            return try AES.GCM.Nonce(data: Data(mac.prefix(12)))
-        } catch {
-            throw SealError.encryptionFailed
-        }
     }
 
     static func base64URLEncode(_ data: Data) -> String {

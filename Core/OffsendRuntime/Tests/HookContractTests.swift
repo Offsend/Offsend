@@ -288,6 +288,50 @@ final class HookContractTests: XCTestCase {
         XCTAssertEqual(content, input.content)
     }
 
+    func testReadGateKeepsFullHookProvidedContentPastLegacy50KBoundary() {
+        let key = "AKIA1234567890ABCDEF"
+        let content = String(repeating: "a", count: 55_000) + key
+        let input = PromptReadGateInput(path: "/repo/large.txt", content: content)
+
+        XCTAssertFalse(PromptReadGate.contentExceedsLimit(for: input))
+        XCTAssertEqual(PromptReadGate.resolveContent(for: input), content)
+    }
+
+    func testReadGateMarksOversizedDiskFileUnsafe() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("offsend-oversized-\(UUID().uuidString).txt")
+        let data = Data(repeating: 0x61, count: PromptReadGate.maxContentBytes + 1)
+        try data.write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let input = PromptReadGateInput(path: url.path, content: nil)
+        XCTAssertTrue(PromptReadGate.contentExceedsLimit(for: input))
+        XCTAssertEqual(PromptReadGate.resolveContentResult(for: input), .oversized)
+        XCTAssertNil(PromptReadGate.resolveContent(for: input))
+        XCTAssertFalse(PromptReadGate.oversizedDecision(path: url.path).allowed)
+    }
+
+    /// Hook input over the stdin byte limit must deny, not fail open: for
+    /// Cursor the file body rides inside the hook JSON, so an oversized file
+    /// would otherwise bypass the content scan entirely.
+    func testReadGateOversizedStdinDeniesForCursorAndClaude() throws {
+        let decision = PromptReadGate.oversizedStdinDecision()
+        XCTAssertFalse(decision.allowed)
+
+        let cursor = PromptReadGateRenderer.render(decision: decision, adapter: .cursor)
+        let cursorRoot = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(cursor.stdout.utf8)) as? [String: Any]
+        )
+        XCTAssertEqual(cursorRoot["permission"] as? String, "deny")
+
+        let claude = PromptReadGateRenderer.render(decision: decision, adapter: .claude)
+        let claudeRoot = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(claude.stdout.utf8)) as? [String: Any]
+        )
+        let hook = try XCTUnwrap(claudeRoot["hookSpecificOutput"] as? [String: Any])
+        XCTAssertEqual(hook["permissionDecision"] as? String, "deny")
+    }
+
     func testReadGateFailOpenUsesPermissionAllow() {
         let output = CheckHookResponseRenderer.failOpen(
             adapter: .cursor,

@@ -270,14 +270,14 @@ offsend check --adapter claude --read-gate --no-notify   # file-read gate
 | `--read-gate` | off | File-read gate for Cursor / Claude: sensitive paths + secret content scan |
 | `--shell-gate` | — | Sensitive-path gate for Cursor / Claude shell hooks (`ask` on findings); used by installed wrappers |
 | `--mcp-gate` | — | MCP tool-call gate for Cursor / Claude: `context.mcp` policy + path/secret scan in args |
-| `--mcp-response-gate` | — | MCP tool-**response** gate: secret-scan the response per `context.mcp.responses` (`observe`/`warn`/`seal`). Claude `PostToolUse` can rewrite the output (`seal`); Cursor `afterMCPExecution` is observe-only |
+| `--mcp-response-gate` | — | MCP tool-**response** gate: secret-scan the response per `context.mcp.responses` (`observe`/`warn`/`seal`). Cursor and Claude `PostToolUse` can rewrite MCP output in `seal` mode |
 | `--subagent-gate` | — | Subagent spawn gate for Cursor: secret-scan task text |
 | `--key-file PATH` | — | Seal key file for `--seal-copy` / `--hook-policy block` |
 | `--key-name NAME` | — | Named key in `~/.offsend/keys/NAME.key` |
 
 Installed wrappers run: `check --adapter … --hook-policy … --secrets-only --no-notify`.
 
-**Fail-open:** infrastructure errors (bad JSON, oversized stdin, settings load, invalid `--hook-policy`) allow the prompt through so a broken hook does not block chat. stderr shows short codes (`invalid_json`, `stdin_too_large`, …); details go to `--debug-hook` only.
+**Fail-open:** infrastructure errors (bad JSON, settings load, invalid `--hook-policy`) normally allow the prompt through so a broken hook does not block chat. Safety exceptions fail closed: oversized read-gate input is denied; oversized MCP responses are withheld; and unrecognized MCP/subagent input is denied when its mode is explicitly `deny`. stderr shows short codes (`invalid_json`, `stdin_too_large`, …); details go to `--debug-hook` only.
 
 Prompt scanning does **not** honor inline `offsend:ignore` bypasses.
 
@@ -380,7 +380,7 @@ offsend hook install --target cursor --no-mcp-gate
 | `--read-gate` / `--no-read-gate` | File-read path gates (**Cursor + Claude only**). **On by default**; `--no-read-gate` disables |
 | `--shell-gate` / `--no-shell-gate` | Shell-command gate (**Cursor + Claude only**). **On by default**; findings ask for confirmation instead of blocking. `--no-shell-gate` disables |
 | `--mcp-gate` / `--no-mcp-gate` | MCP tool-call gate (**Cursor + Claude only**). **On by default**; Cursor `beforeMCPExecution` with `failClosed: true`. `--no-mcp-gate` disables |
-| `--mcp-response-gate` / `--no-mcp-response-gate` | MCP tool-**response** gate (**Cursor + Claude only**). **On by default**; Cursor `afterMCPExecution` (observe-only, fail-open), Claude `PostToolUse` matcher `mcp__.*` (can rewrite output in `seal` mode). `--no-mcp-response-gate` disables |
+| `--mcp-response-gate` / `--no-mcp-response-gate` | MCP tool-**response** gate (**Cursor + Claude only**). **On by default**; Cursor `postToolUse` matcher `MCP:.*`, Claude `PostToolUse` matcher `mcp__.*`; both can rewrite output in `seal` mode. `--no-mcp-response-gate` disables |
 | `--subagent-gate` / `--no-subagent-gate` | Subagent spawn gate (**Cursor only**). **On by default**; `subagentStart` with `failClosed: true`. `--no-subagent-gate` disables |
 | `--cli-path PATH` | CLI for wrapper scripts |
 | `--force` | Overwrite a foreign git hook or AI wrapper; managed files refresh automatically |
@@ -468,7 +468,7 @@ Treat editor hooks as **defense-in-depth**, not a hard perimeter. Prefer this st
 | Editor Read / Edit / Write tools | Read-gate | Cursor `beforeReadFile`; Claude `PreToolUse` (`Read\|Edit\|Write`) |
 | Agent shell (`Bash` / `beforeShellExecution`) | Shell-gate | On by default for Cursor/Claude; returns `ask`, not hard deny |
 | MCP tool calls | MCP-gate | On by default for Cursor/Claude; Cursor `beforeMCPExecution` (`failClosed: true`); Claude `PreToolUse` (`mcp__.*`). Policy + path/secret scan on **args**; see `context.mcp` in `.offsend.yml` |
-| MCP tool responses | MCP-response-gate | On by default for Cursor/Claude; Claude `PostToolUse` (`mcp__.*`) can **replace** the output — `context.mcp.responses: seal` swaps secrets for `{{…}}` tokens; Cursor `afterMCPExecution` is observe-only (stderr + debug log) |
+| MCP tool responses | MCP-response-gate | On by default for Cursor/Claude; `PostToolUse` can **replace** the output — `context.mcp.responses: seal` swaps secrets for `{{…}}` tokens before model consumption |
 | Subagent spawn (Cursor Task) | Subagent-gate | On by default for Cursor `subagentStart`; secret-scan of the task prompt (`deny` on findings; no `ask`). Claude subagents are not gated — rely on AI ignore |
 
 ### What hooks do not cover
@@ -478,7 +478,7 @@ These walk past a path-based file hook by design. Close them with ignore rules a
 | Bypass | Why the hook misses it | What to use instead |
 | --- | --- | --- |
 | **Shell without shell-gate** | `cat` / `grep` / `sed` read the file outside the Read tool (older installs, or `--no-shell-gate`) | Re-run `offsend hook install --target cursor\|claude` (shell-gate is on by default) |
-| **MCP tool responses** | MCP-gate scans call **arguments**. The response gate closes this for Claude (`PostToolUse` can seal/replace output); Cursor `afterMCPExecution` is observe-only — the payload still reaches the agent | `context.mcp.responses: seal` + seal key for Claude; restrict MCP servers (`context.mcp` allow/deny); keep secrets off disk; AI ignore |
+| **MCP responses without active sealing** | `observe`/`warn` or an older install does not replace plaintext output; `seal` without a key safely withholds secret-bearing responses instead of passing them through | Set `context.mcp.responses: seal`, generate a seal key, and re-run hook install for Cursor/Claude |
 | **MCP without mcp-gate** | Older installs, or `--no-mcp-gate` | Re-run `offsend hook install --target cursor\|claude` (mcp-gate is on by default) |
 | **Subagents (Claude / ungated Cursor)** | Claude subagents may skip parent hooks; Cursor without `--subagent-gate` does not scan task text | `offsend hook install --target cursor` (subagent-gate on by default); project-level AI ignore; no plaintext secrets on disk |
 | **Local agent history already written** | Prior transcripts may already contain secrets | `offsend history audit` / `offsend history scrub --apply` |
@@ -487,7 +487,7 @@ These walk past a path-based file hook by design. Close them with ignore rules a
 | **Open editor tabs (Cursor)** | Cursor may not always enforce `beforeReadFile` deny | `offsend protect` / `.cursorignore` for hard blocks |
 | **Cloud agent sessions** | Remote/cloud agents do not run local editor hooks | Keep secrets out of the repo; CI `check --policy`; rotate if leaked |
 
-`offsend doctor` surfaces residual gaps as `hook-coverage-gaps` when any AI-editor hook is installed (not a sandbox claim). Status is **warn** when MCP/Claude/Cursor-specific gaps apply; **ok** (informational) when only the universal cloud-sessions residual remains.
+`offsend doctor` surfaces residual gaps as `hook-coverage-gaps` when any AI-editor hook is installed (not a sandbox claim). An installed MCP response hook counts as protecting only when it uses a replacement-capable event, the wrapper is valid, `context.mcp.responses: seal` is configured, and the default seal key exists. Status is **warn** when MCP/Claude/Cursor-specific gaps apply; **ok** (informational) when only the universal cloud-sessions residual remains.
 
 ### Hook policies
 
@@ -504,7 +504,7 @@ These walk past a path-based file hook by design. Close them with ignore rules a
 The read gate protects Cursor `beforeReadFile` and Claude `PreToolUse` (`Read|Edit|Write`); it is installed by default for these targets (disable with `--no-read-gate`). It:
 
 1. **Denies sensitive paths** — `.env`, `*.pem`, credentials-like names, and files under `.ssh`, `.aws`, `.kube`, `.docker`, `.gnupg`, `.azure`, `.fly`, …
-2. **Scans file content for secrets** — uses the same secret detectors as the prompt gate (`--secrets-only` by default). Cursor supplies `content` in the hook JSON; Claude’s PreToolUse has no body, so Offsend reads a bounded UTF-8 prefix from disk (up to 50k characters). Binary / unreadable files skip the content step (path rules still apply).
+2. **Scans complete file content for secrets** — uses the same secret detectors as the prompt gate (`--secrets-only` by default). Cursor supplies `content` in the hook JSON; Claude’s PreToolUse has no body, so Offsend reads the file from disk up to the 2 MiB safety limit. Larger files — and hook payloads over the 2 MiB stdin limit — are denied rather than partially scanned (fail-closed). Known limitation, accepted by design: binary (NUL-containing) and non-UTF-8 files under 2 MiB skip the content step — path rules still apply, but no secret scan runs on them.
 3. **Claude Edit/Write** — same gate runs before edits so a model that already saw a secret cannot “proceed with the fix” via `Edit` after a later `Read` deny.
 
 The prompt gate also scans file-like `@mentions` (for example `@index.js`) by reading a bounded prefix from disk, so attaching a secret file in the prompt can be blocked before the model turn starts. That is a **different pipe** from the read-gate: `@file` is checked at prompt submit; Read/Edit/Write are checked when those tools run.
@@ -513,7 +513,7 @@ On a secret hit the editor receives deny with a short remediation message (detec
 
 Cursor may not always enforce `beforeReadFile` deny (known IDE limitation; open tabs can bypass the hook). Prefer `offsend protect` / `.cursorignore` for hard blocks; treat read-gate as defense-in-depth.
 
-**Seal mode (`context.read.on_secret: seal`)** — instead of a dead-end deny, the gate writes a **sealed copy** (secrets replaced with `{{TYPE:v1.…}}` tokens, temp file with `0600` permissions) and tells the agent its path (`agent_message` for Cursor; part of `permissionDecisionReason` for Claude). The agent keeps working on the sealed copy; plaintext never enters model context; the user restores outputs with `offsend unseal`. Requires a seal key (`offsend keygen --default`) — without one, the gate falls back to a plain deny. Sealed copies are auto-allowed by the read-gate and are clean under `offsend check`. The shell-gate asks for confirmation before the agent itself runs `offsend unseal`. Honest boundary: this keeps plaintext out of transcripts/context but is not a sandbox against a local agent with key access.
+**Seal mode (`context.read.on_secret: seal`)** — instead of a dead-end deny, the gate writes a **sealed copy** (secrets replaced with `{{TYPE:v1.…}}` tokens, temp file with `0600` permissions) and tells the agent its path (`agent_message` for Cursor; part of `permissionDecisionReason` for Claude). The agent keeps working on the sealed copy; plaintext never enters model context; the user restores outputs with `offsend unseal`. Requires a seal key (`offsend keygen --default`) — without one, the gate falls back to a plain deny. Each token uses a fresh random AES-GCM nonce; existing `v1` tokens remain readable. Sealed copies are created without following symlinks and are content-scanned like every other file; directory membership alone is never trusted. The shell-gate asks for confirmation before the agent itself runs `offsend unseal`. Honest boundary: this keeps plaintext out of transcripts/context but is not a sandbox against a local agent with key access.
 
 ### Shell-gate (on by default)
 
@@ -535,21 +535,23 @@ Installed by default for Cursor and Claude (disable with `--no-mcp-gate`). Gates
 
 Enforcement mode (`context.mcp.mode`): `observe` (allow + stderr), `ask` (default when unset), or `deny`. `offsend show` lists configured MCP servers; `offsend doctor` warns when MCP is present without a policy or when the gate is missing.
 
-Fail-open vs fail-closed: infrastructure errors (unreadable settings, invalid config) fail **open** so a broken install never blocks the editor. With an explicit `context.mcp.mode: deny` (or `context.subagents.mode: deny` for the subagent gate), unrecognized hook input is **denied** instead — you asked to block, so Offsend fails closed there.
+Fail-open vs fail-closed: infrastructure errors (unreadable settings, invalid config) fail **open** so a broken install never blocks the editor. With an explicit `context.mcp.mode: deny` (or `context.subagents.mode: deny` for the subagent gate), unrecognized hook input — including payloads over the 2 MiB stdin limit — is **denied** instead: you asked to block, so Offsend fails closed there.
 
 This gate scans **arguments** only; responses are handled by the MCP-response-gate below.
 
 ### MCP-response-gate (on by default)
 
-Installed by default for Cursor and Claude (disable with `--no-mcp-response-gate`). Scans MCP tool **responses** for secret-shaped values after the tool runs (Cursor `afterMCPExecution`, Claude `PostToolUse` matcher `mcp__.*`). Mode via `context.mcp.responses`:
+Installed by default for Cursor and Claude (disable with `--no-mcp-response-gate`). Scans MCP tool **responses** after execution using Cursor `postToolUse` (`MCP:.*`) or Claude `PostToolUse` (`mcp__.*`). Mode via `context.mcp.responses`:
 
 | Mode | Claude | Cursor |
 | --- | --- | --- |
 | `observe` (default) | stderr + debug log | stderr + debug log |
-| `warn` | Also warns the agent via `additionalContext` (“do not echo/store/reuse these values”) | Same as observe |
-| `seal` | **Replaces the tool output** (`hookSpecificOutput.updatedToolOutput`) with a sealed version — secrets become `{{TYPE:v1.…}}` tokens before the model sees them. Needs a seal key; falls back to `warn` without one or when the response exceeds the ~50k scan budget | Same as observe |
+| `warn` | Also warns the agent via `additionalContext` (“do not echo/store/reuse these values”) | Warns via `additional_context` |
+| `seal` | Replaces `updatedToolOutput` with the sealed output as a **string** (the documented field type; only detected values become tokens) | Replaces `updated_mcp_tool_output` with a sealed version, preserving the JSON object shape |
 
-The asymmetry is an editor limitation: Cursor `afterMCPExecution` receives the result but cannot rewrite it, so on Cursor the payload still reaches the agent (findings surface via stderr / debug log; doctor reports the residual gap). The gate is fail-open — a broken hook never blocks the editor.
+Responses are scanned in full up to the 2 MiB hook-input limit. Larger responses are replaced with a safe withholding message instead of being partially scanned or passed through. In `seal` mode a response whose secrets **fail to seal** (for example a single value over the plaintext size cap), or cannot be sealed because no key is available, is withheld the same way — never downgraded to a warning. Generate the key with `offsend keygen --default`.
+
+Cursor caveat: `warn` relies on `additional_context`, which Cursor builds before 3.9.8 did not deliver to the model — on those builds `warn` is effectively `observe`. For real protection on Cursor use `responses: seal` with a seal key; `offsend doctor` warns about this combination.
 
 ### Subagent-gate (on by default for Cursor)
 
@@ -595,11 +597,11 @@ Scrub limits: files larger than 2 MB are scanned (bounded prefix) but skipped by
 
 - Advice uses **detector type names only** — never secret prefixes/suffixes.
 - Notifications: fixed short template (`N sensitive items…`).
-- Sealed temp files: mode `0600`, best-effort cleanup after 1 hour; UI messaging is clipboard-only.
+- Sealed temp files: private `0700` directory, exclusive no-symlink creation with mode `0600`, best-effort cleanup after 1 hour; UI messaging is clipboard-only.
 - Stdin capped at **2 MiB** (`check`, `seal`, `unseal`).
 - Cursor `attachments` paths checked by name/extension (files not opened).
 - Project `.offsend.yml` detector disables / dictionaries apply; macOS app settings also affect detection.
-- `hook-debug.log` rotates at ~512 KiB; home paths redacted in log fields.
+- `hook-debug.log` uses mode `0600`, refuses symlink targets, rotates at ~512 KiB, and redacts home paths in log fields.
 - Hooks are an additional check — not a replacement for permissions, AI ignore files, or keeping secrets out of the workspace. See [What hooks do not cover](#what-hooks-do-not-cover).
 
 ### Verify

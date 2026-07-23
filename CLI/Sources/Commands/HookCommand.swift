@@ -78,7 +78,7 @@ struct HookInstall: ParsableCommand {
     @Flag(
         name: [.customLong("mcp-response-gate"), .customLong("with-mcp-response-gate")],
         inversion: .prefixedNo,
-        help: "MCP tool-response gates — secret-scan responses (Claude PostToolUse can seal them; Cursor afterMCPExecution observes only). On by default for cursor/claude; disable with --no-mcp-response-gate."
+        help: "MCP tool-response gates — secret-scan and optionally seal responses via Cursor/Claude PostToolUse. On by default for cursor/claude; disable with --no-mcp-response-gate."
     )
     var mcpResponseGate: Bool?
 

@@ -42,7 +42,7 @@ No. Ignore files are the primary exclusion layer; hooks are defense-in-depth on 
 | Materialized AI ignore files + drift detection | Org-wide policy across every repository |
 | Content scan for secrets/credentials (`check`, hooks, CI) | Zero-day discovery, privilege escalation, lateral movement in infra |
 | Prompt / read / shell / MCP **args** / Cursor subagent gates | Ungated Claude subagents, cloud agent sessions |
-| MCP **response** sealing on Claude (`context.mcp.responses: seal`); seal-for-agents read copies | MCP **response** rewriting on Cursor (`afterMCPExecution` is observe-only) |
+| MCP **response** sealing on Cursor/Claude (`context.mcp.responses: seal`); seal-for-agents read copies | Responses without active sealing (`observe`/`warn`, older hook install); missing keys safely withhold secret-bearing responses but stop that tool result |
 | Local agent-history audit / scrub after a leak | Replacing the editor’s own permission model |
 
 Credentials in agent context are leverage for further tool use (read, shell, MCP), not only a privacy leak. Prefer `offsend protect` + ignore files first; hooks are defense-in-depth. Details: [what hooks cover / do not cover](cli.md#what-hooks-cover).
@@ -60,7 +60,7 @@ Coding assistants: Claude Code, Codex, Cursor, Windsurf (CLI prompt hooks + igno
 Yes. After clone or init, `offsend sync` installs git + detected AI-editor hooks. For a specific editor: `offsend hook install --target cursor` (or `claude`, `windsurf`, `codex`, `all`). Default install also enables read, shell, MCP, and (Cursor) subagent gates.
 
 **Are AI-editor hooks a hard block on every way to read a file?**  
-No. They are defense-in-depth on known editor paths (prompt, `@file`, Read/Edit/Write, shell, MCP tool **args** + **responses**, Cursor subagent tasks). Prefer `offsend protect` / AI ignore files first so secrets never enter context. Gaps remain: MCP **response** payloads on Cursor (observe-only; on Claude `context.mcp.responses: seal` replaces them with tokens), Claude subagents, cloud sessions, and secrets already written to local transcripts (`offsend history audit` / `scrub`). See [what hooks cover / do not cover](cli.md#what-hooks-cover).
+No. They are defense-in-depth on known editor paths (prompt, `@file`, Read/Edit/Write, shell, MCP tool **args** + **responses**, Cursor subagent tasks). Prefer `offsend protect` / AI ignore files first so secrets never enter context. With `context.mcp.responses: seal`, responses are sealed when a key is available; without a key, secret-bearing responses are withheld instead of passed through. Other gaps remain: Claude subagents, cloud sessions, and secrets already written to local transcripts (`offsend history audit` / `scrub`). See [what hooks cover / do not cover](cli.md#what-hooks-cover).
 
 **Can the agent keep working when a read is denied because of secrets?**  
 Yes, with seal-for-agents: set `context.read.on_secret: seal` (plus a seal key via `offsend keygen --default`). The read-gate still denies the original file but hands the agent a sealed copy where secrets are `{{TYPE:v1.…}}` tokens. The user restores agent outputs with `offsend unseal`; the shell-gate asks before the agent runs `unseal` itself.
