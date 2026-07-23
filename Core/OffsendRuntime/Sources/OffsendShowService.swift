@@ -213,7 +213,7 @@ public struct OffsendShowService: Sendable {
             )
             for item in drift {
                 warnings.append(
-                    "Managed ignore drift in \(item.relativePath): missing \(item.missingPatterns.joined(separator: ", ")). Run: offsend sync"
+                    "Managed ignore drift in \(item.relativePath): missing \(item.missingPatterns.joined(separator: ", ")). Shared policy in .offsend.yml is ahead of this file — run: offsend sync"
                 )
             }
         }

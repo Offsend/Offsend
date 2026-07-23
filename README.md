@@ -4,7 +4,7 @@
 
 <p align="center">
   See and fix what AI tools can read.<br>
-  Local-first checks for terminals, CI, and macOS — before Claude Code, Codex, Cursor, or Windsurf see your context.
+  One <code>.offsend.yml</code> in the repo — shared by the team and CI — before Claude Code, Codex, Cursor, or Windsurf see your context.
 </p>
 
 <p align="center">
@@ -29,7 +29,7 @@
 
 `.gitignore` protects Git. It does not define what AI tools should read.
 
-Offsend is that missing layer: audit what AI tools can see, describe what they must not see in one `.offsend.yml`, and let Offsend maintain `.cursorignore`, `.claudeignore`, `.aiexclude`, and the rest for you. Everything runs **locally** — no cloud account, no upload of file contents for analysis. The CLI is free and open source.
+Offsend is that missing layer: put the AI context boundary in **one `.offsend.yml`**, commit it with the code, and let the whole team inherit the same rules. Offsend materializes `.cursorignore`, `.claudeignore`, `.aiexclude`, and the rest, runs local checks, and can fail CI when secrets or ignore drift show up. Everything runs **locally** — no cloud account, no upload of file contents for analysis. The CLI is free and open source.
 
 No install yet? [Scan a public GitHub repo with Check](https://check.offsend.io).
 
@@ -37,9 +37,10 @@ No install yet? [Scan a public GitHub repo with Check](https://check.offsend.io)
 
 | Layer | Job | Commands |
 | --- | --- | --- |
-| **Boundary** | Show sensitive paths AI can see; keep them out via `.offsend.yml` synced to all AI ignore files | `show`, `protect`, `ignore`, `sync` |
+| **Boundary** | Shared path rules in `.offsend.yml`; sync to AI ignore files; catch drift | `show`, `protect`, `ignore`, `sync`, `doctor` |
 | **Content** | Scan files, staged diffs, or stdin for secrets and custom terms | `check` |
-| **Runtime** | Gate prompts, file reads, shell, MCP calls, and Cursor subagents in the editor; audit local agent history | `sync`, `hook install`, `history` |
+| **Team / CI** | Same boundary on every PR; fail when secrets or ignore drift appear | [GitHub Action](https://offsend.io/github-action), `check --policy` |
+| **Runtime** | Gate prompts, file reads, shell, MCP, and Cursor subagents; audit local agent history | `sync`, `hook install`, `history` |
 
 Defense-in-depth: ignore files first, then hooks. Hooks do not replace keeping secrets out of the workspace — see [what hooks cover](docs/cli.md#what-hooks-cover).
 
@@ -66,19 +67,28 @@ Scanned: /path/to/project
   - server.pem
 ```
 
-Recommended onboarding:
+### Team path (recommended)
 
 ```bash
-# new project
-offsend init --template node   # .offsend.yml + ignore files + baseline check
+# once per repo — commit .offsend.yml so everyone shares the boundary
+offsend init --template node   # .offsend.yml + ignore files + baseline check (advise-only)
 offsend protect                # promote exposed paths to .offsend.yml, sync AI ignore files
-offsend sync                   # git pre-commit + AI editor gates (idempotent)
+git add .offsend.yml && git commit -m "Add AI context policy"
+# add the GitHub Action so PRs fail on secrets / ignore drift (see below)
 
-# cloned a repo that already has .offsend.yml
+# every clone
 offsend sync                   # materialize AI ignore files + install hooks
 ```
 
-Rules live in `.offsend.yml` — commit it and the whole team gets the same boundary. AI ignore files are generated artifacts and stay out of git by default (`ignore.commit: false`).
+Rules live in `.offsend.yml` — that file is the source of truth. AI ignore files are generated artifacts and stay out of git by default (`ignore.commit: false`). Teammates do not copy `.cursorignore` by hand; they run `sync`. Full walkthrough: [Add Offsend to a team repo](docs/team.md).
+
+### Already leaked into local agent history?
+
+```bash
+offsend history audit                 # find secrets in Cursor/Claude transcripts
+offsend history scrub --apply         # redact findings (close agent sessions first)
+offsend doctor                        # next steps if ignore files or hooks are missing
+```
 
 Other installs: [CLI docs → Install](docs/cli.md#install) · macOS app: `brew install --cask offsend/tap/offsend`
 
@@ -89,24 +99,24 @@ Other installs: [CLI docs → Install](docs/cli.md#install) · macOS app: `brew 
 | **[CLI](docs/cli.md)** | Repos, git hooks, AI-editor gates, CI (macOS & Linux) |
 | **[macOS app](docs/macos-app.md)** | Safe Paste, drag-and-drop prep, watched folders |
 | **[Check](https://check.offsend.io)** | One-off scan of a public GitHub repo |
-| **[GitHub Action](https://offsend.io/github-action)** | Same checks on every PR / push |
+| **[GitHub Action](https://offsend.io/github-action)** | Fail PRs on secrets, exposed paths, or ignore drift |
 | **[Extension](https://offsend.io/extension)** | Mask secrets in ChatGPT, Claude, Gemini, and similar chats |
 
 ## CLI essentials
 
 | Command | Purpose |
 | --- | --- |
-| `offsend show` | Sensitive paths visible to AI (+ MCP inventory, agent-history hint) |
+| `offsend show` | Sensitive paths visible to AI (+ MCP inventory, agent-history hint, ignore drift) |
 | `offsend sync` | Apply `.offsend.yml`: materialize AI ignore files + install hooks (post-clone, idempotent) |
 | `offsend protect` | Promote exposed paths to `.offsend.yml` and sync AI ignore files |
 | `offsend ignore` | Add ignore patterns to `.offsend.yml` (auto-materializes; use `sync` after hand-edits) |
 | `offsend check` | Scan contents (files, `--staged`, stdin, or editor hook JSON) |
 | `offsend hook install` | Git pre-commit + prompt / read / shell / MCP / subagent gates |
 | `offsend history audit` | Find secrets already written into local Cursor/Claude transcripts |
-| `offsend doctor` | Verify install, hooks, MCP policy, next setup steps |
+| `offsend doctor` | Verify install, hooks, ignore drift, MCP policy, next setup steps |
 
 ```bash
-# CI
+# CI — fail the PR when secrets or managed ignore drift appear
 - uses: Offsend/ai-hygiene@v1
   with:
     fail-on: block
@@ -127,10 +137,12 @@ Details and vulnerability reporting: [docs/faq.md](docs/faq.md) · [SECURITY.md]
 | Doc | Description |
 | --- | --- |
 | [docs/README.md](docs/README.md) | Documentation index |
+| [docs/team.md](docs/team.md) | Add Offsend to a team repository |
 | [docs/cli.md](docs/cli.md) | Commands, flags, exit codes, AI-editor hooks |
 | [docs/configuration.md](docs/configuration.md) | `.offsend.yml` reference (`check`, `ignore`, `hooks`, `context`) |
 | [docs/macos-app.md](docs/macos-app.md) | Desktop app, Free vs Pro, App vs CLI |
 | [docs/faq.md](docs/faq.md) | FAQ |
+| [docs/positioning.md](docs/positioning.md) | ICP and messaging test (internal) |
 | [.offsend.yml.example](.offsend.yml.example) | Annotated config starter |
 
 ## Contributing

@@ -105,9 +105,15 @@ final class OffsendDoctorTests: XCTestCase {
         let report = DoctorReport(
             checks: [
                 DoctorCheck(name: "project-config", status: .ok, message: "/repo/.offsend.yml"),
-                DoctorCheck(name: "next-actions", status: .warn, message: "1. offsend sync   # materialize ignore files + hooks"),
+                DoctorCheck(
+                    name: "next-actions",
+                    status: .warn,
+                    message: "1. offsend sync   # after clone: materialize ignore files + hooks from .offsend.yml"
+                ),
             ],
-            suggestedActions: ["offsend sync   # materialize ignore files + hooks"]
+            suggestedActions: [
+                "offsend sync   # after clone: materialize ignore files + hooks from .offsend.yml"
+            ]
         )
 
         let text = DoctorReporter().render(report, format: .text)
@@ -123,13 +129,66 @@ final class OffsendDoctorTests: XCTestCase {
                     status: .warn,
                     message: "No \(ProjectConfigLoader.filename) found for the current directory."
                 ),
-                DoctorCheck(name: "next-actions", status: .warn, message: "1. offsend init --template <stack>   # create .offsend.yml"),
+                DoctorCheck(
+                    name: "next-actions",
+                    status: .warn,
+                    message: "1. offsend init --template <stack>   # create shared .offsend.yml (commit it for the team)"
+                ),
             ],
-            suggestedActions: ["offsend init --template <stack>   # create .offsend.yml"]
+            suggestedActions: [
+                "offsend init --template <stack>   # create shared .offsend.yml (commit it for the team)"
+            ]
         )
 
         let text = DoctorReporter().render(report, format: .text)
         XCTAssertTrue(text.contains("Tip: offsend init"), text)
         XCTAssertFalse(text.contains("offsend setup"), text)
+    }
+
+    // MARK: - hasManagedIgnoreDrift
+
+    func testHasManagedIgnoreDriftWhenPatternsMissingFromIgnoreFile() throws {
+        try writeConfig(
+            """
+            version: 1
+            ignore:
+              commit: true
+              patterns:
+                - "team-secret/"
+            """
+        )
+        try "personal/\n".write(
+            to: root.appendingPathComponent(".cursorignore"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(
+            OffsendDoctor.hasManagedIgnoreDrift(
+                configLoader: ProjectConfigLoader(),
+                directory: root
+            )
+        )
+    }
+
+    func testNoManagedIgnoreDriftAfterSync() throws {
+        try writeConfig(
+            """
+            version: 1
+            ignore:
+              commit: false
+              patterns:
+                - "team-secret/"
+            """
+        )
+        let report = OffsendIgnoreSyncService().run(directoryURL: root)
+        XCTAssertTrue(report.errors.isEmpty, report.errors.joined(separator: "; "))
+
+        XCTAssertFalse(
+            OffsendDoctor.hasManagedIgnoreDrift(
+                configLoader: ProjectConfigLoader(),
+                directory: root
+            )
+        )
     }
 }

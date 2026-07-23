@@ -1,6 +1,6 @@
 # Configuration
 
-Offsend looks for a project config file named `.offsend.yml` at the repository root. Commit it so the same rules apply locally, in git hooks, and in CI — including the AI-context boundary: `ignore.patterns` is the source of truth that `offsend sync` materializes into `.cursorignore`, `.claudeignore`, and other AI ignore files.
+Offsend looks for a project config file named `.offsend.yml` at the repository root. Commit it so the same rules apply locally, in git hooks, and in CI — including the AI-context boundary: `ignore.patterns` is the source of truth that `offsend sync` materializes into `.cursorignore`, `.claudeignore`, and other AI ignore files. Teams tune that shared baseline (templates, `detectors.disable`); they do not each maintain a private copy of the ignore rules. Walkthrough: [team.md](team.md).
 
 Create a starter file:
 
@@ -138,13 +138,15 @@ Exit policy for `offsend check`:
 
 | Value | Behavior |
 | --- | --- |
-| `block` | Fail only on blocking findings (critical secrets, failed policy checks) |
+| `block` | Fail only on blocking findings (critical secrets, failed policy checks — including managed ignore drift) |
 | `warn` | Also fail on warning / mask findings |
 | `none` | Report findings but always exit successfully |
 
+Locally, prefer reviewing with `doctor` / `show` and advise-only `init` checks. In CI, keep `fail-on: block` so secrets and ignore drift break the PR. See [team.md](team.md) and [FAQ → defaults](faq.md#what-are-the-default-enforcement-modes).
+
 ### `check.policy`
 
-When `true`, `offsend check` also runs workspace policy checks for ignore files and exposed sensitive paths. When `false`, it scans file contents only.
+When `true`, `offsend check` also runs workspace policy checks for ignore files, exposed sensitive paths, and managed ignore drift. When `false`, it scans file contents only.
 
 ### `check.exclude`
 
@@ -171,9 +173,12 @@ Use `offsend init --template …` to seed a useful exclude list for your stack. 
 | `tuist` | `**/Derived/**`, `**/Tuist/.build/**`, `**/Tuist/Dependencies/**`, `**/.tuist-bin/**`, `.package.resolved` |
 
 Do not exclude secret-bearing files (for example `.env`, `*.pem`) — those should stay in the scan.
+
 ### `check.detectors.disable`
 
 Detector IDs to turn off for this project. Unknown IDs are ignored.
+
+This is how teams **tune** a shared baseline without abandoning `.offsend.yml`: keep credential detectors on, disable noisy non-secret detectors (for example `phone`, `email`) that do not match your threat model. Prefer editing this list over maintaining separate per-engineer ignore rules.
 
 Supported IDs:
 

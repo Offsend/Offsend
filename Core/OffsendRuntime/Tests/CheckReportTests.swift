@@ -165,4 +165,20 @@ final class CheckReportTests: XCTestCase {
         XCTAssertTrue(output.contains("✗ secrets.env  1 blocking"))
         XCTAssertFalse(output.contains("Check failed."))
     }
+
+    func testManagedIgnoreDriftFailsWithBlockPolicy() {
+        let report = CheckReport(
+            fileFindings: [],
+            policyFindings: [
+                PolicyCheckFinding(
+                    message: "Managed ignore drift in .cursorignore: missing team-secret/. Policy in .offsend.yml is ahead of this file. Run: offsend sync",
+                    status: .fail
+                )
+            ],
+            failPolicy: .block
+        )
+        XCTAssertTrue(report.shouldFail)
+        XCTAssertEqual(report.blockingCount, 1)
+        XCTAssertTrue(report.hasBlockingFindings)
+    }
 }

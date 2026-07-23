@@ -108,10 +108,12 @@ public struct OffsendCheckService: Sendable {
                     configuration: configuration
                 )
                 for item in drift {
+                    // Fail (not warn): with `fail-on: block` (CI default), ignore drift
+                    // must break the build — suggested per-editor rules otherwise drift silently.
                     policyFindings.append(
                         PolicyCheckFinding(
-                            message: "Managed ignore drift in \(item.relativePath): missing \(item.missingPatterns.joined(separator: ", ")). Run: offsend sync",
-                            status: .warning
+                            message: "Managed ignore drift in \(item.relativePath): missing \(item.missingPatterns.joined(separator: ", ")). Policy in .offsend.yml is ahead of this file. Run: offsend sync",
+                            status: .fail
                         )
                     )
                 }

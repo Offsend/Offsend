@@ -501,7 +501,7 @@ public struct OffsendDoctor: Sendable {
         return DoctorReport(checks: checks, suggestedActions: next.actions)
     }
 
-    /// Ranked setup hints: project config → AI boundary → shell/MCP gates → git hook.
+    /// Ranked setup hints: shared policy → materialize/drift → AI boundary → gates → history → git hook.
     private func nextActionsCheck(
         cwd: URL,
         configLoader: ProjectConfigLoader,
@@ -511,14 +511,22 @@ public struct OffsendDoctor: Sendable {
         var actions: [String] = []
 
         if configLoader.configURL(for: cwd) == nil {
-            actions.append("offsend init --template <stack>   # create .offsend.yml")
+            actions.append(
+                "offsend init --template <stack>   # create shared .offsend.yml (commit it for the team)"
+            )
         } else if Self.needsIgnoreMaterialization(
             configLoader: configLoader,
             directory: cwd,
             fileManager: fileManager,
             gitResolver: GitRepositoryResolver(fileManager: fileManager, gitExecutable: gitExecutable)
         ) {
-            actions.append("offsend sync   # materialize ignore files + hooks")
+            actions.append(
+                "offsend sync   # after clone: materialize ignore files + hooks from .offsend.yml"
+            )
+        } else if Self.hasManagedIgnoreDrift(configLoader: configLoader, directory: cwd) {
+            actions.append(
+                "offsend sync   # repair ignore drift — .offsend.yml is ahead of local AI ignore files"
+            )
         }
 
         let showReport = context.map { OffsendShowService(context: $0).run(directoryURL: cwd) }
@@ -569,12 +577,14 @@ public struct OffsendDoctor: Sendable {
         }
 
         if let history = showReport?.history, history.filesScanned > 0 {
-            actions.append("offsend history audit   # scan \(history.filesScanned) local agent transcript(s)")
+            actions.append(
+                "offsend history audit   # secrets may already be in \(history.filesScanned) local agent transcript(s)"
+            )
         }
 
         let gitInstalled = (try? HookManager(fileManager: fileManager).isInstalled(repositoryPath: cwd)) ?? false
         if !gitInstalled, !actions.contains(where: { $0.contains("hook install") }) {
-            actions.append("offsend hook install --target git   # pre-commit check --staged")
+            actions.append("offsend hook install --target git   # pre-commit check --staged (team CI companion)")
         }
 
         if actions.isEmpty {
@@ -582,7 +592,7 @@ public struct OffsendDoctor: Sendable {
                 DoctorCheck(
                     name: "next-actions",
                     status: .ok,
-                    message: "No urgent setup steps. Optional: offsend check --staged --policy"
+                    message: "Shared policy looks healthy. Optional: offsend check --staged --policy (same gate as CI)"
                 ),
                 []
             )
@@ -615,6 +625,22 @@ public struct OffsendDoctor: Sendable {
         let targets = OffsendIgnoreSyncService.managedIgnoreRelativePaths(tools: config.ignore?.toolIDs)
         guard !targets.isEmpty else { return false }
         return targets.contains { !fileManager.fileExists(atPath: root.appendingPathComponent($0).path) }
+    }
+
+    /// True when managed AI ignore files exist but are missing patterns from
+    /// `.offsend.yml` — the “suggested rules drift” case for team repos.
+    static func hasManagedIgnoreDrift(
+        configLoader: ProjectConfigLoader,
+        directory: URL
+    ) -> Bool {
+        guard let config = (try? configLoader.load(from: directory)) ?? nil,
+              let patterns = config.ignore?.patterns,
+              !patterns.isEmpty
+        else { return false }
+        return !OffsendManagedIgnoreDrift.findings(
+            directoryURL: directory,
+            patterns: patterns
+        ).isEmpty
     }
 
     private func projectConfigCheck(loader: ProjectConfigLoader, directory: URL) -> DoctorCheck {
@@ -708,7 +734,7 @@ public struct OffsendDoctor: Sendable {
                     DoctorCheck(
                         name: "ignore-sync",
                         status: .ok,
-                        message: "Existing AI ignore files include managed patterns from .offsend.yml."
+                        message: "AI ignore files match shared .offsend.yml (no managed drift)."
                     )
                 )
             } else {
@@ -717,7 +743,7 @@ public struct OffsendDoctor: Sendable {
                     DoctorCheck(
                         name: "ignore-sync",
                         status: .warn,
-                        message: "Managed ignore drift: \(summary). Run: offsend sync"
+                        message: "Managed ignore drift (shared policy ahead of local files): \(summary). Run: offsend sync — CI with fail-on: block fails on this too."
                     )
                 )
             }

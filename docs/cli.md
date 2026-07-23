@@ -114,13 +114,13 @@ offsend doctor --no-follow
 
 Exits `2` when any check has status `fail`. AI hooks and seal key warnings are informational (`warn`).
 
-Checks include `ai-wrapper-prompt` / `ai-wrapper-read` / `ai-wrapper-shell` / `ai-wrapper-mcp` (managed marker + version) when those wrappers exist, `ai-shell-gate` / `ai-mcp-gate` (warn) when Cursor/Claude are installed without those gates, `mcp-inventory` (configured MCP servers + policy), and `next-actions` (ranked hints: init → protect → sync / hook install). In a TTY, doctor may offer to run the first suggested command. JSON includes `suggestedActions`.
+Checks include `ignore-sync` / `rules-drift` (shared `.offsend.yml` vs materialized ignore and privacy rule files), `ai-wrapper-prompt` / `ai-wrapper-read` / `ai-wrapper-shell` / `ai-wrapper-mcp` (managed marker + version) when those wrappers exist, `ai-shell-gate` / `ai-mcp-gate` (warn) when Cursor/Claude are installed without those gates, `mcp-inventory` (configured MCP servers + policy), and `next-actions` (ranked hints: shared policy → sync / drift repair → protect → gates → history audit → git hook). In a TTY, doctor may offer to run the first suggested command. JSON includes `suggestedActions`.
 
 ---
 
 ## `offsend show`
 
-Read-only audit: which sensitive **paths** AI tools can see (ignore rules only — **does not read file contents** of those paths). Also reports configured MCP servers and a local agent-history summary when present.
+Read-only audit: which sensitive **paths** AI tools can see (ignore rules only — **does not read file contents** of those paths). Also reports configured MCP servers, a local agent-history summary when present, and **managed ignore drift** when local AI ignore files are behind `.offsend.yml` (fix with `offsend sync`).
 
 ```bash
 offsend show
@@ -193,7 +193,7 @@ offsend sync --no-hooks                   # ignore files only
 
 With `--local`, the CLI prints a warning that the rule will not be shared. To publish later, re-run without `--local`.
 
-Adding patterns already materializes ignore files. After editing `.offsend.yml` by hand, or when doctor/check report managed ignore drift, run [`offsend sync`](#offsend-sync) (or `sync --no-hooks` for ignore files only). Inside a git repository, files are always materialized at the repository root, regardless of the current directory.
+Adding patterns already materializes ignore files. After editing `.offsend.yml` by hand, or when doctor / show / check report managed ignore drift (shared policy ahead of local ignore files), run [`offsend sync`](#offsend-sync) (or `sync --no-hooks` for ignore files only). Inside a git repository, files are always materialized at the repository root, regardless of the current directory.
 
 Requires an existing `.offsend.yml` (run `offsend init` first) unless `--local` is used. Scanner exclusions remain under `check.exclude`.
 
@@ -699,6 +699,8 @@ offsend doctor
 
 ### CI
 
+Fail PRs when secrets appear or the AI ignore boundary drifts from the committed policy:
+
 ```yaml
 - uses: actions/checkout@v4
 - uses: Offsend/ai-hygiene@v1
@@ -712,13 +714,16 @@ Or install the CLI and run:
 offsend check --staged --policy --fail-on block
 ```
 
-`--policy` also fails when AI ignore rules regress (exposed sensitive paths / missing ignore files).
+With `--policy`, `fail-on: block` fails on critical secrets, exposed required paths / missing ignore files, and **managed ignore drift** (local AI ignore files missing patterns from `.offsend.yml`). Fix drift with `offsend sync`; change the shared rules in `.offsend.yml`, not only in one editor’s ignore file.
+
+Team walkthrough: [team.md](team.md).
 
 ---
 
 ## Related
 
 - [Docs index](README.md)
+- [Team setup](team.md)
 - [Configuration (`.offsend.yml`)](configuration.md)
 - [macOS app](macos-app.md)
 - [FAQ](faq.md)
