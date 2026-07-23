@@ -68,12 +68,13 @@ hooks:
   policy: false
   publish: false
 
-# Optional AI-context controls (MCP policy, etc.)
+# Optional AI-context controls (MCP policy, response seal, …)
 # context:
 #   mcp:
 #     mode: ask          # observe | ask | deny
 #     allow: [github]    # non-empty allow = allowlist mode
 #     high_risk: [filesystem, postgres]
+#     responses: seal    # observe | warn | seal — needs: offsend keygen --default
 ```
 
 A fuller annotated example lives in [`.offsend.yml.example`](../.offsend.yml.example).
@@ -194,6 +195,8 @@ context:
   history:
     audit: true
 ```
+
+`--strict-credentials` does **not** set `context.mcp.responses: seal`. Add that (plus `offsend keygen --default` per machine) when MCP tools are in use — [README → MCP seal](../README.md#mcp-seal).
 
 This does **not** change the default AI-editor prompt policy (`soft-block`). To hard-block secret prompts in the editor:
 

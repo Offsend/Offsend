@@ -104,8 +104,9 @@ hooks:
 #     allow: [github]         # non-empty allow = allowlist mode
 #     deny: [postgres]        # or ["*"] for allowlist-only
 #     high_risk: [filesystem, postgres]
-#     responses: observe      # observe | warn | seal — MCP **response** scan;
-#                             # seal rewrites output for Claude (PostToolUse); Cursor is observe-only
+#     responses: seal         # observe | warn | seal — MCP **response** scan (Cursor + Claude);
+#                             # seal rewrites tool output before the model sees it
+#                             # (needs a seal key: offsend keygen --default)
 #   subagents:
 #     mode: deny              # observe | deny (ask is treated as deny on Cursor subagentStart)
 #     scan_task: true         # secret-scan the subagent task prompt

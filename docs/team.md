@@ -19,6 +19,27 @@ offsend protect    # promote required exposures into .offsend.yml + sync ignores
 offsend sync       # ignore files + git / AI-editor hooks
 ```
 
+### Optional: MCP response seal (Cursor / Claude)
+
+If the team uses MCP tools, seal secrets in tool **responses** before the model sees them. Each engineer needs a local key; the mode lives in the shared policy:
+
+```bash
+offsend keygen --default   # once per machine → ~/.offsend/seal.key (do not commit)
+```
+
+```yaml
+# in .offsend.yml (commit this)
+context:
+  mcp:
+    responses: seal
+```
+
+```bash
+offsend sync && offsend doctor
+```
+
+Short recipe: [README → MCP seal](../README.md#mcp-seal). Details: [cli.md → MCP-response-gate](cli.md#mcp-response-gate-on-by-default).
+
 ## 3. Commit the source of truth
 
 ```bash
