@@ -52,6 +52,11 @@ public struct IgnoreSyncReport: Sendable, Equatable {
 /// block) and, when `ignore.commit` is false, keeps those paths out of git via
 /// a managed block in `.gitignore`.
 public struct OffsendIgnoreSyncService: Sendable {
+    /// Current built-in AI privacy ignore patterns (for `offsend ignore --merge-defaults`).
+    public static var builtInPrivacyPatterns: [String] {
+        AIWorkspacePrivacyIgnoreTemplate.defaultPatterns
+    }
+
     private let configuration: AIWorkspacePrivacyAuditConfiguration
     private let fileManager: FileManager
     private let gitResolver: GitRepositoryResolver

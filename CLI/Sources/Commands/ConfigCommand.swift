@@ -77,6 +77,16 @@ struct Init: AsyncParsableCommand {
     )
     var noSync = false
 
+    @Flag(
+        name: .customLong("strict-credentials"),
+        help: """
+        Enable check/hooks policy checks and a tighter context block (MCP ask, subagent deny, \
+        history audit). Does not change default editor soft-block; reinstall with \
+        --hook-policy block when desired.
+        """
+    )
+    var strictCredentials = false
+
     mutating func run() async throws {
         if listTemplates {
             print(ProjectConfigTemplates.listTemplatesText())
@@ -150,7 +160,8 @@ struct Init: AsyncParsableCommand {
         let contents = ProjectConfigTemplates.renderYAML(
             templates: templates,
             ignoreCommit: options.ignoreCommit,
-            hooksPublish: options.hooksPublish
+            hooksPublish: options.hooksPublish,
+            strictCredentials: strictCredentials
         )
 
         do {
@@ -165,6 +176,10 @@ struct Init: AsyncParsableCommand {
         print(ui.hint("  templates: \(labels)"))
         print(ui.hint("  ignore.commit: \(options.ignoreCommit)"))
         print(ui.hint("  hooks.publish: \(options.hooksPublish)"))
+        if strictCredentials {
+            print(ui.hint("  strict-credentials: on (check/hooks policy + context)"))
+            print(ui.hint("  optional: offsend hook install --hook-policy block"))
+        }
 
         var ranSync = false
         if !noSync {

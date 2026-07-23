@@ -5,7 +5,7 @@ import OffsendRuntime
 struct Protect: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "protect",
-        abstract: "Close gaps: hide exposed sensitive paths from AI tools (add required patterns to .offsend.yml + sync).",
+        abstract: "Close gaps: keep exposed credentials/paths out of AI context (add required patterns to .offsend.yml + sync).",
         discussion: """
         Runs the same path audit as `offsend show`, creates missing AI ignore files, \
         then appends canonical ignore lines for every \

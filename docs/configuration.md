@@ -9,6 +9,7 @@ offsend init                      # TTY prompts: stack, ignore.commit, hooks.pub
 offsend init --template node --no-ignore-commit --no-hooks-publish
 offsend init --template js,swift
 offsend init --template python --merge-exclude
+offsend init --template node --strict-credentials
 offsend init --list-templates
 offsend init --template node --no-check --no-sync
 # or copy the example:
@@ -67,12 +68,13 @@ hooks:
   policy: false
   publish: false
 
-# Optional AI-context controls (MCP policy, etc.)
+# Optional AI-context controls (MCP policy, response seal, …)
 # context:
 #   mcp:
 #     mode: ask          # observe | ask | deny
 #     allow: [github]    # non-empty allow = allowlist mode
 #     high_risk: [filesystem, postgres]
+#     responses: seal    # observe | warn | seal — needs: offsend keygen --default
 ```
 
 A fuller annotated example lives in [`.offsend.yml.example`](../.offsend.yml.example).
@@ -112,6 +114,25 @@ Mandatory AI-ignore patterns for the repository. Source of truth for the managed
 - After editing this list by hand, run `offsend sync` (or `sync --no-hooks` for ignore files only)
 - User-authored lines outside the managed markers are preserved
 
+### Upgrading Offsend CLI (existing `.offsend.yml`)
+
+New releases may add built-in sensitive-path detectors and default ignore patterns. **An existing committed `.offsend.yml` is not auto-updated** — `offsend sync` only materializes whatever is already in `ignore.patterns`.
+
+After upgrading the CLI (especially with CI `check --policy`):
+
+```bash
+# Option A — merge full built-in defaults (recommended after CLI upgrade)
+offsend ignore --merge-defaults
+git add .offsend.yml && git commit -m "Merge AI ignore defaults after Offsend upgrade"
+
+# Option B — only paths currently exposed on disk
+offsend show
+offsend protect && offsend sync
+git add .offsend.yml && git commit -m "Refresh AI ignore for exposed paths"
+```
+
+`--merge-defaults` unions the current built-in privacy pattern list into `ignore.patterns` (idempotent). Because it is a union, defaults you deliberately removed are re-added — preview with `--dry-run` and re-remove unwanted patterns before committing. `protect` only promotes paths that exist and match detectors on disk. Use A after upgrading; use B for day-to-day gap closure.
+
 ### Managed editor privacy rules
 
 `offsend protect` also creates an editor privacy rule per supported editor, rendered from one canonical text in the editor's native format:
@@ -147,6 +168,43 @@ Locally, prefer reviewing with `doctor` / `show` and advise-only `init` checks. 
 ### `check.policy`
 
 When `true`, `offsend check` also runs workspace policy checks for ignore files, exposed sensitive paths, and managed ignore drift. When `false`, it scans file contents only.
+
+### Strict credentials mode
+
+For repos where credentials must not become agent fuel, use:
+
+```bash
+offsend init --template <stack> --strict-credentials
+```
+
+Or set the same shape by hand:
+
+```yaml
+check:
+  fail_on: block
+  policy: true          # also fail on exposed required paths / ignore drift
+hooks:
+  fail_on: block
+  policy: true
+context:
+  mcp:
+    mode: ask           # or deny
+  subagents:
+    mode: deny
+    scan_task: true
+  history:
+    audit: true
+```
+
+`--strict-credentials` does **not** set `context.mcp.responses: seal`. Add that (plus `offsend keygen --default` per machine) when MCP tools are in use — [README → MCP seal](../README.md#mcp-seal).
+
+This does **not** change the default AI-editor prompt policy (`soft-block`). To hard-block secret prompts in the editor:
+
+```bash
+offsend hook install --hook-policy block
+```
+
+Adoption defaults stay soft locally; strict credentials is opt-in. See [FAQ → covers / does not cover](faq.md#what-does-offsend-cover-vs-not-cover).
 
 ### `check.exclude`
 
@@ -215,6 +273,16 @@ Whether installed hooks include workspace policy checks. If omitted, falls back 
 
 Whether AI editor hook files (`.cursor/hooks.json`, `.offsend/hooks/`, …) are intended to be committed. Default `false`: `offsend sync` / `offsend hook install` keep them local via `.git/info/exclude`. When `true`, wrappers omit machine-specific absolute paths so they are safer to share.
 
+### `context.read`
+
+Optional read-gate behavior when a file read is denied because of detected secrets:
+
+| Field | Description |
+| --- | --- |
+| `on_secret` | `block` (default) — plain deny. `seal` — deny, but write a sealed copy (secrets replaced with `{{TYPE:v1.…}}` tokens) and hand the agent its path so work continues without plaintext in context. Requires a seal key (`offsend keygen --default`); without one, falls back to plain deny |
+
+Read at runtime by the read-gate — changing it does not require reinstalling hooks. Sealed copies are exclusively created without following symlinks in a private temp directory, use `0600` permissions, and are cleaned up after ~1 hour. Tokens use fresh random AES-GCM nonces while remaining compatible with existing `v1` tokens. The user can restore agent outputs containing tokens with `offsend unseal`. Note the honest boundary: seal mode keeps plaintext out of transcripts and model context, but a local agent with access to your seal key is not sandboxed by this.
+
 ### `context.mcp`
 
 Optional MCP policy used by `offsend show`, `offsend doctor`, and the MCP-gate (`offsend sync` / `offsend hook install` / `check --mcp-gate`):
@@ -225,6 +293,7 @@ Optional MCP policy used by `offsend show`, `offsend doctor`, and the MCP-gate (
 | `allow` | Server name patterns permitted. A non-empty list switches to allowlist mode: servers not matching are flagged |
 | `deny` | Server name patterns to block. `"*"` also enables allowlist mode |
 | `high_risk` | Patterns flagged in `show` / `doctor` (defaults include `filesystem`, `postgres`, …) |
+| `responses` | MCP **response** scanning (`check --mcp-response-gate`): `observe` (default; log/stderr only), `warn` (also warn the agent), or `seal` (Cursor/Claude: replace MCP output with a sealed version before the model sees it; needs a seal key). Cursor keeps the JSON object shape; Claude receives the sealed output as text (`updatedToolOutput` is a string). Responses above the 2 MiB safety limit, responses whose secrets fail to seal, and secret-bearing responses encountered without a seal key are withheld. Caveat: `warn` relies on hook-injected context (`additional_context` / `additionalContext`), which Cursor builds before 3.9.8 did not deliver to the model — for enforcement use `seal` with a seal key |
 
 ### `context.subagents`
 
@@ -239,6 +308,7 @@ Optional MCP policy used by `offsend show`, `offsend doctor`, and the MCP-gate (
 | --- | --- |
 | `audit` | When `false`, `offsend show` skips the agent-history section (default: audit) |
 | `scrub_on_protect` | When `true`, `offsend protect` also runs history scrub (honors `--dry-run`) |
+| `scan_in_show` | When `true`, `offsend show` / `doctor` content-scan local transcripts (same detectors as `history audit`). Default / unset: count files only. One-shot alternative: `offsend show --scan-history` |
 
 ---
 

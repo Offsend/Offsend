@@ -1,6 +1,7 @@
 import DetectionCore
 import DocumentCore
 import Foundation
+import MaskingCore
 import RiskScoringCore
 import WorkspacePolicyCore
 
@@ -50,6 +51,15 @@ public struct OffsendCheckService: Sendable {
     private let auditor: AIWorkspacePrivacyAuditor
     private let detector: SensitiveDataDetecting
     private let riskScorer: RiskScoring
+    private let defaultSealEngine: SealEngine?
+
+    /// Resolved once per process: hook invocations build several services per
+    /// run, and the default-key lookup can touch the filesystem/Keychain.
+    private static let cachedDefaultSealEngine: SealEngine? = (try? SealKeyResolver.resolve(
+        key: nil,
+        keyFilePath: nil,
+        keyName: nil
+    ).data).flatMap { try? SealEngine(keyData: $0) }
 
     public init(
         context: OffsendRuntimeContext,
@@ -63,6 +73,7 @@ public struct OffsendCheckService: Sendable {
         self.auditor = auditor
         self.detector = detector
         self.riskScorer = riskScorer
+        self.defaultSealEngine = Self.cachedDefaultSealEngine
     }
 
     public func run(_ request: OffsendCheckRequest) async -> CheckReport {
@@ -147,12 +158,18 @@ public struct OffsendCheckService: Sendable {
         let detection = await detector.scan(
             DetectionRequest(text: text, options: detectionOptions)
         )
-        let assessment = riskScorer.assess(detection.entities)
+        // `{{TYPE:v1.…}}` seal tokens are already-protected values; their
+        // ciphertext bodies must not re-trigger detectors.
+        let scannedEntities = filterSealTokenFindings(
+            detection.entities,
+            in: detection.scannedText
+        )
+        let assessment = riskScorer.assess(scannedEntities)
         let findings: [FileCheckFinding]
         if assessment.recommendedAction == .allow {
             findings = []
         } else {
-            findings = detection.entities.map { entity in
+            findings = scannedEntities.map { entity in
                 FileCheckFinding(
                     relativePath: "<stdin>",
                     line: lineNumber(for: entity.range, in: detection.scannedText),
@@ -166,9 +183,9 @@ public struct OffsendCheckService: Sendable {
         // When risk says allow, only surface secret-shaped entities for hook advice.
         let adviceEntities: [SensitiveEntity]
         if assessment.recommendedAction == .allow {
-            adviceEntities = detection.entities.filter(\.type.isSecret)
+            adviceEntities = scannedEntities.filter(\.type.isSecret)
         } else {
-            adviceEntities = detection.entities
+            adviceEntities = scannedEntities
         }
 
         let report = CheckReport(
@@ -255,7 +272,12 @@ public struct OffsendCheckService: Sendable {
     ) -> [FileCheckFinding] {
         guard analysis.assessment.recommendedAction != .allow else { return [] }
 
-        return analysis.detection.entities.map { entity in
+        // Seal tokens in files (e.g. sealed copies) are not live secrets.
+        let entities = filterSealTokenFindings(
+            analysis.detection.entities,
+            in: analysis.detection.scannedText
+        )
+        return entities.map { entity in
             FileCheckFinding(
                 relativePath: relativePath,
                 line: lineNumber(for: entity.range, in: analysis.detection.scannedText),
@@ -264,6 +286,18 @@ public struct OffsendCheckService: Sendable {
                 hasCriticalSecret: entity.type.countsAsCriticalSecret
             )
         }
+    }
+
+    private func filterSealTokenFindings(
+        _ entities: [SensitiveEntity],
+        in text: String
+    ) -> [SensitiveEntity] {
+        let syntacticallyFiltered = SealTokenDetector.excludingTokenSpans(entities, in: text)
+        guard let defaultSealEngine else { return syntacticallyFiltered }
+        return defaultSealEngine.excludingAuthenticatedTokenSpans(
+            syntacticallyFiltered,
+            in: text
+        )
     }
 
     private func action(

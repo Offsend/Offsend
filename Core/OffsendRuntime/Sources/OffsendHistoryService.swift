@@ -386,8 +386,10 @@ public enum OffsendHistoryReporter {
             return renderAuditText(report, ui: CLIText(useColor: useColor))
         case .json:
             return encodeJSON(AuditPayload(
+                schemaVersion: Self.jsonSchemaVersion,
                 filesScanned: report.filesScanned,
                 filesWithFindings: report.filesWithFindings,
+                hasFindings: report.hasFindings,
                 findings: report.findings.map {
                     FindingPayload(
                         path: $0.path,
@@ -411,9 +413,11 @@ public enum OffsendHistoryReporter {
             return renderScrubText(report, ui: CLIText(useColor: useColor))
         case .json:
             return encodeJSON(ScrubPayload(
+                schemaVersion: Self.jsonSchemaVersion,
                 dryRun: report.dryRun,
                 filesTouched: report.filesTouched,
                 redactionCount: report.redactionCount,
+                hasFindings: !report.findings.isEmpty || report.redactionCount > 0,
                 findings: report.findings.map {
                     FindingPayload(
                         path: $0.path,
@@ -426,6 +430,9 @@ public enum OffsendHistoryReporter {
             ))
         }
     }
+
+    /// Bump when JSON field names/semantics change in a breaking way.
+    public static let jsonSchemaVersion = 1
 
     private static func renderAuditText(_ report: OffsendHistoryAuditReport, ui: CLIText) -> String {
         var lines: [String] = [ui.section("History audit")]
@@ -476,16 +483,20 @@ public enum OffsendHistoryReporter {
     }
 
     private struct AuditPayload: Encodable {
+        let schemaVersion: Int
         let filesScanned: Int
         let filesWithFindings: Int
+        let hasFindings: Bool
         let findings: [FindingPayload]
         let errors: [String]
     }
 
     private struct ScrubPayload: Encodable {
+        let schemaVersion: Int
         let dryRun: Bool
         let filesTouched: [String]
         let redactionCount: Int
+        let hasFindings: Bool
         let findings: [FindingPayload]
         let errors: [String]
     }

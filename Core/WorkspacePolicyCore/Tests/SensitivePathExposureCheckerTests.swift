@@ -110,6 +110,30 @@ final class SensitivePathMatcherTests: XCTestCase {
             "env-files"
         )
     }
+
+    func testDefaultPatternsMatchNestedCredentialDirs() {
+        let patterns = AIWorkspaceSensitivePattern.defaultPatterns
+        XCTAssertEqual(
+            SensitivePathMatcher.matchingPattern(relativePath: ".kube/config", patterns: patterns)?.id,
+            "kube-config"
+        )
+        XCTAssertEqual(
+            SensitivePathMatcher.matchingPattern(relativePath: ".aws/config", patterns: patterns)?.id,
+            "aws-files"
+        )
+        XCTAssertEqual(
+            SensitivePathMatcher.matchingPattern(relativePath: ".docker/config.json", patterns: patterns)?.id,
+            "docker-config"
+        )
+        XCTAssertEqual(
+            SensitivePathMatcher.matchingPattern(relativePath: ".ssh/config", patterns: patterns)?.id,
+            "ssh-files"
+        )
+        XCTAssertEqual(
+            SensitivePathMatcher.matchingPattern(relativePath: "logs/app.log", patterns: patterns)?.id,
+            "log-files"
+        )
+    }
 }
 
 final class SensitivePathExposureCheckerTests: XCTestCase {
@@ -194,6 +218,15 @@ final class SensitivePathExposureCheckerTests: XCTestCase {
                 ignorePatternsByFile: ignore
             )
         )
+    }
+
+    func testBenignKeyFilesAreAllowlisted() {
+        let patterns = AIWorkspaceSensitivePattern.defaultPatterns
+        XCTAssertFalse(checker.matchesSensitivePattern(relativePath: "public.key", sensitivePatterns: patterns))
+        XCTAssertFalse(checker.matchesSensitivePattern(relativePath: "vendor/license.key", sensitivePatterns: patterns))
+        XCTAssertFalse(checker.matchesSensitivePattern(relativePath: "docs/licence.key", sensitivePatterns: patterns))
+        XCTAssertTrue(checker.matchesSensitivePattern(relativePath: "tls.key", sensitivePatterns: patterns))
+        XCTAssertTrue(checker.matchesSensitivePattern(relativePath: "private.key", sensitivePatterns: patterns))
     }
 
     func testEnvExampleIsAllowlisted() {
@@ -418,6 +451,14 @@ final class SensitivePathExposureCheckerTests: XCTestCase {
             "accessKeys.csv",
             "application-local.*",
             ".fly/",
+            "_netrc",
+            "secring.*",
+            ".gnupg/",
+            "master.key",
+            "secrets.yml",
+            "secrets.yaml",
+            "credentials.yml",
+            "credentials.yaml",
         ] {
             XCTAssertTrue(patterns.contains(pattern), "Missing ignore pattern: \(pattern)")
         }
@@ -438,6 +479,9 @@ final class SensitivePathExposureCheckerTests: XCTestCase {
         XCTAssertTrue(checker.matchesSensitivePattern(relativePath: "accessKeys.csv", sensitivePatterns: patterns))
         XCTAssertTrue(checker.matchesSensitivePattern(relativePath: "src/main/resources/application-local.yml", sensitivePatterns: patterns))
         XCTAssertTrue(checker.matchesSensitivePattern(relativePath: ".fly/config.yml", sensitivePatterns: patterns))
+        XCTAssertTrue(checker.matchesSensitivePattern(relativePath: "config/master.key", sensitivePatterns: patterns))
+        XCTAssertTrue(checker.matchesSensitivePattern(relativePath: "config/secrets.yml", sensitivePatterns: patterns))
+        XCTAssertTrue(checker.matchesSensitivePattern(relativePath: ".gnupg/pubring.kbx", sensitivePatterns: patterns))
     }
 
     func testDefaultIgnoreTemplateCoversNewSensitivePaths() {
@@ -456,6 +500,12 @@ final class SensitivePathExposureCheckerTests: XCTestCase {
             "vault.kdbx",
             "accessKeys.csv",
             "application-local.properties",
+            "_netrc",
+            "secring.gpg",
+            ".gnupg/private-keys-v1.d/key",
+            "config/master.key",
+            "config/secrets.yml",
+            "deploy/credentials.yaml",
         ] {
             XCTAssertNil(
                 checker.exposedFinding(
@@ -464,6 +514,50 @@ final class SensitivePathExposureCheckerTests: XCTestCase {
                     ignorePatternsByFile: ignore
                 ),
                 "Default ignore template should cover \(path)"
+            )
+        }
+    }
+
+    func testDefaultIgnoreCoversAllRequiredSensitiveSamplePaths() {
+        let ignore: [String: Set<String>] = [
+            ".cursorignore": Set(AIWorkspacePrivacyIgnoreTemplate.defaultPatterns)
+        ]
+        let patterns = AIWorkspaceSensitivePattern.defaultPatterns
+        let requiredSamples: [(id: String, path: String)] = [
+            ("env-files", ".env"),
+            ("env-files", "apps/api/.env.production"),
+            ("pem-files", "server.pem"),
+            ("pem-files", "certs/tls.pem"),
+            ("key-files", "private.key"),
+            ("credentials-json", "credentials.json"),
+            ("credentials-json", "ops/credentials.json"),
+            ("secrets-json", "secrets.json"),
+            ("kube-config", "kubeconfig"),
+            ("kube-config", "cluster.kubeconfig"),
+            ("kube-config", ".kube/config"),
+            ("firebase-keys", "serviceAccountKey.json"),
+            ("firebase-keys", "firebase-adminsdk-abc.json"),
+            ("aws-root-key-csv", "accessKeys.csv"),
+            ("aws-root-key-csv", "credentials.csv"),
+            ("keepass-databases", "vault.kdbx"),
+            ("git-credentials", ".git-credentials"),
+            ("rails-master-key", "config/master.key"),
+            ("secrets-yaml", "config/secrets.yml"),
+            ("secrets-yaml", "credentials.yaml"),
+        ]
+
+        for sample in requiredSamples {
+            XCTAssertTrue(
+                patterns.contains { $0.id == sample.id && $0.severity == .required },
+                "Missing required sensitive pattern \(sample.id)"
+            )
+            XCTAssertNil(
+                checker.exposedFinding(
+                    relativePath: sample.path,
+                    sensitivePatterns: patterns,
+                    ignorePatternsByFile: ignore
+                ),
+                "Required pattern \(sample.id) sample \(sample.path) should be covered by default ignore"
             )
         }
     }

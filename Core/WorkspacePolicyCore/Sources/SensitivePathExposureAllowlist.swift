@@ -5,6 +5,13 @@ public enum SensitivePathExposureAllowlist {
     public static let defaultPatterns: [String] = [
         ".env.example",
         "**/.env.example",
+        // Common non-secret `*.key` names (still match key-files glob).
+        "public.key",
+        "**/public.key",
+        "license.key",
+        "**/license.key",
+        "licence.key",
+        "**/licence.key",
         "Tests/**",
         "**/Tests/**",
         "test/**",

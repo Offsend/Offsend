@@ -483,6 +483,132 @@ final class AIEditorHookInstallerTests: XCTestCase {
         XCTAssertFalse(installer.status(target: .cursor, repositoryPath: root).mcpGate)
     }
 
+    func testMCPResponseGateOnByDefaultForCursor() throws {
+        let installer = AIEditorHookInstaller()
+        let result = try installer.install(
+            target: .cursor,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend"
+        )
+        XCTAssertTrue(result.withMCPResponseGate)
+        let wrapperPath = try XCTUnwrap(result.mcpResponseWrapperPath)
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: wrapperPath))
+
+        let data = try Data(contentsOf: URL(fileURLWithPath: result.configPath))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
+        let responseHooks = try XCTUnwrap(hooks["postToolUse"] as? [[String: Any]])
+        XCTAssertTrue((responseHooks.first?["command"] as? String)?.contains("check-mcp-out.sh") == true)
+        XCTAssertEqual(responseHooks.first?["matcher"] as? String, AIEditorHookInstaller.cursorMCPMatcher)
+        XCTAssertEqual(responseHooks.first?["failClosed"] as? Bool, false)
+        XCTAssertNil(hooks["afterMCPExecution"])
+
+        let wrapper = try String(contentsOf: URL(fileURLWithPath: wrapperPath), encoding: .utf8)
+        XCTAssertTrue(wrapper.contains("--mcp-response-gate"))
+        XCTAssertTrue(wrapper.contains("--secrets-only"))
+        let status = installer.status(target: .cursor, repositoryPath: root)
+        XCTAssertTrue(status.mcpResponseGate)
+        XCTAssertTrue(status.mcpResponseReplacement)
+    }
+
+    func testMCPResponseGateInstallsClaudePostToolUse() throws {
+        let installer = AIEditorHookInstaller()
+        let result = try installer.install(
+            target: .claude,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend"
+        )
+        XCTAssertTrue(result.withMCPResponseGate)
+
+        let data = try Data(contentsOf: URL(fileURLWithPath: result.configPath))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
+        let postGroups = try XCTUnwrap(hooks["PostToolUse"] as? [[String: Any]])
+        let managed = try XCTUnwrap(
+            postGroups.first { group in
+                let nested = group["hooks"] as? [[String: Any]] ?? []
+                return nested.contains { ($0["command"] as? String)?.contains("check-mcp-out.sh") == true }
+            }
+        )
+        XCTAssertEqual(managed["matcher"] as? String, AIEditorHookInstaller.claudeMCPMatcher)
+        let status = installer.status(target: .claude, repositoryPath: root)
+        XCTAssertTrue(status.mcpResponseGate)
+        XCTAssertTrue(status.mcpResponseReplacement)
+    }
+
+    func testLegacyCursorResponseHookIsInstalledButCannotReplaceOutput() throws {
+        let installer = AIEditorHookInstaller()
+        let result = try installer.install(
+            target: .cursor,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend",
+            hookPolicy: .softBlock
+        )
+        let configURL = URL(fileURLWithPath: result.configPath)
+        let data = try Data(contentsOf: configURL)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        var hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
+        hooks["afterMCPExecution"] = hooks.removeValue(forKey: "postToolUse")
+        object["hooks"] = hooks
+        let legacyData = try JSONSerialization.data(
+            withJSONObject: object,
+            options: [.prettyPrinted, .sortedKeys]
+        )
+        try legacyData.write(to: configURL)
+
+        let status = installer.status(target: .cursor, repositoryPath: root)
+        XCTAssertTrue(status.mcpResponseGate)
+        XCTAssertFalse(status.mcpResponseReplacement)
+    }
+
+    func testMCPResponseGateOptOutRemovesEntryAndOrphanWrapper() throws {
+        let installer = AIEditorHookInstaller()
+        _ = try installer.install(
+            target: .cursor,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend",
+            withMCPResponseGate: true
+        )
+        let result = try installer.install(
+            target: .cursor,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend",
+            withMCPResponseGate: false
+        )
+        XCTAssertFalse(result.withMCPResponseGate)
+        XCTAssertNil(result.mcpResponseWrapperPath)
+
+        let data = try Data(contentsOf: URL(fileURLWithPath: result.configPath))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
+        XCTAssertNil(hooks["afterMCPExecution"])
+        XCTAssertNil(hooks["postToolUse"])
+        let wrapperURL = root.appendingPathComponent(AIEditorHookInstaller.mcpResponseWrapperRelativePath)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: wrapperURL.path))
+        let status = installer.status(target: .cursor, repositoryPath: root)
+        XCTAssertFalse(status.mcpResponseGate)
+        XCTAssertFalse(status.mcpResponseReplacement)
+    }
+
+    func testUninstallClaudeRemovesPostToolUse() throws {
+        let installer = AIEditorHookInstaller()
+        let result = try installer.install(
+            target: .claude,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend"
+        )
+        try installer.uninstall(target: .claude, repositoryPath: root)
+
+        if FileManager.default.fileExists(atPath: result.configPath) {
+            let data = try Data(contentsOf: URL(fileURLWithPath: result.configPath))
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            let hooks = object["hooks"] as? [String: Any] ?? [:]
+            XCTAssertNil(hooks["PostToolUse"])
+        }
+        let wrapperURL = root.appendingPathComponent(AIEditorHookInstaller.mcpResponseWrapperRelativePath)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: wrapperURL.path))
+    }
+
     func testShellGateOptOutRemovesEntryAndOrphanWrapper() throws {
         let installer = AIEditorHookInstaller()
         _ = try installer.install(
@@ -669,6 +795,58 @@ final class SealCopyStoreTests: XCTestCase {
         XCTAssertEqual(perms?.intValue ?? 0, 0o600)
         XCTAssertEqual(try String(contentsOf: result.fileURL, encoding: .utf8), "{{SECRET:v1.abc}}")
     }
+
+    func testWriteRejectsSymlinkDirectory() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("offsend-seal-test-\(UUID().uuidString)", isDirectory: true)
+        let target = root.appendingPathComponent("target", isDirectory: true)
+        let link = root.appendingPathComponent("offsend-seal", isDirectory: true)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        XCTAssertThrowsError(try SealCopyStore.write("sealed", in: link)) { error in
+            XCTAssertEqual(error as? SealCopyStoreError, .unsafeDirectory)
+        }
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: target.path), [])
+    }
+
+    func testCleanupOnlyRemovesExpiredManagedRegularFiles() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("offsend-seal-cleanup-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let expired = directory.appendingPathComponent("sealed-old.txt")
+        let unrelated = directory.appendingPathComponent("notes.txt")
+        let symlink = directory.appendingPathComponent("sealed-link.txt")
+        let target = directory.appendingPathComponent("target.txt")
+        try "old".write(to: expired, atomically: true, encoding: .utf8)
+        try "keep".write(to: unrelated, atomically: true, encoding: .utf8)
+        try "target".write(to: target, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: target)
+        let oldDate = Date(timeIntervalSince1970: 1)
+        try FileManager.default.setAttributes(
+            [.modificationDate: oldDate],
+            ofItemAtPath: expired.path
+        )
+        try FileManager.default.setAttributes(
+            [.modificationDate: oldDate],
+            ofItemAtPath: unrelated.path
+        )
+
+        SealCopyStore.cleanupExpired(
+            in: directory,
+            maxAge: 60,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: expired.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: unrelated.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: symlink.path))
+        XCTAssertEqual(try String(contentsOf: target, encoding: .utf8), "target")
+    }
+
 }
 
 final class PromptAttachmentAdvisorTests: XCTestCase {
@@ -696,6 +874,50 @@ final class PromptAttachmentAdvisorTests: XCTestCase {
         XCTAssertFalse(PromptAttachmentAdvisor.isSuspicious(path: "/repo/docker/config.json"))
         XCTAssertFalse(PromptAttachmentAdvisor.isSuspicious(path: "/repo/.dockerignore"))
     }
+
+    func testDetectsAdditionalCredentialBasenamesAndDotfiles() {
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/repo/_netrc"))
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/repo/.git-credentials"))
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/repo/secring.gpg"))
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/repo/accessKeys.csv"))
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/android/local.properties"))
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/config/master.key"))
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/keys/firebase-adminsdk-abc.json"))
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/app/application-local.yml"))
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/home/me/.cargo/credentials.toml"))
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/repo/auth.json"))
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/repo/secrets.yml"))
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/repo/credentials.json"))
+        XCTAssertFalse(PromptAttachmentAdvisor.isSuspicious(path: "/src/AuthorizeService.swift"))
+    }
+
+    func testBareSecretsAndCredentialsFilesWithoutExtensionAreSuspicious() {
+        // Lock behavior: extensionless `credentials` (AWS-style) / `secrets` stay flagged.
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/repo/credentials"))
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/repo/secrets"))
+    }
+
+    func testDoesNotFalsePositiveOnSourceFilesNamedSecretsOrCredentials() {
+        XCTAssertFalse(PromptAttachmentAdvisor.isSuspicious(path: "/Sources/Secrets.swift"))
+        XCTAssertFalse(PromptAttachmentAdvisor.isSuspicious(path: "/src/credentials.ts"))
+        XCTAssertFalse(PromptAttachmentAdvisor.isSuspicious(path: "/lib/secrets.js"))
+        XCTAssertFalse(PromptAttachmentAdvisor.isSuspicious(path: "/pkg/credentials.go"))
+    }
+
+    func testCargoCredentialsOnlyNotWholeCargoDir() {
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/home/me/.cargo/credentials"))
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/home/me/.cargo/credentials.toml"))
+        XCTAssertFalse(PromptAttachmentAdvisor.isSuspicious(path: "/home/me/.cargo/config.toml"))
+        XCTAssertFalse(PromptAttachmentAdvisor.isSuspicious(path: "/home/me/.cargo/registry/src/foo/lib.rs"))
+    }
+
+    func testBenignKeyFilenamesAreNotSuspicious() {
+        XCTAssertFalse(PromptAttachmentAdvisor.isSuspicious(path: "/repo/public.key"))
+        XCTAssertFalse(PromptAttachmentAdvisor.isSuspicious(path: "/repo/license.key"))
+        XCTAssertFalse(PromptAttachmentAdvisor.isSuspicious(path: "/repo/licence.key"))
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/repo/tls.key"))
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/repo/private.key"))
+    }
 }
 
 final class HookDebugLogTests: XCTestCase {
@@ -717,6 +939,51 @@ final class HookDebugLogTests: XCTestCase {
         try big.write(to: url, atomically: true, encoding: .utf8)
         HookDebugLog.rotateIfNeeded(at: url, maxBytes: 100)
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: url.appendingPathExtension("1").path))
+        let rotated = url.appendingPathExtension("1")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: rotated.path))
+        let attributes = try FileManager.default.attributesOfItem(atPath: rotated.path)
+        XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
+    }
+
+    func testAppendCorrectsExistingLogPermissions() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("offsend-debug-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("hook-debug.log")
+        try "existing\n".write(to: url, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: url.path)
+
+        HookDebugLog.append(entry(), to: url)
+
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
+        XCTAssertTrue(try String(contentsOf: url, encoding: .utf8).contains("\"adapter\":\"cursor\""))
+    }
+
+    func testAppendDoesNotFollowLogSymlink() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("offsend-debug-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let target = dir.appendingPathComponent("target.txt")
+        let url = dir.appendingPathComponent("hook-debug.log")
+        try "unchanged".write(to: target, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: url, withDestinationURL: target)
+
+        HookDebugLog.append(entry(), to: url)
+
+        XCTAssertEqual(try String(contentsOf: target, encoding: .utf8), "unchanged")
+    }
+
+    private func entry() -> HookDebugLog.Entry {
+        HookDebugLog.Entry(
+            adapter: "cursor",
+            policy: "soft-block",
+            findingCount: 0,
+            findingTypes: [],
+            exitCode: 0,
+            latencyMs: 1
+        )
     }
 }

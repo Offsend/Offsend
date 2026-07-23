@@ -5,11 +5,16 @@ public struct PromptReadGateDecision: Equatable, Sendable {
     public let path: String
     public let allowed: Bool
     public let reason: String
+    /// Extra guidance for the agent (Cursor `agent_message`; appended to the
+    /// Claude `permissionDecisionReason`). Used by seal-mode denies to hand the
+    /// agent the sealed-copy path.
+    public let agentMessage: String?
 
-    public init(path: String, allowed: Bool, reason: String) {
+    public init(path: String, allowed: Bool, reason: String, agentMessage: String? = nil) {
         self.path = path
         self.allowed = allowed
         self.reason = reason
+        self.agentMessage = agentMessage
     }
 }
 
@@ -24,10 +29,16 @@ public struct PromptReadGateInput: Equatable, Sendable {
     }
 }
 
+public enum PromptReadGateContentResolution: Equatable, Sendable {
+    case content(String)
+    case oversized
+    case unavailable
+}
+
 /// Path denylist + optional secrets scan for Cursor `beforeReadFile` / Claude `PreToolUse` (Read).
 public enum PromptReadGate {
-    /// Cap for disk fallback / scan window (matches default detection `maximumLength`).
-    public static let maxContentCharacters = 50_000
+    /// Full-content budget for hook payloads and disk fallback.
+    public static let maxContentBytes = CheckHookLimits.maxStdinBytes
 
     public static func parse(json: String, adapter: CheckHookAdapter) throws -> PromptReadGateInput {
         guard let data = json.data(using: .utf8),
@@ -97,7 +108,8 @@ public enum PromptReadGate {
             return PromptReadGateDecision(
                 path: path,
                 allowed: false,
-                reason: "Offsend: blocked reading sensitive path (\(name)). Run `offsend ignore '\(name)'` or use env secrets."
+                reason: "Offsend: blocked reading sensitive path (\(name)) — keep credentials out of agent context. "
+                    + "Use env secrets or `offsend ignore '\(name)'`."
             )
         }
         return PromptReadGateDecision(path: path, allowed: true, reason: "")
@@ -119,16 +131,75 @@ public enum PromptReadGate {
             path: path,
             allowed: false,
             reason: "Offsend: blocked reading \(name) — contains secrets (\(typeList)). "
-                + "Move secrets to env / secret manager, or add the path via `offsend ignore`."
+                + "Keep them out of agent context (env / secret manager), or `offsend ignore` the path."
         )
     }
 
-    /// Content from the hook JSON, else a bounded UTF-8 prefix from disk (Claude has no body in PreToolUse).
+    /// Deny that points the agent at a sealed copy instead of a dead end
+    /// (`context.read.on_secret: seal`). Plaintext stays out of the transcript;
+    /// secret values in the copy are `{{TYPE:v1.…}}` tokens.
+    public static func sealedDecision(
+        path: String,
+        sealedCopyPath: String,
+        secretTypes: [String]
+    ) -> PromptReadGateDecision {
+        let name = URL(fileURLWithPath: path).lastPathComponent
+        let typeList = secretTypes.joined(separator: ", ")
+        return PromptReadGateDecision(
+            path: path,
+            allowed: false,
+            reason: "Offsend: blocked reading \(name) — contains secrets (\(typeList)). "
+                + "Sealed copy (secrets → {{…}} tokens): \(sealedCopyPath)",
+            agentMessage: "Read the sealed copy instead: \(sealedCopyPath). "
+                + "Secret values are sealed as {{TYPE:v1.…}} tokens — keep them verbatim; "
+                + "the user can restore outputs with `offsend unseal`."
+        )
+    }
+
+    public static func oversizedDecision(path: String) -> PromptReadGateDecision {
+        let name = URL(fileURLWithPath: path).lastPathComponent
+        return PromptReadGateDecision(
+            path: path,
+            allowed: false,
+            reason: "Offsend: blocked reading \(name) — content exceeds the "
+                + "\(maxContentBytes)-byte safety limit and cannot be fully scanned."
+        )
+    }
+
+    /// Deny for hook input over the stdin byte limit: the payload was never
+    /// parsed, so the path is unknown. Same fail-closed policy as
+    /// `oversizedDecision` — an unscannable read must not pass.
+    public static func oversizedStdinDecision() -> PromptReadGateDecision {
+        PromptReadGateDecision(
+            path: "",
+            allowed: false,
+            reason: "Offsend: blocked this file read — hook input exceeds the "
+                + "\(maxContentBytes)-byte safety limit and cannot be scanned."
+        )
+    }
+
+    public static func contentExceedsLimit(for input: PromptReadGateInput) -> Bool {
+        resolveContentResult(for: input) == .oversized
+    }
+
+    /// Full content from hook JSON, else a bounded complete UTF-8 file from disk.
     public static func resolveContent(for input: PromptReadGateInput) -> String? {
-        if let content = input.content, !content.isEmpty {
-            return String(content.prefix(maxContentCharacters))
+        guard case let .content(content) = resolveContentResult(for: input) else {
+            return nil
         }
-        return loadContentPrefix(fromPath: input.path)
+        return content
+    }
+
+    /// Resolves content and distinguishes an oversized input from other
+    /// unscannable files using the bytes actually read, not path metadata.
+    public static func resolveContentResult(
+        for input: PromptReadGateInput
+    ) -> PromptReadGateContentResolution {
+        if let content = input.content, !content.isEmpty {
+            guard content.utf8.count <= maxContentBytes else { return .oversized }
+            return .content(content)
+        }
+        return loadContentResult(fromPath: input.path)
     }
 
     public static func extractPath(from root: [String: Any], adapter: CheckHookAdapter) -> String? {
@@ -170,27 +241,40 @@ public enum PromptReadGate {
 
     /// Best-effort disk read for Claude (and Cursor when content is omitted). Failures → nil (caller allows).
     public static func loadContentPrefix(fromPath path: String) -> String? {
+        guard case let .content(content) = loadContentResult(fromPath: path) else {
+            return nil
+        }
+        return content
+    }
+
+    private static func loadContentResult(
+        fromPath path: String
+    ) -> PromptReadGateContentResolution {
         let url = URL(fileURLWithPath: path)
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
               !isDirectory.boolValue else {
-            return nil
+            return .unavailable
         }
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return .unavailable }
         defer { try? handle.close() }
 
-        // Read a byte budget large enough for typical UTF-8 of `maxContentCharacters`.
-        let byteBudget = maxContentCharacters * 4
+        // Read one extra byte so an oversized file cannot be mistaken for a
+        // complete safe prefix.
+        let byteBudget = maxContentBytes + 1
         let data: Data
         if #available(macOS 10.15.4, iOS 13.4, *) {
-            guard let chunk = try? handle.read(upToCount: byteBudget) else { return nil }
+            guard let chunk = try? handle.read(upToCount: byteBudget) else { return .unavailable }
             data = chunk
         } else {
             data = handle.readData(ofLength: byteBudget)
         }
-        guard !data.isEmpty, !data.contains(0) else { return nil }
-        guard let text = String(data: data, encoding: .utf8), !text.isEmpty else { return nil }
-        return String(text.prefix(maxContentCharacters))
+        guard data.count <= maxContentBytes else { return .oversized }
+        guard !data.isEmpty, !data.contains(0) else { return .unavailable }
+        guard let text = String(data: data, encoding: .utf8), !text.isEmpty else {
+            return .unavailable
+        }
+        return .content(text)
     }
 }
 
@@ -220,11 +304,15 @@ public enum PromptReadGateRenderer {
                     exitCode: 0
                 )
             }
+            var payload: [String: Any] = [
+                "permission": "deny",
+                "user_message": decision.reason,
+            ]
+            if let agentMessage = decision.agentMessage {
+                payload["agent_message"] = agentMessage
+            }
             return CheckHookAdapterOutput(
-                stdout: jsonObject([
-                    "permission": "deny",
-                    "user_message": decision.reason,
-                ]),
+                stdout: jsonObject(payload),
                 stderr: decision.reason + "\n",
                 exitCode: 0
             )
@@ -234,12 +322,16 @@ public enum PromptReadGateRenderer {
             }
             // PreToolUse requires hookSpecificOutput.permissionDecision (top-level
             // decision/reason is deprecated and ignored by current Claude Code).
+            // The reason reaches the model, so the agent message is appended there.
+            let reason = [decision.reason, decision.agentMessage]
+                .compactMap { $0 }
+                .joined(separator: " ")
             return CheckHookAdapterOutput(
                 stdout: jsonObject([
                     "hookSpecificOutput": [
                         "hookEventName": "PreToolUse",
                         "permissionDecision": "deny",
-                        "permissionDecisionReason": decision.reason,
+                        "permissionDecisionReason": reason,
                     ],
                 ]),
                 stderr: decision.reason + "\n",

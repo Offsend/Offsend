@@ -93,15 +93,25 @@ hooks:
 
 # Optional AI-context controls used by `show`, `doctor`, and the editor gates
 # (`offsend sync` / `offsend hook install`). See docs/configuration.md#contextmcp.
+# Strict credentials recipe (also: offsend init --strict-credentials):
+#   set check.policy / hooks.policy to true, then:
 # context:
+#   read:
+#     on_secret: block        # block | seal — seal: deny hands the agent a sealed copy
+#                             # (secrets → {{TYPE:v1.…}} tokens; needs a seal key: offsend keygen --default)
 #   mcp:
 #     mode: ask               # observe | ask | deny (deny also fails closed on bad hook input)
 #     allow: [github]         # non-empty allow = allowlist mode
 #     deny: [postgres]        # or ["*"] for allowlist-only
 #     high_risk: [filesystem, postgres]
+#     responses: seal         # observe | warn | seal — MCP **response** scan (Cursor + Claude);
+#                             # seal rewrites tool output before the model sees it
+#                             # (needs a seal key: offsend keygen --default)
 #   subagents:
 #     mode: deny              # observe | deny (ask is treated as deny on Cursor subagentStart)
 #     scan_task: true         # secret-scan the subagent task prompt
 #   history:
 #     audit: true             # `offsend show` includes the agent-history section
 #     scrub_on_protect: false # `offsend protect` also runs history scrub
+#     scan_in_show: false     # content-scan transcripts in show/doctor (or: show --scan-history)
+# Editor prompts stay soft-block unless: offsend hook install --hook-policy block

@@ -41,6 +41,115 @@ struct CheckHookEmitter {
         )
     }
 
+    func emitMCPResponseLimitExceeded(
+        adapter: CheckHookAdapter,
+        started: Date,
+        policy: CheckHookPolicy
+    ) {
+        let rendered = PromptMCPResponseGateRenderer.renderLimitExceeded(adapter: adapter)
+        writeHookOutput(rendered)
+        logDebug(
+            adapter: adapter,
+            policy: policy,
+            advice: nil,
+            exitCode: rendered.exitCode,
+            started: started,
+            error: FailOpenReason.stdinTooLarge.code
+        )
+    }
+
+    /// Oversized read-gate hook input cannot be scanned — deny (fail closed),
+    /// matching the oversized-content policy inside `emitReadGate`.
+    func emitReadGateLimitExceeded(
+        adapter: CheckHookAdapter,
+        started: Date,
+        policy: CheckHookPolicy
+    ) {
+        let decision = PromptReadGate.oversizedStdinDecision()
+        let rendered = PromptReadGateRenderer.render(decision: decision, adapter: adapter)
+        writeHookOutput(rendered)
+        logDebug(
+            adapter: adapter,
+            policy: policy,
+            advice: nil,
+            exitCode: rendered.exitCode,
+            started: started,
+            error: "read_gate_denied_oversized_stdin"
+        )
+    }
+
+    /// Oversized MCP-gate hook input: `context.mcp.mode: deny` means the user
+    /// asked to block, so fail closed there (same policy as invalid JSON).
+    func emitMCPGateLimitExceeded(
+        adapter: CheckHookAdapter,
+        started: Date,
+        policy: CheckHookPolicy,
+        mcpConfig: OffsendProjectMCPConfig?
+    ) {
+        guard OffsendContextEnforcementMode(rawValue: mcpConfig?.mode ?? "") == .deny else {
+            emitFailOpen(
+                adapter: adapter,
+                reason: .stdinTooLarge,
+                started: started,
+                policy: policy,
+                kind: .mcpGate
+            )
+            return
+        }
+        let decision = PromptMCPGateDecision(
+            call: PromptMCPGateCall(server: "unknown", tool: "unknown", toolInput: ""),
+            permission: .deny,
+            reason: "Offsend: oversized MCP hook input denied (context.mcp.mode: deny).",
+            code: "invalid_input"
+        )
+        let rendered = PromptMCPGateRenderer.render(decision: decision, adapter: adapter)
+        writeHookOutput(rendered)
+        logDebug(
+            adapter: adapter,
+            policy: policy,
+            advice: nil,
+            exitCode: rendered.exitCode,
+            started: started,
+            error: "mcp_gate_stdin_too_large"
+        )
+    }
+
+    /// Oversized subagent-gate hook input: fail closed under
+    /// `context.subagents.mode: deny`, mirroring the invalid-JSON policy.
+    func emitSubagentGateLimitExceeded(
+        adapter: CheckHookAdapter,
+        started: Date,
+        policy: CheckHookPolicy,
+        subagentsConfig: OffsendProjectSubagentsConfig?
+    ) {
+        guard OffsendContextEnforcementMode(rawValue: subagentsConfig?.mode ?? "") == .deny else {
+            emitFailOpen(
+                adapter: adapter,
+                reason: .stdinTooLarge,
+                started: started,
+                policy: policy,
+                kind: .subagentGate
+            )
+            return
+        }
+        let decision = PromptSubagentGateDecision(
+            call: PromptSubagentGateCall(task: ""),
+            permission: .deny,
+            reason: "Offsend: oversized subagent hook input denied (context.subagents.mode: deny).",
+            code: "invalid_input"
+        )
+        let rendered = PromptSubagentGateRenderer.render(decision: decision, adapter: adapter)
+        writeHookOutput(rendered)
+        logDebug(
+            adapter: adapter,
+            policy: policy,
+            advice: nil,
+            exitCode: rendered.exitCode,
+            started: started,
+            error: "subagent_gate_stdin_too_large"
+        )
+    }
+
     func emitReadGate(
         adapter: CheckHookAdapter,
         rawJSON: String,
@@ -50,7 +159,8 @@ struct CheckHookEmitter {
         disabledDetectors: Set<SensitiveEntityType> = [],
         customDictionaries: [CustomDictionaryItem] = [],
         excludePatterns: [String] = [],
-        projectRoot: URL? = nil
+        projectRoot: URL? = nil,
+        readConfig: OffsendProjectReadConfig? = nil
     ) async {
         let input: PromptReadGateInput
         do {
@@ -90,14 +200,30 @@ struct CheckHookEmitter {
 
         var decision = PromptReadGate.evaluatePath(input.path)
         var denyReason = decision.allowed ? nil : "read_gate_denied_path"
+        var scanResult: OffsendTextCheckResult?
+        var resolvedContent: String?
 
-        if decision.allowed, let content = PromptReadGate.resolveContent(for: input) {
-            let textResult = await OffsendCheckService(context: context).runText(
+        if decision.allowed {
+            switch PromptReadGate.resolveContentResult(for: input) {
+            case let .content(content):
+                resolvedContent = content
+            case .oversized:
+                decision = PromptReadGate.oversizedDecision(path: input.path)
+                denyReason = "read_gate_denied_oversized"
+            case .unavailable:
+                break
+            }
+        }
+
+        if decision.allowed, let content = resolvedContent {
+            let scanned = await OffsendCheckService(context: context).runText(
                 content,
                 failPolicy: .block,
                 disabledDetectors: disabledDetectors,
                 customDictionaries: customDictionaries
             )
+            let textResult = filteringAuthenticatedSealTokens(in: scanned)
+            scanResult = textResult
             if let secretDeny = PromptReadGate.decisionForSecretEntities(
                 path: input.path,
                 entities: textResult.entities,
@@ -105,6 +231,28 @@ struct CheckHookEmitter {
             ) {
                 decision = secretDeny
                 denyReason = "read_gate_denied_secrets"
+            }
+        }
+
+        // context.read.on_secret: seal — swap the dead-end deny for a deny that
+        // hands the agent a sealed copy. Any failure (no key, no scannable
+        // content, no entities) falls back to the plain deny above.
+        if !decision.allowed,
+           OffsendReadGateSecretMode(rawValue: readConfig?.onSecret ?? "") == .seal {
+            if scanResult == nil,
+               let content = resolvedContent ?? PromptReadGate.resolveContent(for: input) {
+                let scanned = await OffsendCheckService(context: context).runText(
+                    content,
+                    failPolicy: .block,
+                    disabledDetectors: disabledDetectors,
+                    customDictionaries: customDictionaries
+                )
+                scanResult = filteringAuthenticatedSealTokens(in: scanned)
+            }
+            if let scanResult,
+               let sealed = sealedReadDecision(input: input, scanResult: scanResult, context: context) {
+                decision = sealed
+                denyReason = "read_gate_denied_sealed_copy"
             }
         }
 
@@ -118,6 +266,70 @@ struct CheckHookEmitter {
             started: started,
             error: denyReason
         )
+    }
+
+    private func filteringAuthenticatedSealTokens(
+        in result: OffsendTextCheckResult
+    ) -> OffsendTextCheckResult {
+        let resolvedKeyFile = keyFile.map {
+            URL(fileURLWithPath: $0, relativeTo: workingDirectory).standardizedFileURL.path
+        }
+        guard let keyData = try? SealKeyResolver.resolve(
+            key: nil,
+            keyFilePath: resolvedKeyFile,
+            keyName: keyName
+        ).data,
+        let engine = try? SealEngine(keyData: keyData) else {
+            return result
+        }
+        let entities = engine.excludingAuthenticatedTokenSpans(
+            result.entities,
+            in: result.scannedText
+        )
+        return OffsendTextCheckResult(
+            report: result.report,
+            entities: entities,
+            scannedText: result.scannedText
+        )
+    }
+
+    /// Seals the scanned text and writes a 0600 temp copy. Returns nil when the
+    /// key does not resolve, no secret entities were found, or sealing fails —
+    /// callers keep the plain deny in that case (never weaker than block mode).
+    private func sealedReadDecision(
+        input: PromptReadGateInput,
+        scanResult: OffsendTextCheckResult,
+        context: OffsendRuntimeContext
+    ) -> PromptReadGateDecision? {
+        let gateEntities = PromptCheckAdviceBuilder.filterEntities(
+            scanResult.entities,
+            secretsOnly: secretsOnly
+        )
+        guard !gateEntities.isEmpty else { return nil }
+        let resolvedKeyFile = keyFile.map {
+            URL(fileURLWithPath: $0, relativeTo: workingDirectory).standardizedFileURL.path
+        }
+        do {
+            let keyData = try SealKeyResolver.resolve(
+                key: nil,
+                keyFilePath: resolvedKeyFile,
+                keyName: keyName
+            ).data
+            let sealed = try OffsendSealService(context: context).seal(
+                text: scanResult.scannedText,
+                entities: gateEntities,
+                keyData: keyData
+            )
+            let written = try SealCopyStore.write(sealed.sealedText)
+            let types = Array(Set(gateEntities.map(\.type.rawValue))).sorted()
+            return PromptReadGate.sealedDecision(
+                path: input.path,
+                sealedCopyPath: written.fileURL.path,
+                secretTypes: types
+            )
+        } catch {
+            return nil
+        }
     }
 
     func emitShellGate(
@@ -199,12 +411,13 @@ struct CheckHookEmitter {
 
         var secretTypes: [String] = []
         if !call.task.isEmpty {
-            let textResult = await OffsendCheckService(context: context).runText(
+            let scanned = await OffsendCheckService(context: context).runText(
                 call.task,
                 failPolicy: .block,
                 disabledDetectors: disabledDetectors,
                 customDictionaries: customDictionaries
             )
+            let textResult = filteringAuthenticatedSealTokens(in: scanned)
             let secrets = PromptCheckAdviceBuilder.filterEntities(
                 textResult.entities,
                 secretsOnly: secretsOnly
@@ -276,12 +489,13 @@ struct CheckHookEmitter {
 
         var secretTypes: [String] = []
         if !call.toolInput.isEmpty {
-            let textResult = await OffsendCheckService(context: context).runText(
+            let scanned = await OffsendCheckService(context: context).runText(
                 call.toolInput,
                 failPolicy: .block,
                 disabledDetectors: disabledDetectors,
                 customDictionaries: customDictionaries
             )
+            let textResult = filteringAuthenticatedSealTokens(in: scanned)
             let secrets = PromptCheckAdviceBuilder.filterEntities(
                 textResult.entities,
                 secretsOnly: secretsOnly
@@ -306,6 +520,103 @@ struct CheckHookEmitter {
         )
     }
 
+    func emitMCPResponseGate(
+        adapter: CheckHookAdapter,
+        rawJSON: String,
+        started: Date,
+        policy: CheckHookPolicy,
+        context: OffsendRuntimeContext,
+        mcpConfig: OffsendProjectMCPConfig?,
+        disabledDetectors: Set<SensitiveEntityType> = [],
+        customDictionaries: [CustomDictionaryItem] = [],
+        secretsOnly: Bool = true
+    ) async {
+        let call: PromptMCPResponseCall
+        do {
+            call = try PromptMCPResponseGate.parse(json: rawJSON, adapter: adapter)
+        } catch {
+            // Post-hoc gate: nothing to block, so fail-open on malformed input.
+            emitFailOpen(
+                adapter: adapter,
+                reason: .invalidJSON,
+                started: started,
+                policy: policy,
+                kind: .mcpResponseGate
+            )
+            return
+        }
+
+        var secretTypes: [String] = []
+        var sealedOutput: String?
+        var sealedCount = 0
+        var sealFailed = false
+        if !call.responseText.isEmpty {
+            let scanned = await OffsendCheckService(context: context).runText(
+                call.responseText,
+                failPolicy: .block,
+                disabledDetectors: disabledDetectors,
+                customDictionaries: customDictionaries
+            )
+            let textResult = filteringAuthenticatedSealTokens(in: scanned)
+            let secrets = PromptCheckAdviceBuilder.filterEntities(
+                textResult.entities,
+                secretsOnly: secretsOnly
+            )
+            secretTypes = Array(Set(secrets.map(\.type.rawValue))).sorted()
+
+            let mode = OffsendMCPResponseMode(rawValue: mcpConfig?.responses ?? "") ?? .observe
+            if mode == .seal,
+               !secrets.isEmpty,
+               !call.truncated,
+               call.canReplaceOutput {
+                let resolvedKeyFile = keyFile.map {
+                    URL(fileURLWithPath: $0, relativeTo: workingDirectory).standardizedFileURL.path
+                }
+                if let keyData = try? SealKeyResolver.resolve(
+                    key: nil,
+                    keyFilePath: resolvedKeyFile,
+                    keyName: keyName
+                ).data {
+                    if let sealed = try? OffsendSealService(context: context).seal(
+                        text: textResult.scannedText,
+                        entities: secrets,
+                        keyData: keyData
+                    ) {
+                        sealedOutput = sealed.sealedText
+                        sealedCount = sealed.sealedCount
+                    } else {
+                        // Key present but sealing broke (e.g. oversized value):
+                        // renderers withhold the output instead of warning.
+                        sealFailed = true
+                    }
+                }
+            }
+        }
+
+        let decision = PromptMCPResponseGate.evaluate(
+            call: call,
+            mcpConfig: mcpConfig,
+            secretTypes: secretTypes,
+            sealedOutput: sealedOutput,
+            sealedCount: sealedCount,
+            sealFailed: sealFailed
+        )
+        let rendered = PromptMCPResponseGateRenderer.render(decision: decision, adapter: adapter)
+        writeHookOutput(rendered)
+        logDebug(
+            adapter: adapter,
+            policy: policy,
+            advice: nil,
+            exitCode: rendered.exitCode,
+            started: started,
+            error: decision.hasFindings
+                ? (decision.sealed
+                    ? "mcp_response_sealed"
+                    : (decision.sealFailed ? "mcp_response_seal_failed" : "mcp_response_secrets"))
+                : nil
+        )
+    }
+
     func emitAdapter(
         adapter: CheckHookAdapter,
         textResult: OffsendTextCheckResult,
@@ -314,6 +625,9 @@ struct CheckHookEmitter {
         started: Date,
         policy: CheckHookPolicy
     ) async throws {
+        // Already-sealed `{{…}}` tokens (authenticated by the configured key)
+        // must not re-trigger the prompt gate.
+        let textResult = filteringAuthenticatedSealTokens(in: textResult)
         let shouldSeal = sealCopy || policy == .block
         let gateEntities = PromptCheckAdviceBuilder.filterEntities(
             textResult.entities,

@@ -45,4 +45,18 @@ final class GlobPatternTests: XCTestCase {
         XCTAssertTrue(glob.matches(".cursor/rules/privacy.mdc"))
         XCTAssertFalse(glob.matches(".cursor/rules/nested/privacy.mdc"))
     }
+
+    func testTrailingSlashDirDoesNotMatchDescendants() {
+        // Document GlobPattern semantics: trailing `/` is literal, unlike gitignore dirs.
+        let glob = GlobPattern(".kube/")
+        XCTAssertTrue(glob.matches(".kube/"))
+        XCTAssertFalse(glob.matches(".kube/config"))
+    }
+
+    func testDoubleStarDirMatchesDescendants() {
+        let glob = GlobPattern(".kube/**")
+        XCTAssertTrue(glob.matches(".kube/config"))
+        XCTAssertTrue(glob.matches(".kube/cache/http"))
+        XCTAssertFalse(glob.matches("kube/config"))
+    }
 }

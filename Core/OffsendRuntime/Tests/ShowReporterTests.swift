@@ -51,7 +51,11 @@ final class ShowReporterTests: XCTestCase {
         let output = ShowReporter().render(report, format: .text)
 
         XCTAssertTrue(output.contains("Scanned: /tmp/project"))
-        XCTAssertTrue(output.contains("2 files would be sent to AI tools (1 required, 1 recommended):"))
+        XCTAssertTrue(
+            output.contains(
+                "2 files exposed to AI tools — usable in further read/shell/MCP steps (1 required, 1 recommended):"
+            )
+        )
         XCTAssertTrue(output.contains("✗ PEM keys [required]"))
         XCTAssertTrue(output.contains("! SSH material [recommended]"))
         XCTAssertTrue(output.contains("    Ignore PEM key files."))
@@ -63,8 +67,9 @@ final class ShowReporterTests: XCTestCase {
 
         let output = ShowReporter().render(report, format: .text)
 
-        XCTAssertTrue(output.contains("1 file would be sent to AI tools"))
+        XCTAssertTrue(output.contains("1 file exposed to AI tools — usable in further read/shell/MCP steps"))
         XCTAssertFalse(output.contains("1 files"))
+        XCTAssertTrue(output.contains("keep required credentials/paths out of AI context"))
     }
 
     func testNoExposureMessage() {
@@ -88,7 +93,7 @@ final class ShowReporterTests: XCTestCase {
         let output = ShowReporter().render(report, format: .text)
 
         XCTAssertTrue(output.contains("! Exposure scan stopped after 1000 files"))
-        XCTAssertTrue(output.contains("1 file would be sent to AI tools"))
+        XCTAssertTrue(output.contains("1 file exposed to AI tools — usable in further read/shell/MCP steps"))
     }
 
     func testLongGroupIsTruncatedWithHint() {

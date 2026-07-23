@@ -6,9 +6,10 @@ Goal: one shared AI context boundary in git. Teammates inherit it on clone; CI f
 
 ```bash
 offsend init --template <stack>   # e.g. node, python, swift
+# optional: --strict-credentials  # policy checks + tighter context (MCP/subagents/history)
 ```
 
-This writes `.offsend.yml`, materializes AI ignore files, and runs a **baseline `check` in advise-only mode** (does not fail `init`). Review `ignore.patterns` and `check.detectors` — teams tune what to disable; credentials stay on by default.
+This writes `.offsend.yml`, materializes AI ignore files, and runs a **baseline `check` in advise-only mode** (does not fail `init`). Review `ignore.patterns` and `check.detectors` — teams tune what to disable; credentials stay on by default. See [Strict credentials](configuration.md#strict-credentials-mode).
 
 ## 2. Close obvious gaps
 
@@ -17,6 +18,27 @@ offsend show
 offsend protect    # promote required exposures into .offsend.yml + sync ignores
 offsend sync       # ignore files + git / AI-editor hooks
 ```
+
+### Optional: MCP response seal (Cursor / Claude)
+
+If the team uses MCP tools, seal secrets in tool **responses** before the model sees them. Each engineer needs a local key; the mode lives in the shared policy:
+
+```bash
+offsend keygen --default   # once per machine → ~/.offsend/seal.key (do not commit)
+```
+
+```yaml
+# in .offsend.yml (commit this)
+context:
+  mcp:
+    responses: seal
+```
+
+```bash
+offsend sync && offsend doctor
+```
+
+Short recipe: [README → MCP seal](../README.md#mcp-seal). Details: [cli.md → MCP-response-gate](cli.md#mcp-response-gate-on-by-default).
 
 ## 3. Commit the source of truth
 
@@ -63,13 +85,20 @@ offsend doctor
 
 Shared baseline in the repo; each team tunes via templates and `detectors.disable`. See [FAQ](faq.md) and [configuration](configuration.md).
 
+After upgrading the Offsend CLI, run `offsend ignore --merge-defaults` (or `show` → `protect` → `sync`) and commit `.offsend.yml` so new built-in credential paths land in the shared policy. See [Upgrading](configuration.md#upgrading-offsend-cli-existing-offsendyml).
+
 ## After a leak into agent history
 
+Use when a coding agent may already have seen credentials (suspicious session, `doctor` / `show` history hint, or secret-shaped findings in transcripts):
+
 ```bash
-offsend history audit
-offsend history scrub --apply
-offsend protect && offsend sync
+offsend history audit                 # find secrets in local Cursor/Claude transcripts
+offsend history scrub --apply         # redact findings (close agent sessions first)
+offsend protect && offsend sync       # close path gaps + refresh ignores/hooks
+offsend doctor                        # confirm next steps / remaining exposures
 ```
+
+Then rotate any credentials that appeared in transcripts. Hooks and ignore files do not undo history that was already written — see [FAQ → covers / does not cover](faq.md#what-does-offsend-cover-vs-not-cover) and [CLI → Agent history](cli.md#agent-history).
 
 ## Related
 

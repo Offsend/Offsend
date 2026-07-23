@@ -2,12 +2,14 @@ import ArgumentParser
 import Foundation
 import OffsendRuntime
 
-struct Show: ParsableCommand {
+struct Show: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "List the sensitive files that would be sent to AI tools (not covered by ignore files).",
+        abstract: "List sensitive files exposed to AI tools (not covered by ignore files).",
         discussion: """
         Use --report to emit an anonymized, aggregated JSON report of AI context \
         hygiene instead (no paths or file names) — suitable for sharing or telemetry.
+        Use --scan-history to content-scan local agent transcripts (same detectors as \
+        `offsend history audit`). Or set context.history.scan_in_show: true in .offsend.yml.
         """
     )
 
@@ -23,17 +25,26 @@ struct Show: ParsableCommand {
     @Option(name: .long, help: "With --report: write the JSON report to this file instead of stdout.")
     var out: String?
 
+    @Flag(
+        name: .customLong("scan-history"),
+        help: "Content-scan local agent transcripts for secret-shaped findings (slower)."
+    )
+    var scanHistory = false
+
     func validate() throws {
         if report {
             if let format, CLIParse.outputFormat(format) == .text {
                 throw ValidationError("--report always emits JSON; --format text is not supported.")
+            }
+            if scanHistory {
+                throw ValidationError("--scan-history is not supported with --report.")
             }
         } else if out != nil {
             throw ValidationError("--out requires --report.")
         }
     }
 
-    mutating func run() throws {
+    mutating func run() async throws {
         let context: OffsendRuntimeContext
         do {
             context = try OffsendRuntimeContext.load()
@@ -51,8 +62,13 @@ struct Show: ParsableCommand {
         }
 
         let outputFormat = CLIParse.outputFormat(format ?? CheckOutputFormat.text.rawValue)
-        let showReport = CLISpinner(message: "Inspecting...").runWhile {
-            OffsendShowService(context: context).run(directoryURL: directoryURL)
+        let spinnerEnabled = outputFormat == .text && CLISpinner.shouldAnimate
+        let spinnerMessage = scanHistory ? "Inspecting (scanning history)..." : "Inspecting..."
+        let showReport = await CLISpinner(message: spinnerMessage, enabled: spinnerEnabled).runWhile {
+            await OffsendShowService(context: context).runAsync(
+                directoryURL: directoryURL,
+                scanHistory: scanHistory
+            )
         }
 
         let useColor = CLIColor.enabled(for: outputFormat)

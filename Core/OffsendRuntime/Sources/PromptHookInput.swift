@@ -105,18 +105,34 @@ public enum PromptHookInput {
 /// Path heuristics for prompt attachments and read-gates (path deny / warn).
 /// Read-gate may also scan file content (hook payload or a bounded disk prefix).
 public enum PromptAttachmentAdvisor {
-    /// Basename tokens matched only with an exact name or a separator (`.`, `-`, `_`).
+    /// Basename tokens matched with an exact name or a separator (`.`, `-`, `_`).
+    /// Key-material names (always suspicious).
     private static let sensitiveBasenames = [
-        "credentials", "secrets", "id_rsa", "id_ed25519", "id_ecdsa",
-        "kubeconfig", "serviceaccountkey",
+        "id_rsa", "id_ed25519", "id_ecdsa",
+        "kubeconfig", "serviceaccountkey", "secring", "accesskeys",
+        "firebase-adminsdk", "application-local",
+    ]
+
+    /// Document-like secret basenames — only when the extension looks secret-bearing
+    /// (avoids denying `Secrets.swift` / `credentials.ts`).
+    private static let secretDocumentBasenames = [
+        "credentials", "secrets",
+    ]
+
+    private static let secretDocumentExtensions: Set<String> = [
+        "json", "yml", "yaml", "csv", "env", "toml", "ini", "conf",
+        "properties", "xml", "txt", "p12", "pfx", "pem", "key",
     ]
 
     private static let sensitiveExactFiles = [
         "google-services.json", "googleservice-info.plist",
+        "local.properties", "master.key", "auth.json",
     ]
 
     private static let sensitiveDotfiles = [
-        ".npmrc", ".pypirc", ".netrc",
+        ".npmrc", ".pypirc", ".netrc", "_netrc",
+        ".git-credentials", ".pgpass", ".my.cnf", ".htpasswd",
+        ".yarnrc.yml", ".terraformrc",
     ]
 
     private static let sensitiveExtensions = [
@@ -124,6 +140,13 @@ public enum PromptAttachmentAdvisor {
         "tfstate", "tfvars", "jks", "keystore", "mobileprovision",
     ]
 
+    /// `*.key` files that are usually not private key material.
+    private static let benignKeyFileNames: Set<String> = [
+        "public.key", "license.key", "licence.key",
+    ]
+
+    /// Whole-directory sensitivity (every path under these components).
+    /// Note: `.cargo` is **not** included — only `.cargo/credentials*` (see below).
     private static let sensitiveDirectoryComponents: Set<String> = [
         ".ssh", ".aws", ".azure", ".kube", ".docker", ".gnupg", ".fly",
     ]
@@ -141,6 +164,13 @@ public enum PromptAttachmentAdvisor {
         if components.contains(where: sensitiveDirectoryComponents.contains) {
             return true
         }
+        // Rust: flag credential files under `.cargo/`, not config.toml / registry cache.
+        if let cargoIndex = components.firstIndex(of: ".cargo") {
+            let underCargo = components.suffix(from: components.index(after: cargoIndex))
+            if underCargo.contains(where: { $0.hasPrefix("credentials") }) {
+                return true
+            }
+        }
 
         let name = URL(fileURLWithPath: path).lastPathComponent.lowercased()
 
@@ -156,8 +186,14 @@ public enum PromptAttachmentAdvisor {
         if sensitiveBasenames.contains(where: { basenameMatches($0, name: name) }) {
             return true
         }
+        if secretDocumentBasenames.contains(where: { secretDocumentMatches($0, name: name) }) {
+            return true
+        }
         // Private key material often named `*.key` / `*.pem`.
-        if let ext = fileExtension(of: name), sensitiveExtensions.contains(ext) || ext == "key" {
+        if let ext = fileExtension(of: name), sensitiveExtensions.contains(ext) {
+            return true
+        }
+        if let ext = fileExtension(of: name), ext == "key", !benignKeyFileNames.contains(name) {
             return true
         }
         return false
@@ -177,6 +213,14 @@ public enum PromptAttachmentAdvisor {
         if name.hasPrefix(marker + "-") { return true }
         if name.hasPrefix(marker + "_") { return true }
         return false
+    }
+
+    /// `secrets.yml` / `credentials-prod.json` match; `Secrets.swift` / `credentials.ts` do not.
+    private static func secretDocumentMatches(_ marker: String, name: String) -> Bool {
+        guard basenameMatches(marker, name: name) else { return false }
+        if name == marker { return true }
+        guard let ext = fileExtension(of: name) else { return true }
+        return secretDocumentExtensions.contains(ext)
     }
 
     private static func fileExtension(of name: String) -> String? {

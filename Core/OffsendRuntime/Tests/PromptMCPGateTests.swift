@@ -18,6 +18,20 @@ final class PromptMCPGateTests: XCTestCase {
         XCTAssertEqual(call.server, "filesystem")
     }
 
+    func testParseCursorMCPQualifiedToolName() throws {
+        let json = #"{"tool_name":"MCP:github/search/code","tool_input":{"query":"needle"}}"#
+        let call = try PromptMCPGate.parse(json: json, adapter: .cursor)
+        XCTAssertEqual(call.server, "github")
+        XCTAssertEqual(call.tool, "search/code")
+    }
+
+    func testCursorQualifiedToolNameMatchesServerPolicy() throws {
+        let json = #"{"tool_name":"MCP:github/search","tool_input":{}}"#
+        let call = try PromptMCPGate.parse(json: json, adapter: .cursor)
+        let config = OffsendProjectMCPConfig(mode: "deny", allow: ["github"])
+        XCTAssertEqual(PromptMCPGate.evaluate(call: call, mcpConfig: config).permission, .allow)
+    }
+
     func testParseClaudeMCPToolName() throws {
         let json = #"{"tool_name":"mcp__github__list_issues","tool_input":{"repo":"acme/app"}}"#
         let call = try PromptMCPGate.parse(json: json, adapter: .claude)
@@ -77,6 +91,23 @@ final class PromptMCPGateTests: XCTestCase {
         let decision = PromptMCPGate.evaluate(call: call, mcpConfig: nil)
         XCTAssertEqual(decision.permission, .ask)
         XCTAssertEqual(decision.code, "sensitive_path")
+        XCTAssertTrue(decision.reason.contains("fuel"))
+    }
+
+    func testFlagsMasterKeyAndGitCredentialsInArgs() {
+        let master = PromptMCPGateCall(
+            server: "fs",
+            tool: "read",
+            toolInput: #"{"path":"config/master.key"}"#
+        )
+        XCTAssertEqual(PromptMCPGate.evaluate(call: master).code, "sensitive_path")
+
+        let gitCreds = PromptMCPGateCall(
+            server: "fs",
+            tool: "read",
+            toolInput: ".git-credentials"
+        )
+        XCTAssertEqual(PromptMCPGate.evaluate(call: gitCreds).code, "sensitive_path")
     }
 
     func testSecretTypesDenyInDenyMode() {

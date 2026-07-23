@@ -13,6 +13,9 @@ struct Ignore: ParsableCommand {
         Use --local to append patterns only to AI ignore files on this machine. \
         Local rules are not written to .offsend.yml and will not be shared.
 
+        Use --merge-defaults after upgrading Offsend to merge the current built-in \
+        AI privacy patterns into ignore.patterns (then commit .offsend.yml).
+
         To re-materialize ignore.patterns after editing .offsend.yml by hand, \
         run `offsend sync` (or `offsend sync --no-hooks` for ignore files only).
 
@@ -29,6 +32,16 @@ struct Ignore: ParsableCommand {
     )
     var local = false
 
+    @Flag(
+        name: .customLong("merge-defaults"),
+        help: """
+        Merge the current built-in AI privacy default patterns into ignore.patterns \
+        (upgrade path for existing .offsend.yml), then materialize ignore files. \
+        Do not pass pattern arguments with this flag.
+        """
+    )
+    var mergeDefaults = false
+
     @Option(name: .long, help: "Project directory. Defaults to the current directory.")
     var path: String?
 
@@ -39,8 +52,20 @@ struct Ignore: ParsableCommand {
     var format: String = CheckOutputFormat.text.rawValue
 
     func validate() throws {
+        if mergeDefaults {
+            if local {
+                throw ValidationError("--merge-defaults cannot be used with --local.")
+            }
+            if !patterns.isEmpty {
+                throw ValidationError("Do not pass patterns with --merge-defaults.")
+            }
+            return
+        }
         guard !patterns.isEmpty else {
-            throw ValidationError("Provide at least one path or pattern to ignore. To re-materialize .offsend.yml, run `offsend sync`.")
+            throw ValidationError(
+                "Provide at least one path or pattern to ignore, or use --merge-defaults. "
+                    + "To re-materialize .offsend.yml, run `offsend sync`."
+            )
         }
     }
 
@@ -75,8 +100,12 @@ struct Ignore: ParsableCommand {
             return
         }
 
+        let patternsToPromote = mergeDefaults
+            ? OffsendIgnoreSyncService.builtInPrivacyPatterns
+            : patterns
+
         let result = OffsendIgnoreSyncService(context: context).promotePatterns(
-            patterns,
+            patternsToPromote,
             directoryURL: directoryURL,
             dryRun: dryRun
         )
@@ -125,16 +154,25 @@ struct Ignore: ParsableCommand {
             let ui = CLIText(useColor: useColor)
             if let configPath = result.configPath {
                 if result.added.isEmpty {
-                    print(ui.ok("No new patterns for \(configPath) (already present or unchanged)"))
+                    let note = mergeDefaults
+                        ? "Built-in defaults already present in \(configPath)"
+                        : "No new patterns for \(configPath) (already present or unchanged)"
+                    print(ui.ok(note))
                 } else if dryRun {
                     print(ui.section("Config"))
-                    print(ui.hint("Would add to \(ProjectConfigLoader.filename):"))
+                    let hint = mergeDefaults
+                        ? "Would merge built-in defaults into \(ProjectConfigLoader.filename):"
+                        : "Would add to \(ProjectConfigLoader.filename):"
+                    print(ui.hint(hint))
                     for pattern in result.added {
                         print(ui.add(pattern))
                     }
                 } else {
                     print(ui.section("Config"))
-                    print(ui.hint("Added to \(ProjectConfigLoader.filename):"))
+                    let hint = mergeDefaults
+                        ? "Merged built-in defaults into \(ProjectConfigLoader.filename):"
+                        : "Added to \(ProjectConfigLoader.filename):"
+                    print(ui.hint(hint))
                     for pattern in result.added {
                         print(ui.add(pattern))
                     }

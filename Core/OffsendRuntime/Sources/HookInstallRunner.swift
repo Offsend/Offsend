@@ -76,6 +76,7 @@ public enum HookInstallRunner {
         withShellGate: Bool = true,
         withMCPGate: Bool = true,
         withSubagentGate: Bool = true,
+        withMCPResponseGate: Bool = true,
         onInstall: (AIEditorHookInstallResult) -> Void = { _ in }
     ) throws -> AIOutcome {
         let installer = AIEditorHookInstaller()
@@ -98,6 +99,7 @@ public enum HookInstallRunner {
                     withShellGate: withShellGate,
                     withMCPGate: withMCPGate,
                     withSubagentGate: withSubagentGate,
+                    withMCPResponseGate: withMCPResponseGate,
                     portableWrappers: publishHooks
                 )
                 results.append(result)

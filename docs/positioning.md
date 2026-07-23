@@ -6,6 +6,10 @@ Internal framing for product copy, docs, and posts. Not a feature list.
 
 Commit an AI context boundary next to the code — like `.gitignore`, but for what agents may read. Teammates inherit it on clone; CI can fail when the boundary drifts or secrets appear.
 
+Product emphasis: credentials in agent context are **leverage for multi-step tool use** (read / shell / MCP), not only a privacy leak. Offsend reduces that fuel; it is not a sandbox.
+
+Enforcement posture: **don’t stop the agent — swap the secrets for tokens.** Where the editor allows it, gates prefer substitution over dead-end denies: seal-for-agents gives the agent a sealed copy of a blocked file (`context.read.on_secret: seal`), and the MCP-response gate seals secrets in Cursor/Claude tool output (`context.mcp.responses: seal`). Work continues; plaintext stays out of model context; the user reverses tokens with `offsend unseal`. Blocking remains the default and the fallback when sealing is unavailable.
+
 ## Who it is for
 
 - Teams that share a repository and already use AI coding tools

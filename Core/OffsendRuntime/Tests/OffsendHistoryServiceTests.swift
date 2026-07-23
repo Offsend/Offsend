@@ -139,6 +139,70 @@ final class OffsendHistoryServiceTests: XCTestCase {
         XCTAssertTrue(resolvedPath(report.findings[0].path).hasPrefix(resolvedPath(matching.path)))
     }
 
+    func testAuditJSONSchemaIsStableForScripts() async throws {
+        let root = try makeTempRoot(prefix: "offsend-hist-json")
+        let home = root.appendingPathComponent("home", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let transcripts = try makeCursorTranscriptsDir(projectRoot: root, home: home)
+        let fileURL = transcripts.appendingPathComponent("session-1.jsonl")
+        let jsonl = #"{"role":"user","content":"AWS_ACCESS_KEY_ID=\#(secret)"}"# + "\n"
+        try jsonl.write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let report = await OffsendHistoryService().audit(
+            projectRoot: root,
+            homeDirectory: home,
+            context: context,
+            allProjects: false
+        )
+        let json = OffsendHistoryReporter.renderAudit(report, format: .json)
+        let data = try XCTUnwrap(json.data(using: .utf8))
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+
+        XCTAssertEqual(object["schemaVersion"] as? Int, OffsendHistoryReporter.jsonSchemaVersion)
+        XCTAssertEqual(object["filesScanned"] as? Int, 1)
+        XCTAssertEqual(object["hasFindings"] as? Bool, true)
+        XCTAssertEqual(object["filesWithFindings"] as? Int, 1)
+        XCTAssertNotNil(object["findings"] as? [[String: Any]])
+        XCTAssertNotNil(object["errors"] as? [Any])
+
+        let empty = OffsendHistoryReporter.renderAudit(
+            OffsendHistoryAuditReport(filesScanned: 0, findings: [], errors: []),
+            format: .json
+        )
+        let emptyObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(empty.utf8)) as? [String: Any]
+        )
+        XCTAssertEqual(emptyObject["schemaVersion"] as? Int, 1)
+        XCTAssertEqual(emptyObject["hasFindings"] as? Bool, false)
+    }
+
+    func testScrubJSONIncludesSchemaVersion() throws {
+        let report = OffsendHistoryScrubReport(
+            dryRun: true,
+            filesTouched: ["/tmp/a.jsonl"],
+            redactionCount: 2,
+            findings: [
+                OffsendHistoryFinding(
+                    path: "/tmp/a.jsonl",
+                    source: "cursor",
+                    secretTypes: ["awsAccessKeyId"],
+                    findingCount: 2
+                )
+            ]
+        )
+        let json = OffsendHistoryReporter.renderScrub(report, format: .json)
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+        )
+        XCTAssertEqual(object["schemaVersion"] as? Int, 1)
+        XCTAssertEqual(object["dryRun"] as? Bool, true)
+        XCTAssertEqual(object["hasFindings"] as? Bool, true)
+        XCTAssertEqual(object["redactionCount"] as? Int, 2)
+    }
+
     func testCursorProjectSlug() {
         let url = URL(fileURLWithPath: "/Users/me/Projects/app")
         XCTAssertEqual(

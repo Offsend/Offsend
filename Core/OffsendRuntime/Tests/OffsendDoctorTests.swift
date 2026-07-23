@@ -145,6 +145,47 @@ final class OffsendDoctorTests: XCTestCase {
         XCTAssertFalse(text.contains("offsend setup"), text)
     }
 
+    func testNextActionsTipSuggestsHistoryAuditWhenFirstAction() {
+        let report = DoctorReport(
+            checks: [
+                DoctorCheck(name: "project-config", status: .ok, message: "/repo/.offsend.yml"),
+                DoctorCheck(
+                    name: "next-actions",
+                    status: .warn,
+                    message: "1. offsend history audit   # 2 local transcript(s) may already hold secrets"
+                ),
+            ],
+            suggestedActions: [
+                "offsend history audit   # 2 local transcript(s) may already hold secrets"
+            ]
+        )
+
+        let text = DoctorReporter().render(report, format: .text)
+        XCTAssertTrue(text.contains("Tip: offsend history audit"), text)
+        XCTAssertTrue(text.contains("scrub --apply"), text)
+        XCTAssertFalse(text.contains("Tip: offsend sync"), text)
+    }
+
+    func testNextActionsTipSuggestsHistoryScrubWhenFirstAction() {
+        let report = DoctorReport(
+            checks: [
+                DoctorCheck(name: "project-config", status: .ok, message: "/repo/.offsend.yml"),
+                DoctorCheck(
+                    name: "next-actions",
+                    status: .warn,
+                    message: "1. offsend history scrub --apply   # 1/2 transcript(s) already hold secrets"
+                ),
+            ],
+            suggestedActions: [
+                "offsend history scrub --apply   # 1/2 transcript(s) already hold secrets"
+            ]
+        )
+
+        let text = DoctorReporter().render(report, format: .text)
+        XCTAssertTrue(text.contains("Tip: offsend history scrub --apply"), text)
+        XCTAssertFalse(text.contains("Tip: offsend history audit"), text)
+    }
+
     // MARK: - hasManagedIgnoreDrift
 
     func testHasManagedIgnoreDriftWhenPatternsMissingFromIgnoreFile() throws {

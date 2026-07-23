@@ -34,6 +34,16 @@ public enum PromptShellGate {
     }
 
     public static func evaluate(command: String, cwd: String? = nil) -> PromptShellGateDecision {
+        // `offsend unseal` restores sealed plaintext; the agent must not quietly
+        // unseal what the read/MCP gates just sealed. Ask the user first.
+        if referencesUnseal(command) {
+            return PromptShellGateDecision(
+                command: command,
+                suspiciousPaths: ["offsend unseal"],
+                reason: "Offsend: command runs `offsend unseal` — it restores sealed secrets to plaintext. "
+                    + "Confirm before running; unseal output belongs to the user, not the agent context."
+            )
+        }
         var seen = Set<String>()
         var suspicious: [String] = []
         for candidate in pathCandidates(in: command) {
@@ -49,8 +59,19 @@ public enum PromptShellGate {
         return PromptShellGateDecision(
             command: command,
             suspiciousPaths: suspicious,
-            reason: "Offsend: command touches sensitive path (\(names)). Confirm before running."
+            reason: "Offsend: command touches sensitive path (\(names)). "
+                + "Confirm before running — secrets can fuel further tool use."
         )
+    }
+
+    /// True when the command invokes `offsend … unseal` (any path to the binary).
+    static func referencesUnseal(_ command: String) -> Bool {
+        let tokens = command.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard tokens.contains("unseal") else { return false }
+        return tokens.contains { token in
+            let trimmed = token.trimmingCharacters(in: CharacterSet(charactersIn: "\"'`"))
+            return trimmed == "offsend" || trimmed.hasSuffix("/offsend")
+        }
     }
 
     /// Raw token first (covers `~/.ssh/…` without expanding), then absolute + symlink target.
@@ -120,7 +141,7 @@ public enum PromptShellGateRenderer {
                 stdout: jsonObject([
                     "permission": "ask",
                     "user_message": decision.reason,
-                    "agent_message": "The command references sensitive files (\(decision.suspiciousPaths.joined(separator: ", "))). Ask the user before reading secret material, or use env vars / AI ignore files.",
+                    "agent_message": "The command references sensitive files (\(decision.suspiciousPaths.joined(separator: ", "))). Ask the user before reading secret material — credentials can fuel further tool use. Prefer env vars / AI ignore files.",
                 ]),
                 stderr: decision.reason + "\n",
                 exitCode: 0

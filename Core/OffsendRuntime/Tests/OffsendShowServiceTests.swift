@@ -106,4 +106,91 @@ final class OffsendShowServiceTests: XCTestCase {
         let ranks = severities.map { $0 == AIWorkspacePrivacyRuleSeverity.required.rawValue ? 0 : 1 }
         XCTAssertEqual(ranks, ranks.sorted(), "Required-severity groups must come before recommended ones.")
     }
+
+    func testHistoryCountOnlyByDefault() async throws {
+        let home = root.appendingPathComponent("home", isDirectory: true)
+        let slug = OffsendHistoryService.cursorProjectSlug(for: root)
+        let transcripts = home
+            .appendingPathComponent(".cursor/projects")
+            .appendingPathComponent(slug)
+            .appendingPathComponent("agent-transcripts")
+            .appendingPathComponent("session-1")
+        try FileManager.default.createDirectory(at: transcripts, withIntermediateDirectories: true)
+        try "AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF\n".write(
+            to: transcripts.appendingPathComponent("session-1.jsonl"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let report = makeService().run(directoryURL: root, homeDirectory: home)
+        XCTAssertEqual(report.history.filesScanned, 1)
+        XCTAssertEqual(report.history.filesWithFindings, 0)
+        XCTAssertFalse(report.history.contentScanned)
+        XCTAssertEqual(report.history.message, "run offsend history audit to scan for secrets")
+    }
+
+    func testHistoryContentScanViaFlag() async throws {
+        let home = root.appendingPathComponent("home", isDirectory: true)
+        let slug = OffsendHistoryService.cursorProjectSlug(for: root)
+        let transcripts = home
+            .appendingPathComponent(".cursor/projects")
+            .appendingPathComponent(slug)
+            .appendingPathComponent("agent-transcripts")
+            .appendingPathComponent("session-1")
+        try FileManager.default.createDirectory(at: transcripts, withIntermediateDirectories: true)
+        let secret = "AKIA1234567890ABCDEF"
+        let jsonl = #"{"role":"user","content":"AWS_ACCESS_KEY_ID=\#(secret)"}"# + "\n"
+        try jsonl.write(
+            to: transcripts.appendingPathComponent("session-1.jsonl"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let context = OffsendRuntimeContext(settings: .default, customDictionaries: [])
+        let report = await OffsendShowService(context: context).runAsync(
+            directoryURL: root,
+            homeDirectory: home,
+            scanHistory: true
+        )
+        XCTAssertEqual(report.history.filesScanned, 1)
+        XCTAssertEqual(report.history.filesWithFindings, 1)
+        XCTAssertFalse(report.history.secretTypes.isEmpty)
+        XCTAssertTrue(report.history.contentScanned)
+        XCTAssertEqual(report.history.message, "run: offsend history scrub --apply")
+    }
+
+    func testHistoryContentScanViaConfig() async throws {
+        try write(
+            ".offsend.yml",
+            """
+            version: 1
+            context:
+              history:
+                scan_in_show: true
+            """
+        )
+        let home = root.appendingPathComponent("home", isDirectory: true)
+        let slug = OffsendHistoryService.cursorProjectSlug(for: root)
+        let transcripts = home
+            .appendingPathComponent(".cursor/projects")
+            .appendingPathComponent(slug)
+            .appendingPathComponent("agent-transcripts")
+            .appendingPathComponent("session-1")
+        try FileManager.default.createDirectory(at: transcripts, withIntermediateDirectories: true)
+        try #"{"role":"user","content":"hello"}"#.write(
+            to: transcripts.appendingPathComponent("session-1.jsonl"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let context = OffsendRuntimeContext(settings: .default, customDictionaries: [])
+        let report = await OffsendShowService(context: context).runAsync(
+            directoryURL: root,
+            homeDirectory: home
+        )
+        XCTAssertEqual(report.history.filesScanned, 1)
+        XCTAssertEqual(report.history.filesWithFindings, 0)
+        XCTAssertTrue(report.history.contentScanned)
+        XCTAssertNil(report.history.message)
+    }
 }

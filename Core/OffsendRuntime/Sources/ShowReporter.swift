@@ -55,7 +55,9 @@ public struct ShowReporter: Sendable {
         let fileWord = Self.pluralize(report.totalExposedCount, singular: "file")
         let summary = Self.severitySummary(for: report.groups)
         let suffix = summary.isEmpty ? "" : " (\(summary))"
-        exposure.append("\(report.totalExposedCount) \(fileWord) would be sent to AI tools\(suffix):")
+        exposure.append(
+            "\(report.totalExposedCount) \(fileWord) exposed to AI tools — usable in further read/shell/MCP steps\(suffix):"
+        )
 
         for group in report.groups {
             exposure.append("")
@@ -80,7 +82,9 @@ public struct ShowReporter: Sendable {
         if !mcpLines.isEmpty { sections.append(mcpLines) }
         let historyLines = renderHistoryLines(report.history, ui: ui)
         if !historyLines.isEmpty { sections.append(historyLines) }
-        sections.append([ui.next("offsend protect   # hide required paths from AI, then re-run offsend show")])
+        sections.append([
+            ui.next("offsend protect   # keep required credentials/paths out of AI context, then offsend show")
+        ])
         return CLIText.joinSections(sections)
     }
 
@@ -96,7 +100,7 @@ public struct ShowReporter: Sendable {
             if !history.secretTypes.isEmpty {
                 lines.append(ui.note("types: \(history.secretTypes.joined(separator: ", "))"))
             }
-            lines.append(ui.note("scrub with: offsend history scrub --apply"))
+            lines.append(ui.note("scrub: offsend history scrub --apply"))
         } else if let message = history.message {
             lines.append(ui.note(message))
         }

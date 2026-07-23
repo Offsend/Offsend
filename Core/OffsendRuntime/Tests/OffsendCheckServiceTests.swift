@@ -66,7 +66,24 @@ final class OffsendCheckServiceTests: XCTestCase {
 
         XCTAssertFalse(result.entities.isEmpty)
         XCTAssertEqual(result.report.fileFindings.first?.relativePath, "<stdin>")
-        XCTAssertTrue(result.entities.contains { $0.type == .awsAccessKeyId })
+        XCTAssertTrue(
+            result.entities.contains { $0.type == .awsAccessKeyId },
+            "Expected AWS finding, got \(result.entities.map { ($0.type, $0.value) })"
+        )
+    }
+
+    func testRunTextDoesNotTrustFakeSealTokenAroundSecret() async {
+        let context = OffsendRuntimeContext(settings: .default, customDictionaries: [])
+        let service = OffsendCheckService(context: context)
+        let result = await service.runText(
+            "{{SECRET:v1.AKIA1234567890ABCDEF}}",
+            failPolicy: .block
+        )
+
+        XCTAssertTrue(
+            result.entities.contains { $0.type.isSecret },
+            "Expected a secret finding, got \(result.entities.map { ($0.type, $0.value) })"
+        )
     }
 
     func testRunTextSeparatesRiskReportFromSecretGateEntities() async {
