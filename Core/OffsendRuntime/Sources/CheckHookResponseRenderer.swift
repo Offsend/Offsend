@@ -14,6 +14,9 @@ public enum CheckHookResponseRenderer {
         case mcpGate
         /// Cursor `subagentStart`.
         case subagentGate
+        /// Cursor `afterMCPExecution` / Claude `PostToolUse` (MCP tools).
+        /// Post-hoc observation — fail-open is an empty object, never a permission.
+        case mcpResponseGate
     }
 
     /// Allow through after an infrastructure error. `reason` is a short public code.
@@ -46,6 +49,13 @@ public enum CheckHookResponseRenderer {
                     exitCode: 0
                 )
             case .claude:
+                return CheckHookAdapterOutput(stdout: "{}", stderr: stderr, exitCode: 0)
+            case .windsurf, .codex:
+                return CheckHookAdapterOutput(stdout: "", stderr: stderr, exitCode: 0)
+            }
+        case .mcpResponseGate:
+            switch adapter {
+            case .cursor, .claude:
                 return CheckHookAdapterOutput(stdout: "{}", stderr: stderr, exitCode: 0)
             case .windsurf, .codex:
                 return CheckHookAdapterOutput(stdout: "", stderr: stderr, exitCode: 0)

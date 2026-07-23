@@ -300,6 +300,8 @@ public extension AIWorkspaceSensitivePattern {
             acceptedPatterns: [
                 ".ssh/",
                 "**/.ssh/",
+                ".ssh/**",
+                "**/.ssh/**",
                 "id_rsa",
                 "**/id_rsa",
                 "**/.ssh/id_rsa",
@@ -317,7 +319,14 @@ public extension AIWorkspaceSensitivePattern {
         AIWorkspaceSensitivePattern(
             id: "aws-files",
             title: "AWS credentials",
-            acceptedPatterns: [".aws/", "**/.aws/", ".aws/credentials", "**/.aws/credentials"],
+            acceptedPatterns: [
+                ".aws/",
+                "**/.aws/",
+                ".aws/**",
+                "**/.aws/**",
+                ".aws/credentials",
+                "**/.aws/credentials"
+            ],
             severity: .recommended,
             category: .cloud,
             remediation: "Ignore AWS credential directories and files."
@@ -357,6 +366,8 @@ public extension AIWorkspaceSensitivePattern {
             acceptedPatterns: [
                 ".azure/",
                 "**/.azure/",
+                ".azure/**",
+                "**/.azure/**",
                 "azureauth.json",
                 "**/azureauth.json"
             ],
@@ -373,7 +384,9 @@ public extension AIWorkspaceSensitivePattern {
                 "*.kubeconfig",
                 "**/*.kubeconfig",
                 ".kube/",
-                "**/.kube/"
+                "**/.kube/",
+                ".kube/**",
+                "**/.kube/**"
             ],
             severity: .required,
             category: .cloud,
@@ -472,6 +485,8 @@ public extension AIWorkspaceSensitivePattern {
             acceptedPatterns: [
                 ".docker/",
                 "**/.docker/",
+                ".docker/**",
+                "**/.docker/**",
                 ".dockerconfigjson",
                 "**/.dockerconfigjson"
             ],
@@ -589,7 +604,14 @@ public extension AIWorkspaceSensitivePattern {
         AIWorkspaceSensitivePattern(
             id: "fly-cli-config",
             title: "Fly.io CLI config",
-            acceptedPatterns: [".fly/", "**/.fly/", ".fly/config.yml", "**/.fly/config.yml"],
+            acceptedPatterns: [
+                ".fly/",
+                "**/.fly/",
+                ".fly/**",
+                "**/.fly/**",
+                ".fly/config.yml",
+                "**/.fly/config.yml"
+            ],
             severity: .recommended,
             category: .cloud,
             remediation: "Ignore .fly/ — Fly CLI config can contain access tokens."
@@ -601,6 +623,44 @@ public extension AIWorkspaceSensitivePattern {
             severity: .required,
             category: .secret,
             remediation: "Ignore .git-credentials — it stores plaintext Git tokens."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "rails-master-key",
+            title: "Rails master.key",
+            acceptedPatterns: ["master.key", "**/master.key"],
+            severity: .required,
+            category: .secret,
+            remediation: "Ignore master.key — it decrypts Rails credentials."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "secrets-yaml",
+            title: "Secrets / credentials YAML",
+            acceptedPatterns: [
+                "secrets.yml",
+                "**/secrets.yml",
+                "secrets.yaml",
+                "**/secrets.yaml",
+                "credentials.yml",
+                "**/credentials.yml",
+                "credentials.yaml",
+                "**/credentials.yaml"
+            ],
+            severity: .required,
+            category: .secret,
+            remediation: "Ignore secrets.yml / credentials.yml (and .yaml) — they often hold plaintext secrets."
+        ),
+        AIWorkspaceSensitivePattern(
+            id: "gnupg-home",
+            title: "GnuPG home",
+            acceptedPatterns: [
+                ".gnupg/",
+                "**/.gnupg/",
+                ".gnupg/**",
+                "**/.gnupg/**"
+            ],
+            severity: .recommended,
+            category: .secret,
+            remediation: "Ignore .gnupg/ — it holds private keyrings."
         ),
         AIWorkspaceSensitivePattern(
             id: "pgpass-files",
@@ -674,7 +734,14 @@ public extension AIWorkspaceSensitivePattern {
         AIWorkspaceSensitivePattern(
             id: "log-files",
             title: "Log files",
-            acceptedPatterns: ["*.log", "**/*.log", "logs/", "**/logs/"],
+            acceptedPatterns: [
+                "*.log",
+                "**/*.log",
+                "logs/",
+                "**/logs/",
+                "logs/**",
+                "**/logs/**"
+            ],
             severity: .informational,
             category: .pii,
             remediation: "Consider ignoring logs/ and *.log which can leak tokens and PII."
@@ -682,7 +749,16 @@ public extension AIWorkspaceSensitivePattern {
         AIWorkspaceSensitivePattern(
             id: "data-exports",
             title: "Data exports & dumps",
-            acceptedPatterns: ["dumps/", "**/dumps/", "exports/", "**/exports/"],
+            acceptedPatterns: [
+                "dumps/",
+                "**/dumps/",
+                "dumps/**",
+                "**/dumps/**",
+                "exports/",
+                "**/exports/",
+                "exports/**",
+                "**/exports/**"
+            ],
             severity: .informational,
             category: .pii,
             remediation: "Consider ignoring dumps/ and exports/ which often contain PII."

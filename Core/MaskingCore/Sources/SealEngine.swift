@@ -37,6 +37,26 @@ public enum SealTokenDetector: Sendable {
         let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
         return pattern.numberOfMatches(in: text, options: [], range: nsRange)
     }
+
+    public static func tokenRanges(in text: String) -> [Range<String.Index>] {
+        let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
+        return pattern.matches(in: text, options: [], range: nsRange)
+            .compactMap { Range($0.range, in: text) }
+    }
+
+    /// Drops entities that overlap a seal-token span. Token bodies are base64url
+    /// ciphertext and trip generic detectors (api-key/entropy shapes), but they
+    /// are already-sealed values — not live secrets.
+    public static func excludingTokenSpans(
+        _ entities: [SensitiveEntity],
+        in text: String
+    ) -> [SensitiveEntity] {
+        guard !entities.isEmpty, containsSealTokens(in: text) else { return entities }
+        let spans = tokenRanges(in: text)
+        return entities.filter { entity in
+            !spans.contains { $0.overlaps(entity.range) }
+        }
+    }
 }
 
 public struct SealEngine: TextSealing, Sendable {

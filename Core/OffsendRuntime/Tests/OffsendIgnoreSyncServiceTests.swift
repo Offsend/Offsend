@@ -64,6 +64,41 @@ final class OffsendIgnoreSyncServiceTests: XCTestCase {
         ))
     }
 
+    func testPromoteBuiltInDefaultsMergesMissingPatterns() throws {
+        try writeConfig(
+            """
+            version: 1
+            ignore:
+              commit: true
+              patterns:
+                - ".env*"
+                - "*.pem"
+            """
+        )
+
+        let result = OffsendIgnoreSyncService().promotePatterns(
+            OffsendIgnoreSyncService.builtInPrivacyPatterns,
+            directoryURL: root,
+            dryRun: false
+        )
+        XCTAssertTrue(result.sync.errors.isEmpty, result.sync.errors.joined(separator: "; "))
+        XCTAssertFalse(result.added.isEmpty, "expected missing built-in defaults to be added")
+        XCTAssertFalse(result.added.contains(".env*"))
+        XCTAssertTrue(result.added.contains("secrets.yml") || result.added.contains("master.key"))
+
+        let yaml = try String(contentsOf: root.appendingPathComponent(".offsend.yml"), encoding: .utf8)
+        XCTAssertTrue(yaml.contains(".env*"))
+        XCTAssertTrue(yaml.contains("*.pem"))
+        // Idempotent second merge.
+        let again = OffsendIgnoreSyncService().promotePatterns(
+            OffsendIgnoreSyncService.builtInPrivacyPatterns,
+            directoryURL: root,
+            dryRun: false
+        )
+        XCTAssertTrue(again.added.isEmpty)
+        XCTAssertTrue(again.sync.errors.isEmpty)
+    }
+
     func testPromotePatternsUpdatesYAMLThenSync() throws {
         try writeConfig(
             """

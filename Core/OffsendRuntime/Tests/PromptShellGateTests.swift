@@ -15,6 +15,13 @@ final class PromptShellGateTests: XCTestCase {
         XCTAssertTrue(decision.reason.contains(".env"))
     }
 
+    func testFlagsAdditionalCredentialPaths() {
+        XCTAssertFalse(PromptShellGate.evaluate(command: "cat config/master.key").allowed)
+        XCTAssertFalse(PromptShellGate.evaluate(command: "less _netrc").allowed)
+        XCTAssertFalse(PromptShellGate.evaluate(command: "cp secring.gpg /tmp/").allowed)
+        XCTAssertFalse(PromptShellGate.evaluate(command: "cat .git-credentials").allowed)
+    }
+
     func testFlagsSSHKeyCopy() {
         let decision = PromptShellGate.evaluate(command: "cp ~/.ssh/id_rsa /tmp/key")
         XCTAssertFalse(decision.allowed)
@@ -33,6 +40,26 @@ final class PromptShellGateTests: XCTestCase {
         XCTAssertEqual(decision.suspiciousPaths, [".env"])
 
         XCTAssertTrue(PromptShellGate.evaluate(command: "ls -la --color=auto src").allowed)
+    }
+
+    func testAsksOnOffsendUnseal() {
+        let direct = PromptShellGate.evaluate(command: "offsend unseal --key-name work < sealed.txt")
+        XCTAssertFalse(direct.allowed)
+        XCTAssertEqual(direct.suspiciousPaths, ["offsend unseal"])
+        XCTAssertTrue(direct.reason.contains("unseal"))
+
+        let viaPath = PromptShellGate.evaluate(command: "/usr/local/bin/offsend unseal file.txt")
+        XCTAssertFalse(viaPath.allowed)
+
+        let piped = PromptShellGate.evaluate(command: "cat sealed.txt | offsend unseal")
+        XCTAssertFalse(piped.allowed)
+    }
+
+    func testDoesNotFlagUnrelatedUnsealMentions() {
+        // `unseal` without the offsend binary, and offsend without unseal.
+        XCTAssertTrue(PromptShellGate.evaluate(command: "vault operator unseal").allowed)
+        XCTAssertTrue(PromptShellGate.evaluate(command: "offsend check README.md").allowed)
+        XCTAssertTrue(PromptShellGate.evaluate(command: "offsend seal notes.txt").allowed)
     }
 
     func testExtractCommandCursorAndClaude() throws {

@@ -5,11 +5,16 @@ public struct PromptReadGateDecision: Equatable, Sendable {
     public let path: String
     public let allowed: Bool
     public let reason: String
+    /// Extra guidance for the agent (Cursor `agent_message`; appended to the
+    /// Claude `permissionDecisionReason`). Used by seal-mode denies to hand the
+    /// agent the sealed-copy path.
+    public let agentMessage: String?
 
-    public init(path: String, allowed: Bool, reason: String) {
+    public init(path: String, allowed: Bool, reason: String, agentMessage: String? = nil) {
         self.path = path
         self.allowed = allowed
         self.reason = reason
+        self.agentMessage = agentMessage
     }
 }
 
@@ -97,7 +102,8 @@ public enum PromptReadGate {
             return PromptReadGateDecision(
                 path: path,
                 allowed: false,
-                reason: "Offsend: blocked reading sensitive path (\(name)). Run `offsend ignore '\(name)'` or use env secrets."
+                reason: "Offsend: blocked reading sensitive path (\(name)) — keep credentials out of agent context. "
+                    + "Use env secrets or `offsend ignore '\(name)'`."
             )
         }
         return PromptReadGateDecision(path: path, allowed: true, reason: "")
@@ -119,7 +125,28 @@ public enum PromptReadGate {
             path: path,
             allowed: false,
             reason: "Offsend: blocked reading \(name) — contains secrets (\(typeList)). "
-                + "Move secrets to env / secret manager, or add the path via `offsend ignore`."
+                + "Keep them out of agent context (env / secret manager), or `offsend ignore` the path."
+        )
+    }
+
+    /// Deny that points the agent at a sealed copy instead of a dead end
+    /// (`context.read.on_secret: seal`). Plaintext stays out of the transcript;
+    /// secret values in the copy are `{{TYPE:v1.…}}` tokens.
+    public static func sealedDecision(
+        path: String,
+        sealedCopyPath: String,
+        secretTypes: [String]
+    ) -> PromptReadGateDecision {
+        let name = URL(fileURLWithPath: path).lastPathComponent
+        let typeList = secretTypes.joined(separator: ", ")
+        return PromptReadGateDecision(
+            path: path,
+            allowed: false,
+            reason: "Offsend: blocked reading \(name) — contains secrets (\(typeList)). "
+                + "Sealed copy (secrets → {{…}} tokens): \(sealedCopyPath)",
+            agentMessage: "Read the sealed copy instead: \(sealedCopyPath). "
+                + "Secret values are sealed as {{TYPE:v1.…}} tokens — keep them verbatim; "
+                + "the user can restore outputs with `offsend unseal`."
         )
     }
 
@@ -220,11 +247,15 @@ public enum PromptReadGateRenderer {
                     exitCode: 0
                 )
             }
+            var payload: [String: Any] = [
+                "permission": "deny",
+                "user_message": decision.reason,
+            ]
+            if let agentMessage = decision.agentMessage {
+                payload["agent_message"] = agentMessage
+            }
             return CheckHookAdapterOutput(
-                stdout: jsonObject([
-                    "permission": "deny",
-                    "user_message": decision.reason,
-                ]),
+                stdout: jsonObject(payload),
                 stderr: decision.reason + "\n",
                 exitCode: 0
             )
@@ -234,12 +265,16 @@ public enum PromptReadGateRenderer {
             }
             // PreToolUse requires hookSpecificOutput.permissionDecision (top-level
             // decision/reason is deprecated and ignored by current Claude Code).
+            // The reason reaches the model, so the agent message is appended there.
+            let reason = [decision.reason, decision.agentMessage]
+                .compactMap { $0 }
+                .joined(separator: " ")
             return CheckHookAdapterOutput(
                 stdout: jsonObject([
                     "hookSpecificOutput": [
                         "hookEventName": "PreToolUse",
                         "permissionDecision": "deny",
-                        "permissionDecisionReason": decision.reason,
+                        "permissionDecisionReason": reason,
                     ],
                 ]),
                 stderr: decision.reason + "\n",

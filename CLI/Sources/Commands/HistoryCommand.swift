@@ -45,7 +45,8 @@ struct HistoryAudit: AsyncParsableCommand {
             staged: false
         )
 
-        let report = await CLISpinner(message: "Auditing agent history...").runWhile {
+        let spinnerEnabled = outputFormat == .text && CLISpinner.shouldAnimate
+        let report = await CLISpinner(message: "Auditing agent history...", enabled: spinnerEnabled).runWhile {
             await OffsendHistoryService().audit(
                 projectRoot: projectRoot,
                 homeDirectory: home,
@@ -108,7 +109,11 @@ struct HistoryScrub: AsyncParsableCommand {
             staged: false
         )
 
-        let report = await CLISpinner(message: apply ? "Scrubbing..." : "Dry-run scrub...").runWhile {
+        let spinnerEnabled = outputFormat == .text && CLISpinner.shouldAnimate
+        let report = await CLISpinner(
+            message: apply ? "Scrubbing..." : "Dry-run scrub...",
+            enabled: spinnerEnabled
+        ).runWhile {
             await OffsendHistoryService().scrub(
                 projectRoot: projectRoot,
                 homeDirectory: home,

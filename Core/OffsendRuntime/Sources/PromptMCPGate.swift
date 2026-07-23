@@ -90,7 +90,8 @@ public enum PromptMCPGate {
             return PromptMCPGateDecision(
                 call: call,
                 permission: permission,
-                reason: "Offsend: MCP tool args reference sensitive path (\(names)).",
+                reason: "Offsend: MCP tool args reference sensitive path (\(names)) — "
+                    + "secrets can fuel further tool use.",
                 code: "sensitive_path",
                 suspiciousPaths: paths,
                 secretTypes: []
@@ -103,7 +104,8 @@ public enum PromptMCPGate {
             return PromptMCPGateDecision(
                 call: call,
                 permission: permission,
-                reason: "Offsend: MCP tool args contain secrets (\(typeList)).",
+                reason: "Offsend: MCP tool args contain secrets (\(typeList)) — "
+                    + "keep credentials out of agent context.",
                 code: "secrets",
                 suspiciousPaths: [],
                 secretTypes: secretTypes

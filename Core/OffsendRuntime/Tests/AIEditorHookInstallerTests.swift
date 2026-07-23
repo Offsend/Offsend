@@ -483,6 +483,99 @@ final class AIEditorHookInstallerTests: XCTestCase {
         XCTAssertFalse(installer.status(target: .cursor, repositoryPath: root).mcpGate)
     }
 
+    func testMCPResponseGateOnByDefaultForCursor() throws {
+        let installer = AIEditorHookInstaller()
+        let result = try installer.install(
+            target: .cursor,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend"
+        )
+        XCTAssertTrue(result.withMCPResponseGate)
+        let wrapperPath = try XCTUnwrap(result.mcpResponseWrapperPath)
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: wrapperPath))
+
+        let data = try Data(contentsOf: URL(fileURLWithPath: result.configPath))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
+        let responseHooks = try XCTUnwrap(hooks["afterMCPExecution"] as? [[String: Any]])
+        XCTAssertTrue((responseHooks.first?["command"] as? String)?.contains("check-mcp-out.sh") == true)
+        // Post-hoc observation must not block tool results on hook failure.
+        XCTAssertEqual(responseHooks.first?["failClosed"] as? Bool, false)
+
+        let wrapper = try String(contentsOf: URL(fileURLWithPath: wrapperPath), encoding: .utf8)
+        XCTAssertTrue(wrapper.contains("--mcp-response-gate"))
+        XCTAssertTrue(wrapper.contains("--secrets-only"))
+        XCTAssertTrue(installer.status(target: .cursor, repositoryPath: root).mcpResponseGate)
+    }
+
+    func testMCPResponseGateInstallsClaudePostToolUse() throws {
+        let installer = AIEditorHookInstaller()
+        let result = try installer.install(
+            target: .claude,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend"
+        )
+        XCTAssertTrue(result.withMCPResponseGate)
+
+        let data = try Data(contentsOf: URL(fileURLWithPath: result.configPath))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
+        let postGroups = try XCTUnwrap(hooks["PostToolUse"] as? [[String: Any]])
+        let managed = try XCTUnwrap(
+            postGroups.first { group in
+                let nested = group["hooks"] as? [[String: Any]] ?? []
+                return nested.contains { ($0["command"] as? String)?.contains("check-mcp-out.sh") == true }
+            }
+        )
+        XCTAssertEqual(managed["matcher"] as? String, AIEditorHookInstaller.claudeMCPMatcher)
+        XCTAssertTrue(installer.status(target: .claude, repositoryPath: root).mcpResponseGate)
+    }
+
+    func testMCPResponseGateOptOutRemovesEntryAndOrphanWrapper() throws {
+        let installer = AIEditorHookInstaller()
+        _ = try installer.install(
+            target: .cursor,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend",
+            withMCPResponseGate: true
+        )
+        let result = try installer.install(
+            target: .cursor,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend",
+            withMCPResponseGate: false
+        )
+        XCTAssertFalse(result.withMCPResponseGate)
+        XCTAssertNil(result.mcpResponseWrapperPath)
+
+        let data = try Data(contentsOf: URL(fileURLWithPath: result.configPath))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
+        XCTAssertNil(hooks["afterMCPExecution"])
+        let wrapperURL = root.appendingPathComponent(AIEditorHookInstaller.mcpResponseWrapperRelativePath)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: wrapperURL.path))
+        XCTAssertFalse(installer.status(target: .cursor, repositoryPath: root).mcpResponseGate)
+    }
+
+    func testUninstallClaudeRemovesPostToolUse() throws {
+        let installer = AIEditorHookInstaller()
+        let result = try installer.install(
+            target: .claude,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend"
+        )
+        try installer.uninstall(target: .claude, repositoryPath: root)
+
+        if FileManager.default.fileExists(atPath: result.configPath) {
+            let data = try Data(contentsOf: URL(fileURLWithPath: result.configPath))
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            let hooks = object["hooks"] as? [String: Any] ?? [:]
+            XCTAssertNil(hooks["PostToolUse"])
+        }
+        let wrapperURL = root.appendingPathComponent(AIEditorHookInstaller.mcpResponseWrapperRelativePath)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: wrapperURL.path))
+    }
+
     func testShellGateOptOutRemovesEntryAndOrphanWrapper() throws {
         let installer = AIEditorHookInstaller()
         _ = try installer.install(
@@ -669,6 +762,30 @@ final class SealCopyStoreTests: XCTestCase {
         XCTAssertEqual(perms?.intValue ?? 0, 0o600)
         XCTAssertEqual(try String(contentsOf: result.fileURL, encoding: .utf8), "{{SECRET:v1.abc}}")
     }
+
+    func testIsSealCopyPathMatchesWrittenCopies() throws {
+        let result = try SealCopyStore.write("{{SECRET:v1.abc}}")
+        defer { try? FileManager.default.removeItem(at: result.fileURL) }
+        XCTAssertTrue(SealCopyStore.isSealCopyPath(result.fileURL.path))
+        XCTAssertFalse(SealCopyStore.isSealCopyPath("/repo/.env"))
+        XCTAssertFalse(SealCopyStore.isSealCopyPath(FileManager.default.temporaryDirectory.path))
+    }
+
+    func testIsSealCopyPathResolvesSymlinkTarget() throws {
+        // A symlink planted inside the seal dir must not allowlist an outside target.
+        let outside = FileManager.default.temporaryDirectory
+            .appendingPathComponent("outside-\(UUID().uuidString).txt")
+        try "secret".write(to: outside, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: outside) }
+
+        let directory = SealCopyStore.directoryURL()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let link = directory.appendingPathComponent("link-\(UUID().uuidString).txt")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: outside)
+        defer { try? FileManager.default.removeItem(at: link) }
+
+        XCTAssertFalse(SealCopyStore.isSealCopyPath(link.path))
+    }
 }
 
 final class PromptAttachmentAdvisorTests: XCTestCase {
@@ -695,6 +812,50 @@ final class PromptAttachmentAdvisorTests: XCTestCase {
         XCTAssertFalse(PromptAttachmentAdvisor.isSuspicious(path: "/repo/kube/config"))
         XCTAssertFalse(PromptAttachmentAdvisor.isSuspicious(path: "/repo/docker/config.json"))
         XCTAssertFalse(PromptAttachmentAdvisor.isSuspicious(path: "/repo/.dockerignore"))
+    }
+
+    func testDetectsAdditionalCredentialBasenamesAndDotfiles() {
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/repo/_netrc"))
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/repo/.git-credentials"))
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/repo/secring.gpg"))
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/repo/accessKeys.csv"))
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/android/local.properties"))
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/config/master.key"))
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/keys/firebase-adminsdk-abc.json"))
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/app/application-local.yml"))
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/home/me/.cargo/credentials.toml"))
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/repo/auth.json"))
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/repo/secrets.yml"))
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/repo/credentials.json"))
+        XCTAssertFalse(PromptAttachmentAdvisor.isSuspicious(path: "/src/AuthorizeService.swift"))
+    }
+
+    func testBareSecretsAndCredentialsFilesWithoutExtensionAreSuspicious() {
+        // Lock behavior: extensionless `credentials` (AWS-style) / `secrets` stay flagged.
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/repo/credentials"))
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/repo/secrets"))
+    }
+
+    func testDoesNotFalsePositiveOnSourceFilesNamedSecretsOrCredentials() {
+        XCTAssertFalse(PromptAttachmentAdvisor.isSuspicious(path: "/Sources/Secrets.swift"))
+        XCTAssertFalse(PromptAttachmentAdvisor.isSuspicious(path: "/src/credentials.ts"))
+        XCTAssertFalse(PromptAttachmentAdvisor.isSuspicious(path: "/lib/secrets.js"))
+        XCTAssertFalse(PromptAttachmentAdvisor.isSuspicious(path: "/pkg/credentials.go"))
+    }
+
+    func testCargoCredentialsOnlyNotWholeCargoDir() {
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/home/me/.cargo/credentials"))
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/home/me/.cargo/credentials.toml"))
+        XCTAssertFalse(PromptAttachmentAdvisor.isSuspicious(path: "/home/me/.cargo/config.toml"))
+        XCTAssertFalse(PromptAttachmentAdvisor.isSuspicious(path: "/home/me/.cargo/registry/src/foo/lib.rs"))
+    }
+
+    func testBenignKeyFilenamesAreNotSuspicious() {
+        XCTAssertFalse(PromptAttachmentAdvisor.isSuspicious(path: "/repo/public.key"))
+        XCTAssertFalse(PromptAttachmentAdvisor.isSuspicious(path: "/repo/license.key"))
+        XCTAssertFalse(PromptAttachmentAdvisor.isSuspicious(path: "/repo/licence.key"))
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/repo/tls.key"))
+        XCTAssertTrue(PromptAttachmentAdvisor.isSuspicious(path: "/repo/private.key"))
     }
 }
 

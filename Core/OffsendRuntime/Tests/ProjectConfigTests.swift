@@ -53,6 +53,56 @@ final class ProjectConfigTests: XCTestCase {
         XCTAssertFalse(issues.contains { $0.contains("ignore_exclude") }, issues.joined(separator: "; "))
     }
 
+    func testContextReadAndMCPResponsesConfig() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
+
+        let yaml = """
+        version: 1
+        context:
+          read:
+            on_secret: seal
+          mcp:
+            responses: warn
+        """
+        try yaml.write(to: root.appendingPathComponent(".offsend.yml"), atomically: true, encoding: .utf8)
+
+        let config = try XCTUnwrap(ProjectConfigLoader().load(from: root))
+        XCTAssertEqual(config.context?.read?.onSecret, "seal")
+        XCTAssertEqual(config.context?.mcp?.responses, "warn")
+        XCTAssertTrue(ProjectConfigValidator.validate(config).isEmpty)
+        // Keys must be known to the structure validator.
+        let structureIssues = ProjectConfigValidator.validateYAMLStructure(yaml)
+        XCTAssertTrue(structureIssues.isEmpty, structureIssues.joined(separator: "; "))
+    }
+
+    func testContextReadAndMCPResponsesInvalidValues() {
+        let config = OffsendProjectConfig(
+            context: OffsendProjectContextConfig(
+                mcp: OffsendProjectMCPConfig(responses: "rewrite"),
+                read: OffsendProjectReadConfig(onSecret: "mask")
+            )
+        )
+        let issues = ProjectConfigValidator.validate(config)
+        XCTAssertTrue(issues.contains { $0.contains("context.read.on_secret 'mask'") }, issues.joined(separator: "; "))
+        XCTAssertTrue(issues.contains { $0.contains("context.mcp.responses 'rewrite'") }, issues.joined(separator: "; "))
+    }
+
+    func testContextReadUnknownKeyFlagged() {
+        let issues = ProjectConfigValidator.validateYAMLStructure(
+            """
+            version: 1
+            context:
+              read:
+                on_read: seal
+            """
+        )
+        XCTAssertTrue(issues.contains { $0.contains("context.read key 'on_read'") }, issues.joined(separator: "; "))
+    }
+
     func testOptionsResolverPrefersCLIOverridesOverConfig() {
         let config = OffsendProjectConfig(
             check: OffsendProjectCheckConfig(failOn: "warn", policy: true)
@@ -129,8 +179,8 @@ final class ProjectConfigTests: XCTestCase {
         ))
     }
 
-    func testDoctorReportFailsWhenSettingsUnavailable() {
-        let report = OffsendDoctor().run(context: nil)
+    func testDoctorReportFailsWhenSettingsUnavailable() async {
+        let report = await OffsendDoctor().run(context: nil)
         XCTAssertFalse(report.isHealthy)
         XCTAssertTrue(report.checks.contains { $0.name == "settings" && $0.status == .fail })
     }
@@ -295,6 +345,8 @@ final class ProjectConfigTests: XCTestCase {
         XCTAssertTrue(yaml.contains("ignore:"))
         XCTAssertTrue(yaml.contains("commit: false"))
         XCTAssertTrue(yaml.contains("publish: false"))
+        XCTAssertTrue(yaml.contains("policy: false"))
+        XCTAssertFalse(yaml.contains("context:"))
 
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -309,10 +361,57 @@ final class ProjectConfigTests: XCTestCase {
         XCTAssertTrue(config.check?.exclude?.contains("*.lock") == true)
         XCTAssertEqual(config.ignore?.commit, false)
         XCTAssertEqual(config.hooks?.publish, false)
+        XCTAssertEqual(config.check?.policy, false)
+        XCTAssertEqual(config.hooks?.policy, false)
         let ignorePatterns = try XCTUnwrap(config.ignore?.patterns)
         XCTAssertEqual(ignorePatterns, AIWorkspacePrivacyIgnoreTemplate.defaultPatterns)
         XCTAssertTrue(ignorePatterns.contains(".env*"))
         XCTAssertTrue(ignorePatterns.contains("*.pem"))
+    }
+
+    func testRenderYAMLKeepsCredentialDetectorsEnabled() throws {
+        let yaml = ProjectConfigTemplates.renderYAML(templates: [.common])
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        try yaml.write(to: root.appendingPathComponent(".offsend.yml"), atomically: true, encoding: .utf8)
+
+        let config = try XCTUnwrap(ProjectConfigLoader().load(from: root))
+        let disabled = Set(config.check?.detectors?.disable ?? [])
+        XCTAssertEqual(disabled, Set(ProjectConfigTemplates.defaultDisabledDetectorIDs))
+        for id in ProjectConfigTemplates.credentialDetectorIDs {
+            XCTAssertFalse(disabled.contains(id), "Credential detector \(id) must stay enabled in init defaults")
+        }
+    }
+
+    func testRenderYAMLStrictCredentialsEnablesPolicyAndContext() throws {
+        let yaml = ProjectConfigTemplates.renderYAML(
+            templates: [.node],
+            strictCredentials: true
+        )
+        XCTAssertTrue(yaml.contains("--strict-credentials"))
+        XCTAssertTrue(yaml.contains("policy: true"))
+        XCTAssertTrue(yaml.contains("mode: ask"))
+        XCTAssertTrue(yaml.contains("mode: deny"))
+        XCTAssertTrue(yaml.contains("scan_task: true"))
+        XCTAssertTrue(yaml.contains("audit: true"))
+
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        try yaml.write(to: root.appendingPathComponent(".offsend.yml"), atomically: true, encoding: .utf8)
+
+        let config = try XCTUnwrap(ProjectConfigLoader().load(from: root))
+        XCTAssertEqual(config.check?.policy, true)
+        XCTAssertEqual(config.hooks?.policy, true)
+        XCTAssertEqual(config.context?.mcp?.mode, "ask")
+        XCTAssertEqual(config.context?.subagents?.mode, "deny")
+        XCTAssertEqual(config.context?.subagents?.scanTask, true)
+        XCTAssertEqual(config.context?.history?.audit, true)
     }
 
     func testParseYesNoDefaults() {

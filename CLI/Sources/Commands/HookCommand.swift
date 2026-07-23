@@ -75,6 +75,13 @@ struct HookInstall: ParsableCommand {
     )
     var subagentGate: Bool?
 
+    @Flag(
+        name: [.customLong("mcp-response-gate"), .customLong("with-mcp-response-gate")],
+        inversion: .prefixedNo,
+        help: "MCP tool-response gates — secret-scan responses (Claude PostToolUse can seal them; Cursor afterMCPExecution observes only). On by default for cursor/claude; disable with --no-mcp-response-gate."
+    )
+    var mcpResponseGate: Bool?
+
     @Option(name: .long, help: "Path to the offsend executable used by the hook.")
     var cliPath: String?
 
@@ -127,6 +134,9 @@ struct HookInstall: ParsableCommand {
             if subagentGate != nil {
                 CLIError.exit(.error, message: "--subagent-gate/--no-subagent-gate requires an AI-editor target.")
             }
+            if mcpResponseGate != nil {
+                CLIError.exit(.error, message: "--mcp-response-gate/--no-mcp-response-gate requires an AI-editor target.")
+            }
             if hookPolicy != nil {
                 CLIError.exit(.error, message: "--hook-policy requires an AI-editor target.")
             }
@@ -169,7 +179,7 @@ struct HookInstall: ParsableCommand {
         } else {
             let names = aiTargets.map(\.rawValue).joined(separator: ", ")
             print(ui.ok("AI editors: \(names)"))
-            print(ui.hint("Gates on by default: read, shell, mcp, subagent (where supported)"))
+            print(ui.hint("Gates on by default: read, shell, mcp, mcp-response, subagent (where supported)"))
         }
 
         return CLIPrompt.yesNo(
@@ -224,6 +234,7 @@ struct HookInstall: ParsableCommand {
         let enableShellGate = shellGate ?? true
         let enableMCPGate = mcpGate ?? true
         let enableSubagentGate = subagentGate ?? true
+        let enableMCPResponseGate = mcpResponseGate ?? true
         if readGate == true {
             let unsupported = aiTargets.filter { !gateSupported.contains($0) }
             for skipped in unsupported {
@@ -260,6 +271,15 @@ struct HookInstall: ParsableCommand {
                 )
             }
         }
+        if mcpResponseGate == true {
+            let unsupported = aiTargets.filter { !gateSupported.contains($0) }
+            for skipped in unsupported {
+                fputs(
+                    "warning: --mcp-response-gate is not supported for \(skipped.rawValue); installing prompt hook only.\n",
+                    stderr
+                )
+            }
+        }
         do {
             let ui = CLIText(useColor: CLIColor.enabled(for: .text))
             let outcome = try HookInstallRunner.installAIHooks(
@@ -271,7 +291,8 @@ struct HookInstall: ParsableCommand {
                 withReadGate: enableReadGate,
                 withShellGate: enableShellGate,
                 withMCPGate: enableMCPGate,
-                withSubagentGate: enableSubagentGate
+                withSubagentGate: enableSubagentGate,
+                withMCPResponseGate: enableMCPResponseGate
             ) { result in
                 print(ui.ok("Installed \(result.target.rawValue) hook (\(result.hookPolicy.rawValue))"))
                 print(ui.hint("  config: \(result.configPath)"))
@@ -287,6 +308,9 @@ struct HookInstall: ParsableCommand {
                 }
                 if let subagentPath = result.subagentWrapperPath {
                     print(ui.hint("  subagent gate: \(subagentPath)"))
+                }
+                if let mcpResponsePath = result.mcpResponseWrapperPath {
+                    print(ui.hint("  mcp response gate: \(mcpResponsePath)"))
                 }
             }
             if outcome.publishHooks {
@@ -609,6 +633,9 @@ struct HookStatus: ParsableCommand {
         if AIEditorHookInstaller.supportsSubagentGate(target), !status.subagentGate {
             detail += "; warning: subagent-gate missing — re-run offsend hook install --target \(target.rawValue)"
         }
+        if AIEditorHookInstaller.supportsFileGates(target), !status.mcpResponseGate {
+            detail += "; warning: mcp-response-gate missing — re-run offsend hook install --target \(target.rawValue)"
+        }
         return "✓ \(target.rawValue): \(detail) (\(status.configPath))"
     }
 
@@ -625,12 +652,14 @@ struct HookStatus: ParsableCommand {
             "shellGate": status.shellGate,
             "mcpGate": status.mcpGate,
             "subagentGate": status.subagentGate,
+            "mcpResponseGate": status.mcpResponseGate,
         ]
         var warnings: [String] = []
         if status.installed {
             if AIEditorHookInstaller.supportsFileGates(target) {
                 if !status.shellGate { warnings.append("shell-gate missing") }
                 if !status.mcpGate { warnings.append("mcp-gate missing") }
+                if !status.mcpResponseGate { warnings.append("mcp-response-gate missing") }
             }
             if AIEditorHookInstaller.supportsSubagentGate(target), !status.subagentGate {
                 warnings.append("subagent-gate missing")

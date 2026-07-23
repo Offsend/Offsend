@@ -62,7 +62,7 @@ public enum ProjectConfigValidator {
             issues.append(
                 contentsOf: unknownKeys(
                     in: context,
-                    allowed: ["mcp", "subagents", "history"],
+                    allowed: ["mcp", "subagents", "history", "read"],
                     path: "context"
                 )
             )
@@ -70,8 +70,17 @@ public enum ProjectConfigValidator {
                 issues.append(
                     contentsOf: unknownKeys(
                         in: mcp,
-                        allowed: ["mode", "allow", "deny", "high_risk"],
+                        allowed: ["mode", "allow", "deny", "high_risk", "responses"],
                         path: "context.mcp"
+                    )
+                )
+            }
+            if let read = context["read"] as? [String: Any] {
+                issues.append(
+                    contentsOf: unknownKeys(
+                        in: read,
+                        allowed: ["on_secret"],
+                        path: "context.read"
                     )
                 )
             }
@@ -88,7 +97,7 @@ public enum ProjectConfigValidator {
                 issues.append(
                     contentsOf: unknownKeys(
                         in: history,
-                        allowed: ["audit", "scrub_on_protect"],
+                        allowed: ["audit", "scrub_on_protect", "scan_in_show"],
                         path: "context.history"
                     )
                 )
@@ -143,6 +152,20 @@ public enum ProjectConfigValidator {
            OffsendContextEnforcementMode(rawValue: subagentMode) == nil {
             issues.append(
                 "context.subagents.mode '\(subagentMode)' is invalid (use \(validValues(OffsendContextEnforcementMode.self)))."
+            )
+        }
+
+        if let onSecret = config.context?.read?.onSecret,
+           OffsendReadGateSecretMode(rawValue: onSecret) == nil {
+            issues.append(
+                "context.read.on_secret '\(onSecret)' is invalid (use \(validValues(OffsendReadGateSecretMode.self)))."
+            )
+        }
+
+        if let responses = config.context?.mcp?.responses,
+           OffsendMCPResponseMode(rawValue: responses) == nil {
+            issues.append(
+                "context.mcp.responses '\(responses)' is invalid (use \(validValues(OffsendMCPResponseMode.self)))."
             )
         }
 

@@ -142,6 +142,48 @@ final class SealEngineTests: XCTestCase {
         XCTAssertEqual(SealTokenDetector.tokenCount(in: "\(token) \(token)"), 2)
     }
 
+    func testExcludingTokenSpansDropsEntitiesInsideTokens() throws {
+        let token = try engine.seal(plaintext: "sk-abcdefghijklmnopqrstuvwxyz123456", type: "OPENAI_API_KEY")
+        let live = "sk-live0000000000000000000000000000"
+        let text = "sealed: \(token) live: \(live)"
+
+        // Detector "fires" on the token payload and on the live value.
+        let payloadStart = text.range(of: "v1.")!.upperBound
+        let payloadEnd = text.index(payloadStart, offsetBy: 10)
+        let insideToken = SensitiveEntity(
+            type: .highEntropyString,
+            range: payloadStart..<payloadEnd,
+            value: String(text[payloadStart..<payloadEnd]),
+            confidence: 0.9,
+            source: .secret
+        )
+        let liveRange = text.range(of: live)!
+        let liveEntity = SensitiveEntity(
+            type: .openAIAPIKey,
+            range: liveRange,
+            value: live,
+            confidence: 0.99,
+            source: .secret
+        )
+
+        let filtered = SealTokenDetector.excludingTokenSpans([insideToken, liveEntity], in: text)
+        XCTAssertEqual(filtered.count, 1)
+        XCTAssertEqual(filtered.first?.value, live)
+    }
+
+    func testExcludingTokenSpansKeepsAllWithoutTokens() {
+        let text = "no tokens here"
+        let range = text.range(of: "tokens")!
+        let entity = SensitiveEntity(
+            type: .email,
+            range: range,
+            value: "tokens",
+            confidence: 0.5,
+            source: .regex
+        )
+        XCTAssertEqual(SealTokenDetector.excludingTokenSpans([entity], in: text).count, 1)
+    }
+
     func testUnsupportedVersion() throws {
         let token = try engine.seal(plaintext: "a@b.com", type: "EMAIL")
         let broken = token.replacingOccurrences(of: ":v1.", with: ":v2.")

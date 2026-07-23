@@ -61,7 +61,7 @@ public struct OffsendDoctor: Sendable {
         self.gitExecutable = gitExecutable ?? ExecutableLocator.defaultGitExecutable(fileManager: fileManager)
     }
 
-    public func run(context: OffsendRuntimeContext? = try? OffsendRuntimeContext.load()) -> DoctorReport {
+    public func run(context: OffsendRuntimeContext? = try? OffsendRuntimeContext.load()) async -> DoctorReport {
         var checks: [DoctorCheck] = []
 
         if let context {
@@ -388,6 +388,31 @@ public struct OffsendDoctor: Sendable {
                     )
                 }
             }
+
+            let mcpResponseURL = cwd.appendingPathComponent(AIEditorHookInstaller.mcpResponseWrapperRelativePath)
+            if fileManager.fileExists(atPath: mcpResponseURL.path) {
+                let mcpResponseValidation = installer.validateWrapper(at: mcpResponseURL)
+                if mcpResponseValidation != .ok {
+                    checks.append(
+                        DoctorCheck(
+                            name: "ai-wrapper-mcp-out",
+                            status: .warn,
+                            message: AIEditorHookInstaller.wrapperValidationMessage(
+                                mcpResponseValidation,
+                                path: mcpResponseURL.path
+                            )
+                        )
+                    )
+                } else {
+                    checks.append(
+                        DoctorCheck(
+                            name: "ai-wrapper-mcp-out",
+                            status: .ok,
+                            message: "\(mcpResponseURL.path) (v\(AIEditorHookInstaller.managedVersion))"
+                        )
+                    )
+                }
+            }
         }
 
         let home = ProcessInfo.processInfo.environment["HOME"]
@@ -420,14 +445,63 @@ public struct OffsendDoctor: Sendable {
             }
         }
 
+        // MCP servers present but responses unwatched: secrets in tool results
+        // reach the agent without even an observation trail.
+        if !mcpInventory.servers.isEmpty {
+            let missingMCPResponseGate = AIEditorHookTarget.allCases.filter { target in
+                guard AIEditorHookInstaller.supportsFileGates(target) else { return false }
+                let status = installer.status(target: target, repositoryPath: cwd)
+                return status.installed && !status.mcpResponseGate
+            }
+            if !missingMCPResponseGate.isEmpty {
+                let names = missingMCPResponseGate.map(\.rawValue).joined(separator: ", ")
+                checks.append(
+                    DoctorCheck(
+                        name: "ai-mcp-response-gate",
+                        status: .warn,
+                        message: "MCP response gate not installed for \(names). Secrets in MCP tool responses go unnoticed (Claude can seal them; Cursor observes). Re-run: offsend hook install --target cursor|claude (mcp-response-gate is on by default; use --no-mcp-response-gate to opt out)"
+                    )
+                )
+            }
+        }
+
+        // One show run for both the history check and next-actions; honors
+        // context.history.scan_in_show (content scan) via the async path.
+        var showReport: ShowReport?
         if let context {
-            let history = OffsendShowService(context: context).run(directoryURL: cwd).history
-            if history.filesScanned > 0 {
+            showReport = await OffsendShowService(context: context).runAsync(directoryURL: cwd)
+        }
+
+        if let history = showReport?.history {
+            if history.skipped {
                 checks.append(
                     DoctorCheck(
                         name: "agent-history",
-                        status: .warn,
-                        message: "\(history.filesScanned) local agent transcript file(s) found. Run: offsend history audit"
+                        status: .ok,
+                        message: "Agent history section skipped (context.history.audit is false)"
+                    )
+                )
+            } else if history.hasFindings {
+                var message =
+                    "\(history.filesWithFindings)/\(history.filesScanned) transcript file(s) have secret-shaped findings. "
+                    + "Run: offsend history scrub --apply"
+                if !history.secretTypes.isEmpty {
+                    message += " (types: \(history.secretTypes.joined(separator: ", ")))"
+                }
+                checks.append(
+                    DoctorCheck(name: "agent-history", status: .warn, message: message)
+                )
+            } else if history.filesScanned > 0 {
+                // Count-only by default; content scan via scan_in_show / show --scan-history.
+                let scannedClean = history.contentScanned
+                checks.append(
+                    DoctorCheck(
+                        name: "agent-history",
+                        status: scannedClean ? .ok : .warn,
+                        message: scannedClean
+                            ? "\(history.filesScanned) local agent transcript file(s); no secret-shaped findings"
+                            : "\(history.filesScanned) local agent transcript file(s) found. "
+                                + "Run: offsend history audit"
                     )
                 )
             } else {
@@ -448,6 +522,31 @@ public struct OffsendDoctor: Sendable {
                 message: "\(installedCount)/\(AIEditorHookTarget.allCases.count) installed (optional)"
             )
         )
+
+        if installedCount > 0 {
+            let cursorInstalled = installer.status(target: .cursor, repositoryPath: cwd).installed
+            let claudeStatus = installer.status(target: .claude, repositoryPath: cwd)
+            let claudeInstalled = claudeStatus.installed
+            let mcpGateInstalled = AIEditorHookTarget.allCases.contains {
+                let status = installer.status(target: $0, repositoryPath: cwd)
+                return status.installed && status.mcpGate
+            }
+            let mcpSurfaceActive = mcpGateInstalled || !mcpInventory.servers.isEmpty
+            let gaps = HookCoverageGap.active(
+                cursorInstalled: cursorInstalled,
+                claudeInstalled: claudeInstalled,
+                mcpSurfaceActive: mcpSurfaceActive,
+                mcpResponseGateClaude: claudeStatus.mcpResponseGate
+            )
+            // Warn only when MCP/Claude/Cursor-specific gaps apply; cloud-only → ok note.
+            checks.append(
+                DoctorCheck(
+                    name: "hook-coverage-gaps",
+                    status: HookCoverageGap.hasActionableGaps(gaps) ? .warn : .ok,
+                    message: HookCoverageGap.doctorMessage(for: gaps)
+                )
+            )
+        }
 
         let sealKeyURL = SealKeyPaths.defaultKeyURL(fileManager: fileManager)
         let sealKeyPath = sealKeyURL.path
@@ -494,19 +593,20 @@ public struct OffsendDoctor: Sendable {
             cwd: cwd,
             configLoader: configLoader,
             installer: installer,
-            context: context
+            showReport: showReport
         )
         checks.append(next.check)
 
         return DoctorReport(checks: checks, suggestedActions: next.actions)
     }
 
-    /// Ranked setup hints: shared policy → materialize/drift → AI boundary → gates → history → git hook.
+    /// Ranked setup hints: shared policy → materialize/drift → protect → gates → history audit → git hook.
+    /// `showReport` counts transcript files by default; with `scan_in_show` it holds real findings.
     private func nextActionsCheck(
         cwd: URL,
         configLoader: ProjectConfigLoader,
         installer: AIEditorHookInstaller,
-        context: OffsendRuntimeContext?
+        showReport: ShowReport?
     ) -> (check: DoctorCheck, actions: [String]) {
         var actions: [String] = []
 
@@ -529,7 +629,6 @@ public struct OffsendDoctor: Sendable {
             )
         }
 
-        let showReport = context.map { OffsendShowService(context: $0).run(directoryURL: cwd) }
         if let show = showReport {
             let requiredPaths = Set(
                 show.groups
@@ -538,7 +637,7 @@ public struct OffsendDoctor: Sendable {
             )
             if !requiredPaths.isEmpty {
                 actions.append(
-                    "offsend protect   # hide \(requiredPaths.count) required path(s) from AI, then offsend show"
+                    "offsend protect   # keep \(requiredPaths.count) required credential/path(s) out of AI context, then offsend show"
                 )
             }
         }
@@ -552,6 +651,10 @@ public struct OffsendDoctor: Sendable {
             let status = installer.status(target: target, repositoryPath: cwd)
             return status.installed && !status.mcpGate
         }
+        let installedWithoutMCPResponse = gateTargets.filter { target in
+            let status = installer.status(target: target, repositoryPath: cwd)
+            return status.installed && !status.mcpResponseGate
+        }
         if !installedWithoutShell.isEmpty {
             actions.append(
                 "offsend hook install --target \(installedWithoutShell[0].rawValue)   # add shell-gate (on by default)"
@@ -559,6 +662,10 @@ public struct OffsendDoctor: Sendable {
         } else if !installedWithoutMCP.isEmpty {
             actions.append(
                 "offsend hook install --target \(installedWithoutMCP[0].rawValue)   # add mcp-gate (on by default)"
+            )
+        } else if !installedWithoutMCPResponse.isEmpty {
+            actions.append(
+                "offsend hook install --target \(installedWithoutMCPResponse[0].rawValue)   # add mcp-response-gate (on by default)"
             )
         } else {
             let cursorStatus = installer.status(target: .cursor, repositoryPath: cwd)
@@ -576,10 +683,16 @@ public struct OffsendDoctor: Sendable {
             }
         }
 
-        if let history = showReport?.history, history.filesScanned > 0 {
-            actions.append(
-                "offsend history audit   # secrets may already be in \(history.filesScanned) local agent transcript(s)"
-            )
+        if let history = showReport?.history, !history.skipped, history.filesScanned > 0 {
+            if history.hasFindings {
+                actions.append(
+                    "offsend history scrub --apply   # \(history.filesWithFindings)/\(history.filesScanned) transcript(s) already hold secrets"
+                )
+            } else if !history.contentScanned {
+                actions.append(
+                    "offsend history audit   # \(history.filesScanned) local transcript(s) may already hold secrets"
+                )
+            }
         }
 
         let gitInstalled = (try? HookManager(fileManager: fileManager).isInstalled(repositoryPath: cwd)) ?? false
@@ -910,7 +1023,12 @@ public struct DoctorReporter: Sendable {
 
         for check in report.checks {
             if check.name == "next-actions" {
-                nextActions = renderNextActions(check, ui: ui, hasProjectConfig: hasProjectConfig)
+                nextActions = renderNextActions(
+                    check,
+                    ui: ui,
+                    hasProjectConfig: hasProjectConfig,
+                    firstSuggestedAction: report.suggestedActions.first
+                )
                 continue
             }
             let line: String
@@ -934,7 +1052,12 @@ public struct DoctorReporter: Sendable {
         return CLIText.joinSections(sections)
     }
 
-    private func renderNextActions(_ check: DoctorCheck, ui: CLIText, hasProjectConfig: Bool) -> [String] {
+    private func renderNextActions(
+        _ check: DoctorCheck,
+        ui: CLIText,
+        hasProjectConfig: Bool,
+        firstSuggestedAction: String?
+    ) -> [String] {
         var lines = [ui.section("Next actions")]
         if check.status == .ok {
             lines.append(ui.ok(check.message))
@@ -948,7 +1071,13 @@ public struct DoctorReporter: Sendable {
                 lines.append("  \(text)")
             }
         }
-        if hasProjectConfig {
+        if let first = firstSuggestedAction, first.contains("history audit") || first.contains("history scrub") {
+            if first.contains("history scrub") {
+                lines.append(ui.hint("Tip: offsend history scrub --apply   # redacts secret-shaped spans in local transcripts"))
+            } else {
+                lines.append(ui.hint("Tip: offsend history audit   # then history scrub --apply if findings"))
+            }
+        } else if hasProjectConfig {
             lines.append(ui.hint("Tip: offsend sync   # materialize ignore files + hooks"))
         } else {
             lines.append(ui.hint("Tip: offsend init   # create .offsend.yml, then offsend sync"))

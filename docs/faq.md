@@ -12,6 +12,9 @@ No. `.gitignore` controls Git; Offsend controls AI context. Rules live in `.offs
 **Do I edit `.cursorignore` / `.claudeignore` by hand?**  
 You can — lines outside the offsend managed block are preserved. Prefer `offsend ignore <pattern>` or editing `ignore.patterns` in `.offsend.yml` (seeded with AI privacy defaults at `init`), then `offsend sync`, so the rule is shared across every tool. If ignore files drift from `.offsend.yml`, `offsend doctor`, `offsend show`, and `offsend check --policy` report it; CI with `fail-on: block` fails on that drift.
 
+**I upgraded Offsend and CI started failing on paths that used to pass — what now?**  
+Built-in detectors can grow across releases; your committed `ignore.patterns` does not auto-merge new defaults. Prefer `offsend ignore --merge-defaults`, then commit `.offsend.yml`. Or `offsend show` → `protect` → `sync` for paths currently on disk. Details: [configuration → Upgrading](configuration.md#upgrading-offsend-cli-existing-offsendyml).
+
 **Is Offsend a secret scanner?**  
 Partly. It also checks AI-context boundaries: what AI tools can read, whether ignore rules exist or have drifted, MCP exposure, and local agent history.
 
@@ -31,8 +34,21 @@ Teams tune the shared baseline with `offsend init --template …` and `check.det
 **Is Offsend a sandbox or agent permission system?**  
 No. Ignore files are the primary exclusion layer; hooks are defense-in-depth on supported operations; content scanning is a final check. It does not replace the editor’s own permission model.
 
+### What does Offsend cover vs not cover?
+
+| Covers | Does not cover |
+| --- | --- |
+| Shared AI context boundary in `.offsend.yml` (committed with the repo) | Network / process sandbox or “agent escape” containment |
+| Materialized AI ignore files + drift detection | Org-wide policy across every repository |
+| Content scan for secrets/credentials (`check`, hooks, CI) | Zero-day discovery, privilege escalation, lateral movement in infra |
+| Prompt / read / shell / MCP **args** / Cursor subagent gates | Ungated Claude subagents, cloud agent sessions |
+| MCP **response** sealing on Claude (`context.mcp.responses: seal`); seal-for-agents read copies | MCP **response** rewriting on Cursor (`afterMCPExecution` is observe-only) |
+| Local agent-history audit / scrub after a leak | Replacing the editor’s own permission model |
+
+Credentials in agent context are leverage for further tool use (read, shell, MCP), not only a privacy leak. Prefer `offsend protect` + ignore files first; hooks are defense-in-depth. Details: [what hooks cover / do not cover](cli.md#what-hooks-cover).
+
 **Does `offsend show` read file contents?**  
-No for path exposure — paths and ignore rules only. Optional sections may report MCP inventory, transcript *counts*, and ignore drift; content scanning is `offsend check` / `offsend history audit`.
+No for path exposure — paths and ignore rules only. Optional sections may report MCP inventory, transcript *counts*, and ignore drift. Content scanning of paths is `offsend check`; of agent history is `offsend history audit` or `offsend show --scan-history` / `context.history.scan_in_show`.
 
 **Which platforms?**  
 App: macOS 13+. CLI: macOS and Linux (x86_64 / arm64). Action: Linux and macOS runners.
@@ -44,7 +60,10 @@ Coding assistants: Claude Code, Codex, Cursor, Windsurf (CLI prompt hooks + igno
 Yes. After clone or init, `offsend sync` installs git + detected AI-editor hooks. For a specific editor: `offsend hook install --target cursor` (or `claude`, `windsurf`, `codex`, `all`). Default install also enables read, shell, MCP, and (Cursor) subagent gates.
 
 **Are AI-editor hooks a hard block on every way to read a file?**  
-No. They are defense-in-depth on known editor paths (prompt, `@file`, Read/Edit/Write, shell, MCP tool **args**, Cursor subagent tasks). Prefer `offsend protect` / AI ignore files first so secrets never enter context. Gaps remain: MCP **response** payloads, Claude subagents, cloud sessions, and secrets already written to local transcripts (`offsend history audit` / `scrub`). See [what hooks cover / do not cover](cli.md#what-hooks-cover).
+No. They are defense-in-depth on known editor paths (prompt, `@file`, Read/Edit/Write, shell, MCP tool **args** + **responses**, Cursor subagent tasks). Prefer `offsend protect` / AI ignore files first so secrets never enter context. Gaps remain: MCP **response** payloads on Cursor (observe-only; on Claude `context.mcp.responses: seal` replaces them with tokens), Claude subagents, cloud sessions, and secrets already written to local transcripts (`offsend history audit` / `scrub`). See [what hooks cover / do not cover](cli.md#what-hooks-cover).
+
+**Can the agent keep working when a read is denied because of secrets?**  
+Yes, with seal-for-agents: set `context.read.on_secret: seal` (plus a seal key via `offsend keygen --default`). The read-gate still denies the original file but hands the agent a sealed copy where secrets are `{{TYPE:v1.…}}` tokens. The user restores agent outputs with `offsend unseal`; the shell-gate asks before the agent runs `unseal` itself.
 
 **Secrets already landed in local agent transcripts — what then?**  
 ```bash

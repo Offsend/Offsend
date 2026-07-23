@@ -50,7 +50,8 @@ struct CheckHookEmitter {
         disabledDetectors: Set<SensitiveEntityType> = [],
         customDictionaries: [CustomDictionaryItem] = [],
         excludePatterns: [String] = [],
-        projectRoot: URL? = nil
+        projectRoot: URL? = nil,
+        readConfig: OffsendProjectReadConfig? = nil
     ) async {
         let input: PromptReadGateInput
         do {
@@ -62,6 +63,23 @@ struct CheckHookEmitter {
                 started: started,
                 policy: policy,
                 kind: .readGate
+            )
+            return
+        }
+
+        // Sealed copies are what a seal-mode deny points the agent at; reading
+        // them must pass (contents are `{{…}}` tokens, no plaintext secrets).
+        if SealCopyStore.isSealCopyPath(input.path) {
+            let allowed = PromptReadGateDecision(path: input.path, allowed: true, reason: "")
+            let rendered = PromptReadGateRenderer.render(decision: allowed, adapter: adapter)
+            writeHookOutput(rendered)
+            logDebug(
+                adapter: adapter,
+                policy: policy,
+                advice: nil,
+                exitCode: rendered.exitCode,
+                started: started,
+                error: "read_gate_seal_copy_allowed"
             )
             return
         }
@@ -90,6 +108,7 @@ struct CheckHookEmitter {
 
         var decision = PromptReadGate.evaluatePath(input.path)
         var denyReason = decision.allowed ? nil : "read_gate_denied_path"
+        var scanResult: OffsendTextCheckResult?
 
         if decision.allowed, let content = PromptReadGate.resolveContent(for: input) {
             let textResult = await OffsendCheckService(context: context).runText(
@@ -98,6 +117,7 @@ struct CheckHookEmitter {
                 disabledDetectors: disabledDetectors,
                 customDictionaries: customDictionaries
             )
+            scanResult = textResult
             if let secretDeny = PromptReadGate.decisionForSecretEntities(
                 path: input.path,
                 entities: textResult.entities,
@@ -105,6 +125,26 @@ struct CheckHookEmitter {
             ) {
                 decision = secretDeny
                 denyReason = "read_gate_denied_secrets"
+            }
+        }
+
+        // context.read.on_secret: seal — swap the dead-end deny for a deny that
+        // hands the agent a sealed copy. Any failure (no key, no scannable
+        // content, no entities) falls back to the plain deny above.
+        if !decision.allowed,
+           OffsendReadGateSecretMode(rawValue: readConfig?.onSecret ?? "") == .seal {
+            if scanResult == nil, let content = PromptReadGate.resolveContent(for: input) {
+                scanResult = await OffsendCheckService(context: context).runText(
+                    content,
+                    failPolicy: .block,
+                    disabledDetectors: disabledDetectors,
+                    customDictionaries: customDictionaries
+                )
+            }
+            if let scanResult,
+               let sealed = sealedReadDecision(input: input, scanResult: scanResult, context: context) {
+                decision = sealed
+                denyReason = "read_gate_denied_sealed_copy"
             }
         }
 
@@ -118,6 +158,45 @@ struct CheckHookEmitter {
             started: started,
             error: denyReason
         )
+    }
+
+    /// Seals the scanned text and writes a 0600 temp copy. Returns nil when the
+    /// key does not resolve, no secret entities were found, or sealing fails —
+    /// callers keep the plain deny in that case (never weaker than block mode).
+    private func sealedReadDecision(
+        input: PromptReadGateInput,
+        scanResult: OffsendTextCheckResult,
+        context: OffsendRuntimeContext
+    ) -> PromptReadGateDecision? {
+        let gateEntities = PromptCheckAdviceBuilder.filterEntities(
+            scanResult.entities,
+            secretsOnly: secretsOnly
+        )
+        guard !gateEntities.isEmpty else { return nil }
+        let resolvedKeyFile = keyFile.map {
+            URL(fileURLWithPath: $0, relativeTo: workingDirectory).standardizedFileURL.path
+        }
+        do {
+            let keyData = try SealKeyResolver.resolve(
+                key: nil,
+                keyFilePath: resolvedKeyFile,
+                keyName: keyName
+            ).data
+            let sealed = try OffsendSealService(context: context).seal(
+                text: scanResult.scannedText,
+                entities: gateEntities,
+                keyData: keyData
+            )
+            let written = try SealCopyStore.write(sealed.sealedText)
+            let types = Array(Set(gateEntities.map(\.type.rawValue))).sorted()
+            return PromptReadGate.sealedDecision(
+                path: input.path,
+                sealedCopyPath: written.fileURL.path,
+                secretTypes: types
+            )
+        } catch {
+            return nil
+        }
     }
 
     func emitShellGate(
@@ -303,6 +382,92 @@ struct CheckHookEmitter {
             exitCode: rendered.exitCode,
             started: started,
             error: decision.allowed ? nil : "mcp_gate_\(decision.code)"
+        )
+    }
+
+    func emitMCPResponseGate(
+        adapter: CheckHookAdapter,
+        rawJSON: String,
+        started: Date,
+        policy: CheckHookPolicy,
+        context: OffsendRuntimeContext,
+        mcpConfig: OffsendProjectMCPConfig?,
+        disabledDetectors: Set<SensitiveEntityType> = [],
+        customDictionaries: [CustomDictionaryItem] = [],
+        secretsOnly: Bool = true
+    ) async {
+        let call: PromptMCPResponseCall
+        do {
+            call = try PromptMCPResponseGate.parse(json: rawJSON, adapter: adapter)
+        } catch {
+            // Post-hoc gate: nothing to block, so fail-open on malformed input.
+            emitFailOpen(
+                adapter: adapter,
+                reason: .invalidJSON,
+                started: started,
+                policy: policy,
+                kind: .mcpResponseGate
+            )
+            return
+        }
+
+        var secretTypes: [String] = []
+        var sealedOutput: String?
+        var sealedCount = 0
+        if !call.responseText.isEmpty {
+            let textResult = await OffsendCheckService(context: context).runText(
+                call.responseText,
+                failPolicy: .block,
+                disabledDetectors: disabledDetectors,
+                customDictionaries: customDictionaries
+            )
+            let secrets = PromptCheckAdviceBuilder.filterEntities(
+                textResult.entities,
+                secretsOnly: secretsOnly
+            )
+            secretTypes = Array(Set(secrets.map(\.type.rawValue))).sorted()
+
+            let mode = OffsendMCPResponseMode(rawValue: mcpConfig?.responses ?? "") ?? .observe
+            // Sealing a truncated response would replace output with a partial
+            // text; renderer downgrades that case to a warning instead.
+            if mode == .seal, !secrets.isEmpty, !call.truncated, adapter == .claude {
+                let resolvedKeyFile = keyFile.map {
+                    URL(fileURLWithPath: $0, relativeTo: workingDirectory).standardizedFileURL.path
+                }
+                if let keyData = try? SealKeyResolver.resolve(
+                    key: nil,
+                    keyFilePath: resolvedKeyFile,
+                    keyName: keyName
+                ).data,
+                    let sealed = try? OffsendSealService(context: context).seal(
+                        text: textResult.scannedText,
+                        entities: secrets,
+                        keyData: keyData
+                    ) {
+                    sealedOutput = sealed.sealedText
+                    sealedCount = sealed.sealedCount
+                }
+            }
+        }
+
+        let decision = PromptMCPResponseGate.evaluate(
+            call: call,
+            mcpConfig: mcpConfig,
+            secretTypes: secretTypes,
+            sealedOutput: sealedOutput,
+            sealedCount: sealedCount
+        )
+        let rendered = PromptMCPResponseGateRenderer.render(decision: decision, adapter: adapter)
+        writeHookOutput(rendered)
+        logDebug(
+            adapter: adapter,
+            policy: policy,
+            advice: nil,
+            exitCode: rendered.exitCode,
+            started: started,
+            error: decision.hasFindings
+                ? (decision.sealed ? "mcp_response_sealed" : "mcp_response_secrets")
+                : nil
         )
     }
 

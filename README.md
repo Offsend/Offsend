@@ -56,7 +56,7 @@ When sensitive paths are exposed:
 
 ```text
 Scanned: /path/to/project
-3 files would be sent to AI tools (2 required, 1 recommended):
+3 files exposed to AI tools — usable in further read/shell/MCP steps (2 required, 1 recommended):
 
 ✗ Environment files [required]
     Ignore .env and .env.* files.

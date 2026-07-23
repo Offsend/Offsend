@@ -10,12 +10,28 @@ public struct SealCopyWriteResult: Equatable, Sendable {
 
 /// Writes sealed prompt text to a private temp file (mode 0600).
 public enum SealCopyStore {
+    /// Directory sealed copies live in. The read-gate allows reads under it so
+    /// agents can consume the sealed copy a seal-mode deny points them at.
+    public static func directoryURL(fileManager: FileManager = .default) -> URL {
+        fileManager.temporaryDirectory
+            .appendingPathComponent("offsend-seal", isDirectory: true)
+    }
+
+    /// True when `path` is inside the sealed-copy directory (symlinks resolved,
+    /// so a link elsewhere cannot borrow the allowlisted prefix).
+    public static func isSealCopyPath(_ path: String, fileManager: FileManager = .default) -> Bool {
+        let directoryPath = directoryURL(fileManager: fileManager)
+            .standardizedFileURL.resolvingSymlinksInPath().path
+        let resolved = URL(fileURLWithPath: path)
+            .standardizedFileURL.resolvingSymlinksInPath().path
+        return resolved.hasPrefix(directoryPath + "/")
+    }
+
     public static func write(
         _ sealedText: String,
         fileManager: FileManager = .default
     ) throws -> SealCopyWriteResult {
-        let directory = fileManager.temporaryDirectory
-            .appendingPathComponent("offsend-seal", isDirectory: true)
+        let directory = directoryURL(fileManager: fileManager)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
 

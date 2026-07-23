@@ -131,6 +131,45 @@ final class HookContractTests: XCTestCase {
         XCTAssertTrue(PromptReadGate.evaluatePath(input.path).allowed)
     }
 
+    func testReadGateSealedDecisionRendersAgentMessage() throws {
+        let decision = PromptReadGate.sealedDecision(
+            path: "/repo/.env",
+            sealedCopyPath: "/tmp/offsend-seal/sealed-abc.txt",
+            secretTypes: ["awsSecretAccessKey"]
+        )
+        XCTAssertFalse(decision.allowed)
+
+        // Cursor: deny plus agent_message with the sealed-copy path.
+        let cursorOut = PromptReadGateRenderer.render(decision: decision, adapter: .cursor)
+        let cursorRoot = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(cursorOut.stdout.utf8)) as? [String: Any]
+        )
+        XCTAssertEqual(cursorRoot["permission"] as? String, "deny")
+        let agentMessage = try XCTUnwrap(cursorRoot["agent_message"] as? String)
+        XCTAssertTrue(agentMessage.contains("/tmp/offsend-seal/sealed-abc.txt"))
+        XCTAssertTrue(agentMessage.contains("offsend unseal"))
+
+        // Claude: the sealed path must reach the model via permissionDecisionReason.
+        let claudeOut = PromptReadGateRenderer.render(decision: decision, adapter: .claude)
+        let claudeRoot = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(claudeOut.stdout.utf8)) as? [String: Any]
+        )
+        let hook = try XCTUnwrap(claudeRoot["hookSpecificOutput"] as? [String: Any])
+        XCTAssertEqual(hook["permissionDecision"] as? String, "deny")
+        let reason = try XCTUnwrap(hook["permissionDecisionReason"] as? String)
+        XCTAssertTrue(reason.contains("/tmp/offsend-seal/sealed-abc.txt"))
+    }
+
+    func testPlainDenyHasNoAgentMessageField() throws {
+        let decision = PromptReadGate.evaluatePath("/Users/me/.env")
+        XCTAssertFalse(decision.allowed)
+        let out = PromptReadGateRenderer.render(decision: decision, adapter: .cursor)
+        let root = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(out.stdout.utf8)) as? [String: Any]
+        )
+        XCTAssertNil(root["agent_message"])
+    }
+
     func testReadGateDeniesSecretEntitiesInContent() {
         let key = "sk-abcdefghijklmnopqrstuvwxyzABCDEF123456"
         let entity = SensitiveEntity(
@@ -188,6 +227,38 @@ final class HookContractTests: XCTestCase {
         let ordinary = root.appendingPathComponent("readme.md")
         try "# hi\n".write(to: ordinary, atomically: true, encoding: .utf8)
         XCTAssertTrue(PromptReadGate.evaluatePath(ordinary.path).allowed)
+    }
+
+    func testReadGatePathHeuristicsMissRenamedCopyButContentScanCatchesSecrets() throws {
+        // Renamed copies are not symlinks: path heuristics alone miss them; content scan is the backstop.
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("offsend-read-gate-rename-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let copy = root.appendingPathComponent("notes.txt")
+        let key = "sk-abcdefghijklmnopqrstuvwxyzABCDEF123456"
+        try "OPENAI_API_KEY=\(key)\n".write(to: copy, atomically: true, encoding: .utf8)
+
+        XCTAssertTrue(
+            PromptReadGate.evaluatePath(copy.path).allowed,
+            "Renamed copy must not be denied by path heuristics alone"
+        )
+
+        let entity = SensitiveEntity(
+            type: .openAIAPIKey,
+            range: key.startIndex..<key.endIndex,
+            value: key,
+            confidence: 0.99,
+            source: .secret
+        )
+        let contentDecision = PromptReadGate.decisionForSecretEntities(
+            path: copy.path,
+            entities: [entity],
+            secretsOnly: true
+        )
+        XCTAssertEqual(contentDecision?.allowed, false)
+        XCTAssertTrue(contentDecision?.reason.contains("openAIAPIKey") == true)
     }
 
     func testReadGateIgnoresHighEntropyWhenSecretsOnly() {

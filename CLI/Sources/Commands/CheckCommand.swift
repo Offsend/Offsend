@@ -129,6 +129,15 @@ struct Check: AsyncParsableCommand {
     )
     var subagentGate = false
 
+    @Flag(
+        name: .long,
+        help: ArgumentHelp(
+            "MCP tool-response gate: secret-scan responses; seal for Claude, observe for Cursor (requires --adapter cursor|claude).",
+            visibility: .hidden
+        )
+    )
+    var mcpResponseGate = false
+
     @Option(
         name: .long,
         help: ArgumentHelp(
@@ -228,7 +237,8 @@ struct Check: AsyncParsableCommand {
                 disabledDetectors: resolved.disabledDetectors,
                 customDictionaries: resolved.customDictionaries,
                 excludePatterns: gateExcludePatterns,
-                projectRoot: projectRoot
+                projectRoot: projectRoot,
+                readConfig: projectConfig?.context?.read
             )
             return
         }
@@ -256,6 +266,32 @@ struct Check: AsyncParsableCommand {
                 staged: false
             )
             await hookEmitter().emitMCPGate(
+                adapter: adapter,
+                rawJSON: rawText,
+                started: started,
+                policy: resolvedHookPolicy(for: adapter),
+                context: context,
+                mcpConfig: projectConfig?.context?.mcp,
+                disabledDetectors: resolved.disabledDetectors,
+                customDictionaries: resolved.customDictionaries,
+                secretsOnly: secretsOnly
+            )
+            return
+        }
+
+        if mcpResponseGate, let adapter {
+            let (context, projectConfig) = loadStdinRuntime(adapter: adapter, started: started)
+            guard let context else { return }
+            let resolved = OptionsResolver.resolveCheckOptions(
+                overrides: CLICheckOverrides(
+                    policySpecified: false,
+                    policyValue: false,
+                    failOn: CLIParse.failPolicy(failOn)
+                ),
+                projectConfig: projectConfig,
+                staged: false
+            )
+            await hookEmitter().emitMCPResponseGate(
                 adapter: adapter,
                 rawJSON: rawText,
                 started: started,
@@ -391,16 +427,23 @@ struct Check: AsyncParsableCommand {
         if subagentGate, let adapter, adapter != .cursor {
             CLIError.exit(.error, message: "--subagent-gate supports --adapter cursor only.")
         }
-        let gateFlags = [readGate, shellGate, mcpGate, subagentGate].filter { $0 }.count
+        if mcpResponseGate, adapter == nil {
+            CLIError.exit(.error, message: "--mcp-response-gate requires --adapter.")
+        }
+        if mcpResponseGate, let adapter, adapter != .cursor, adapter != .claude {
+            CLIError.exit(.error, message: "--mcp-response-gate supports --adapter cursor or claude.")
+        }
+        let gateFlags = [readGate, shellGate, mcpGate, subagentGate, mcpResponseGate].filter { $0 }.count
         if gateFlags > 1 {
             CLIError.exit(
                 .error,
-                message: "--read-gate, --shell-gate, --mcp-gate, and --subagent-gate are mutually exclusive."
+                message: "--read-gate, --shell-gate, --mcp-gate, --subagent-gate, and --mcp-response-gate are mutually exclusive."
             )
         }
     }
 
     private var hookKind: CheckHookResponseRenderer.Kind {
+        if mcpResponseGate { return .mcpResponseGate }
         if subagentGate { return .subagentGate }
         if mcpGate { return .mcpGate }
         if shellGate { return .shellGate }
@@ -584,10 +627,10 @@ struct Check: AsyncParsableCommand {
         let outputFormat = CLIParse.outputFormat(format)
         let validatedFailOn = CLIParse.failPolicy(failOn)
 
-        if adapter != nil || hookPolicy != nil || sealCopy || debugHook || gateSecrets || readGate || shellGate || mcpGate || subagentGate {
+        if adapter != nil || hookPolicy != nil || sealCopy || debugHook || gateSecrets || readGate || shellGate || mcpGate || subagentGate || mcpResponseGate {
             CLIError.exit(
                 .error,
-                message: "--adapter/--hook-policy/--seal-copy/--debug-hook/--gate-secrets/--read-gate/--shell-gate/--mcp-gate/--subagent-gate require stdin."
+                message: "--adapter/--hook-policy/--seal-copy/--debug-hook/--gate-secrets/--read-gate/--shell-gate/--mcp-gate/--subagent-gate/--mcp-response-gate require stdin."
             )
         }
 

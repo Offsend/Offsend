@@ -41,6 +41,9 @@ public struct ShowHistorySection: Sendable, Equatable {
     public let filesWithFindings: Int
     public let secretTypes: [String]
     public let skipped: Bool
+    /// True when transcript contents were scanned (`--scan-history` / `scan_in_show`),
+    /// false for the default count-only section.
+    public let contentScanned: Bool
     public let message: String?
 
     public init(
@@ -48,12 +51,14 @@ public struct ShowHistorySection: Sendable, Equatable {
         filesWithFindings: Int = 0,
         secretTypes: [String] = [],
         skipped: Bool = false,
+        contentScanned: Bool = false,
         message: String? = nil
     ) {
         self.filesScanned = filesScanned
         self.filesWithFindings = filesWithFindings
         self.secretTypes = secretTypes
         self.skipped = skipped
+        self.contentScanned = contentScanned
         self.message = message
     }
 
@@ -86,7 +91,7 @@ public struct ShowMCPSection: Sendable, Equatable {
     public var isEmpty: Bool { servers.isEmpty }
 }
 
-/// What `offsend show` found: the sensitive files that would be sent to AI tools,
+/// What `offsend show` found: sensitive files exposed to AI tools (usable in further tool use),
 /// grouped by data type.
 public struct ShowReport: Sendable, Equatable {
     public let directoryPath: String
@@ -129,9 +134,11 @@ public struct ShowReport: Sendable, Equatable {
 /// Lists sensitive files that are exposed to AI tools (`.cursorignore`, `.claudeignore`, …
 /// do not cover them), mirroring the macOS app's directory exposure audit. Read-only:
 /// only ignore-file contents are read, never the matched files themselves.
+/// Opt-in `scanHistory` / `context.history.scan_in_show` also content-scans local agent transcripts.
 public struct OffsendShowService: Sendable {
     private let configuration: AIWorkspacePrivacyAuditConfiguration
     private let auditor: AIWorkspacePrivacyAuditor
+    private let runtimeContext: OffsendRuntimeContext?
 
     public init(
         context: OffsendRuntimeContext,
@@ -139,39 +146,117 @@ public struct OffsendShowService: Sendable {
     ) {
         self.init(
             configuration: OffsendConfiguration.directoryCheckConfiguration(context: context),
-            auditor: auditor
+            auditor: auditor,
+            runtimeContext: context
         )
     }
 
     public init(
         configuration: AIWorkspacePrivacyAuditConfiguration,
-        auditor: AIWorkspacePrivacyAuditor = AIWorkspacePrivacyAuditor()
+        auditor: AIWorkspacePrivacyAuditor = AIWorkspacePrivacyAuditor(),
+        runtimeContext: OffsendRuntimeContext? = nil
     ) {
         self.configuration = configuration
         self.auditor = auditor
+        self.runtimeContext = runtimeContext
     }
 
+    /// Count-only synchronous variant: never content-scans transcripts (ignores
+    /// `scan_in_show`). Use `runAsync` for history content scanning.
     public func run(
         directoryURL: URL,
         homeDirectory: URL? = nil,
         projectConfig: OffsendProjectConfig? = nil
     ) -> ShowReport {
         let standardizedURL = directoryURL.standardizedFileURL
-        let home = homeDirectory
+        let home = resolvedHome(homeDirectory)
+        let config = projectConfig ?? (try? ProjectConfigLoader().load(from: standardizedURL))
+        return buildReportSync(
+            standardizedURL: standardizedURL,
+            home: home,
+            config: config
+        )
+    }
+
+    public func runAsync(
+        directoryURL: URL,
+        homeDirectory: URL? = nil,
+        projectConfig: OffsendProjectConfig? = nil,
+        scanHistory: Bool = false
+    ) async -> ShowReport {
+        let standardizedURL = directoryURL.standardizedFileURL
+        let home = resolvedHome(homeDirectory)
+        let config = projectConfig ?? (try? ProjectConfigLoader().load(from: standardizedURL))
+        let shouldScanHistory = scanHistory || (config?.context?.history?.scanInShow == true)
+        return await buildReport(
+            standardizedURL: standardizedURL,
+            home: home,
+            config: config,
+            scanContent: shouldScanHistory
+        )
+    }
+
+    private func resolvedHome(_ homeDirectory: URL?) -> URL {
+        homeDirectory
             ?? ProcessInfo.processInfo.environment["HOME"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
             ?? FileManager.default.homeDirectoryForCurrentUser
-        let config = projectConfig ?? (try? ProjectConfigLoader().load(from: standardizedURL))
+    }
+
+    private func buildReportSync(
+        standardizedURL: URL,
+        home: URL,
+        config: OffsendProjectConfig?
+    ) -> ShowReport {
         let mcpSection = Self.makeMCPSection(
             projectRoot: standardizedURL,
             homeDirectory: home,
             projectConfig: config
         )
-        let historySection = Self.makeHistorySection(
+        let historySection = Self.makeHistorySectionCountOnly(
             projectRoot: standardizedURL,
             homeDirectory: home,
             projectConfig: config
         )
+        return finishReport(
+            standardizedURL: standardizedURL,
+            config: config,
+            mcpSection: mcpSection,
+            historySection: historySection
+        )
+    }
 
+    private func buildReport(
+        standardizedURL: URL,
+        home: URL,
+        config: OffsendProjectConfig?,
+        scanContent: Bool
+    ) async -> ShowReport {
+        let mcpSection = Self.makeMCPSection(
+            projectRoot: standardizedURL,
+            homeDirectory: home,
+            projectConfig: config
+        )
+        let historySection = await Self.makeHistorySection(
+            projectRoot: standardizedURL,
+            homeDirectory: home,
+            projectConfig: config,
+            runtimeContext: runtimeContext,
+            scanContent: scanContent
+        )
+        return finishReport(
+            standardizedURL: standardizedURL,
+            config: config,
+            mcpSection: mcpSection,
+            historySection: historySection
+        )
+    }
+
+    private func finishReport(
+        standardizedURL: URL,
+        config: OffsendProjectConfig?,
+        mcpSection: ShowMCPSection,
+        historySection: ShowHistorySection
+    ) -> ShowReport {
         let audit = auditor.audit(directoryURL: standardizedURL, configuration: configuration)
 
         if audit.isDirectoryUnavailable {
@@ -230,7 +315,7 @@ public struct OffsendShowService: Sendable {
         )
     }
 
-    private static func makeHistorySection(
+    private static func makeHistorySectionCountOnly(
         projectRoot: URL,
         homeDirectory: URL,
         projectConfig: OffsendProjectConfig?
@@ -253,6 +338,53 @@ public struct OffsendShowService: Sendable {
             filesWithFindings: 0,
             secretTypes: [],
             message: "run offsend history audit to scan for secrets"
+        )
+    }
+
+    private static func makeHistorySection(
+        projectRoot: URL,
+        homeDirectory: URL,
+        projectConfig: OffsendProjectConfig?,
+        runtimeContext: OffsendRuntimeContext?,
+        scanContent: Bool
+    ) async -> ShowHistorySection {
+        if projectConfig?.context?.history?.audit == false {
+            return ShowHistorySection(skipped: true, message: "context.history.audit is false")
+        }
+
+        if scanContent, let runtimeContext {
+            let audit = await OffsendHistoryService().audit(
+                projectRoot: projectRoot,
+                homeDirectory: homeDirectory,
+                context: runtimeContext,
+                allProjects: false
+            )
+            let types = Array(Set(audit.findings.flatMap(\.secretTypes))).sorted()
+            if audit.filesScanned == 0 {
+                return ShowHistorySection(filesScanned: 0, contentScanned: true, message: nil)
+            }
+            if audit.hasFindings {
+                return ShowHistorySection(
+                    filesScanned: audit.filesScanned,
+                    filesWithFindings: audit.filesWithFindings,
+                    secretTypes: types,
+                    contentScanned: true,
+                    message: "run: offsend history scrub --apply"
+                )
+            }
+            return ShowHistorySection(
+                filesScanned: audit.filesScanned,
+                filesWithFindings: 0,
+                secretTypes: [],
+                contentScanned: true,
+                message: nil
+            )
+        }
+
+        return makeHistorySectionCountOnly(
+            projectRoot: projectRoot,
+            homeDirectory: homeDirectory,
+            projectConfig: projectConfig
         )
     }
 

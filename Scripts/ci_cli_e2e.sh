@@ -429,6 +429,88 @@ if echo "$read_fail_open" | grep -q 'continue'; then
   echo "$read_fail_open" >&2
   exit 1
 fi
+
+# Read-gate seal mode: deny hands the agent a sealed copy path (context.read.on_secret: seal).
+seal_read_repo="$workdir/seal-read"
+seal_read_home="$workdir/seal-read-home"
+mkdir -p "$seal_read_repo" "$seal_read_home"
+printf '%s\n' \
+  "version: 1" \
+  "" \
+  "context:" \
+  "  read:" \
+  "    on_secret: seal" > "$seal_read_repo/.offsend.yml"
+HOME="$seal_read_home" "$CLI_PATH" keygen --default >/dev/null
+
+# offsend:ignore-next-line
+read_seal_payload='{"file_path":"/repo/creds.env","content":"AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF"}'
+set +e
+read_seal_out="$(printf '%s' "$read_seal_payload" | HOME="$seal_read_home" "$CLI_PATH" check --adapter cursor --read-gate --no-notify --working-directory "$seal_read_repo" 2>/dev/null)"
+set -e
+if ! echo "$read_seal_out" | grep -q '"deny"'; then
+  echo "Expected seal-mode read-gate to still deny" >&2
+  echo "$read_seal_out" >&2
+  exit 1
+fi
+if ! echo "$read_seal_out" | grep -q 'agent_message'; then
+  echo "Expected seal-mode deny to include agent_message" >&2
+  echo "$read_seal_out" >&2
+  exit 1
+fi
+# JSON-escaped slashes (\/) must be unescaped before extracting the path.
+sealed_copy_path="$(echo "$read_seal_out" | sed 's|\\/|/|g' | { grep -o '/[^"]*offsend-seal/sealed-[^"]*\.txt' || true; } | head -1)"
+if [[ -z "$sealed_copy_path" || ! -f "$sealed_copy_path" ]]; then
+  echo "Expected seal-mode deny to reference an existing sealed copy" >&2
+  echo "$read_seal_out" >&2
+  exit 1
+fi
+if ! grep -q '{{' "$sealed_copy_path" || grep -q 'AKIA1234567890ABCDEF' "$sealed_copy_path"; then
+  echo "Expected sealed copy to contain tokens and no plaintext secret" >&2
+  cat "$sealed_copy_path" >&2
+  exit 1
+fi
+# Read-gate must allow reading the sealed copy itself.
+set +e
+sealed_copy_allow="$(printf '%s' "{\"file_path\":\"$sealed_copy_path\"}" | HOME="$seal_read_home" "$CLI_PATH" check --adapter cursor --read-gate --no-notify --working-directory "$seal_read_repo" 2>/dev/null)"
+set -e
+if ! echo "$sealed_copy_allow" | grep -q '"allow"'; then
+  echo "Expected read-gate to allow the sealed copy path" >&2
+  echo "$sealed_copy_allow" >&2
+  exit 1
+fi
+# offsend check on the sealed copy is clean (seal tokens are not live secrets).
+if ! "$CLI_PATH" check "$sealed_copy_path" --fail-on block --quiet; then
+  echo "Expected offsend check on the sealed copy to pass" >&2
+  exit 1
+fi
+rm -f "$sealed_copy_path"
+
+# Without a key, seal mode degrades to the plain deny (no agent_message).
+no_seal_key_home="$workdir/seal-read-nokey"
+mkdir -p "$no_seal_key_home"
+set +e
+read_nokey_out="$(printf '%s' "$read_seal_payload" | HOME="$no_seal_key_home" "$CLI_PATH" check --adapter cursor --read-gate --no-notify --working-directory "$seal_read_repo" 2>/dev/null)"
+set -e
+if ! echo "$read_nokey_out" | grep -q '"deny"'; then
+  echo "Expected read-gate deny without seal key" >&2
+  echo "$read_nokey_out" >&2
+  exit 1
+fi
+if echo "$read_nokey_out" | grep -q 'agent_message'; then
+  echo "Expected no sealed-copy agent_message without a key" >&2
+  echo "$read_nokey_out" >&2
+  exit 1
+fi
+
+# Shell gate asks before the agent runs offsend unseal.
+set +e
+unseal_ask="$(printf '%s' '{"command":"offsend unseal sealed.txt"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
+set -e
+if ! echo "$unseal_ask" | grep -q '"ask"'; then
+  echo "Expected shell-gate ask for offsend unseal" >&2
+  echo "$unseal_ask" >&2
+  exit 1
+fi
 # Refuse missing repository paths and preserve foreign wrappers unless forced.
 set +e
 "$CLI_PATH" hook install --path "$repo/missing-project" --target cursor --cli-path "$CLI_PATH" >/dev/null 2>&1
@@ -659,6 +741,123 @@ if ! grep -q "check-mcp.sh" "$repo/.cursor/hooks.json"; then
   exit 1
 fi
 
+# MCP response gate: Cursor observe-only ({}), Claude warn/seal, fail-open, install toggles.
+if ! grep -q "check-mcp-out.sh" "$repo/.cursor/hooks.json" || ! grep -q "afterMCPExecution" "$repo/.cursor/hooks.json"; then
+  echo "Expected mcp-response-gate on by default (afterMCPExecution + check-mcp-out.sh)" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+if [[ ! -x "$repo/.offsend/hooks/check-mcp-out.sh" ]]; then
+  echo "Expected check-mcp-out.sh wrapper" >&2
+  exit 1
+fi
+
+# offsend:ignore-next-line
+mcpresp_cursor_payload='{"tool_name":"query","command":"postgres","result_json":"AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF"}'
+set +e
+mcpresp_cursor_out="$(printf '%s' "$mcpresp_cursor_payload" | "$CLI_PATH" check --adapter cursor --mcp-response-gate --no-notify 2>/tmp/offsend-mcpresp-stderr.$$)"
+set -e
+mcpresp_cursor_stderr="$(cat /tmp/offsend-mcpresp-stderr.$$)"
+rm -f /tmp/offsend-mcpresp-stderr.$$
+if [[ "$mcpresp_cursor_out" != "{}" ]]; then
+  echo "Expected cursor mcp-response-gate stdout {} (observe-only)" >&2
+  echo "$mcpresp_cursor_out" >&2
+  exit 1
+fi
+if ! echo "$mcpresp_cursor_stderr" | grep -qi 'secrets'; then
+  echo "Expected cursor mcp-response-gate stderr warning" >&2
+  echo "$mcpresp_cursor_stderr" >&2
+  exit 1
+fi
+if echo "$mcpresp_cursor_stderr" | grep -q 'AKIA'; then
+  echo "mcp-response-gate stderr must not contain secret material" >&2
+  exit 1
+fi
+
+mcpresp_warn_repo="$workdir/mcpresp-warn"
+mkdir -p "$mcpresp_warn_repo"
+printf '%s\n' \
+  "version: 1" \
+  "" \
+  "context:" \
+  "  mcp:" \
+  "    responses: warn" > "$mcpresp_warn_repo/.offsend.yml"
+# offsend:ignore-next-line
+mcpresp_claude_payload='{"tool_name":"mcp__github__get_secret","tool_response":"AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF"}'
+set +e
+mcpresp_warn_out="$(printf '%s' "$mcpresp_claude_payload" | "$CLI_PATH" check --adapter claude --mcp-response-gate --no-notify --working-directory "$mcpresp_warn_repo" 2>/dev/null)"
+set -e
+if ! echo "$mcpresp_warn_out" | grep -q 'additionalContext'; then
+  echo "Expected claude warn mode additionalContext" >&2
+  echo "$mcpresp_warn_out" >&2
+  exit 1
+fi
+if echo "$mcpresp_warn_out" | grep -q 'updatedToolOutput'; then
+  echo "warn mode must not rewrite tool output" >&2
+  echo "$mcpresp_warn_out" >&2
+  exit 1
+fi
+
+mcpresp_seal_repo="$workdir/mcpresp-seal"
+mcpresp_seal_home="$workdir/mcpresp-seal-home"
+mkdir -p "$mcpresp_seal_repo" "$mcpresp_seal_home"
+printf '%s\n' \
+  "version: 1" \
+  "" \
+  "context:" \
+  "  mcp:" \
+  "    responses: seal" > "$mcpresp_seal_repo/.offsend.yml"
+HOME="$mcpresp_seal_home" "$CLI_PATH" keygen --default >/dev/null
+set +e
+mcpresp_seal_out="$(printf '%s' "$mcpresp_claude_payload" | HOME="$mcpresp_seal_home" "$CLI_PATH" check --adapter claude --mcp-response-gate --no-notify --working-directory "$mcpresp_seal_repo" 2>/dev/null)"
+set -e
+if ! echo "$mcpresp_seal_out" | grep -q 'updatedToolOutput'; then
+  echo "Expected claude seal mode updatedToolOutput" >&2
+  echo "$mcpresp_seal_out" >&2
+  exit 1
+fi
+if ! echo "$mcpresp_seal_out" | grep -q 'updatedMCPToolOutput'; then
+  echo "Expected claude seal mode legacy updatedMCPToolOutput alias" >&2
+  echo "$mcpresp_seal_out" >&2
+  exit 1
+fi
+if echo "$mcpresp_seal_out" | grep -q 'AKIA1234567890ABCDEF'; then
+  echo "Sealed output must not contain the plaintext secret" >&2
+  exit 1
+fi
+if ! echo "$mcpresp_seal_out" | grep -q 'v1\.'; then
+  echo "Expected sealed output to contain seal tokens" >&2
+  echo "$mcpresp_seal_out" >&2
+  exit 1
+fi
+
+set +e
+mcpresp_fail_open="$(printf '%s' 'not-json' | "$CLI_PATH" check --adapter claude --mcp-response-gate --no-notify 2>/dev/null)"
+set -e
+if [[ "$mcpresp_fail_open" != "{}" ]]; then
+  echo "Expected mcp-response-gate fail-open {}" >&2
+  echo "$mcpresp_fail_open" >&2
+  exit 1
+fi
+
+"$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --no-mcp-response-gate
+if grep -q "check-mcp-out.sh" "$repo/.cursor/hooks.json"; then
+  echo "Expected --no-mcp-response-gate to remove the check-mcp-out.sh entry" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+if [[ -e "$repo/.offsend/hooks/check-mcp-out.sh" ]]; then
+  echo "Expected --no-mcp-response-gate to remove orphan check-mcp-out.sh" >&2
+  exit 1
+fi
+
+"$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --with-mcp-response-gate
+if ! grep -q "check-mcp-out.sh" "$repo/.cursor/hooks.json"; then
+  echo "Expected --with-mcp-response-gate alias to add check-mcp-out.sh" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+
 # Subagent gate (Cursor): secret in task → deny; clean task → allow; fail-open; install toggles.
 # offsend:ignore-next-line
 subagent_deny="$(printf '%s' '{"task":"use AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF","subagent_type":"explore"}' | "$CLI_PATH" check --adapter cursor --subagent-gate --no-notify 2>/dev/null)"
@@ -732,6 +931,11 @@ if ! grep -q "check-prompt.sh" "$combined/.cursor/hooks.json"; then
 fi
 if ! grep -q "check-prompt.sh" "$combined/.claude/settings.json"; then
   echo "Expected default install to add the claude hook" >&2
+  exit 1
+fi
+if ! grep -q "PostToolUse" "$combined/.claude/settings.json" || ! grep -q "check-mcp-out.sh" "$combined/.claude/settings.json"; then
+  echo "Expected default claude install to add PostToolUse mcp-response-gate" >&2
+  cat "$combined/.claude/settings.json" >&2
   exit 1
 fi
 if ! grep -q "check-prompt.sh" "$combined/.codex/hooks.json"; then

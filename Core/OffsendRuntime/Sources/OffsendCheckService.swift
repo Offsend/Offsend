@@ -1,6 +1,7 @@
 import DetectionCore
 import DocumentCore
 import Foundation
+import MaskingCore
 import RiskScoringCore
 import WorkspacePolicyCore
 
@@ -147,12 +148,18 @@ public struct OffsendCheckService: Sendable {
         let detection = await detector.scan(
             DetectionRequest(text: text, options: detectionOptions)
         )
-        let assessment = riskScorer.assess(detection.entities)
+        // `{{TYPE:v1.…}}` seal tokens are already-protected values; their
+        // ciphertext bodies must not re-trigger detectors.
+        let scannedEntities = SealTokenDetector.excludingTokenSpans(
+            detection.entities,
+            in: detection.scannedText
+        )
+        let assessment = riskScorer.assess(scannedEntities)
         let findings: [FileCheckFinding]
         if assessment.recommendedAction == .allow {
             findings = []
         } else {
-            findings = detection.entities.map { entity in
+            findings = scannedEntities.map { entity in
                 FileCheckFinding(
                     relativePath: "<stdin>",
                     line: lineNumber(for: entity.range, in: detection.scannedText),
@@ -166,9 +173,9 @@ public struct OffsendCheckService: Sendable {
         // When risk says allow, only surface secret-shaped entities for hook advice.
         let adviceEntities: [SensitiveEntity]
         if assessment.recommendedAction == .allow {
-            adviceEntities = detection.entities.filter(\.type.isSecret)
+            adviceEntities = scannedEntities.filter(\.type.isSecret)
         } else {
-            adviceEntities = detection.entities
+            adviceEntities = scannedEntities
         }
 
         let report = CheckReport(
@@ -255,7 +262,12 @@ public struct OffsendCheckService: Sendable {
     ) -> [FileCheckFinding] {
         guard analysis.assessment.recommendedAction != .allow else { return [] }
 
-        return analysis.detection.entities.map { entity in
+        // Seal tokens in files (e.g. sealed copies) are not live secrets.
+        let entities = SealTokenDetector.excludingTokenSpans(
+            analysis.detection.entities,
+            in: analysis.detection.scannedText
+        )
+        return entities.map { entity in
             FileCheckFinding(
                 relativePath: relativePath,
                 line: lineNumber(for: entity.range, in: analysis.detection.scannedText),

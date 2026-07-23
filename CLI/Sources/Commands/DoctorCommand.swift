@@ -2,7 +2,7 @@ import ArgumentParser
 import Foundation
 import OffsendRuntime
 
-struct Doctor: ParsableCommand {
+struct Doctor: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Verify local Offsend CLI setup and dependencies."
     )
@@ -16,10 +16,10 @@ struct Doctor: ParsableCommand {
     )
     var noFollow = false
 
-    mutating func run() throws {
+    mutating func run() async throws {
         let outputFormat = CLIParse.outputFormat(format)
         let useColor = CLIColor.enabled(for: outputFormat)
-        let report = OffsendDoctor().run()
+        let report = await OffsendDoctor().run()
         print(DoctorReporter().render(report, format: outputFormat, useColor: useColor))
 
         if !report.isHealthy {

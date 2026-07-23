@@ -77,6 +77,23 @@ final class PromptMCPGateTests: XCTestCase {
         let decision = PromptMCPGate.evaluate(call: call, mcpConfig: nil)
         XCTAssertEqual(decision.permission, .ask)
         XCTAssertEqual(decision.code, "sensitive_path")
+        XCTAssertTrue(decision.reason.contains("fuel"))
+    }
+
+    func testFlagsMasterKeyAndGitCredentialsInArgs() {
+        let master = PromptMCPGateCall(
+            server: "fs",
+            tool: "read",
+            toolInput: #"{"path":"config/master.key"}"#
+        )
+        XCTAssertEqual(PromptMCPGate.evaluate(call: master).code, "sensitive_path")
+
+        let gitCreds = PromptMCPGateCall(
+            server: "fs",
+            tool: "read",
+            toolInput: ".git-credentials"
+        )
+        XCTAssertEqual(PromptMCPGate.evaluate(call: gitCreds).code, "sensitive_path")
     }
 
     func testSecretTypesDenyInDenyMode() {
