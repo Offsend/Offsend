@@ -249,6 +249,12 @@ public struct OffsendMCPInventory: Sendable {
     }
 
     /// Minimal glob: `*` matches any run of characters; otherwise exact match.
+    /// Comparison is case-insensitive.
+    public static func matchesNamePattern(_ pattern: String, value: String) -> Bool {
+        matchesGlob(pattern.lowercased(), value: value.lowercased())
+    }
+
+    /// Minimal glob: `*` matches any run of characters; otherwise exact match.
     private static func matchesGlob(_ pattern: String, value: String) -> Bool {
         if pattern == "*" { return true }
         if !pattern.contains("*") { return pattern == value }

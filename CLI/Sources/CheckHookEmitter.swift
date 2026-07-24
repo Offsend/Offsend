@@ -510,13 +510,25 @@ struct CheckHookEmitter {
         )
         let rendered = PromptMCPGateRenderer.render(decision: decision, adapter: adapter)
         writeHookOutput(rendered)
+        // Use machine `code`, not `allowed`: observe mode still surfaces findings
+        // (sensitive_path / secrets / policy) while permitting the call.
+        let gateCode = decision.code == "allow" ? "allow" : "mcp_gate_\(decision.code)"
+        MCPActivityLog.append(
+            MCPActivityLog.Entry(
+                kind: "mcp_call",
+                server: call.server,
+                tool: call.tool,
+                code: gateCode,
+                secretTypes: decision.secretTypes
+            )
+        )
         logDebug(
             adapter: adapter,
             policy: policy,
             advice: nil,
             exitCode: rendered.exitCode,
             started: started,
-            error: decision.allowed ? nil : "mcp_gate_\(decision.code)"
+            error: decision.code == "allow" ? nil : gateCode
         )
     }
 
@@ -549,10 +561,78 @@ struct CheckHookEmitter {
         var secretTypes: [String] = []
         var sealedOutput: String?
         var sealedCount = 0
+        var fieldsTransformed = 0
         var sealFailed = false
         if !call.responseText.isEmpty {
+            let mode = OffsendMCPRuleResolver.effectiveResponseMode(
+                mcpConfig: mcpConfig,
+                server: call.server,
+                tool: call.tool
+            )
+            let fieldActions = OffsendMCPRuleResolver.effectiveFieldActions(
+                mcpConfig: mcpConfig,
+                server: call.server,
+                tool: call.tool
+            )
+
+            var workingText = call.responseText
+            var keyData: Data?
+            // Resolve key once when seal mode can rewrite output.
+            if mode == .seal, !call.truncated, call.canReplaceOutput {
+                let resolvedKeyFile = keyFile.map {
+                    URL(fileURLWithPath: $0, relativeTo: workingDirectory).standardizedFileURL.path
+                }
+                keyData = try? SealKeyResolver.resolve(
+                    key: nil,
+                    keyFilePath: resolvedKeyFile,
+                    keyName: keyName
+                ).data
+            }
+
+            if mode == .seal,
+               !fieldActions.isEmpty,
+               !call.truncated,
+               call.canReplaceOutput,
+               (call.responseShape == .object || call.responseShape == .array) {
+                let sealPlaintext: ((String) throws -> String)?
+                if fieldActions.values.contains(.seal) {
+                    if let keyData,
+                       let engine = try? SealEngine(keyData: keyData) {
+                        sealPlaintext = { plaintext in
+                            try engine.seal(
+                                plaintext: plaintext,
+                                type: OffsendMCPJSONFieldTransformer.sealType
+                            )
+                        }
+                    } else {
+                        sealPlaintext = nil
+                    }
+                } else {
+                    sealPlaintext = nil
+                }
+
+                if fieldActions.values.contains(.seal), sealPlaintext == nil {
+                    sealFailed = true
+                } else {
+                    do {
+                        let fieldResult = try OffsendMCPJSONFieldTransformer.apply(
+                            jsonText: workingText,
+                            fields: fieldActions,
+                            sealPlaintext: sealPlaintext
+                        )
+                        workingText = fieldResult.text
+                        fieldsTransformed = fieldResult.transformedCount
+                        sealedCount += fieldResult.sealedCount
+                    } catch OffsendMCPJSONFieldTransformError.invalidJSON {
+                        // Non-JSON payloads keep detector-only sealing.
+                    } catch {
+                        sealFailed = true
+                    }
+                }
+            }
+
             let scanned = await OffsendCheckService(context: context).runText(
-                call.responseText,
+                workingText,
                 failPolicy: .block,
                 disabledDetectors: disabledDetectors,
                 customDictionaries: customDictionaries
@@ -564,31 +644,27 @@ struct CheckHookEmitter {
             )
             secretTypes = Array(Set(secrets.map(\.type.rawValue))).sorted()
 
-            let mode = OffsendMCPResponseMode(rawValue: mcpConfig?.responses ?? "") ?? .observe
             if mode == .seal,
-               !secrets.isEmpty,
+               !sealFailed,
                !call.truncated,
                call.canReplaceOutput {
-                let resolvedKeyFile = keyFile.map {
-                    URL(fileURLWithPath: $0, relativeTo: workingDirectory).standardizedFileURL.path
-                }
-                if let keyData = try? SealKeyResolver.resolve(
-                    key: nil,
-                    keyFilePath: resolvedKeyFile,
-                    keyName: keyName
-                ).data {
-                    if let sealed = try? OffsendSealService(context: context).seal(
-                        text: textResult.scannedText,
-                        entities: secrets,
-                        keyData: keyData
-                    ) {
-                        sealedOutput = sealed.sealedText
-                        sealedCount = sealed.sealedCount
-                    } else {
-                        // Key present but sealing broke (e.g. oversized value):
-                        // renderers withhold the output instead of warning.
-                        sealFailed = true
+                if !secrets.isEmpty {
+                    if let keyData {
+                        if let sealed = try? OffsendSealService(context: context).seal(
+                            text: textResult.scannedText,
+                            entities: secrets,
+                            keyData: keyData
+                        ) {
+                            sealedOutput = sealed.sealedText
+                            sealedCount += sealed.sealedCount
+                        } else {
+                            // Key present but sealing broke (e.g. oversized value):
+                            // renderers withhold the output instead of warning.
+                            sealFailed = true
+                        }
                     }
+                } else if fieldsTransformed > 0 {
+                    sealedOutput = workingText
                 }
             }
         }
@@ -599,21 +675,38 @@ struct CheckHookEmitter {
             secretTypes: secretTypes,
             sealedOutput: sealedOutput,
             sealedCount: sealedCount,
+            fieldsTransformed: fieldsTransformed,
             sealFailed: sealFailed
         )
         let rendered = PromptMCPResponseGateRenderer.render(decision: decision, adapter: adapter)
         writeHookOutput(rendered)
+        let responseCode: String
+        if decision.sealed {
+            responseCode = "mcp_response_sealed"
+        } else if decision.sealFailed {
+            responseCode = "mcp_response_seal_failed"
+        } else if decision.hasFindings {
+            responseCode = "mcp_response_secrets"
+        } else {
+            responseCode = "allow"
+        }
+        MCPActivityLog.append(
+            MCPActivityLog.Entry(
+                kind: "mcp_response",
+                server: call.server,
+                tool: call.tool,
+                code: responseCode,
+                secretTypes: decision.secretTypes,
+                fieldsTransformed: decision.fieldsTransformed
+            )
+        )
         logDebug(
             adapter: adapter,
             policy: policy,
             advice: nil,
             exitCode: rendered.exitCode,
             started: started,
-            error: decision.hasFindings
-                ? (decision.sealed
-                    ? "mcp_response_sealed"
-                    : (decision.sealFailed ? "mcp_response_seal_failed" : "mcp_response_secrets"))
-                : nil
+            error: decision.hasFindings ? responseCode : nil
         )
     }
 

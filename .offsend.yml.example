@@ -107,6 +107,21 @@ hooks:
 #     responses: seal         # observe | warn | seal — MCP **response** scan (Cursor + Claude);
 #                             # seal rewrites tool output before the model sees it
 #                             # (needs a seal key: offsend keygen --default)
+#     # Starter presets (uncomment and rename servers/tools to match your MCP config):
+#     rules:
+#       - match: { server: github, tool: list_* }
+#         responses: observe        # low-risk list tools
+#       - match: { server: postgres }
+#         mode: ask                 # or deny for stricter repos
+#         responses: seal
+#       - match: { server: filesystem }
+#         mode: ask
+#         responses: seal
+#       - match: { server: crm, tool: get_customer }
+#         fields:                   # JSON paths; only when responses: seal
+#           passport_number: seal   # bare key = any depth
+#           account_id: pass        # keep; detectors still apply
+#           meta.filters: drop      # key stays, value becomes null
 #   subagents:
 #     mode: deny              # observe | deny (ask is treated as deny on Cursor subagentStart)
 #     scan_task: true         # secret-scan the subagent task prompt

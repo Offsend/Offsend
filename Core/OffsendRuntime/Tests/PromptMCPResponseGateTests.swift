@@ -45,6 +45,14 @@ final class PromptMCPResponseGateTests: XCTestCase {
         let json = #"{"tool_name":"mcp__fs__read","tool_response":"plain text body"}"#
         let call = try PromptMCPResponseGate.parse(json: json, adapter: .claude)
         XCTAssertEqual(call.responseText, "plain text body")
+        XCTAssertEqual(call.responseShape, .string)
+    }
+
+    func testParseClaudeJSONStringToolResponseGetsObjectShape() throws {
+        let json = #"{"tool_name":"mcp__crm__get","tool_response":"{\"passport_number\":\"AB1\"}"}"#
+        let call = try PromptMCPResponseGate.parse(json: json, adapter: .claude)
+        XCTAssertEqual(call.responseShape, .object)
+        XCTAssertTrue(call.responseText.contains("passport_number"))
     }
 
     func testRejectsNonMCPClaudeTool() {
@@ -110,6 +118,25 @@ final class PromptMCPResponseGateTests: XCTestCase {
         )
         XCTAssertEqual(decision.mode, .observe)
         XCTAssertTrue(decision.reason.contains("apiKeyGeneric"))
+    }
+
+    func testRuleResponsesOverridePerTool() {
+        let call = PromptMCPResponseCall(server: "github", tool: "list_issues", responseText: "secret")
+        let config = OffsendProjectMCPConfig(
+            responses: "seal",
+            rules: [
+                OffsendMCPRule(
+                    match: OffsendMCPRuleMatch(server: "github", tool: "list_issues"),
+                    responses: "observe"
+                ),
+            ]
+        )
+        let decision = PromptMCPResponseGate.evaluate(
+            call: call,
+            mcpConfig: config,
+            secretTypes: ["apiKeyGeneric"]
+        )
+        XCTAssertEqual(decision.mode, .observe)
     }
 
     func testSealModeWithoutKeyExplainsWithhold() {
@@ -353,6 +380,33 @@ final class PromptMCPResponseGateTests: XCTestCase {
         let replacement = try XCTUnwrap(root["updated_mcp_tool_output"] as? [String: Any])
         XCTAssertNotNil(replacement["error"])
         XCTAssertFalse(output.stdout.contains("plaintext"))
+    }
+
+    func testSealFailureWithoutDetectorSecretsStillWithholds() throws {
+        let call = PromptMCPResponseCall(
+            server: "crm",
+            tool: "get_customer",
+            responseText: #"{"passport_number":"AB1234567"}"#,
+            canReplaceOutput: true,
+            responseShape: .object
+        )
+        let decision = PromptMCPResponseGate.evaluate(
+            call: call,
+            mcpConfig: OffsendProjectMCPConfig(responses: "seal"),
+            sealFailed: true
+        )
+        XCTAssertTrue(decision.hasFindings)
+        XCTAssertTrue(decision.sealFailed)
+        XCTAssertTrue(decision.reason.contains("Sealing failed"))
+
+        let cursor = PromptMCPResponseGateRenderer.render(decision: decision, adapter: .cursor)
+        let cursorRoot = try json(cursor.stdout)
+        XCTAssertNotNil(cursorRoot["updated_mcp_tool_output"])
+        XCTAssertFalse(cursor.stdout.contains("AB1234567"))
+
+        let claude = PromptMCPResponseGateRenderer.render(decision: decision, adapter: .claude)
+        XCTAssertFalse(claude.stdout.contains("AB1234567"))
+        XCTAssertTrue(claude.stdout.contains("withheld"))
     }
 
     func testClaudeSealFailureWithholdsOutput() throws {

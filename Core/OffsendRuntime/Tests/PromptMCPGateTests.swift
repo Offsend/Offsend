@@ -122,6 +122,22 @@ final class PromptMCPGateTests: XCTestCase {
         XCTAssertEqual(decision.code, "secrets")
     }
 
+    func testRuleModeOverrideSoftensFindingsForOneTool() {
+        let call = PromptMCPGateCall(server: "github", tool: "list_issues", toolInput: #"{"path":".env"}"#)
+        let config = OffsendProjectMCPConfig(
+            mode: "deny",
+            rules: [
+                OffsendMCPRule(
+                    match: OffsendMCPRuleMatch(server: "github", tool: "list_issues"),
+                    mode: "observe"
+                ),
+            ]
+        )
+        let decision = PromptMCPGate.evaluate(call: call, mcpConfig: config)
+        XCTAssertEqual(decision.permission, .allow)
+        XCTAssertEqual(decision.code, "sensitive_path")
+    }
+
     func testCursorRendererDenyAndAsk() {
         let call = PromptMCPGateCall(server: "x", tool: "y", toolInput: ".env")
         let deny = PromptMCPGateDecision(
