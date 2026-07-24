@@ -1,0 +1,279 @@
+# =============================================================================
+# Offsend — full `.offsend.yml` catalog (reference only)
+# =============================================================================
+# Every recognized key, with comments. Not a recommended production profile:
+# copy keys you need into `.offsend.yml` (or start from `.offsend.yml.example`
+# / `offsend init`). Unknown keys are reported by `offsend doctor`.
+#
+# Docs: docs/configuration.md
+# Team walkthrough: docs/team.md
+# Starter: .offsend.yml.example
+# =============================================================================
+
+version: 1   # schema version — only `1` is accepted
+
+# -----------------------------------------------------------------------------
+# check — `offsend check`, baseline `init` scan, and defaults for hooks
+# -----------------------------------------------------------------------------
+check:
+  # Exit policy for `offsend check` (CLI flags override when passed):
+  #   block — fail only on blocking findings (critical secrets, policy failures)
+  #   warn  — also fail on warning / mask findings
+  #   none  — report findings but always exit 0
+  fail_on: block
+
+  # When true, also run workspace policy checks (ignore files, exposed sensitive
+  # paths, managed ignore drift). false = content scan only.
+  policy: false
+
+  # Repository-relative globs skipped by file scanning. Prefer seeding via
+  # `offsend init --template <stack>` (common is always included).
+  # Templates: common, node (js/ts), python, go, rust, ruby, java, android,
+  #            swift (ios), tuist
+  # Do NOT exclude secret-bearing paths (.env, *.pem, …).
+  exclude:
+    - "*.lock"
+    - ".DS_Store"
+    - "Thumbs.db"
+    - "Desktop.ini"
+    - "**/dist/**"
+    - "**/build/**"
+    - "**/coverage/**"
+    - "*.map"
+    - "*.min.js"
+    - "*.min.css"
+    - ".eslintcache"
+    - ".stylelintcache"
+    - ".offsend/hooks/**"
+    - "**/*.png"
+    - "**/*.gif"
+    - "**/*.jpg"
+    - "**/*.jpeg"
+    - "**/*.ico"
+    - "**/*.webp"
+    - "**/*.icns"
+    # Optional — only if these dirs never hold secrets:
+    # - "**/.cache/**"
+    # - "**/tmp/**"
+    # - "**/temp/**"
+    # Stack examples (from templates):
+    # - "**/node_modules/**"          # node
+    # - "**/.venv/**"                 # python
+    # - "**/vendor/**"                # go
+    # - "**/target/**"                # rust / java
+    # - "**/DerivedData/**"           # swift
+
+  detectors:
+    # Detector IDs to turn OFF for this project. Unknown IDs are ignored.
+    # All IDs (list under disable: to silence):
+    #   email, phone, money, url, ipAddress, internalDomain, contractId,
+    #   invoiceId, orderId, apiKeyGeneric, openAIAPIKey, awsAccessKeyId,
+    #   githubToken, slackToken, stripeKey, jwt, privateKey, sshPrivateKey,
+    #   databaseURLWithPassword, bearerToken, highEntropyString, creditCardLike,
+    #   iban, customClient, customCompany, customProject, customSensitiveTerm,
+    #   customInternalDomain, personName, streetAddress, governmentId
+    # Default starter keeps credential detectors on; noisy PII/noise off.
+    disable:
+      - email
+      - phone
+      - money
+      - url
+      - ipAddress
+      - internalDomain
+      - contractId
+      - invoiceId
+      - orderId
+      - creditCardLike
+      - iban
+      - personName
+      - streetAddress
+      - governmentId
+
+  # Extra custom-dictionary entries (merged with macOS app dictionaries).
+  # kind: client | company | project | sensitiveTerm | internalDomain | regex
+  # Non-regex: literal match with word boundaries. regex: pattern as-is.
+  dictionaries:
+    - kind: client
+      value: "Acme Corp"
+    - kind: company
+      value: "Globex"
+    - kind: project
+      value: "Project Apollo"
+    - kind: sensitiveTerm
+      value: "internal-codename"
+    - kind: internalDomain
+      value: "internal.example.com"
+    - kind: regex
+      value: "ACME-\\d{4,}"
+
+# -----------------------------------------------------------------------------
+# ignore — team AI-ignore source of truth (`offsend sync` / `ignore` / `protect`)
+# -----------------------------------------------------------------------------
+ignore:
+  # false (default): keep .cursorignore / .claudeignore / … out of git via a
+  # managed .gitignore block. true: allow those files to be committed.
+  commit: false
+
+  # Optional: only manage ignore/rule files for these tools. Absent = all.
+  # Supported: cursor, claude, copilot, continue, windsurf, gemini, llm,
+  #            aider, cline, roo, zed, cody
+  # tools:
+  #   - cursor
+  #   - claude
+
+  # Patterns materialized into every managed AI ignore file.
+  # `offsend init` seeds defaults; `offsend ignore <pat>` appends;
+  # `offsend ignore --merge-defaults` unions built-in privacy patterns.
+  patterns: []
+  # - "secrets/"
+  # - "**/.env"
+  # - "**/*.pem"
+
+# -----------------------------------------------------------------------------
+# hooks — git pre-commit + AI-editor hook install defaults (`offsend sync`)
+# -----------------------------------------------------------------------------
+hooks:
+  # Currently only: pre-commit
+  type: pre-commit
+
+  # Hook exit policy. If omitted → check.fail_on → block
+  fail_on: block
+
+  # Include workspace policy checks in git hooks. If omitted → check.policy → false
+  policy: false
+
+  # false (default): AI editor hook files stay local (.git/info/exclude).
+  # true: wrappers omit machine-specific absolute paths (safer to commit).
+  publish: false
+
+  # false (default): read-gate honors check.exclude for in-repo paths.
+  # true: read-gate scans every path regardless of check.exclude (strictest).
+  ignore_exclude: false
+
+# -----------------------------------------------------------------------------
+# context — AI-editor gates (read / MCP / subagents / history)
+# Used by show, doctor, sync / hook install. Changing most values does not
+# require reinstalling hooks (read.on_secret is read at runtime).
+# -----------------------------------------------------------------------------
+context:
+  # --- read-gate (file reads by the agent) -----------------------------------
+  read:
+    # When a read is denied because secrets were detected:
+    #   block — plain deny (default when unset)
+    #   seal  — deny, but hand the agent a sealed copy ({{TYPE:v1.…}} tokens).
+    #           Needs: offsend keygen --default. Without a key → plain deny.
+    on_secret: block
+
+  # --- MCP call + response gates (Cursor / Claude) ---------------------------
+  mcp:
+    # Pre-tool (call) enforcement when allow/deny / sensitive path / secrets hit:
+    #   observe — stderr / log only (still allows the call)
+    #   ask     — confirm (default when unset for findings)
+    #   deny    — block (also fails closed on unrecognized hook input)
+    mode: ask
+
+    # Non-empty allow → allowlist mode: servers not matching are flagged.
+    # Patterns support * wildcards (case-insensitive).
+    allow:
+      - github
+
+    # Server name patterns to flag/block. deny: ["*"] also enables allowlist-only.
+    deny:
+      - postgres
+
+    # Patterns flagged as high-risk in show / doctor.
+    # When omitted/empty, built-in defaults apply:
+    #   filesystem, postgres, postgresql, sqlite, mysql, mongodb, mongo,
+    #   redis, aws, gdrive, google-drive, db-*, *-db, sql*
+    high_risk:
+      - filesystem
+      - postgres
+      - postgresql
+      - sqlite
+      - mysql
+      - mongodb
+      - mongo
+      - redis
+      - aws
+      - gdrive
+      - google-drive
+      - "db-*"
+      - "*-db"
+      - "sql*"
+
+    # Post-tool response scanning (mcp-response-gate):
+    #   observe — log/stderr only (default when unset)
+    #   warn    — also warn the agent (hook context; older Cursor may drop it)
+    #   seal    — rewrite/withhold output before the model sees it
+    #             (needs seal key: offsend keygen --default)
+    # Oversized responses, seal failures, and secret-bearing responses without
+    # a key are withheld in seal mode (fail-closed).
+    responses: seal
+
+    # Per-tool overrides. match.server and/or match.tool (glob with *).
+    # mode / responses: most specific match wins; unset inherits globals above.
+    # fields: merged from ALL matching rules (more specific path wins; on equal
+    #         specificity the earlier list entry wins). Applied only when the
+    #         effective responses mode is seal, for JSON object/array output
+    #         (including JSON encoded as a string).
+    # Field actions:
+    #   seal — replace scalar (or leaf scalars under a container) with tokens
+    #   drop — keep the key, set value to JSON null
+    #   pass — skip field seal/drop for this path (detectors still apply)
+    # Path patterns: bare key = any depth; dotted paths; * = one segment;
+    #                ** = zero or more segments.
+    rules:
+      # Soften a trusted, low-risk list tool
+      - match:
+          server: github
+          tool: list_*
+        responses: observe
+
+      # Tighten a high-risk server (call gate)
+      - match:
+          server: postgres
+        mode: deny
+        responses: seal
+
+      - match:
+          server: filesystem
+        mode: ask
+        responses: seal
+
+      # Field-level minimization: keep structure, seal/drop sensitive keys
+      - match:
+          server: crm
+          tool: get_customer
+        fields:
+          passport_number: seal   # bare key → any depth
+          ssn: seal
+          account_id: pass        # keep; detectors still apply
+          meta.filters: drop      # key stays, value → null
+          "rows.*.ssn": seal      # dotted glob + array index segment
+
+  # --- Cursor subagentStart --------------------------------------------------
+  subagents:
+    # observe | deny  (ask is treated as deny on Cursor subagentStart)
+    mode: deny
+    # Secret-scan the subagent task prompt (default true when unset)
+    scan_task: true
+
+  # --- Local agent transcript / history --------------------------------------
+  history:
+    # false → show skips the agent-history section (default: audit / include)
+    audit: true
+    # true → protect also runs history scrub (honors --dry-run)
+    scrub_on_protect: false
+    # true → show/doctor content-scan transcripts (same detectors as history audit).
+    # Default/unset: count files only. One-shot: offsend show --scan-history
+    scan_in_show: false
+
+# =============================================================================
+# Notes (not YAML keys)
+# =============================================================================
+# - Seal key is per-machine (~/.offsend/seal.key), never commit it.
+# - Editor prompt soft-block is separate: offsend hook install --hook-policy block
+# - After editing: offsend sync && offsend doctor
+# - Strict-credentials shape: check.policy + hooks.policy true, mcp.mode ask|deny,
+#   subagents.mode deny, history.audit true — does NOT auto-set responses: seal
+# =============================================================================

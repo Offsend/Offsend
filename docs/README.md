@@ -19,6 +19,7 @@ Start on the [main README](../README.md) (quick start + [MCP seal](../README.md#
 | [Configuration](configuration.md) | Full `.offsend.yml` — `check`, `ignore`, `hooks`, `context` |
 | [macOS app](macos-app.md) | Safe Paste, Prepare, Free vs Pro, App vs CLI |
 | [`.offsend.yml.example`](../.offsend.yml.example) | Annotated starter config |
+| [`.offsend.yml.full`](../.offsend.yml.full) | Every `.offsend.yml` key + comments |
 | [SECURITY.md](../SECURITY.md) | Vulnerability reporting |
 | [Positioning](positioning.md) | ICP and messaging (internal) |
 

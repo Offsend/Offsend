@@ -91,6 +91,104 @@ final class ProjectConfigTests: XCTestCase {
         XCTAssertTrue(issues.contains { $0.contains("context.mcp.responses 'rewrite'") }, issues.joined(separator: "; "))
     }
 
+    func testContextMCPRulesLoadAndValidate() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
+
+        let yaml = """
+        version: 1
+        context:
+          mcp:
+            mode: ask
+            responses: seal
+            rules:
+              - match:
+                  server: github
+                  tool: list_issues
+                responses: observe
+              - match:
+                  server: postgres
+                mode: deny
+        """
+        try yaml.write(to: root.appendingPathComponent(".offsend.yml"), atomically: true, encoding: .utf8)
+
+        let config = try XCTUnwrap(ProjectConfigLoader().load(from: root))
+        XCTAssertEqual(config.context?.mcp?.rules?.count, 2)
+        XCTAssertEqual(config.context?.mcp?.rules?.first?.match.server, "github")
+        XCTAssertEqual(config.context?.mcp?.rules?.first?.responses, "observe")
+        XCTAssertTrue(ProjectConfigValidator.validate(config).isEmpty)
+        XCTAssertTrue(ProjectConfigValidator.validateYAMLStructure(yaml).isEmpty)
+    }
+
+    func testContextMCPRulesInvalidEntries() {
+        let config = OffsendProjectConfig(
+            context: OffsendProjectContextConfig(
+                mcp: OffsendProjectMCPConfig(
+                    rules: [
+                        OffsendMCPRule(match: OffsendMCPRuleMatch(), mode: "ask"),
+                        OffsendMCPRule(
+                            match: OffsendMCPRuleMatch(server: "github"),
+                            responses: "rewrite"
+                        ),
+                        OffsendMCPRule(match: OffsendMCPRuleMatch(server: "x")),
+                        OffsendMCPRule(
+                            match: OffsendMCPRuleMatch(server: "crm"),
+                            fields: ["passport_number": "shred"]
+                        ),
+                    ]
+                )
+            )
+        )
+        let issues = ProjectConfigValidator.validate(config)
+        XCTAssertTrue(issues.contains { $0.contains("rules[0].match needs server and/or tool") }, issues.joined(separator: "; "))
+        XCTAssertTrue(issues.contains { $0.contains("rules[1].responses 'rewrite'") }, issues.joined(separator: "; "))
+        XCTAssertTrue(issues.contains { $0.contains("rules[2] needs mode, responses, and/or fields") }, issues.joined(separator: "; "))
+        XCTAssertTrue(issues.contains { $0.contains("rules[3].fields.passport_number 'shred'") }, issues.joined(separator: "; "))
+
+        let structure = ProjectConfigValidator.validateYAMLStructure(
+            """
+            version: 1
+            context:
+              mcp:
+                rules:
+                  - mode: ask
+                    reshape: true
+            """
+        )
+        XCTAssertTrue(structure.contains { $0.contains("rules[0].match is required") }, structure.joined(separator: "; "))
+        XCTAssertTrue(structure.contains { $0.contains("Unknown context.mcp.rules[0] key 'reshape'") }, structure.joined(separator: "; "))
+    }
+
+    func testContextMCPRulesFieldsLoad() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
+
+        let yaml = """
+        version: 1
+        context:
+          mcp:
+            responses: seal
+            rules:
+              - match: { server: crm, tool: get_customer }
+                fields:
+                  passport_number: seal
+                  account_id: pass
+                  meta.filters: drop
+        """
+        try yaml.write(to: root.appendingPathComponent(".offsend.yml"), atomically: true, encoding: .utf8)
+        let config = try XCTUnwrap(ProjectConfigLoader().load(from: root))
+        XCTAssertEqual(config.context?.mcp?.rules?.first?.fields?["passport_number"], "seal")
+        XCTAssertEqual(config.context?.mcp?.rules?.first?.fields?["account_id"], "pass")
+        XCTAssertTrue(ProjectConfigValidator.validate(config).isEmpty)
+        XCTAssertTrue(ProjectConfigValidator.validateYAMLStructure(yaml).isEmpty)
+    }
+
     func testContextReadUnknownKeyFlagged() {
         let issues = ProjectConfigValidator.validateYAMLStructure(
             """

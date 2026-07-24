@@ -65,30 +65,85 @@ public struct ShowHistorySection: Sendable, Equatable {
     public var hasFindings: Bool { filesWithFindings > 0 }
 }
 
+/// One configured `context.mcp.rules` entry, summarized for show.
+public struct ShowMCPRule: Sendable, Equatable {
+    public let summary: String
+
+    public init(summary: String) {
+        self.summary = summary
+    }
+}
+
+/// Recent MCP gate activity (from local `mcp-activity.log`).
+public struct ShowMCPActivityHit: Sendable, Equatable {
+    public let server: String
+    public let tool: String
+    public let kind: String
+    public let count: Int
+    public let lastCode: String
+    public let secretTypes: [String]
+    public let fieldsTransformed: Int
+
+    public init(
+        server: String,
+        tool: String,
+        kind: String,
+        count: Int,
+        lastCode: String,
+        secretTypes: [String] = [],
+        fieldsTransformed: Int = 0
+    ) {
+        self.server = server
+        self.tool = tool
+        self.kind = kind
+        self.count = count
+        self.lastCode = lastCode
+        self.secretTypes = secretTypes
+        self.fieldsTransformed = fieldsTransformed
+    }
+
+    public var label: String { "\(server)/\(tool)" }
+}
+
 /// MCP inventory + policy snapshot attached to `offsend show`.
 public struct ShowMCPSection: Sendable, Equatable {
     public let servers: [ShowMCPServer]
     public let policyMode: String?
+    public let responsesMode: String?
     public let hasAllowlist: Bool
     public let hasDenylist: Bool
     /// Editor targets that already have an Offsend MCP gate installed.
     public let gateTargets: [String]
+    public let rules: [ShowMCPRule]
+    public let recentActivity: [ShowMCPActivityHit]
+    /// Soft guidance (high-risk without rules, activity without coverage).
+    public let hints: [String]
 
     public init(
         servers: [ShowMCPServer] = [],
         policyMode: String? = nil,
+        responsesMode: String? = nil,
         hasAllowlist: Bool = false,
         hasDenylist: Bool = false,
-        gateTargets: [String] = []
+        gateTargets: [String] = [],
+        rules: [ShowMCPRule] = [],
+        recentActivity: [ShowMCPActivityHit] = [],
+        hints: [String] = []
     ) {
         self.servers = servers
         self.policyMode = policyMode
+        self.responsesMode = responsesMode
         self.hasAllowlist = hasAllowlist
         self.hasDenylist = hasDenylist
         self.gateTargets = gateTargets
+        self.rules = rules
+        self.recentActivity = recentActivity
+        self.hints = hints
     }
 
-    public var isEmpty: Bool { servers.isEmpty }
+    public var isEmpty: Bool {
+        servers.isEmpty && rules.isEmpty && recentActivity.isEmpty
+    }
 }
 
 /// What `offsend show` found: sensitive files exposed to AI tools (usable in further tool use),
@@ -423,19 +478,72 @@ public struct OffsendShowService: Sendable {
             .filter { AIEditorHookInstaller.supportsFileGates($0) }
             .filter { installer.status(target: $0, repositoryPath: projectRoot).mcpGate }
             .map(\.rawValue)
+        let servers = inventory.servers.map {
+            ShowMCPServer(
+                name: $0.name,
+                source: $0.source,
+                detail: $0.detail,
+                highRisk: $0.highRisk
+            )
+        }
+        let mcpConfig = projectConfig?.context?.mcp
+        let configuredRules = mcpConfig?.rules ?? []
+        let ruleSummaries = configuredRules.map {
+            ShowMCPRule(summary: OffsendMCPRuleAdvice.summarizeRule($0))
+        }
+        let activity = MCPActivityLog.recentFindingSummaries().map {
+            ShowMCPActivityHit(
+                server: $0.server,
+                tool: $0.tool,
+                kind: $0.kind,
+                count: $0.count,
+                lastCode: $0.lastCode,
+                secretTypes: $0.secretTypes,
+                fieldsTransformed: $0.fieldsTransformed
+            )
+        }
+        var hints: [String] = []
+        let uncovered = OffsendMCPRuleAdvice.uncoveredHighRiskServers(
+            servers: servers,
+            rules: configuredRules
+        )
+        if !uncovered.isEmpty {
+            hints.append(
+                "high-risk without rules: \(uncovered.joined(separator: ", ")) — add context.mcp.rules "
+                    + "(see docs/configuration.md#contextmcp)"
+            )
+        }
+        let uncoveredHits = OffsendMCPRuleAdvice.uncoveredActivityHits(
+            hits: MCPActivityLog.recentFindingSummaries(),
+            rules: configuredRules
+        )
+        if let hit = uncoveredHits.first {
+            hints.append(
+                "recent \(hit.label) had \(hit.lastCode) with no matching rule — consider "
+                    + "context.mcp.rules match for that server/tool"
+            )
+        }
+        if OffsendMCPRuleAdvice.hasFieldsWithoutSealResponses(
+            rules: configuredRules,
+            globalResponses: mcpConfig?.responses
+        ) {
+            hints.append(
+                "fields rules only apply when that rule's effective responses is seal — "
+                    + "set responses: seal on the rule or context.mcp.responses: seal "
+                    + "(and offsend keygen --default)"
+            )
+        }
+
         return ShowMCPSection(
-            servers: inventory.servers.map {
-                ShowMCPServer(
-                    name: $0.name,
-                    source: $0.source,
-                    detail: $0.detail,
-                    highRisk: $0.highRisk
-                )
-            },
+            servers: servers,
             policyMode: inventory.policyMode,
+            responsesMode: mcpConfig?.responses,
             hasAllowlist: inventory.hasAllowlist,
             hasDenylist: inventory.hasDenylist,
-            gateTargets: gateTargets
+            gateTargets: gateTargets,
+            rules: ruleSummaries,
+            recentActivity: activity,
+            hints: hints
         )
     }
 
