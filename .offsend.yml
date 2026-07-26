@@ -1,5 +1,8 @@
 version: 1
 
+context:
+  read:
+    on_secret: seal
 check:
   fail_on: block
   policy: false
