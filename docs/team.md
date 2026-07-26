@@ -11,6 +11,14 @@ offsend init --template <stack>   # e.g. node, python, swift
 
 This writes `.offsend.yml`, materializes AI ignore files, and runs a **baseline `check` in advise-only mode** (does not fail `init`). Review `ignore.patterns` and `check.detectors` — teams tune what to disable; credentials stay on by default. See [Strict credentials](configuration.md#strict-credentials-mode).
 
+Config references (do not commit the full catalog as-is):
+
+| File | Role |
+| --- | --- |
+| [`.offsend.yml.example`](../.offsend.yml.example) | Annotated starter — copy or use `offsend init` |
+| [`.offsend.yml.full`](../.offsend.yml.full) | Every recognized key + comments — pick what you need |
+| [configuration.md](configuration.md) | Settings reference |
+
 ## 2. Close obvious gaps
 
 ```bash
@@ -19,7 +27,7 @@ offsend protect    # promote required exposures into .offsend.yml + sync ignores
 offsend sync       # ignore files + git / AI-editor hooks
 ```
 
-### Optional: MCP response seal (Cursor / Claude)
+### Optional: MCP response seal + field rules (Cursor / Claude)
 
 If the team uses MCP tools, seal secrets in tool **responses** before the model sees them. Each engineer needs a local key; the mode lives in the shared policy:
 
@@ -31,14 +39,26 @@ offsend keygen --default   # once per machine → ~/.offsend/seal.key (do not co
 # in .offsend.yml (commit this)
 context:
   mcp:
-    responses: seal
+    mode: ask
+    responses: seal          # needs seal key on each machine
+    rules:
+      # Soften low-risk list tools
+      - match: { server: github, tool: list_* }
+        responses: observe
+      # Field-level minimization (PII / over-return) — only when responses: seal
+      - match: { server: crm, tool: get_customer }
+        fields:
+          passport_number: seal   # bare key = any depth
+          ssn: seal
+          account_id: pass        # keep; detectors still apply
+          meta.filters: drop      # key stays, value → null
 ```
 
 ```bash
 offsend sync && offsend doctor
 ```
 
-Short recipe: [README → MCP seal](../README.md#mcp-seal). Details: [cli.md → MCP-response-gate](cli.md#mcp-response-gate-on-by-default).
+`fields` (`seal` / `drop` / `pass`) apply to JSON object/array MCP output when the effective `responses` mode is `seal`. Rename `server` / `tool` to match your MCP config. Full key catalog: [`.offsend.yml.full`](../.offsend.yml.full). Recipe: [configuration.md → MCP rules](configuration.md#mcp-rules-recipe). Short overview: [README → MCP seal](../README.md#mcp-seal).
 
 ## 3. Commit the source of truth
 
@@ -104,5 +124,7 @@ Then rotate any credentials that appeared in transcripts. Hooks and ignore files
 
 - [CLI reference](cli.md)
 - [Configuration](configuration.md)
+- [`.offsend.yml.example`](../.offsend.yml.example) — starter
+- [`.offsend.yml.full`](../.offsend.yml.full) — full parameter catalog
 - [FAQ](faq.md)
 - [Positioning](positioning.md)

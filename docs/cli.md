@@ -530,8 +530,9 @@ Note: Cursor currently enforces only `deny` reliably; `ask` may not pause the co
 Installed by default for Cursor and Claude (disable with `--no-mcp-gate`). Gates MCP tool **calls** (Cursor `beforeMCPExecution` with `failClosed: true`, Claude `PreToolUse` matcher `mcp__.*`):
 
 1. **Server policy** — optional `context.mcp.allow` / `deny` in `.offsend.yml`. A non-empty `allow` list (or `deny: ["*"]`) switches to allowlist mode: servers not matching `allow` are flagged
-2. **Sensitive paths in tool args** — same path heuristics as the shell-gate
-3. **Secret-shaped values in tool args** — same detectors as the prompt gate (`--secrets-only` by default)
+2. **Per-tool rules** — optional `context.mcp.rules` overrides `mode` / `responses` for matching `server`/`tool` globs, and optional `fields` (`seal`/`drop`/`pass` on JSON paths) when sealing responses. Mode/responses: most specific match wins; fields from all matches merge (more specific wins per path). `offsend show` lists rules + recent MCP findings from a local activity log (server/tool/outcome only); `doctor` warns on high-risk servers without rules. Recipe: [configuration.md → MCP rules recipe](configuration.md#mcp-rules-recipe)
+3. **Sensitive paths in tool args** — same path heuristics as the shell-gate
+4. **Secret-shaped values in tool args** — same detectors as the prompt gate (`--secrets-only` by default)
 
 Enforcement mode (`context.mcp.mode`): `observe` (allow + stderr), `ask` (default when unset), or `deny`. `offsend show` lists configured MCP servers; `offsend doctor` warns when MCP is present without a policy or when the gate is missing.
 
@@ -773,3 +774,4 @@ Team walkthrough: [team.md](team.md).
 - [FAQ](faq.md)
 - [README](../README.md) — product overview and quick start
 - [`.offsend.yml.example`](../.offsend.yml.example) — annotated starter
+- [`.offsend.yml.full`](../.offsend.yml.full) — full parameter catalog

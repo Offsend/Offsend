@@ -505,6 +505,72 @@ public struct OffsendDoctor: Sendable {
                     )
                 )
             }
+
+            let mcpConfig = projectConfig?.context?.mcp
+            let showServers = mcpInventory.servers.map {
+                ShowMCPServer(
+                    name: $0.name,
+                    source: $0.source,
+                    detail: $0.detail,
+                    highRisk: $0.highRisk
+                )
+            }
+            let uncoveredHighRisk = OffsendMCPRuleAdvice.uncoveredHighRiskServers(
+                servers: showServers,
+                rules: mcpConfig?.rules
+            )
+            if !uncoveredHighRisk.isEmpty {
+                checks.append(
+                    DoctorCheck(
+                        name: "mcp-rules",
+                        status: .warn,
+                        message: "High-risk MCP server(s) have no context.mcp.rules entry: "
+                            + "\(uncoveredHighRisk.joined(separator: ", ")). "
+                            + "Add per-tool mode/responses/fields overrides "
+                            + "(see docs/configuration.md#mcp-rules-recipe)."
+                    )
+                )
+            } else if !(mcpConfig?.rules ?? []).isEmpty {
+                checks.append(
+                    DoctorCheck(
+                        name: "mcp-rules",
+                        status: .ok,
+                        message: "\(mcpConfig?.rules?.count ?? 0) MCP rule(s) configured"
+                    )
+                )
+            }
+
+            if OffsendMCPRuleAdvice.hasFieldsWithoutSealResponses(
+                rules: mcpConfig?.rules,
+                globalResponses: mcpConfig?.responses
+            ) {
+                checks.append(
+                    DoctorCheck(
+                        name: "mcp-rules-fields",
+                        status: .warn,
+                        message: "context.mcp.rules include fields, but responses is not seal. "
+                            + "Field seal/drop only runs when that rule's effective responses "
+                            + "mode is seal (set responses: seal on the rule or "
+                            + "context.mcp.responses: seal, and offsend keygen --default)."
+                    )
+                )
+            }
+
+            let uncoveredHits = OffsendMCPRuleAdvice.uncoveredActivityHits(
+                hits: MCPActivityLog.recentFindingSummaries(),
+                rules: mcpConfig?.rules
+            )
+            if let hit = uncoveredHits.first {
+                checks.append(
+                    DoctorCheck(
+                        name: "mcp-activity",
+                        status: .warn,
+                        message: "Recent MCP finding without a matching rule: \(hit.label) "
+                            + "(\(hit.lastCode)×\(hit.count)). Add a context.mcp.rules entry for "
+                            + "that server/tool, or field rules if the JSON shape is stable."
+                    )
+                )
+            }
         }
 
         // One show run for both the history check and next-actions; honors
@@ -748,6 +814,14 @@ public struct OffsendDoctor: Sendable {
                     "offsend history audit   # \(history.filesScanned) local transcript(s) may already hold secrets"
                 )
             }
+        }
+
+        if let mcp = showReport?.mcp,
+           mcp.hints.contains(where: { $0.contains("high-risk without rules") || $0.contains("no matching rule") }) {
+            actions.append(
+                "edit .offsend.yml context.mcp.rules   # tighten high-risk / recent MCP tools "
+                    + "(recipe: docs/configuration.md#mcp-rules-recipe)"
+            )
         }
 
         let gitInstalled = (try? HookManager(fileManager: fileManager).isInstalled(repositoryPath: cwd)) ?? false

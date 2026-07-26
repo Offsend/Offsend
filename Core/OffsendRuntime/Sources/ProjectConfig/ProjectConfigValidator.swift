@@ -70,10 +70,11 @@ public enum ProjectConfigValidator {
                 issues.append(
                     contentsOf: unknownKeys(
                         in: mcp,
-                        allowed: ["mode", "allow", "deny", "high_risk", "responses"],
+                        allowed: ["mode", "allow", "deny", "high_risk", "responses", "rules"],
                         path: "context.mcp"
                     )
                 )
+                issues.append(contentsOf: validateMCPRulesStructure(mcp["rules"]))
             }
             if let read = context["read"] as? [String: Any] {
                 issues.append(
@@ -169,6 +170,89 @@ public enum ProjectConfigValidator {
             )
         }
 
+        if let rules = config.context?.mcp?.rules {
+            for (index, rule) in rules.enumerated() {
+                let path = "context.mcp.rules[\(index)]"
+                let server = rule.match.server?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let tool = rule.match.tool?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                if server.isEmpty, tool.isEmpty {
+                    issues.append("\(path).match needs server and/or tool.")
+                }
+                if let mode = rule.mode, OffsendContextEnforcementMode(rawValue: mode) == nil {
+                    issues.append(
+                        "\(path).mode '\(mode)' is invalid (use \(validValues(OffsendContextEnforcementMode.self)))."
+                    )
+                }
+                if let responses = rule.responses, OffsendMCPResponseMode(rawValue: responses) == nil {
+                    issues.append(
+                        "\(path).responses '\(responses)' is invalid (use \(validValues(OffsendMCPResponseMode.self)))."
+                    )
+                }
+                let fields = rule.fields ?? [:]
+                if fields.isEmpty, rule.mode == nil, rule.responses == nil {
+                    issues.append("\(path) needs mode, responses, and/or fields.")
+                }
+                for key in fields.keys.sorted() {
+                    let raw = fields[key] ?? ""
+                    if OffsendMCPFieldAction(rawValue: raw) == nil {
+                        issues.append(
+                            "\(path).fields.\(key) '\(raw)' is invalid "
+                                + "(use \(validValues(OffsendMCPFieldAction.self)))."
+                        )
+                    }
+                }
+            }
+        }
+
+        return issues
+    }
+
+    private static func validateMCPRulesStructure(_ value: Any?) -> [String] {
+        guard let value else { return [] }
+        guard let rules = value as? [Any] else {
+            return ["context.mcp.rules must be a list."]
+        }
+        var issues: [String] = []
+        for (index, entry) in rules.enumerated() {
+            let path = "context.mcp.rules[\(index)]"
+            guard let rule = entry as? [String: Any] else {
+                issues.append("\(path) must be a mapping.")
+                continue
+            }
+            issues.append(
+                contentsOf: unknownKeys(
+                    in: rule,
+                    allowed: ["match", "mode", "responses", "fields"],
+                    path: path
+                )
+            )
+            if let fields = rule["fields"] {
+                if let map = fields as? [String: Any] {
+                    for key in map.keys.sorted() {
+                        if !(map[key] is String) {
+                            issues.append("\(path).fields.\(key) must be a string action.")
+                        }
+                    }
+                } else {
+                    issues.append("\(path).fields must be a mapping.")
+                }
+            }
+            guard let matchValue = rule["match"] else {
+                issues.append("\(path).match is required.")
+                continue
+            }
+            guard let match = matchValue as? [String: Any] else {
+                issues.append("\(path).match must be a mapping.")
+                continue
+            }
+            issues.append(
+                contentsOf: unknownKeys(
+                    in: match,
+                    allowed: ["server", "tool"],
+                    path: "\(path).match"
+                )
+            )
+        }
         return issues
     }
 

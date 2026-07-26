@@ -14,6 +14,8 @@ offsend init --list-templates
 offsend init --template node --no-check --no-sync
 # or copy the example:
 cp .offsend.yml.example .offsend.yml
+# full key catalog (reference — do not use as a drop-in profile):
+#   .offsend.yml.full
 ```
 
 `offsend init` expands exclude presets into a concrete `check.exclude` list (no `preset` field in the YAML). The `common` preset is always included. Template names are case-insensitive; aliases: `js`/`ts` → `node`, `ios` → `swift`. Without `--template`, a TTY prompts for the stack; non-TTY requires `--template` explicitly.
@@ -75,9 +77,16 @@ hooks:
 #     allow: [github]    # non-empty allow = allowlist mode
 #     high_risk: [filesystem, postgres]
 #     responses: seal    # observe | warn | seal — needs: offsend keygen --default
+#     rules:             # optional per-tool overrides (most specific match wins)
+#       - match: { server: github, tool: list_issues }
+#         responses: observe
+#       - match: { server: crm, tool: get_customer }
+#         fields:
+#           passport_number: seal
+#           account_id: pass
 ```
 
-A fuller annotated example lives in [`.offsend.yml.example`](../.offsend.yml.example).
+Annotated starter: [`.offsend.yml.example`](../.offsend.yml.example). Every recognized key with comments: [`.offsend.yml.full`](../.offsend.yml.full).
 
 ---
 
@@ -294,6 +303,43 @@ Optional MCP policy used by `offsend show`, `offsend doctor`, and the MCP-gate (
 | `deny` | Server name patterns to block. `"*"` also enables allowlist mode |
 | `high_risk` | Patterns flagged in `show` / `doctor` (defaults include `filesystem`, `postgres`, …) |
 | `responses` | MCP **response** scanning (`check --mcp-response-gate`): `observe` (default; log/stderr only), `warn` (also warn the agent), or `seal` (Cursor/Claude: replace MCP output with a sealed version before the model sees it; needs a seal key). Cursor keeps the JSON object shape; Claude receives the sealed output as text (`updatedToolOutput` is a string). Responses above the 2 MiB safety limit, responses whose secrets fail to seal, and secret-bearing responses encountered without a seal key are withheld. Caveat: `warn` relies on hook-injected context (`additional_context` / `additionalContext`), which Cursor builds before 3.9.8 did not deliver to the model — for enforcement use `seal` with a seal key |
+| `rules` | Optional per-tool overrides. Each entry has `match.server` and/or `match.tool` (glob with `*`), plus `mode` and/or `responses`, and optional `fields`. Most specific match wins for `mode` / `responses`; unset values inherit the globals above. `fields` from **all** matching rules are merged (more specific path wins; on equal specificity the earlier list entry wins) — a narrow override without `fields` keeps fields from a broader match. `fields` maps JSON path patterns to `seal` \| `drop` \| `pass` (applied in `responses: seal` for object/array tool output, including JSON encoded as a string). Bare key names match at any depth; dotted paths support `*` and `**`. `pass` skips field sealing for that path but does **not** bypass secret detectors. `drop` keeps the key and sets JSON `null`. |
+
+#### MCP rules recipe
+
+Use this when third-party MCP tools over-return data, or when `offsend show` / `doctor` flags high-risk servers / recent MCP findings without rules.
+
+```yaml
+context:
+  mcp:
+    mode: ask
+    responses: seal          # needs: offsend keygen --default
+    rules:
+      # Soften a trusted, low-risk tool
+      - match: { server: github, tool: list_issues }
+        responses: observe
+
+      # Tighten a high-risk server
+      - match: { server: postgres }
+        mode: deny
+
+      # Keep structure; seal only sensitive JSON fields
+      - match: { server: crm, tool: get_customer }
+        fields:
+          passport_number: seal
+          ssn: seal
+          account_id: pass
+          meta.filters: drop
+```
+
+Workflow:
+
+1. `offsend show` — inventory, configured rules, recent MCP findings (from local activity log)
+2. Add `rules` for high-risk servers or tools that keep sealing secrets
+3. `offsend doctor` — warns when high-risk servers lack rules, or `fields` are set without `responses: seal`
+4. Re-run the agent; check `show` again for recent findings
+
+`offsend show` / hooks record only `server`, `tool`, and outcome codes locally (`mcp-activity.log`) — never tool payloads.
 
 ### `context.subagents`
 
@@ -330,3 +376,4 @@ Optional MCP policy used by `offsend show`, `offsend doctor`, and the MCP-gate (
 - [FAQ](faq.md)
 - [README](../README.md) — quick start and workflows
 - [`.offsend.yml.example`](../.offsend.yml.example) — copy-paste starter
+- [`.offsend.yml.full`](../.offsend.yml.full) — full parameter catalog

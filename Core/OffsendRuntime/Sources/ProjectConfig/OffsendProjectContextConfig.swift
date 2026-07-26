@@ -30,6 +30,9 @@ public struct OffsendProjectMCPConfig: Codable, Equatable, Sendable {
     /// MCP **response** handling: `observe` (stderr only), `warn` (agent context note),
     /// or `seal` (replace secrets with seal tokens before the model sees them).
     public var responses: String?
+    /// Optional per-server/tool overrides for `mode` / `responses`.
+    /// Most specific match wins; unset fields inherit the globals above.
+    public var rules: [OffsendMCPRule]?
 
     enum CodingKeys: String, CodingKey {
         case mode
@@ -37,6 +40,7 @@ public struct OffsendProjectMCPConfig: Codable, Equatable, Sendable {
         case deny
         case highRisk = "high_risk"
         case responses
+        case rules
     }
 
     public init(
@@ -44,13 +48,15 @@ public struct OffsendProjectMCPConfig: Codable, Equatable, Sendable {
         allow: [String]? = nil,
         deny: [String]? = nil,
         highRisk: [String]? = nil,
-        responses: String? = nil
+        responses: String? = nil,
+        rules: [OffsendMCPRule]? = nil
     ) {
         self.mode = mode
         self.allow = allow
         self.deny = deny
         self.highRisk = highRisk
         self.responses = responses
+        self.rules = rules
     }
 }
 

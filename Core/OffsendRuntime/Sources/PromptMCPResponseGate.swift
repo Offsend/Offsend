@@ -48,6 +48,8 @@ public struct PromptMCPResponseDecision: Equatable, Sendable {
     /// Only set in seal mode when the key resolved and the response was not truncated.
     public let sealedOutput: String?
     public let sealedCount: Int
+    /// Keys sealed or dropped by `context.mcp.rules[].fields`.
+    public let fieldsTransformed: Int
     /// Seal mode: a key resolved but sealing itself failed (e.g. a secret value
     /// over the plaintext size cap). Renderers withhold the output (fail closed)
     /// instead of downgrading to a warning.
@@ -55,7 +57,9 @@ public struct PromptMCPResponseDecision: Equatable, Sendable {
     public let reason: String
 
     public var hasFindings: Bool {
-        !secretTypes.isEmpty || (mode == .seal && call.truncated)
+        !secretTypes.isEmpty
+            || fieldsTransformed > 0
+            || (mode == .seal && (call.truncated || sealFailed))
     }
     public var sealed: Bool { sealedOutput != nil }
 
@@ -65,6 +69,7 @@ public struct PromptMCPResponseDecision: Equatable, Sendable {
         secretTypes: [String],
         sealedOutput: String? = nil,
         sealedCount: Int = 0,
+        fieldsTransformed: Int = 0,
         sealFailed: Bool = false,
         reason: String
     ) {
@@ -73,6 +78,7 @@ public struct PromptMCPResponseDecision: Equatable, Sendable {
         self.secretTypes = secretTypes
         self.sealedOutput = sealedOutput
         self.sealedCount = sealedCount
+        self.fieldsTransformed = fieldsTransformed
         self.sealFailed = sealFailed
         self.reason = reason
     }
@@ -116,22 +122,17 @@ public enum PromptMCPResponseGate {
         secretTypes: [String] = [],
         sealedOutput: String? = nil,
         sealedCount: Int = 0,
+        fieldsTransformed: Int = 0,
         sealFailed: Bool = false
     ) -> PromptMCPResponseDecision {
-        let mode = OffsendMCPResponseMode(rawValue: mcpConfig?.responses ?? "") ?? .observe
-        guard !secretTypes.isEmpty else {
-            if mode == .seal, call.truncated {
-                let handling = call.canReplaceOutput
-                    ? "and was withheld."
-                    : "— it could not be scanned or sealed safely."
-                return PromptMCPResponseDecision(
-                    call: call,
-                    mode: mode,
-                    secretTypes: [],
-                    reason: "Offsend: MCP response from '\(call.server)/\(call.tool)' exceeded "
-                        + "the safe sealing limit \(handling)"
-                )
-            }
+        let mode = OffsendMCPRuleResolver.effectiveResponseMode(
+            mcpConfig: mcpConfig,
+            server: call.server,
+            tool: call.tool
+        )
+        let hasSecrets = !secretTypes.isEmpty
+        let hasFields = fieldsTransformed > 0
+        guard hasSecrets || hasFields || (mode == .seal && (call.truncated || sealFailed)) else {
             return PromptMCPResponseDecision(
                 call: call,
                 mode: mode,
@@ -139,10 +140,33 @@ public enum PromptMCPResponseGate {
                 reason: ""
             )
         }
-        let typeList = secretTypes.joined(separator: ", ")
-        var reason = "Offsend: MCP response from '\(call.server)/\(call.tool)' contains secrets (\(typeList))."
+
+        if !hasSecrets, !hasFields, mode == .seal, call.truncated {
+            let handling = call.canReplaceOutput
+                ? "and was withheld."
+                : "— it could not be scanned or sealed safely."
+            return PromptMCPResponseDecision(
+                call: call,
+                mode: mode,
+                secretTypes: [],
+                reason: "Offsend: MCP response from '\(call.server)/\(call.tool)' exceeded "
+                    + "the safe sealing limit \(handling)"
+            )
+        }
+
+        var reason = "Offsend: MCP response from '\(call.server)/\(call.tool)'"
+        if hasSecrets {
+            reason += " contains secrets (\(secretTypes.joined(separator: ", ")))"
+        }
+        if hasFields {
+            reason += hasSecrets
+                ? "; field policy transformed \(fieldsTransformed) value(s)"
+                : " matched field policy (\(fieldsTransformed) value(s))"
+        }
+        reason += "."
+
         if sealedOutput != nil {
-            reason += " Secrets were sealed as {{…}} tokens before reaching the agent."
+            reason += " Sensitive values were sealed as {{…}} tokens before reaching the agent."
         } else if mode == .seal, call.truncated {
             reason += call.canReplaceOutput
                 ? " Response too large to seal safely — it was withheld."
@@ -162,6 +186,7 @@ public enum PromptMCPResponseGate {
             secretTypes: secretTypes,
             sealedOutput: sealedOutput,
             sealedCount: sealedCount,
+            fieldsTransformed: fieldsTransformed,
             sealFailed: sealFailed,
             reason: reason
         )
@@ -175,7 +200,7 @@ public enum PromptMCPResponseGate {
                 ?? nonEmptyString(root["toolName"])
                 ?? "unknown"
             let parsedTool = PromptMCPGate.parseCursorMCPToolName(rawTool)
-            let serialized = serializeCursorOutput(root["tool_output"] ?? root["toolOutput"])
+            let serialized = serializeJSONAware(root["tool_output"] ?? root["toolOutput"])
             let bounded = bounded(serialized.text)
             return PromptMCPResponseCall(
                 server: parsedTool?.server ?? "unknown",
@@ -197,7 +222,7 @@ public enum PromptMCPResponseGate {
         guard root["result_json"] != nil || root["resultJson"] != nil || !tool.isEmpty else {
             return nil
         }
-        let serialized = serializeCursorOutput(root["result_json"] ?? root["resultJson"])
+        let serialized = serializeJSONAware(root["result_json"] ?? root["resultJson"])
         let bounded = bounded(serialized.text)
         return PromptMCPResponseCall(
             server: server,
@@ -213,7 +238,9 @@ public enum PromptMCPResponseGate {
             ?? nonEmptyString(root["toolName"])
             ?? ""
         guard let parsed = PromptMCPGate.parseClaudeMCPToolName(toolName) else { return nil }
-        let serialized = serialize(root["tool_response"] ?? root["toolResponse"])
+        // Same as Cursor: stringified JSON objects/arrays get object/array shape
+        // so `context.mcp.rules[].fields` can run.
+        let serialized = serializeJSONAware(root["tool_response"] ?? root["toolResponse"])
         let bounded = bounded(serialized.text)
         return PromptMCPResponseCall(
             server: parsed.server,
@@ -251,7 +278,9 @@ public enum PromptMCPResponseGate {
         return (String(describing: value), .scalar)
     }
 
-    private static func serializeCursorOutput(
+    /// Serializes tool output and, when the payload is a JSON object/array encoded
+    /// as a string, reports `.object` / `.array` so field rules can apply.
+    private static func serializeJSONAware(
         _ value: Any?
     ) -> (text: String, shape: PromptMCPResponseShape) {
         let serialized = serialize(value)

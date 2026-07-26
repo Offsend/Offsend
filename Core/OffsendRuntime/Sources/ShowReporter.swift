@@ -117,8 +117,14 @@ public struct ShowReporter: Sendable {
         }
         if let mode = mcp.policyMode, !mode.isEmpty {
             summary += "; policy: \(mode)"
-        } else {
+        } else if !mcp.servers.isEmpty {
             summary += "; policy: unset"
+        }
+        if let responses = mcp.responsesMode, !responses.isEmpty {
+            summary += "; responses: \(responses)"
+        }
+        if !mcp.rules.isEmpty {
+            summary += "; rules: \(mcp.rules.count)"
         }
         if mcp.hasAllowlist || mcp.hasDenylist {
             var bits: [String] = []
@@ -141,10 +147,36 @@ public struct ShowReporter: Sendable {
         if overflow > 0 {
             lines.append(ui.note("… and \(overflow) more (use --format json for the full list)"))
         }
-        if mcp.gateTargets.isEmpty {
+        if !mcp.rules.isEmpty {
+            lines.append(ui.note("rules:"))
+            for rule in mcp.rules.prefix(12) {
+                lines.append("  - \(rule.summary)")
+            }
+            let ruleOverflow = mcp.rules.count - 12
+            if ruleOverflow > 0 {
+                lines.append(ui.note("… and \(ruleOverflow) more rules (use --format json)"))
+            }
+        }
+        if !mcp.recentActivity.isEmpty {
+            lines.append(ui.note("recent MCP findings:"))
+            for hit in mcp.recentActivity.prefix(8) {
+                var detail = hit.lastCode
+                if hit.fieldsTransformed > 0 {
+                    detail += ", fields:\(hit.fieldsTransformed)"
+                }
+                if !hit.secretTypes.isEmpty {
+                    detail += ", \(hit.secretTypes.prefix(3).joined(separator: ", "))"
+                }
+                lines.append("  - \(hit.label) ×\(hit.count) (\(detail))")
+            }
+        }
+        for hint in mcp.hints.prefix(3) {
+            lines.append(ui.note(hint))
+        }
+        if mcp.gateTargets.isEmpty, !mcp.servers.isEmpty {
             lines.append(ui.note("no MCP gate installed — offsend hook install adds it (on by default)"))
         }
-        if mcp.policyMode == nil {
+        if mcp.policyMode == nil, !mcp.servers.isEmpty {
             lines.append(ui.note("set context.mcp in .offsend.yml to observe|ask|deny"))
         }
         return lines
@@ -164,12 +196,28 @@ public struct ShowReporter: Sendable {
             let detail: String
             let highRisk: Bool
         }
+        struct MCPRulePayload: Encodable {
+            let summary: String
+        }
+        struct MCPActivityPayload: Encodable {
+            let server: String
+            let tool: String
+            let kind: String
+            let count: Int
+            let lastCode: String
+            let secretTypes: [String]
+            let fieldsTransformed: Int
+        }
         struct MCPPayload: Encodable {
             let servers: [MCPServerPayload]
             let policyMode: String?
+            let responsesMode: String?
             let hasAllowlist: Bool
             let hasDenylist: Bool
             let gateTargets: [String]
+            let rules: [MCPRulePayload]
+            let recentActivity: [MCPActivityPayload]
+            let hints: [String]
         }
         struct HistoryPayload: Encodable {
             let filesScanned: Int
@@ -214,9 +262,23 @@ public struct ShowReporter: Sendable {
                     )
                 },
                 policyMode: report.mcp.policyMode,
+                responsesMode: report.mcp.responsesMode,
                 hasAllowlist: report.mcp.hasAllowlist,
                 hasDenylist: report.mcp.hasDenylist,
-                gateTargets: report.mcp.gateTargets
+                gateTargets: report.mcp.gateTargets,
+                rules: report.mcp.rules.map { MCPRulePayload(summary: $0.summary) },
+                recentActivity: report.mcp.recentActivity.map {
+                    MCPActivityPayload(
+                        server: $0.server,
+                        tool: $0.tool,
+                        kind: $0.kind,
+                        count: $0.count,
+                        lastCode: $0.lastCode,
+                        secretTypes: $0.secretTypes,
+                        fieldsTransformed: $0.fieldsTransformed
+                    )
+                },
+                hints: report.mcp.hints
             ),
             history: HistoryPayload(
                 filesScanned: report.history.filesScanned,

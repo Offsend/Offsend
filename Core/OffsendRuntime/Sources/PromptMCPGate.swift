@@ -69,7 +69,11 @@ public enum PromptMCPGate {
         mcpConfig: OffsendProjectMCPConfig? = nil,
         secretTypes: [String] = []
     ) -> PromptMCPGateDecision {
-        let mode = OffsendContextEnforcementMode(rawValue: mcpConfig?.mode ?? "") ?? .ask
+        let mode = OffsendMCPRuleResolver.effectiveMode(
+            mcpConfig: mcpConfig,
+            server: call.server,
+            tool: call.tool
+        )
 
         if let policy = evaluatePolicy(server: call.server, mcpConfig: mcpConfig) {
             let permission = permission(for: mode, finding: true)
