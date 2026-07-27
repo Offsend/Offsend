@@ -31,7 +31,7 @@ Related products with different trust boundaries:
 | Safe Paste / Restore | Local (macOS app) |
 | Path audits (`show` / `protect`) and ignore sync | Local — paths and ignore rules; `show` does not read exposed file contents |
 | Content scan (`check`, pre-commit, CI) | Local / CI runner |
-| AI-editor gates (prompt, read, shell, MCP args/responses, Cursor subagent) | Local hook wrappers calling the CLI |
+| AI-editor gates (prompt, read, shell, MCP args/responses, Cursor subagent) | Local editor hooks invoking the installed CLI directly |
 | Seal / unseal (`{{TYPE:v1.…}}` tokens) | Local AES-GCM with a personal key |
 | Agent history audit / scrub | Local Cursor / Claude transcripts on disk |
 | Optional NER/PII models (macOS app) | On-device |
@@ -75,10 +75,36 @@ Hooks are **defense-in-depth**, not a hard perimeter or agent sandbox. Prefer:
 
 1. No plaintext secrets in the workspace
 2. Shared AI ignore rules in `.offsend.yml` (`offsend protect` / `sync`)
-3. Prompt / read / shell / MCP / subagent gates on supported editors
+3. Prompt / read / semantic write / shell / MCP / subagent gates on supported editors
 4. Git pre-commit + CI
 
-Known residual gaps (also surfaced by `offsend doctor` as `hook-coverage-gaps`) include ungated Claude subagents, some Cursor open-tab paths, cloud agent sessions, and secrets already written to local transcripts — use `offsend history audit` / `scrub` for the last case. Details: [docs/cli.md → What hooks cover](docs/cli.md#what-hooks-cover).
+Offsend does not execute repo-local `.offsend/hooks/*.sh` files. Local editor configs prefer the install-time CLI path and fall back to `offsend` on `PATH`; published configs use `PATH`. Legacy managed wrappers are migrated and removed by `offsend sync`.
+
+### Workspace trust handoff
+
+Workspace configuration can be executable infrastructure: editor hooks, task runners, Git helpers, virtual environments, and other host components may act on files an agent can write. Offsend is not a process sandbox and cannot contain those host actions.
+
+Cursor/Claude installs use pre-tool hooks to deny direct agent Edit/Write operations against high-confidence executable trust surfaces: editor hook configs, `.vscode/tasks.json` / `launch.json`, any path inside a Git directory, global Git config, shell/direnv startup files, SSH directories, launch agents/daemons, Python startup hooks, and Offsend's own policy and trust snapshots. Rules match on path shape, so subdirectory, nested-repository, home-directory, symlinked, and case/Unicode variants of the same file classify identically. Direct shell path references are denied too. Editor settings that mix preferences with execution (`.vscode/settings.json`, `*.code-workspace`) are denied only when the content introduces an execution-sensitive key. Virtualenv interpreters are observe-only because blocking them has high false-positive risk.
+
+Editor matchers follow each vendor's documented semantics: Claude matches plain names exactly (so every writing tool is named explicitly), and Cursor's file-tool set includes `Delete`, which is gated alongside writes. Because Cursor does not publish a `tool_input` schema for file tools, the gate classifies every path-shaped value in a payload rather than depending on one key name, and applies the strictest outcome when a call names several files. Unrecognized payloads ask rather than deny so an editor schema change cannot block every write; on Cursor, which accepts but does not enforce `ask` for `preToolUse`, those decisions become deny instead of silently passing.
+
+The shell-gate also recognizes static Git invocations and denies mutations or per-command overrides of execution-sensitive keys, including hooks, aliases, credential/diff/merge/filter helpers, diff/merge tools, textconv and trailer commands, editors, pagers, includes, template directories, `protocol.*.allow`, and submodule update commands. Read-only queries and ordinary identity/format settings are allowed. This parser does not claim full shell semantics: dynamic construction, generated scripts, and custom binaries can hide equivalent operations.
+
+All shell classifiers share one lexer and one command extractor, so quoting (`cat '.git'/config`), redirection (`printf x >.envrc`), launcher wrappers (`env`, `sudo`, `timeout`, `nice`, `xargs`, `stdbuf`, `nohup`), and inline shell scripts (`bash -c '…'`, `env -S '…'`) reach the same verdict as the direct form. Nested scripts are followed a bounded number of levels; beyond that the payload is treated as opaque. Quoted text passed as data — `printf '%s' "git config …"` — is still not an invocation. A command that trips several gates reports every finding at once instead of one per round-trip.
+
+Recognized Docker, Podman, nerdctl, containerd, BuildKit, and macOS VM-manager (Colima, Lima, OrbStack) operations are classified by side effect. Getting a shell inside a Docker-backing VM is denied because those VMs mount the host home directory. Container execution/attachment, elevated options, daemon plugins, direct known Unix-socket access, and explicit daemon endpoints are denied because the host daemon operates outside the agent sandbox. Lower-risk mutations require confirmation and diagnostics are allowed. This does not mediate MCP-based daemon clients, custom protocols/binaries, dynamically generated commands, undiscovered sockets, or remote contexts hidden outside static argv.
+
+Static environment mutations are classified before shell execution. Relative/workspace/temporary `PATH`, dynamic-loader variables (`DYLD_*`, `LD_*`), exported shell functions (`BASH_FUNC_*`), execution-sensitive `GIT_*`, and interpreter/shell startup injection variables (`PYTHON*`, `NODE_*`, `RUBY*`/`GEM_*`, `PERL5*`, `CLASSPATH`, Java tool options) are denied. Variables that merely name a helper program — `EDITOR`, `VISUAL`, `PAGER`, `MANPAGER`, `SHELL`, `LESSOPEN` — are judged by value: a plain program asks for confirmation, while a shell fragment or a program under a workspace-writable path is denied. Lower-risk system `PATH` and configuration-home overrides require confirmation. Process APIs, parent-process state, command substitution, generated scripts, and unknown launchers remain outside static command analysis.
+
+Gates that carry hard denials — write, shell, MCP, subagent — are installed fail-closed on Cursor, so a hook process that crashes or times out blocks the operation instead of dropping the denial. The read-gate stays fail-open by design: it is friction against reading secrets, and a broken hook blocking every file read costs more than it protects.
+
+Post-write hooks add a metadata-only provenance trail for classified trust surfaces changed through editor file tools. The user-local ledger is `0600`, rotates at 512 KiB, and stores relative paths and hashes—not file contents or absolute repository paths. Entries are hash-chained, and the log's length and tail hash are kept in a companion `0600` anchor file, so removing or rewriting an entry — including cutting the log at either end, which the chain alone cannot see — is reported rather than silently shortening the record. Both files are local: an attacker who rewrites the log and the anchor together defeats this. `offsend doctor` summarizes the last 30 days and warns when writes to denied surfaces reached disk. This does not attribute writes made through shell commands, external processes, cloud agents, or editors that skip the hook.
+
+For Offsend's own runtime policy, `offsend policy trust` stores a SHA-256 snapshot outside the workspace after explicit interactive approval. If `.offsend.yml` later changes, disappears, or becomes invalid, editor hooks fail closed until the user reviews and trusts it again. Until a snapshot exists, gates apply only the policy fields that cannot make a gate more permissive than its built-in default, so removing the snapshot does not restore an agent's ability to loosen policy. `sync`, `protect`, and `hook install` never refresh trust automatically; agent-shell attempts to run `policy trust` or `policy forget` are denied.
+
+The snapshot is deliberately byte-sensitive: comments and formatting changes also require re-trust. This favors an auditable trust boundary over convenience.
+
+Known residual gaps (surfaced by `offsend doctor` through `hook-coverage-gaps`, `git-config-invocation-gate`, `privileged-daemons`, and `environment-invocation-gate`) include dynamic Git/daemon/environment operations hidden behind `eval`, process APIs, variables, generated scripts, MCP tools, custom binaries, remote contexts, undiscovered sockets, or already-poisoned parent environments; editor paths not mediated by a supported pre-tool hook; ungated Claude subagents; some Cursor open-tab paths; cloud agent sessions; and secrets already written to local transcripts — use `offsend history audit` / `scrub` for the last case. Use patched editor versions (Cursor 3.0 or newer for the workspace-hook issue described in CVE-2026-48124). Details: [docs/cli.md → What hooks cover](docs/cli.md#what-hooks-cover).
 
 ## Permissions (macOS app)
 

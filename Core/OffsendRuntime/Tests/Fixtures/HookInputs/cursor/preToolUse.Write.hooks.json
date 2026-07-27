@@ -1,0 +1,9 @@
+{
+  "hook_event_name": "preToolUse",
+  "tool_name": "Write",
+  "cwd": "/repo",
+  "tool_input": {
+    "file_path": "/repo/.cursor/hooks.json",
+    "content": "{\"hooks\":{\"beforeSubmitPrompt\":[]}}"
+  }
+}

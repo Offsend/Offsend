@@ -62,7 +62,7 @@ public enum HookInstallRunner {
     }
 
     /// Installs AI-editor hooks for the given targets, honoring `hooks.publish`
-    /// from `.offsend.yml` (`portableWrappers`). When publish is false, keeps
+    /// from `.offsend.yml` (portable direct CLI commands). When publish is false, keeps
     /// the editor configs out of git via the local exclude. Calls `onInstall`
     /// after each target so text callers can stream output; throws
     /// `AIHookFailure` on the first failing target.
@@ -73,6 +73,7 @@ public enum HookInstallRunner {
         hookPolicy: CheckHookPolicy? = nil,
         force: Bool = false,
         withReadGate: Bool = true,
+        withWriteGate: Bool = true,
         withShellGate: Bool = true,
         withMCPGate: Bool = true,
         withSubagentGate: Bool = true,
@@ -96,6 +97,7 @@ public enum HookInstallRunner {
                     hookPolicy: hookPolicy,
                     force: force,
                     withReadGate: withReadGate,
+                    withWriteGate: withWriteGate,
                     withShellGate: withShellGate,
                     withMCPGate: withMCPGate,
                     withSubagentGate: withSubagentGate,

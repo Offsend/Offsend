@@ -280,7 +280,13 @@ Whether installed hooks include workspace policy checks. If omitted, falls back 
 
 ### `hooks.publish`
 
-Whether AI editor hook files (`.cursor/hooks.json`, `.offsend/hooks/`, …) are intended to be committed. Default `false`: `offsend sync` / `offsend hook install` keep them local via `.git/info/exclude`. When `true`, wrappers omit machine-specific absolute paths so they are safer to share.
+Whether AI editor hook configs (`.cursor/hooks.json`, `.claude/settings.json`, …) are intended to be committed. Default `false`: `offsend sync` / `offsend hook install` keep them local via `.git/info/exclude`. New installs invoke the installed Offsend CLI directly and never execute repo-local `.offsend/hooks/*.sh` wrappers. Local commands prefer the install-time path with a `PATH` fallback. When `true`, commands use `offsend` from each teammate's `PATH`; every teammate must install the CLI. Re-running `offsend sync` migrates legacy wrapper-based configs and removes unused managed wrappers.
+
+Cursor/Claude installs also include a semantic write-gate by default. It hard-denies agent Edit/Write operations against executable trust surfaces (editor hook configs, `.vscode/tasks.json` / `launch.json`, anything inside a Git directory, global Git config, shell/direnv startup files, SSH directories, launch agents, Python startup hooks, and this file itself). This is intentionally not controlled by agent-writable project policy; use the explicit local install flag `--no-write-gate` only when accepting that risk.
+
+Until you run `offsend policy trust`, editor gates apply only the settings below that tighten a gate. `check.exclude`, `check.detectors.disable`, `context.mcp.mode` / `rules[].mode` below `ask`, `context.subagents.mode` below `deny`, and `context.subagents.scan_task: false` take effect for `offsend check` on the command line but are ignored by editor gates until the policy is trusted. See [`offsend policy`](cli.md#offsend-policy).
+
+The same installs add post-write provenance for Cursor `afterFileEdit` and Claude `PostToolUse Edit|Write`. Only metadata and hashes are written to a rotating user-local `0600` ledger; project content and absolute repository paths are excluded. This audit is local install behavior, not agent-writable project policy.
 
 ### `context.read`
 

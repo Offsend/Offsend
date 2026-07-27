@@ -22,6 +22,121 @@ final class OffsendDoctorTests: XCTestCase {
         )
     }
 
+    // MARK: - Cursor minimum version
+
+    func testCursorVersionCheckAcceptsVersionThreeOrNewer() {
+        XCTAssertEqual(OffsendDoctor.cursorVersionCheck(version: "3.0.0").status, .ok)
+        XCTAssertEqual(OffsendDoctor.cursorVersionCheck(version: "4.1.2").status, .ok)
+    }
+
+    func testCursorVersionCheckWarnsForPreThreeVersion() {
+        let check = OffsendDoctor.cursorVersionCheck(version: "2.10.4")
+
+        XCTAssertEqual(check.name, "cursor-version")
+        XCTAssertEqual(check.status, .warn)
+        XCTAssertTrue(check.message.contains("CVE-2026-48124"))
+    }
+
+    func testCursorVersionCheckWarnsWhenVersionCannotBeParsed() {
+        XCTAssertEqual(OffsendDoctor.cursorVersionCheck(version: "unknown").status, .warn)
+    }
+
+    func testProvenanceLedgerCheckWarnsForExecutableTrustSurfaceChanges() {
+        let entry = ArtifactProvenanceEntry(
+            timestamp: Date(),
+            repositoryID: "repository",
+            relativePath: ".cursor/hooks.json",
+            pathHash: "path",
+            artifactKind: .editorHookConfig,
+            adapter: "cursor",
+            toolName: "afterFileEdit",
+            outcome: "changed",
+            contentHash: "content"
+        )
+
+        let check = OffsendDoctor.provenanceLedgerCheck(directory: root, entries: [entry])
+
+        XCTAssertEqual(check.name, "artifact-provenance")
+        XCTAssertEqual(check.status, .warn)
+        XCTAssertTrue(check.message.contains(".cursor/hooks.json"))
+    }
+
+    func testProvenanceLedgerCheckKeepsObserveOnlyChangesInformational() {
+        let entry = ArtifactProvenanceEntry(
+            timestamp: Date(),
+            repositoryID: "repository",
+            relativePath: ".venv/bin/python",
+            pathHash: "path",
+            artifactKind: .virtualEnvironmentInterpreter,
+            adapter: "claude",
+            toolName: "Write",
+            outcome: "changed",
+            contentHash: nil
+        )
+
+        XCTAssertEqual(
+            OffsendDoctor.provenanceLedgerCheck(directory: root, entries: [entry]).status,
+            .ok
+        )
+    }
+
+    func testProvenanceLedgerCheckReportsBrokenChainAheadOfEntries() {
+        let check = OffsendDoctor.provenanceLedgerCheck(
+            directory: root,
+            entries: [],
+            chain: .broken(line: 4)
+        )
+
+        XCTAssertEqual(check.status, .warn)
+        XCTAssertTrue(check.message.contains("entry 4"))
+        XCTAssertTrue(check.message.contains("modified after the fact"))
+    }
+
+    func testProvenanceLedgerCheckReportsTruncatedLogAheadOfEntries() {
+        let check = OffsendDoctor.provenanceLedgerCheck(
+            directory: root,
+            entries: [],
+            chain: .truncated(expected: 12, found: 9)
+        )
+
+        XCTAssertEqual(check.status, .warn)
+        XCTAssertTrue(check.message.contains("12 were recorded, 9 remain"))
+        XCTAssertTrue(check.message.contains("shortened the log"))
+    }
+
+    func testPrivilegedDaemonCheckWarnsWithoutHealthyShellGate() {
+        let check = OffsendDoctor.privilegedDaemonCheck(
+            endpointLabels: ["docker-desktop"],
+            shellGateActive: false
+        )
+
+        XCTAssertEqual(check.name, "privileged-daemons")
+        XCTAssertEqual(check.status, .warn)
+        XCTAssertTrue(check.message.contains("host-side container execution"))
+    }
+
+    func testPrivilegedDaemonCheckReportsCoverageAndResidualGap() {
+        let check = OffsendDoctor.privilegedDaemonCheck(
+            endpointLabels: ["containerd", "docker-system", "docker-system"],
+            shellGateActive: true
+        )
+
+        XCTAssertEqual(check.status, .ok)
+        XCTAssertTrue(check.message.contains("containerd, docker-system"))
+        XCTAssertTrue(check.message.contains("custom clients remain residual gaps"))
+    }
+
+    func testEnvironmentInvocationCheckReflectsShellGateHealth() {
+        let active = OffsendDoctor.environmentInvocationCheck(shellGateActive: true)
+        XCTAssertEqual(active.name, "environment-invocation-gate")
+        XCTAssertEqual(active.status, .ok)
+        XCTAssertTrue(active.message.contains("already-poisoned parent environments"))
+
+        let inactive = OffsendDoctor.environmentInvocationCheck(shellGateActive: false)
+        XCTAssertEqual(inactive.status, .warn)
+        XCTAssertTrue(inactive.message.contains("shell-gate"))
+    }
+
     // MARK: - needsIgnoreMaterialization (fresh-clone detection)
 
     func testNeedsMaterializationWhenConfigExistsButIgnoreFilesMissing() throws {

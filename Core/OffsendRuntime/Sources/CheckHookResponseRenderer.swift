@@ -7,6 +7,8 @@ public enum CheckHookResponseRenderer {
         case promptSubmit
         /// Cursor `beforeReadFile` / Claude `PreToolUse` (Read).
         case readGate
+        /// Cursor/Claude generic pre-tool hooks for Edit/Write.
+        case writeGate
         /// Cursor `beforeShellExecution` / Claude `PreToolUse` (Bash).
         /// Same permission-shaped fail-open as the read gate.
         case shellGate
@@ -40,7 +42,7 @@ public enum CheckHookResponseRenderer {
             case .windsurf:
                 return CheckHookAdapterOutput(stdout: "", stderr: stderr, exitCode: 0)
             }
-        case .readGate, .shellGate, .mcpGate, .subagentGate:
+        case .readGate, .writeGate, .shellGate, .mcpGate, .subagentGate:
             switch adapter {
             case .cursor:
                 return CheckHookAdapterOutput(
@@ -59,6 +61,102 @@ public enum CheckHookResponseRenderer {
                 return CheckHookAdapterOutput(stdout: "{}", stderr: stderr, exitCode: 0)
             case .windsurf, .codex:
                 return CheckHookAdapterOutput(stdout: "", stderr: stderr, exitCode: 0)
+            }
+        }
+    }
+
+    /// Stop an editor operation when a trusted policy exists but the live
+    /// workspace policy no longer matches it.
+    public static func failClosed(
+        adapter: CheckHookAdapter,
+        reason: String,
+        kind: Kind
+    ) -> CheckHookAdapterOutput {
+        let message = "Offsend blocked this operation: \(reason). "
+            + "Review .offsend.yml, then run `offsend policy trust` yourself in a terminal."
+        let stderr = "offsend: fail-closed (\(adapter.rawValue)): policy_drift\n"
+        switch kind {
+        case .promptSubmit:
+            switch adapter {
+            case .cursor:
+                return CheckHookAdapterOutput(
+                    stdout: encodeJSONObject([
+                        "continue": false,
+                        "user_message": message,
+                    ]),
+                    stderr: stderr,
+                    exitCode: 0
+                )
+            case .claude, .codex:
+                return CheckHookAdapterOutput(
+                    stdout: encodeJSONObject([
+                        "decision": "block",
+                        "reason": message,
+                        "systemMessage": message,
+                    ]),
+                    stderr: stderr,
+                    exitCode: 0
+                )
+            case .windsurf:
+                return CheckHookAdapterOutput(
+                    stdout: "",
+                    stderr: message + "\n",
+                    exitCode: OffsendExitCode.error.rawValue
+                )
+            }
+        case .readGate, .writeGate, .shellGate, .mcpGate, .subagentGate:
+            switch adapter {
+            case .cursor:
+                return CheckHookAdapterOutput(
+                    stdout: encodeJSONObject([
+                        "permission": "deny",
+                        "user_message": message,
+                        "agent_message": message,
+                    ]),
+                    stderr: stderr,
+                    exitCode: 0
+                )
+            case .claude:
+                return CheckHookAdapterOutput(
+                    stdout: encodeJSONObject([
+                        "hookSpecificOutput": [
+                            "hookEventName": "PreToolUse",
+                            "permissionDecision": "deny",
+                            "permissionDecisionReason": message,
+                        ],
+                    ]),
+                    stderr: stderr,
+                    exitCode: 0
+                )
+            case .windsurf, .codex:
+                return CheckHookAdapterOutput(stdout: "", stderr: message + "\n", exitCode: 2)
+            }
+        case .mcpResponseGate:
+            switch adapter {
+            case .cursor:
+                return CheckHookAdapterOutput(
+                    stdout: encodeJSONObject([
+                        "updated_mcp_tool_output": ["error": message],
+                        "additional_context": message,
+                    ]),
+                    stderr: stderr,
+                    exitCode: 0
+                )
+            case .claude:
+                return CheckHookAdapterOutput(
+                    stdout: encodeJSONObject([
+                        "hookSpecificOutput": [
+                            "hookEventName": "PostToolUse",
+                            "updatedToolOutput": message,
+                            "updatedMCPToolOutput": message,
+                            "additionalContext": message,
+                        ],
+                    ]),
+                    stderr: stderr,
+                    exitCode: 0
+                )
+            case .windsurf, .codex:
+                return CheckHookAdapterOutput(stdout: "", stderr: message + "\n", exitCode: 2)
             }
         }
     }

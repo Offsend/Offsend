@@ -114,6 +114,9 @@ public struct OffsendDoctor: Sendable {
                 )
             )
         }
+        if let cursorVersion = installedCursorVersion() {
+            checks.append(Self.cursorVersionCheck(version: cursorVersion))
+        }
         #endif
 
         if fileManager.isExecutableFile(atPath: gitExecutable) {
@@ -138,12 +141,17 @@ public struct OffsendDoctor: Sendable {
         let cwd = URL(fileURLWithPath: fileManager.currentDirectoryPath)
         checks.append(projectConfigCheck(loader: configLoader, directory: cwd))
         checks.append(contentsOf: ignorePolicyChecks(loader: configLoader, directory: cwd))
+        checks.append(trustSurfaceMapCheck(directory: cwd))
 
         let installer = AIEditorHookInstaller(fileManager: fileManager)
         var installedCount = 0
         var anyAIHookInstalled = false
+        var workspaceWrapperTargets: [AIEditorHookTarget] = []
         for target in AIEditorHookTarget.allCases {
             let status = installer.status(target: target, repositoryPath: cwd)
+            if status.usesWorkspaceWrappers {
+                workspaceWrapperTargets.append(target)
+            }
             // Absent AI hooks are optional — only report when present (ok) or broken (warn).
             if status.broken {
                 var details: [String] = []
@@ -216,29 +224,97 @@ public struct OffsendDoctor: Sendable {
                 anyAIHookInstalled = true
             }
         }
+        let healthyShellGate = AIEditorHookTarget.allCases.contains { target in
+            guard AIEditorHookInstaller.supportsFileGates(target) else { return false }
+            let status = installer.status(target: target, repositoryPath: cwd)
+            return status.installed && status.shellGate && !status.broken
+        }
+        checks.append(
+            Self.privilegedDaemonCheck(
+                endpointLabels: privilegedDaemonEndpointLabels(),
+                shellGateActive: healthyShellGate
+            )
+        )
+
+        if !workspaceWrapperTargets.isEmpty {
+            let names = workspaceWrapperTargets.map(\.rawValue).joined(separator: ", ")
+            checks.append(
+                DoctorCheck(
+                    name: "ai-hook-trust-root",
+                    status: .warn,
+                    message: "Legacy repo-local executable hook wrappers are active for \(names). "
+                        + "Workspace files can be modified by an agent and later executed by the editor outside its sandbox. "
+                        + "Re-run `offsend sync` to migrate hooks to direct CLI invocation."
+                )
+            )
+        }
 
         if anyAIHookInstalled {
-            let promptURL = cwd.appendingPathComponent(AIEditorHookInstaller.wrapperRelativePath)
-            let promptValidation = installer.validateWrapper(at: promptURL)
-            if promptValidation != .ok {
+            checks.append(Self.environmentInvocationCheck(shellGateActive: healthyShellGate))
+            switch OffsendPolicySnapshotStore(fileManager: fileManager).status(directory: cwd) {
+            case .missing:
                 checks.append(
                     DoctorCheck(
-                        name: "ai-wrapper-prompt",
+                        name: "policy-snapshot",
                         status: .warn,
-                        message: AIEditorHookInstaller.wrapperValidationMessage(
-                            promptValidation,
-                            path: promptURL.path
+                        message: "No user-approved trust snapshot: editor gates honor only the .offsend.yml "
+                            + "settings that tighten them, and ignore anything that would loosen a gate "
+                            + "(check.exclude, detectors.disable, modes below the built-in default). "
+                            + "Review .offsend.yml, then run `offsend policy trust` yourself in an interactive terminal."
+                    )
+                )
+            case .trusted:
+                checks.append(
+                    DoctorCheck(
+                        name: "policy-snapshot",
+                        status: .ok,
+                        message: "Editor-gate policy matches the user-approved snapshot."
+                    )
+                )
+            case .drift(_, let reason):
+                checks.append(
+                    DoctorCheck(
+                        name: "policy-snapshot",
+                        status: .fail,
+                        message: "Editor-gate policy drift: \(reason). Hooks fail closed until "
+                            + "you review .offsend.yml and run `offsend policy trust`."
+                    )
+                )
+            case .invalidSnapshot(let reason):
+                checks.append(
+                    DoctorCheck(
+                        name: "policy-snapshot",
+                        status: .fail,
+                        message: "Trusted policy snapshot is invalid: \(reason). "
+                            + "Run `offsend policy forget`, review .offsend.yml, then trust it again."
+                    )
+                )
+            }
+
+            let promptURL = cwd.appendingPathComponent(AIEditorHookInstaller.wrapperRelativePath)
+            if fileManager.fileExists(atPath: promptURL.path) {
+                let promptValidation = installer.validateWrapper(at: promptURL)
+                if promptValidation != .ok {
+                    checks.append(
+                        DoctorCheck(
+                            name: "ai-wrapper-prompt",
+                            status: .warn,
+                            message: AIEditorHookInstaller.wrapperValidationMessage(
+                                promptValidation,
+                                path: promptURL.path
+                            )
                         )
                     )
-                )
-            } else {
-                checks.append(
-                    DoctorCheck(
-                        name: "ai-wrapper-prompt",
-                        status: .ok,
-                        message: "\(promptURL.path) (v\(AIEditorHookInstaller.managedVersion))"
+                } else {
+                    checks.append(
+                        DoctorCheck(
+                            name: "ai-wrapper-prompt",
+                            status: .warn,
+                            message: "\(promptURL.path) is a legacy repo-local executable wrapper; "
+                                + "re-run `offsend sync` to remove it."
+                        )
                     )
-                )
+                }
             }
 
             let readURL = cwd.appendingPathComponent(AIEditorHookInstaller.readWrapperRelativePath)
@@ -316,6 +392,51 @@ public struct OffsendDoctor: Sendable {
                 }
             }
 
+            let missingWriteGate = AIEditorHookTarget.allCases.filter { target in
+                guard AIEditorHookInstaller.supportsFileGates(target) else { return false }
+                let status = installer.status(target: target, repositoryPath: cwd)
+                return status.installed && !status.writeGate
+            }
+            if !missingWriteGate.isEmpty {
+                let names = missingWriteGate.map(\.rawValue).joined(separator: ", ")
+                checks.append(
+                    DoctorCheck(
+                        name: "ai-write-gate",
+                        status: .warn,
+                        message: "Semantic write gate not installed for \(names). Agent file tools can modify editor/Git executable configuration. Re-run: offsend hook install --target cursor|claude"
+                    )
+                )
+            }
+
+            let missingArtifactAudit = AIEditorHookTarget.allCases.filter { target in
+                guard AIEditorHookInstaller.supportsFileGates(target) else { return false }
+                let status = installer.status(target: target, repositoryPath: cwd)
+                return status.installed && !status.artifactAudit
+            }
+            if !missingArtifactAudit.isEmpty {
+                let names = missingArtifactAudit.map(\.rawValue).joined(separator: ", ")
+                checks.append(
+                    DoctorCheck(
+                        name: "ai-artifact-audit",
+                        status: .warn,
+                        message: "Post-write provenance hook not installed for \(names). Changes that bypass pre-write enforcement will not be attributed. Re-run: offsend hook install --target cursor|claude"
+                    )
+                )
+            }
+
+            let provenanceRoot = (try? GitRepositoryResolver(
+                fileManager: fileManager,
+                gitExecutable: gitExecutable
+            ).repositoryRoot(startingAt: cwd)) ?? cwd
+            let ledger = ArtifactProvenanceLedger(fileManager: fileManager)
+            checks.append(
+                Self.provenanceLedgerCheck(
+                    directory: provenanceRoot,
+                    entries: ledger.recentEntries(repositoryRoot: provenanceRoot),
+                    chain: ledger.verifyChain()
+                )
+            )
+
             // Shell-gate is on by default for Cursor/Claude; warn when an install omits it.
             let missingShellGate = AIEditorHookTarget.allCases.filter { target in
                 guard AIEditorHookInstaller.supportsFileGates(target) else { return false }
@@ -329,6 +450,20 @@ public struct OffsendDoctor: Sendable {
                         name: "ai-shell-gate",
                         status: .warn,
                         message: "Shell gate not installed for \(names). Agents can still read sensitive files via shell (cat/grep/sed). Re-run: offsend hook install --target cursor|claude (shell-gate is on by default; use --no-shell-gate to opt out)"
+                    )
+                )
+            }
+            let gitConfigGateActive = AIEditorHookTarget.allCases.contains { target in
+                guard AIEditorHookInstaller.supportsFileGates(target) else { return false }
+                let status = installer.status(target: target, repositoryPath: cwd)
+                return status.installed && status.shellGate && !status.broken
+            }
+            if gitConfigGateActive {
+                checks.append(
+                    DoctorCheck(
+                        name: "git-config-invocation-gate",
+                        status: .ok,
+                        message: "Static execution-sensitive `git config`, `git -c`, and `--config-env` invocations are denied, including behind launcher wrappers and inline `-c` scripts. Dynamic construction through eval, variables, generated scripts, MCP tools, or custom binaries remains a residual gap."
                     )
                 )
             }
@@ -421,10 +556,6 @@ public struct OffsendDoctor: Sendable {
         let sealKeyURL = SealKeyPaths.defaultKeyURL(fileManager: fileManager)
         let sealKeyPath = sealKeyURL.path
         let sealKeyAvailable = fileManager.fileExists(atPath: sealKeyPath)
-        let mcpResponseWrapperURL = cwd.appendingPathComponent(
-            AIEditorHookInstaller.mcpResponseWrapperRelativePath
-        )
-        let mcpResponseWrapperHealthy = installer.validateWrapper(at: mcpResponseWrapperURL) == .ok
         let projectConfig = try? configLoader.load(from: cwd)
         let mcpInventory = OffsendMCPInventory(fileManager: fileManager).collect(
             projectRoot: cwd,
@@ -476,7 +607,7 @@ public struct OffsendDoctor: Sendable {
                     return status.installed && status.mcpResponseGate && !MCPResponseProtection.isActive(
                         hookInstalled: true,
                         replacementEventInstalled: status.mcpResponseReplacement,
-                        wrapperHealthy: mcpResponseWrapperHealthy,
+                        wrapperHealthy: !status.broken,
                         configuredMode: projectConfig?.context?.mcp?.responses,
                         sealKeyAvailable: sealKeyAvailable
                     )
@@ -487,7 +618,7 @@ public struct OffsendDoctor: Sendable {
                         DoctorCheck(
                             name: "ai-mcp-response-protection",
                             status: .warn,
-                            message: "MCP response gate is installed for \(names) but is not actively sealing responses. Require a replacement-capable hook, context.mcp.responses: seal, a valid wrapper, and a default seal key."
+                            message: "MCP response gate is installed for \(names) but is not actively sealing responses. Require a replacement-capable hook, a healthy CLI runtime, context.mcp.responses: seal, and a default seal key."
                         )
                     )
                 }
@@ -649,14 +780,14 @@ public struct OffsendDoctor: Sendable {
                 mcpResponseProtectedCursor: MCPResponseProtection.isActive(
                     hookInstalled: cursorStatus.mcpResponseGate,
                     replacementEventInstalled: cursorStatus.mcpResponseReplacement,
-                    wrapperHealthy: mcpResponseWrapperHealthy,
+                        wrapperHealthy: !cursorStatus.broken,
                     configuredMode: mcpResponseMode,
                     sealKeyAvailable: sealKeyAvailable
                 ),
                 mcpResponseProtectedClaude: MCPResponseProtection.isActive(
                     hookInstalled: claudeStatus.mcpResponseGate,
                     replacementEventInstalled: claudeStatus.mcpResponseReplacement,
-                    wrapperHealthy: mcpResponseWrapperHealthy,
+                        wrapperHealthy: !claudeStatus.broken,
                     configuredMode: mcpResponseMode,
                     sealKeyAvailable: sealKeyAvailable
                 )
@@ -1076,6 +1207,160 @@ public struct OffsendDoctor: Sendable {
         return checks
     }
 
+    private func trustSurfaceMapCheck(directory: URL) -> DoctorCheck {
+        let root = directory.standardizedFileURL
+        let editorCandidates = [
+            ".cursor/hooks.json",
+            ".claude/settings.json",
+            ".claude/settings.local.json",
+            ".windsurf/hooks.json",
+            ".codex/hooks.json",
+            ".vscode/tasks.json",
+        ]
+        let editorCount = editorCandidates.filter {
+            fileManager.fileExists(atPath: root.appendingPathComponent($0).path)
+        }.count
+
+        let resolver = GitRepositoryResolver(fileManager: fileManager, gitExecutable: gitExecutable)
+        let configPresent = fileManager.fileExists(atPath: resolver.configURL(in: root).path)
+        let hooksDirectory = resolver.hooksDirectory(in: root)
+        let hookEntries = ((try? fileManager.contentsOfDirectory(atPath: hooksDirectory.path)) ?? [])
+            .filter { !$0.hasPrefix(".") && !$0.hasSuffix(".sample") }
+            .filter { fileManager.isExecutableFile(atPath: hooksDirectory.appendingPathComponent($0).path) }
+            .count
+        let venvCandidates = [
+            ".venv/bin/python", ".venv/bin/python3",
+            "venv/bin/python", "venv/bin/python3",
+        ]
+        let venvCount = venvCandidates.filter {
+            fileManager.fileExists(atPath: root.appendingPathComponent($0).path)
+        }.count
+        let shellStartupCandidates = [
+            ".zshrc", ".zprofile", ".zshenv",
+            ".bashrc", ".bash_profile", ".profile",
+            ".envrc", ".direnvrc",
+            ".config/fish/config.fish",
+            ".config/direnv/direnvrc",
+        ]
+        let shellStartupCount = shellStartupCandidates.filter {
+            fileManager.fileExists(atPath: root.appendingPathComponent($0).path)
+        }.count
+
+        return DoctorCheck(
+            name: "trust-surface-map",
+            status: .ok,
+            message: "Executable trust surfaces: editor configs \(editorCount), Git config \(configPresent ? "present" : "absent"), Git hooks \(hookEntries), shell/direnv startup \(shellStartupCount), venv interpreters \(venvCount) observe-only."
+        )
+    }
+
+    static func provenanceLedgerCheck(
+        directory: URL,
+        entries: [ArtifactProvenanceEntry],
+        chain: ArtifactProvenanceChainStatus = .unverifiable
+    ) -> DoctorCheck {
+        // A broken chain outranks the entries themselves: if the log was edited,
+        // what it still contains no longer says much.
+        if case .broken(let line) = chain {
+            return DoctorCheck(
+                name: "artifact-provenance",
+                status: .warn,
+                message: "Provenance ledger was modified after the fact: entry \(line) does not follow the one before it. Someone with local write access removed or rewrote history. Treat recent trust-surface changes as unattributed and review the affected files."
+            )
+        }
+        if case .truncated(let expected, let found) = chain {
+            return DoctorCheck(
+                name: "artifact-provenance",
+                status: .warn,
+                message: "Provenance ledger is missing entries: \(expected) were recorded, \(found) remain. Someone with local write access shortened the log. Treat recent trust-surface changes as unattributed and review the affected files."
+            )
+        }
+        guard !entries.isEmpty else {
+            return DoctorCheck(
+                name: "artifact-provenance",
+                status: .ok,
+                message: "No agent trust-surface changes recorded in the last 30 days. Post-write hooks cover editor file tools; shell and external-process writes remain a residual attribution gap."
+            )
+        }
+        // Observe-only and content-conditional kinds are not evidence that
+        // pre-write enforcement was bypassed.
+        let enforcementRelevant = entries.filter { $0.artifactKind.enforcement == .deny }
+        let paths = Array(Set(entries.map(\.relativePath))).sorted().prefix(5).joined(separator: ", ")
+        let suffix = entries.count > 5 ? ", …" : ""
+        if !enforcementRelevant.isEmpty {
+            return DoctorCheck(
+                name: "artifact-provenance",
+                status: .warn,
+                message: "\(enforcementRelevant.count) executable trust-surface change(s) bypassed or occurred after pre-write enforcement in the last 30 days: \(paths)\(suffix). Review the affected files before host automation executes them."
+            )
+        }
+        return DoctorCheck(
+            name: "artifact-provenance",
+            status: .ok,
+            message: "\(entries.count) observe-only interpreter change(s) recorded in the last 30 days: \(paths)\(suffix)."
+        )
+    }
+
+    static func privilegedDaemonCheck(
+        endpointLabels: [String],
+        shellGateActive: Bool
+    ) -> DoctorCheck {
+        let unique = Array(Set(endpointLabels)).sorted()
+        guard !unique.isEmpty else {
+            return DoctorCheck(
+                name: "privileged-daemons",
+                status: .ok,
+                message: "No common Docker, Podman, containerd, or BuildKit endpoint detected. Remote contexts and dynamically constructed endpoints remain residual gaps."
+            )
+        }
+        let endpoints = unique.joined(separator: ", ")
+        if shellGateActive {
+            return DoctorCheck(
+                name: "privileged-daemons",
+                status: .ok,
+                message: "Detected privileged daemon endpoint(s): \(endpoints). Shell-gate denies direct socket access and container execution; dynamic scripts, MCP tools, and custom clients remain residual gaps."
+            )
+        }
+        return DoctorCheck(
+            name: "privileged-daemons",
+            status: .warn,
+            message: "Detected privileged daemon endpoint(s) without a healthy shell-gate: \(endpoints). Agents may use host-side container execution. Re-run: offsend hook install --target cursor|claude"
+        )
+    }
+
+    static func environmentInvocationCheck(shellGateActive: Bool) -> DoctorCheck {
+        DoctorCheck(
+            name: "environment-invocation-gate",
+            status: shellGateActive ? .ok : .warn,
+            message: shellGateActive
+                ? "Static PATH, loader, Git-helper, and interpreter-startup environment overrides are gated. Process APIs, generated scripts, command substitution, and already-poisoned parent environments remain residual gaps."
+                : "Environment invocation gate is inactive without a healthy shell-gate. Re-run: offsend hook install --target cursor|claude"
+        )
+    }
+
+    private func privilegedDaemonEndpointLabels() -> [String] {
+        let home = fileManager.homeDirectoryForCurrentUser
+        let candidates: [(String, URL)] = [
+            ("docker-system", URL(fileURLWithPath: "/var/run/docker.sock")),
+            ("docker-run", URL(fileURLWithPath: "/run/docker.sock")),
+            ("docker-desktop", home.appendingPathComponent(".docker/run/docker.sock")),
+            ("colima", home.appendingPathComponent(".colima/default/docker.sock")),
+            ("orbstack", home.appendingPathComponent(".orbstack/run/docker.sock")),
+            ("podman-system", URL(fileURLWithPath: "/run/podman/podman.sock")),
+            ("podman-machine", home.appendingPathComponent(".local/share/containers/podman/machine/podman.sock")),
+            ("containerd", URL(fileURLWithPath: "/run/containerd/containerd.sock")),
+            ("buildkit", URL(fileURLWithPath: "/run/buildkit/buildkitd.sock")),
+        ]
+        var labels = candidates.compactMap { label, url in
+            fileManager.fileExists(atPath: url.path) ? label : nil
+        }
+        let environment = ProcessInfo.processInfo.environment
+        for name in ["DOCKER_HOST", "DOCKER_CONTEXT", "CONTAINER_HOST", "BUILDKIT_HOST"]
+            where environment[name]?.isEmpty == false {
+            labels.append(name)
+        }
+        return labels
+    }
+
     private static var cliPathSuffix: String {
         #if os(macOS)
         return " or Offsend.app Contents/Helpers."
@@ -1084,7 +1369,45 @@ public struct OffsendDoctor: Sendable {
         #endif
     }
 
+    static func cursorVersionCheck(version: String) -> DoctorCheck {
+        let major = version
+            .split(separator: ".", maxSplits: 1)
+            .first
+            .flatMap { Int($0) }
+
+        if let major, major >= 3 {
+            return DoctorCheck(
+                name: "cursor-version",
+                status: .ok,
+                message: "Cursor \(version) includes the workspace-hook sandbox fix (minimum 3.0)."
+            )
+        }
+
+        return DoctorCheck(
+            name: "cursor-version",
+            status: .warn,
+            message: "Cursor \(version) is below or could not be verified against minimum 3.0. Update Cursor to prevent workspace-controlled hooks from escaping the agent sandbox (CVE-2026-48124)."
+        )
+    }
+
     #if os(macOS)
+    private func installedCursorVersion() -> String? {
+        let candidates = [
+            URL(fileURLWithPath: "/Applications/Cursor.app", isDirectory: true),
+            URL(fileURLWithPath: "\(NSHomeDirectory())/Applications/Cursor.app", isDirectory: true),
+        ]
+
+        for appURL in candidates where fileManager.fileExists(atPath: appURL.path) {
+            guard let bundle = Bundle(url: appURL) else {
+                return "unknown"
+            }
+            return (bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)
+                ?? (bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String)
+                ?? "unknown"
+        }
+        return nil
+    }
+
     private func bundledAppCLIPath() -> String? {
         let candidates = [
             Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/offsend").path,

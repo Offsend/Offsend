@@ -43,7 +43,7 @@ struct HookInstall: ParsableCommand {
 
     @Flag(
         name: .long,
-        help: "Overwrite a non-Offsend git hook or AI wrapper. Managed hooks refresh without this flag."
+        help: "Overwrite a non-Offsend git hook. Managed editor entries refresh without this flag."
     )
     var force = false
 
@@ -53,6 +53,13 @@ struct HookInstall: ParsableCommand {
         help: "File-read gates — sensitive paths + secret content scan (Cursor beforeReadFile / Claude PreToolUse Read). On by default for cursor/claude; disable with --no-read-gate."
     )
     var readGate: Bool?
+
+    @Flag(
+        name: [.customLong("write-gate"), .customLong("with-write-gate")],
+        inversion: .prefixedNo,
+        help: "Semantic pre-write gate for executable workspace configuration. On by default for cursor/claude; disable with --no-write-gate."
+    )
+    var writeGate: Bool?
 
     @Flag(
         name: [.customLong("shell-gate"), .customLong("with-shell-gate")],
@@ -125,6 +132,9 @@ struct HookInstall: ParsableCommand {
             if readGate != nil {
                 CLIError.exit(.error, message: "--read-gate/--no-read-gate requires an AI-editor target.")
             }
+            if writeGate != nil {
+                CLIError.exit(.error, message: "--write-gate/--no-write-gate requires an AI-editor target.")
+            }
             if shellGate != nil {
                 CLIError.exit(.error, message: "--shell-gate/--no-shell-gate requires an AI-editor target.")
             }
@@ -179,7 +189,8 @@ struct HookInstall: ParsableCommand {
         } else {
             let names = aiTargets.map(\.rawValue).joined(separator: ", ")
             print(ui.ok("AI editors: \(names)"))
-            print(ui.hint("Gates on by default: read, shell, mcp, mcp-response, subagent (where supported)"))
+            print(ui.hint("Gates on by default: read, write, shell, mcp, mcp-response, subagent (where supported)"))
+            print(ui.hint("Plus post-write provenance recording for executable trust surfaces"))
         }
 
         return CLIPrompt.yesNo(
@@ -229,8 +240,9 @@ struct HookInstall: ParsableCommand {
     ) {
         let policyOverride = hookPolicy.map { CLIParse.checkHookPolicy($0) }
         let gateSupported: Set<AIEditorHookTarget> = [.cursor, .claude]
-        // Read/shell/MCP gates are on by default for supported targets; --no-*-gate opts out.
+        // Read/write/shell/MCP gates are on by default for supported targets; --no-*-gate opts out.
         let enableReadGate = readGate ?? true
+        let enableWriteGate = writeGate ?? true
         let enableShellGate = shellGate ?? true
         let enableMCPGate = mcpGate ?? true
         let enableSubagentGate = subagentGate ?? true
@@ -240,6 +252,15 @@ struct HookInstall: ParsableCommand {
             for skipped in unsupported {
                 fputs(
                     "warning: --read-gate is not supported for \(skipped.rawValue); installing prompt hook only.\n",
+                    stderr
+                )
+            }
+        }
+        if writeGate == true {
+            let unsupported = aiTargets.filter { !gateSupported.contains($0) }
+            for skipped in unsupported {
+                fputs(
+                    "warning: --write-gate is not supported for \(skipped.rawValue); installing prompt hook only.\n",
                     stderr
                 )
             }
@@ -289,6 +310,7 @@ struct HookInstall: ParsableCommand {
                 hookPolicy: policyOverride,
                 force: force,
                 withReadGate: enableReadGate,
+                withWriteGate: enableWriteGate,
                 withShellGate: enableShellGate,
                 withMCPGate: enableMCPGate,
                 withSubagentGate: enableSubagentGate,
@@ -296,7 +318,11 @@ struct HookInstall: ParsableCommand {
             ) { result in
                 print(ui.ok("Installed \(result.target.rawValue) hook (\(result.hookPolicy.rawValue))"))
                 print(ui.hint("  config: \(result.configPath)"))
-                print(ui.hint("  wrapper: \(result.wrapperPath)"))
+                if let wrapperPath = result.wrapperPath {
+                    print(ui.hint("  legacy wrapper: \(wrapperPath)"))
+                } else {
+                    print(ui.hint("  runtime: installed Offsend CLI (no repo-local executable wrapper)"))
+                }
                 if let readPath = result.readWrapperPath {
                     print(ui.hint("  read gate: \(readPath)"))
                 }
@@ -314,7 +340,7 @@ struct HookInstall: ParsableCommand {
                 }
             }
             if outcome.publishHooks {
-                print(ui.hint("hooks.publish: true — commit `.offsend/hooks/` and the editor config to share with the team."))
+                print(ui.hint("hooks.publish: true — commit the editor config; each teammate needs `offsend` on PATH."))
             } else {
                 if outcome.excludeUpdated {
                     print(ui.hint("Updated local git exclude so AI hooks stay untracked."))
@@ -624,6 +650,15 @@ struct HookStatus: ParsableCommand {
             return "✗ \(target.rawValue): not installed (\(status.configPath))"
         }
         var detail = "installed"
+        if AIEditorHookInstaller.supportsFileGates(target), !status.readGate {
+            detail += "; warning: read-gate missing — re-run offsend hook install --target \(target.rawValue)"
+        }
+        if AIEditorHookInstaller.supportsFileGates(target), !status.writeGate {
+            detail += "; warning: write-gate missing — re-run offsend hook install --target \(target.rawValue)"
+        }
+        if AIEditorHookInstaller.supportsFileGates(target), !status.artifactAudit {
+            detail += "; warning: post-write artifact audit missing — re-run offsend hook install --target \(target.rawValue)"
+        }
         if AIEditorHookInstaller.supportsFileGates(target), !status.shellGate {
             detail += "; warning: shell-gate missing — re-run offsend hook install --target \(target.rawValue)"
         }
@@ -649,6 +684,8 @@ struct HookStatus: ParsableCommand {
             "broken": status.broken,
             "configPath": status.configPath,
             "readGate": status.readGate,
+            "writeGate": status.writeGate,
+            "artifactAudit": status.artifactAudit,
             "shellGate": status.shellGate,
             "mcpGate": status.mcpGate,
             "subagentGate": status.subagentGate,
@@ -657,6 +694,9 @@ struct HookStatus: ParsableCommand {
         var warnings: [String] = []
         if status.installed {
             if AIEditorHookInstaller.supportsFileGates(target) {
+                if !status.readGate { warnings.append("read-gate missing") }
+                if !status.writeGate { warnings.append("write-gate missing") }
+                if !status.artifactAudit { warnings.append("post-write artifact audit missing") }
                 if !status.shellGate { warnings.append("shell-gate missing") }
                 if !status.mcpGate { warnings.append("mcp-gate missing") }
                 if !status.mcpResponseGate { warnings.append("mcp-response-gate missing") }
