@@ -295,7 +295,7 @@ offsend check --adapter claude --write-gate --no-notify  # executable-config wri
 
 Installed editor hooks invoke the CLI directly: `offsend check --adapter … --hook-policy … --secrets-only --no-notify`.
 
-**Fail-open:** infrastructure errors (bad JSON, settings load, invalid `--hook-policy`) normally allow the prompt through so a broken hook does not block chat. Safety exceptions fail closed: trusted-policy drift blocks all editor gates; oversized read-gate input is denied; oversized MCP responses are withheld; and unrecognized MCP/subagent input is denied when its mode is explicitly `deny`. stderr shows short codes (`invalid_json`, `policy_drift`, `stdin_too_large`, …); details go to `--debug-hook` only.
+**Fail-open:** infrastructure errors (bad JSON, settings load, invalid `--hook-policy`) normally allow the prompt through so a broken hook does not block chat. Safety exceptions fail closed: trusted-policy drift blocks all editor gates; oversized read-gate input is denied; oversized MCP responses are withheld; and unrecognized MCP input is denied when `context.mcp.mode` is explicitly `deny`; unrecognized subagent input is denied by default (only `context.subagents.mode: observe` fail-opens). stderr shows short codes (`invalid_json`, `policy_drift`, `stdin_too_large`, …); details go to `--debug-hook` only.
 
 That covers errors Offsend can see. A hook process that crashes or times out never reports anything, so Cursor's own `failClosed` flag decides. Gates that carry hard denials set it — write, shell, MCP, subagent — and a crashed hook blocks the operation. The read-gate and the prompt gate leave it off: they are friction against reading secrets rather than a perimeter, and blocking every file read on a broken hook costs more than it protects.
 
@@ -504,7 +504,8 @@ Treat editor hooks as **defense-in-depth**, not a hard perimeter. Prefer this st
 | Agent shell **output** (`afterShellExecution` / `PostToolUse Bash`) | Shell-output audit | On by default for Cursor/Claude. Reports only: neither editor accepts a replacement for terminal output, so secrets a command printed are logged and notified for rotation, not withheld |
 | MCP tool calls | MCP-gate | On by default for Cursor/Claude; Cursor `beforeMCPExecution` (`failClosed: true`); Claude `PreToolUse` (`mcp__.*`). Policy + path/secret scan on **args**; see `context.mcp` in `.offsend.yml` |
 | MCP tool responses | MCP-response-gate | On by default for Cursor/Claude; `PostToolUse` can **replace** the output — `context.mcp.responses: seal` swaps secrets for `{{…}}` tokens before model consumption |
-| Subagent spawn (Cursor Task) | Subagent-gate | On by default for Cursor `subagentStart`; secret-scan of the task prompt (`deny` on findings; no `ask`). Claude subagents are not gated — rely on AI ignore |
+| Subagent spawn (Cursor Task) | Subagent-gate | On by default for Cursor `subagentStart` + `preToolUse` (`Task`); secret-scan of the task prompt (`deny` on findings; no `ask`). Claude subagents are not gated — rely on AI ignore |
+| Editor Grep (Cursor) | Grep-gate | On by default with read-gate; seal mode denies Grep (no rewrite API); otherwise single-file content deny |
 
 ### What hooks do not cover
 
@@ -519,7 +520,8 @@ These walk past a path-based file hook by design. Close them with ignore rules a
 | **Environment poisoning outside static shell argv** | Process APIs, command substitution, generated scripts, parent-process state, or custom launchers can hide PATH/loader/helper overrides | Shell-gate denies recognized execution-sensitive assignments; write-gate protects common shell/direnv startup files; start agents from a clean environment |
 | **MCP responses without active sealing** | `observe`/`warn` or an older install does not replace plaintext output; `seal` without a key safely withholds secret-bearing responses instead of passing them through | Set `context.mcp.responses: seal`, generate a seal key, and re-run hook install for Cursor/Claude |
 | **MCP without mcp-gate** | Older installs, or `--no-mcp-gate` | Re-run `offsend hook install --target cursor\|claude` (mcp-gate is on by default) |
-| **Subagents (Claude / ungated Cursor)** | Claude subagents may skip parent hooks; Cursor without `--subagent-gate` does not scan task text | `offsend hook install --target cursor` (subagent-gate on by default); project-level AI ignore; no plaintext secrets on disk |
+| **Subagents (Claude / ungated Cursor)** | Claude subagents may skip parent hooks; Cursor without `--subagent-gate` does not scan task text | `offsend hook install --target cursor` installs `subagentStart` + `preToolUse` (`Task`); project-level AI ignore; no plaintext secrets on disk |
+| **Grep/search (Cursor)** | Cursor `postToolUse` can replace **MCP** output only — Grep match bodies cannot be sealed | With `context.read.on_secret: seal`, `--grep-gate` denies Grep and points the agent at Read. Without seal, single-file Grep with secrets is denied; workspace Grep remains a residual |
 | **Local agent history already written** | Prior transcripts may already contain secrets | `offsend history audit` / `offsend history scrub --apply` |
 | **Symlinks to sensitive targets** | A benign link name (e.g. `notes.txt` → `.env`) used to skip name heuristics | Read-gate and shell-gate (when the path exists) also check the symlink-resolved target |
 | **Renamed copies** | A real copy under a new name is not a symlink, so path heuristics may miss it | Content scan on the gated read path may still catch secret-shaped values; ignore patterns + no plaintext remain the real control |
@@ -558,7 +560,7 @@ Because this runs on every gated tool call, the Git directory behind a worktree 
 
 `.vscode/settings.json` and `*.code-workspace` mix ordinary preferences with execution: they are denied only when the write introduces or changes an execution-sensitive key (interpreter/tool paths, terminal profiles, task commands), and asked for confirmation when the content cannot be inspected. An edit that swaps a value in place carries neither the key nor the surrounding file, so the gate reads the settings file to see which setting the replaced text belongs to; when that file cannot be read, only the payload is judged. `python*` / `activate*` under a `bin/` directory and `pyvenv.cfg` are observe-only and not blocked. `offsend doctor` reports missing coverage as `ai-write-gate` and summarizes discovered locations as `trust-surface-map`.
 
-Matchers follow each editor's documented semantics. Claude treats a matcher of plain names as an **exact** list, so `Edit|Write` would not fire for `MultiEdit` or `NotebookEdit`; the installed matcher is `Edit|MultiEdit|NotebookEdit|Write`. Cursor's tool set is `Shell`, `Read`, `Write`, `Grep`, `Delete`, `Task`, so the installed matcher is `Write|Edit|Delete` — deleting a hook config or Git file disables protection as effectively as rewriting it.
+Matchers follow each editor's documented semantics. Claude treats a matcher of plain names as an **exact** list, so `Edit|Write` would not fire for `MultiEdit` or `NotebookEdit`; the installed matcher is `Edit|MultiEdit|NotebookEdit|Write`. Cursor's tool set is `Shell`, `Read`, `Write`, `Grep`, `Delete`, `Task`; Offsend installs separate `preToolUse` matchers for `Write|Edit|Delete` (write-gate), `Task` (subagent-gate), and `Grep` (grep-gate). Deleting a hook config or Git file disables protection as effectively as rewriting it.
 
 Cursor does not publish a `tool_input` schema for its file tools. Rather than depend on a key name, the gate reads the documented keys first and otherwise classifies every path-shaped value in the payload, so an unfamiliar or renamed field cannot turn the gate into a no-op. When a call names several files, the strictest outcome applies. Edit lists (`edits: [{old_string, new_string}]`, used by Claude `MultiEdit` and Cursor `afterFileEdit`) contribute their replacement text to content inspection.
 
@@ -624,7 +626,7 @@ Installed by default for Cursor and Claude (disable with `--no-mcp-gate`). Gates
 
 Enforcement mode (`context.mcp.mode`): `observe` (allow + stderr), `ask` (default when unset), or `deny`. `offsend show` lists configured MCP servers; `offsend doctor` warns when MCP is present without a policy or when the gate is missing.
 
-Fail-open vs fail-closed: infrastructure errors (unreadable settings, invalid config) fail **open** so a broken install never blocks the editor. With an explicit `context.mcp.mode: deny` (or `context.subagents.mode: deny` for the subagent gate), unrecognized hook input — including payloads over the 2 MiB stdin limit — is **denied** instead: you asked to block, so Offsend fails closed there.
+Fail-open vs fail-closed: infrastructure errors (unreadable settings, invalid config) fail **open** so a broken install never blocks the editor. With an explicit `context.mcp.mode: deny`, unrecognized MCP hook input — including payloads over the 2 MiB stdin limit — is **denied**. The subagent-gate fails closed on unrecognized / oversized input by default; only `context.subagents.mode: observe` fail-opens there.
 
 This gate scans **arguments** only; responses are handled by the MCP-response-gate below.
 
@@ -644,7 +646,11 @@ Cursor caveat: `warn` relies on `additional_context`, which Cursor builds before
 
 ### Subagent-gate (on by default for Cursor)
 
-Installed by default for Cursor (`subagentStart`, `failClosed: true`). Scans the subagent **task** text for secret-shaped values before spawn. Findings **deny** (Cursor does not support `ask` for this event). Mode via `context.subagents.mode` (`observe` / `deny`; `ask` is treated as deny). Claude Code is not covered — subagents may use a separate hook config.
+Installed by default for Cursor (`subagentStart` and `preToolUse` matcher `Task`, both `failClosed: true`). Scans the subagent **task** text for secret-shaped values before spawn (top-level `task` / `prompt` / `description`, or nested `tool_input`). Findings **deny** (Cursor does not support `ask` for this event). Unrecognized / oversized input fails closed unless `context.subagents.mode` is `observe`. Mode via `context.subagents.mode` (`observe` / `deny`; `ask` is treated as deny). Claude Code is not covered — subagents may use a separate hook config.
+
+### Grep-gate (on by default for Cursor with read-gate)
+
+Installed with the read-gate for Cursor (`preToolUse` matcher `Grep`, `failClosed: true`). Cursor cannot seal Grep results (`updated_mcp_tool_output` is MCP-only), so under `context.read.on_secret: seal` the gate **denies Grep** and tells the agent to use Read (which seals). Without seal, a Grep that targets a single file still content-scans and denies on secret hits; workspace-wide Grep without a file path remains a residual (see [What hooks do not cover](#what-hooks-do-not-cover)).
 
 ### Agent history
 

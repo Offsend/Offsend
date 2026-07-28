@@ -781,10 +781,25 @@ if ! grep -q "subagentStart" "$repo/.cursor/hooks.json"; then
   cat "$repo/.cursor/hooks.json" >&2
   exit 1
 fi
+if ! grep -q '"Task"' "$repo/.cursor/hooks.json"; then
+  echo "Expected preToolUse Task matcher with subagent-gate" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+if ! grep -q '"Grep"' "$repo/.cursor/hooks.json" || ! grep -q -- "--grep-gate" "$repo/.cursor/hooks.json"; then
+  echo "Expected preToolUse Grep matcher with grep-gate" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
 
 "$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --no-read-gate
 if grep -q "beforeReadFile" "$repo/.cursor/hooks.json"; then
   echo "Expected --no-read-gate to remove beforeReadFile" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+if grep -q -- "--grep-gate" "$repo/.cursor/hooks.json"; then
+  echo "Expected --no-read-gate to remove grep-gate" >&2
   cat "$repo/.cursor/hooks.json" >&2
   exit 1
 fi
@@ -1408,16 +1423,28 @@ if ! echo "$subagent_allow" | grep -q '"allow"'; then
   echo "$subagent_allow" >&2
   exit 1
 fi
-subagent_fail_open="$(printf '%s' 'not-json' | "$CLI_PATH" check --adapter cursor --subagent-gate --no-notify 2>/dev/null)"
-if ! echo "$subagent_fail_open" | grep -q 'permission'; then
-  echo "Expected subagent-gate fail-open permission:allow" >&2
-  echo "$subagent_fail_open" >&2
+subagent_nested="$(printf '%s' '{"tool_name":"Task","tool_input":{"prompt":"use AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF","subagent_type":"explore"}}' | "$CLI_PATH" check --adapter cursor --subagent-gate --no-notify 2>/dev/null)"
+if ! echo "$subagent_nested" | grep -q '"deny"'; then
+  echo "Expected subagent-gate deny for nested tool_input secrets" >&2
+  echo "$subagent_nested" >&2
+  exit 1
+fi
+subagent_fail_closed="$(printf '%s' 'not-json' | "$CLI_PATH" check --adapter cursor --subagent-gate --no-notify 2>/dev/null)"
+if ! echo "$subagent_fail_closed" | grep -q '"deny"'; then
+  echo "Expected subagent-gate fail-closed deny for invalid JSON" >&2
+  echo "$subagent_fail_closed" >&2
   exit 1
 fi
 
 "$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --no-subagent-gate
 if grep -q -- "--subagent-gate" "$repo/.cursor/hooks.json"; then
   echo "Expected --no-subagent-gate to remove the managed subagent-gate entry" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+
+if grep -q '"Task"' "$repo/.cursor/hooks.json"; then
+  echo "Expected --no-subagent-gate to remove Task preToolUse matcher" >&2
   cat "$repo/.cursor/hooks.json" >&2
   exit 1
 fi

@@ -126,6 +126,8 @@ public struct AIEditorHookTargetStatus: Equatable, Sendable {
     public let usesWorkspaceWrappers: Bool
     /// Config references the read-gate wrapper (`check-read.sh`).
     public let readGate: Bool
+    /// Config references the Grep gate (`--grep-gate`). Cursor only.
+    public let grepGate: Bool
     /// Config invokes the semantic pre-write gate for Edit/Write.
     public let writeGate: Bool
     /// Config records metadata after agent writes to executable trust surfaces.
@@ -149,6 +151,7 @@ public struct AIEditorHookTargetStatus: Equatable, Sendable {
         broken: Bool,
         usesWorkspaceWrappers: Bool = false,
         readGate: Bool = false,
+        grepGate: Bool = false,
         writeGate: Bool = false,
         artifactAudit: Bool = false,
         shellGate: Bool = false,
@@ -163,6 +166,7 @@ public struct AIEditorHookTargetStatus: Equatable, Sendable {
         self.broken = broken
         self.usesWorkspaceWrappers = usesWorkspaceWrappers
         self.readGate = readGate
+        self.grepGate = grepGate
         self.writeGate = writeGate
         self.artifactAudit = artifactAudit
         self.shellGate = shellGate
@@ -196,6 +200,10 @@ public struct AIEditorHookInstaller: Sendable {
     /// config or Git file is as effective as rewriting it; `Edit` is kept for
     /// builds that still expose it under the Claude-compatible name.
     public static let cursorWriteMatcher = "Write|Edit|Delete"
+    /// Cursor Task tool — defense-in-depth alongside `subagentStart`.
+    public static let cursorTaskMatcher = "Task"
+    /// Cursor Grep/search — content seal cannot rewrite match bodies.
+    public static let cursorGrepMatcher = "Grep"
     /// Cursor and Claude support read/shell/MCP gates; Windsurf/Codex do not.
     public static func supportsFileGates(_ target: AIEditorHookTarget) -> Bool {
         target == .cursor || target == .claude
@@ -204,8 +212,12 @@ public struct AIEditorHookInstaller: Sendable {
     public static func supportsSubagentGate(_ target: AIEditorHookTarget) -> Bool {
         target == .cursor
     }
+    /// Cursor Grep gate (Claude search is not a separate preToolUse tool here).
+    public static func supportsGrepGate(_ target: AIEditorHookTarget) -> Bool {
+        target == .cursor
+    }
 
-    public static let managedVersion = 6
+    public static let managedVersion = 7
 
     public enum WrapperValidation: Equatable, Sendable {
         case ok
@@ -252,6 +264,7 @@ public struct AIEditorHookInstaller: Sendable {
 
         let gateSupported = Self.supportsFileGates(target)
         let enableReadGate = withReadGate && gateSupported
+        let enableGrepGate = withReadGate && Self.supportsGrepGate(target)
         let enableWriteGate = withWriteGate && gateSupported
         let enableArtifactAudit = gateSupported
         let enableShellGate = withShellGate && gateSupported
@@ -277,6 +290,7 @@ public struct AIEditorHookInstaller: Sendable {
             try mergeCursorConfig(
                 command: command,
                 readCommand: enableReadGate ? makeReadCommand(target: target, executable: executable) : nil,
+                grepCommand: enableGrepGate ? makeGrepCommand(target: target, executable: executable) : nil,
                 writeCommand: enableWriteGate ? makeWriteCommand(target: target, executable: executable) : nil,
                 artifactAuditCommand: enableArtifactAudit
                     ? makeArtifactAuditCommand(target: target, executable: executable)
@@ -517,6 +531,7 @@ public struct AIEditorHookInstaller: Sendable {
             broken: installed && (!promptOK || !readOK || !shellOK || !mcpOK || !subagentOK || !mcpResponseOK),
             usesWorkspaceWrappers: usesWorkspaceWrappers,
             readGate: readUsed,
+            grepGate: managedConfig(contents, containsFlag: "--grep-gate"),
             writeGate: writeUsed,
             artifactAudit: artifactAuditUsed,
             shellGate: shellUsed,
@@ -687,6 +702,11 @@ public struct AIEditorHookInstaller: Sendable {
             + "--mcp-gate --secrets-only --no-notify"
     }
 
+    public func makeGrepCommand(target: AIEditorHookTarget, executable: String = "offsend") -> String {
+        "\(Self.managedCommandMarker) \(executable) check --adapter \(target.adapter.rawValue) "
+            + "--grep-gate --secrets-only --no-notify"
+    }
+
     public func makeSubagentCommand(target: AIEditorHookTarget, executable: String = "offsend") -> String {
         "\(Self.managedCommandMarker) \(executable) check --adapter \(target.adapter.rawValue) "
             + "--subagent-gate --secrets-only --no-notify"
@@ -734,6 +754,7 @@ public struct AIEditorHookInstaller: Sendable {
     private func mergeCursorConfig(
         command: String,
         readCommand: String?,
+        grepCommand: String?,
         writeCommand: String?,
         artifactAuditCommand: String?,
         shellCommand: String?,
@@ -758,6 +779,20 @@ public struct AIEditorHookInstaller: Sendable {
             command: writeCommand,
             failClosed: true,
             matcher: Self.cursorWriteMatcher
+        )
+        setManagedCursorGate(
+            &hooks,
+            event: "preToolUse",
+            command: subagentCommand,
+            failClosed: true,
+            matcher: Self.cursorTaskMatcher
+        )
+        setManagedCursorGate(
+            &hooks,
+            event: "preToolUse",
+            command: grepCommand,
+            failClosed: true,
+            matcher: Self.cursorGrepMatcher
         )
         setManagedCursorGate(
             &hooks,
@@ -802,6 +837,8 @@ public struct AIEditorHookInstaller: Sendable {
     }
 
     /// Adds/refreshes the managed entry for a gate event, or removes it when `command` is nil.
+    /// When `matcher` is set, only the managed entry with the same matcher is replaced,
+    /// so multiple managed `preToolUse` hooks (Write / Task / Grep) can coexist.
     private func setManagedCursorGate(
         _ hooks: inout [String: Any],
         event: String,
@@ -809,20 +846,20 @@ public struct AIEditorHookInstaller: Sendable {
         failClosed: Bool = false,
         matcher: String? = nil
     ) {
+        var entries = (hooks[event] as? [[String: Any]]) ?? []
+        entries.removeAll { entry in
+            guard isManagedHookObject(entry) else { return false }
+            return (entry["matcher"] as? String) == matcher
+        }
         if let command {
-            var entries = (hooks[event] as? [[String: Any]]) ?? []
-            entries.removeAll { isManagedHookObject($0) }
             entries.append(
                 managedCursorEntry(command: command, failClosed: failClosed, matcher: matcher)
             )
             hooks[event] = entries
-        } else if var entries = hooks[event] as? [[String: Any]] {
-            entries.removeAll { isManagedHookObject($0) }
-            if entries.isEmpty {
-                hooks.removeValue(forKey: event)
-            } else {
-                hooks[event] = entries
-            }
+        } else if entries.isEmpty {
+            hooks.removeValue(forKey: event)
+        } else {
+            hooks[event] = entries
         }
     }
 

@@ -19,7 +19,7 @@ final class HookCoverageGapsTests: XCTestCase {
         )
         XCTAssertEqual(
             gaps,
-            [.mcpResponses, .claudeSubagents, .cursorOpenTabs, .cloudSessions]
+            [.mcpResponses, .claudeSubagents, .cursorOpenTabs, .cursorGrepSearch, .cloudSessions]
         )
     }
 
@@ -92,6 +92,26 @@ final class HookCoverageGapsTests: XCTestCase {
         ))
     }
 
+    func testSealModeWithGrepGateClosesGrepGap() {
+        let open = HookCoverageGap.active(
+            cursorInstalled: true,
+            claudeInstalled: false,
+            mcpSurfaceActive: false,
+            cursorGrepGateInstalled: true,
+            readSealMode: false
+        )
+        XCTAssertTrue(open.contains(.cursorGrepSearch))
+
+        let closed = HookCoverageGap.active(
+            cursorInstalled: true,
+            claudeInstalled: false,
+            mcpSurfaceActive: false,
+            cursorGrepGateInstalled: true,
+            readSealMode: true
+        )
+        XCTAssertFalse(closed.contains(.cursorGrepSearch))
+    }
+
     func testDoctorMessageListsGapsWithoutSandboxClaim() {
         let message = HookCoverageGap.doctorMessage(for: [.mcpResponses, .cloudSessions])
         XCTAssertTrue(message.contains("MCP response payloads"))
@@ -121,6 +141,7 @@ final class HookCoverageGapsTests: XCTestCase {
         XCTAssertTrue(cli.contains("MCP tool responses"))
         XCTAssertTrue(cli.contains("Subagents (Claude"))
         XCTAssertTrue(cli.contains("Open editor tabs (Cursor)"))
+        XCTAssertTrue(cli.contains("Grep/search") || cli.contains("Cursor Grep"), "Grep/search gap missing from docs")
         XCTAssertTrue(cli.contains("Cloud agent sessions"))
         XCTAssertTrue(cli.contains("Renamed copies"))
     }

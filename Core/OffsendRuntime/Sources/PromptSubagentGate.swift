@@ -40,8 +40,9 @@ public struct PromptSubagentGateDecision: Equatable, Sendable {
     }
 }
 
-/// Cursor `subagentStart` gate: secret-scan the task prompt before a subagent is spawned.
-/// Cursor does not support `ask` for this event — findings become `deny` unless mode is `observe`.
+/// Cursor `subagentStart` + `preToolUse` (`Task`) gate: secret-scan the task
+/// prompt before a subagent is spawned. Cursor does not support `ask` for
+/// `subagentStart` — findings become `deny` unless mode is `observe`.
 public enum PromptSubagentGate {
     public static func parse(json: String, adapter: CheckHookAdapter) throws -> PromptSubagentGateCall {
         guard adapter == .cursor else {
@@ -55,6 +56,12 @@ public enum PromptSubagentGate {
             throw PromptHookInputError.invalidJSON
         }
         return call
+    }
+
+    /// Invalid / oversized hook input fails closed unless mode is explicitly `observe`.
+    public static func shouldFailClosed(subagentsConfig: OffsendProjectSubagentsConfig?) -> Bool {
+        let mode = OffsendContextEnforcementMode(rawValue: subagentsConfig?.mode ?? "") ?? .deny
+        return mode != .observe
     }
 
     public static func evaluate(
@@ -107,14 +114,24 @@ public enum PromptSubagentGate {
     }
 
     public static func extractCall(from root: [String: Any]) -> PromptSubagentGateCall? {
-        let task = (root["task"] as? String)
-            ?? (root["prompt"] as? String)
-            ?? (root["description"] as? String)
-        guard let task, !task.isEmpty else { return nil }
-        let subagentType = (root["subagent_type"] as? String)
-            ?? (root["subagentType"] as? String)
-            ?? (root["type"] as? String)
-        return PromptSubagentGateCall(task: task, subagentType: subagentType)
+        let toolInput = root["tool_input"] as? [String: Any]
+        let scopes: [[String: Any]] = {
+            if let toolInput { return [root, toolInput] }
+            return [root]
+        }()
+        for scope in scopes {
+            let task = (scope["task"] as? String)
+                ?? (scope["prompt"] as? String)
+                ?? (scope["description"] as? String)
+            guard let task, !task.isEmpty else { continue }
+            let subagentType = (scope["subagent_type"] as? String)
+                ?? (scope["subagentType"] as? String)
+                ?? (scope["type"] as? String)
+                ?? (root["subagent_type"] as? String)
+                ?? (root["subagentType"] as? String)
+            return PromptSubagentGateCall(task: task, subagentType: subagentType)
+        }
+        return nil
     }
 }
 

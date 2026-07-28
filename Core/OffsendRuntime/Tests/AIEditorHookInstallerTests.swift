@@ -524,6 +524,11 @@ final class AIEditorHookInstallerTests: XCTestCase {
         XCTAssertTrue((subagentHooks.first?["command"] as? String)?.contains("--subagent-gate") == true)
         XCTAssertEqual(subagentHooks.first?["failClosed"] as? Bool, true)
         XCTAssertTrue(installer.status(target: .cursor, repositoryPath: root).subagentGate)
+        let preTool = try XCTUnwrap(hooks["preToolUse"] as? [[String: Any]])
+        XCTAssertTrue(preTool.contains {
+            ($0["matcher"] as? String) == AIEditorHookInstaller.cursorTaskMatcher
+                && ($0["command"] as? String)?.contains("--subagent-gate") == true
+        })
 
         let claudeRoot = root.appendingPathComponent("claude-proj", isDirectory: true)
         try FileManager.default.createDirectory(at: claudeRoot, withIntermediateDirectories: true)
@@ -807,9 +812,23 @@ final class AIEditorHookInstallerTests: XCTestCase {
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         var hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
         let writeHooks = try XCTUnwrap(hooks["preToolUse"] as? [[String: Any]])
-        XCTAssertEqual(writeHooks.first?["matcher"] as? String, AIEditorHookInstaller.cursorWriteMatcher)
-        XCTAssertTrue((writeHooks.first?["command"] as? String)?.contains("--write-gate") == true)
+        let writeEntry = try XCTUnwrap(writeHooks.first {
+            ($0["matcher"] as? String) == AIEditorHookInstaller.cursorWriteMatcher
+        })
+        XCTAssertTrue((writeEntry["command"] as? String)?.contains("--write-gate") == true)
         XCTAssertTrue(installer.status(target: .cursor, repositoryPath: root).writeGate)
+        let matchers = Set(writeHooks.compactMap { $0["matcher"] as? String })
+        XCTAssertTrue(matchers.contains(AIEditorHookInstaller.cursorTaskMatcher))
+        XCTAssertTrue(matchers.contains(AIEditorHookInstaller.cursorGrepMatcher))
+        XCTAssertTrue(installer.status(target: .cursor, repositoryPath: root).grepGate)
+        XCTAssertTrue(writeHooks.contains {
+            ($0["matcher"] as? String) == AIEditorHookInstaller.cursorTaskMatcher
+                && ($0["command"] as? String)?.contains("--subagent-gate") == true
+        })
+        XCTAssertTrue(writeHooks.contains {
+            ($0["matcher"] as? String) == AIEditorHookInstaller.cursorGrepMatcher
+                && ($0["command"] as? String)?.contains("--grep-gate") == true
+        })
 
         let disabled = try installer.install(
             target: .cursor,
@@ -821,7 +840,11 @@ final class AIEditorHookInstallerTests: XCTestCase {
         data = try Data(contentsOf: URL(fileURLWithPath: disabled.configPath))
         object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
-        XCTAssertNil(hooks["preToolUse"])
+        let remaining = try XCTUnwrap(hooks["preToolUse"] as? [[String: Any]])
+        let remainingMatchers = Set(remaining.compactMap { $0["matcher"] as? String })
+        XCTAssertFalse(remainingMatchers.contains(AIEditorHookInstaller.cursorWriteMatcher))
+        XCTAssertTrue(remainingMatchers.contains(AIEditorHookInstaller.cursorTaskMatcher))
+        XCTAssertTrue(remainingMatchers.contains(AIEditorHookInstaller.cursorGrepMatcher))
     }
 
     func testArtifactAuditInstallsForCursorAndClaude() throws {

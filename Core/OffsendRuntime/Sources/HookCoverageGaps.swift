@@ -6,6 +6,9 @@ public enum HookCoverageGap: String, CaseIterable, Sendable {
     case mcpResponses = "MCP response payloads"
     case claudeSubagents = "Claude subagents"
     case cursorOpenTabs = "Cursor open tabs"
+    /// Cursor can rewrite MCP `postToolUse` output only; Grep match bodies stay plaintext
+    /// unless seal mode denies Grep via `--grep-gate`.
+    case cursorGrepSearch = "Cursor Grep/search plaintext"
     case cloudSessions = "cloud agent sessions"
 
     /// Gaps relevant for the current editor/MCP surface. `cloudSessions` always
@@ -18,7 +21,9 @@ public enum HookCoverageGap: String, CaseIterable, Sendable {
         claudeInstalled: Bool,
         mcpSurfaceActive: Bool,
         mcpResponseProtectedCursor: Bool = false,
-        mcpResponseProtectedClaude: Bool = false
+        mcpResponseProtectedClaude: Bool = false,
+        cursorGrepGateInstalled: Bool = false,
+        readSealMode: Bool = false
     ) -> [HookCoverageGap] {
         var gaps: [HookCoverageGap] = []
         if mcpSurfaceActive {
@@ -33,6 +38,11 @@ public enum HookCoverageGap: String, CaseIterable, Sendable {
         }
         if cursorInstalled {
             gaps.append(.cursorOpenTabs)
+            // Seal mode + grep-gate closes the Grep plaintext channel by denying Grep.
+            // Without seal (or without the gate), workspace Grep can still return secrets.
+            if !(readSealMode && cursorGrepGateInstalled) {
+                gaps.append(.cursorGrepSearch)
+            }
         }
         gaps.append(.cloudSessions)
         return gaps

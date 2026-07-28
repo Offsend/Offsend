@@ -44,7 +44,7 @@ Not in the direction that matters. Without a trusted snapshot, hooks read the li
 | Shared AI context boundary in `.offsend.yml` (committed with the repo) | Replacing the editor’s own permission UI / allowlists |
 | Materialized AI ignore files + drift detection | Org-wide policy across every repository |
 | Content scan for secrets/credentials (`check`, hooks, CI) | Zero-day discovery, privilege escalation, lateral movement in infra |
-| Prompt / read / shell / MCP **args** / Cursor subagent gates | Ungated Claude subagents, cloud agent sessions |
+| Prompt / read / shell / MCP **args** / Cursor subagent + Grep gates | Ungated Claude subagents; Cursor Grep without seal; cloud agent sessions |
 | Optional OS sandbox config (`sandbox.enabled`) — generate + verify | Applying `nono` for you (you launch with `nono run …`); Cursor IDE wrap; Windsurf sandbox |
 | User-approved policy snapshot outside the workspace | Containing arbitrary IDE tasks, Git helpers, venv discovery, or host automation outside static shell argv |
 | MCP **response** sealing on Cursor/Claude (`context.mcp.responses: seal`); seal-for-agents read copies | Responses without active sealing (`observe`/`warn`, older hook install); missing keys safely withhold secret-bearing responses but stop that tool result |
@@ -62,13 +62,13 @@ App: macOS 13+. CLI: macOS and Linux (x86_64 / arm64). Action: Linux and macOS r
 Coding assistants: Claude Code, Codex, Cursor, Windsurf (CLI prompt hooks + ignore files). Extension chats: ChatGPT, Claude, Gemini, Grok, Perplexity, DeepSeek. Multi-tool support exists so one committed policy can be enforced wherever a teammate opens the repo — not because switching editors is the main goal.
 
 **Can Offsend check prompts before they reach an AI editor?**  
-Yes. After clone or init, `offsend sync` installs git + detected AI-editor hooks. For a specific editor: `offsend hook install --target cursor` (or `claude`, `windsurf`, `codex`, `all`). Default install also enables read, shell, MCP, and (Cursor) subagent gates.
+Yes. After clone or init, `offsend sync` installs git + detected AI-editor hooks. For a specific editor: `offsend hook install --target cursor` (or `claude`, `windsurf`, `codex`, `all`). Default install also enables read, shell, MCP, (Cursor) subagent, and (Cursor) Grep gates.
 
 **Can the agent keep working when a read is denied because of secrets?**  
 Yes, with seal-for-agents: set `context.read.on_secret: seal` (plus a seal key via `offsend keygen --default`). The read-gate still denies the original file but hands the agent a sealed copy where findings are `{{TYPE:v1.…}}` tokens. The user restores agent outputs with `offsend unseal`; the shell-gate blocks (default `context.shell.mode: deny`) or asks (`mode: ask`) before the agent runs `unseal` itself. Seal / MCP-seal scans ignore `check.detectors.disable` so enabled detector classes and custom dictionaries cannot silently remain plaintext; fuzzy `highEntropyString` remains excluded. `doctor` reports this policy difference as `seal-detector-gap`. Large, wrapped, and multiple base64/hex blobs in files the agent reads (including terminal transcripts) are decode-probed; scan-budget overflow denies/withholds instead of allowing an unscanned tail.
 
 **Are AI-editor hooks a hard block on every way to read a file?**
-No. They are defense-in-depth on known editor paths (prompt, `@file`, Read/Edit/Write, shell, MCP tool **args** + **responses**, Cursor subagent tasks). Prefer `offsend protect` / AI ignore files first. For enumeration/egress that hooks cannot decide from command text, use [`sandbox.enabled`](configuration.md#sandbox). Other gaps remain: Claude subagents, cloud sessions, renamed copies without secret-shaped content, and secrets already in local transcripts (`offsend history audit` / `scrub`). See [what hooks cover / do not cover](cli.md#what-hooks-cover).
+No. They are defense-in-depth on known editor paths (prompt, `@file`, Read/Edit/Write, shell, MCP tool **args** + **responses**, Cursor subagent tasks, Cursor Grep under seal). Prefer `offsend protect` / AI ignore files first. For enumeration/egress that hooks cannot decide from command text, use [`sandbox.enabled`](configuration.md#sandbox). Other gaps remain: Claude subagents, cloud sessions, renamed copies without secret-shaped content, and secrets already in local transcripts (`offsend history audit` / `scrub`). See [what hooks cover / do not cover](cli.md#what-hooks-cover).
 
 **Secrets already landed in local agent transcripts — what then?**  
 ```bash

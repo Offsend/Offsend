@@ -9,6 +9,27 @@ final class PromptSubagentGateTests: XCTestCase {
         XCTAssertEqual(call.subagentType, "explore")
     }
 
+    func testParseNestedToolInputPrompt() throws {
+        let json = #"{"tool_name":"Task","tool_input":{"prompt":"Explore auth","subagent_type":"explore"}}"#
+        let call = try PromptSubagentGate.parse(json: json, adapter: .cursor)
+        XCTAssertEqual(call.task, "Explore auth")
+        XCTAssertEqual(call.subagentType, "explore")
+    }
+
+    func testFailClosedDefaultsUnlessObserve() {
+        XCTAssertTrue(PromptSubagentGate.shouldFailClosed(subagentsConfig: nil))
+        XCTAssertTrue(
+            PromptSubagentGate.shouldFailClosed(
+                subagentsConfig: OffsendProjectSubagentsConfig(mode: "deny", scanTask: true)
+            )
+        )
+        XCTAssertFalse(
+            PromptSubagentGate.shouldFailClosed(
+                subagentsConfig: OffsendProjectSubagentsConfig(mode: "observe", scanTask: true)
+            )
+        )
+    }
+
     func testRejectsNonCursorAdapter() {
         XCTAssertThrowsError(
             try PromptSubagentGate.parse(json: #"{"task":"x"}"#, adapter: .claude)

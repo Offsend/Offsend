@@ -7,6 +7,8 @@ public enum CheckHookResponseRenderer {
         case promptSubmit
         /// Cursor `beforeReadFile` / Claude `PreToolUse` (Read).
         case readGate
+        /// Cursor `preToolUse` (`Grep`) — content seal cannot rewrite search hits.
+        case grepGate
         /// Cursor/Claude generic pre-tool hooks for Edit/Write.
         case writeGate
         /// Cursor `beforeShellExecution` / Claude `PreToolUse` (Bash).
@@ -14,7 +16,7 @@ public enum CheckHookResponseRenderer {
         case shellGate
         /// Cursor `beforeMCPExecution` / Claude `PreToolUse` (MCP tools).
         case mcpGate
-        /// Cursor `subagentStart`.
+        /// Cursor `subagentStart` / `preToolUse` (`Task`).
         case subagentGate
         /// Cursor `postToolUse` / Claude `PostToolUse` (MCP tools).
         /// Post-execution transformation; never returns a permission shape.
@@ -45,7 +47,7 @@ public enum CheckHookResponseRenderer {
             case .windsurf:
                 return CheckHookAdapterOutput(stdout: "", stderr: stderr, exitCode: 0)
             }
-        case .readGate, .writeGate, .shellGate, .mcpGate, .subagentGate:
+        case .readGate, .grepGate, .writeGate, .shellGate, .mcpGate, .subagentGate:
             switch adapter {
             case .cursor:
                 return CheckHookAdapterOutput(
@@ -107,7 +109,7 @@ public enum CheckHookResponseRenderer {
                     exitCode: OffsendExitCode.error.rawValue
                 )
             }
-        case .readGate, .writeGate, .shellGate, .mcpGate, .subagentGate:
+        case .readGate, .grepGate, .writeGate, .shellGate, .mcpGate, .subagentGate:
             switch adapter {
             case .cursor:
                 return CheckHookAdapterOutput(

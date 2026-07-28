@@ -810,6 +810,9 @@ public struct OffsendDoctor: Sendable {
             }
             let mcpSurfaceActive = mcpGateInstalled || !mcpInventory.servers.isEmpty
             let mcpResponseMode = projectConfig?.context?.mcp?.responses
+            let readSealMode = OffsendReadGateSecretMode(
+                rawValue: projectConfig?.context?.read?.onSecret ?? ""
+            ) == .seal
             let gaps = HookCoverageGap.active(
                 cursorInstalled: cursorInstalled,
                 claudeInstalled: claudeInstalled,
@@ -827,7 +830,9 @@ public struct OffsendDoctor: Sendable {
                         wrapperHealthy: !claudeStatus.broken,
                     configuredMode: mcpResponseMode,
                     sealKeyAvailable: sealKeyAvailable
-                )
+                ),
+                cursorGrepGateInstalled: cursorStatus.grepGate,
+                readSealMode: readSealMode
             )
             // Warn only when MCP/Claude/Cursor-specific gaps apply; cloud-only → ok note.
             checks.append(

@@ -105,6 +105,15 @@ struct Check: AsyncParsableCommand {
     @Flag(
         name: .long,
         help: ArgumentHelp(
+            "Grep/search gate for Cursor: deny Grep that would bypass content seal (requires --adapter cursor).",
+            visibility: .hidden
+        )
+    )
+    var grepGate = false
+
+    @Flag(
+        name: .long,
+        help: ArgumentHelp(
             "Pre-write gate for executable workspace configuration (requires --adapter cursor|claude).",
             visibility: .hidden
         )
@@ -310,6 +319,32 @@ struct Check: AsyncParsableCommand {
                 excludePatterns: gateExcludePatterns,
                 projectRoot: projectRoot,
                 readConfig: projectConfig?.context?.read
+            )
+            return
+        }
+
+        if grepGate, let adapter {
+            let (context, projectConfig) = loadStdinRuntime(adapter: adapter, started: started)
+            guard let context else { return }
+            let resolved = OptionsResolver.resolveCheckOptions(
+                overrides: CLICheckOverrides(
+                    policySpecified: false,
+                    policyValue: false,
+                    failOn: CLIParse.failPolicy(failOn)
+                ),
+                projectConfig: projectConfig,
+                staged: false
+            )
+            await hookEmitter().emitGrepGate(
+                adapter: adapter,
+                rawJSON: rawText,
+                started: started,
+                policy: resolvedHookPolicy(for: adapter),
+                context: context,
+                disabledDetectors: resolved.disabledDetectors,
+                customDictionaries: resolved.customDictionaries,
+                readConfig: projectConfig?.context?.read,
+                secretsOnly: secretsOnly
             )
             return
         }
@@ -533,6 +568,12 @@ struct Check: AsyncParsableCommand {
         if readGate, let adapter, adapter != .cursor, adapter != .claude {
             CLIError.exit(.error, message: "--read-gate supports --adapter cursor or claude.")
         }
+        if grepGate, adapter == nil {
+            CLIError.exit(.error, message: "--grep-gate requires --adapter.")
+        }
+        if grepGate, let adapter, adapter != .cursor {
+            CLIError.exit(.error, message: "--grep-gate supports --adapter cursor only.")
+        }
         if writeGate, adapter == nil {
             CLIError.exit(.error, message: "--write-gate requires --adapter.")
         }
@@ -576,14 +617,14 @@ struct Check: AsyncParsableCommand {
             CLIError.exit(.error, message: "--mcp-response-gate supports --adapter cursor or claude.")
         }
         let gateFlags = [
-            readGate, writeGate, artifactAudit, shellGate, shellAudit,
+            readGate, grepGate, writeGate, artifactAudit, shellGate, shellAudit,
             mcpGate, subagentGate, mcpResponseGate,
         ]
             .filter { $0 }.count
         if gateFlags > 1 {
             CLIError.exit(
                 .error,
-                message: "--read-gate, --write-gate, --artifact-audit, --shell-gate, --shell-audit, --mcp-gate, --subagent-gate, and --mcp-response-gate are mutually exclusive."
+                message: "--read-gate, --grep-gate, --write-gate, --artifact-audit, --shell-gate, --shell-audit, --mcp-gate, --subagent-gate, and --mcp-response-gate are mutually exclusive."
             )
         }
     }
@@ -595,6 +636,7 @@ struct Check: AsyncParsableCommand {
         if mcpGate { return .mcpGate }
         if shellGate { return .shellGate }
         if writeGate { return .writeGate }
+        if grepGate { return .grepGate }
         if readGate { return .readGate }
         return .promptSubmit
     }
@@ -614,6 +656,14 @@ struct Check: AsyncParsableCommand {
         if readGate {
             // An unscannable read must not pass — same policy as oversized content.
             hookEmitter().emitReadGateLimitExceeded(
+                adapter: adapter,
+                started: started,
+                policy: policy
+            )
+            return true
+        }
+        if grepGate {
+            hookEmitter().emitGrepGateLimitExceeded(
                 adapter: adapter,
                 started: started,
                 policy: policy
@@ -913,10 +963,10 @@ struct Check: AsyncParsableCommand {
         let outputFormat = CLIParse.outputFormat(format)
         let validatedFailOn = CLIParse.failPolicy(failOn)
 
-        if adapter != nil || hookPolicy != nil || sealCopy || debugHook || gateSecrets || readGate || writeGate || artifactAudit || shellGate || mcpGate || subagentGate || mcpResponseGate {
+        if adapter != nil || hookPolicy != nil || sealCopy || debugHook || gateSecrets || readGate || grepGate || writeGate || artifactAudit || shellGate || mcpGate || subagentGate || mcpResponseGate {
             CLIError.exit(
                 .error,
-                message: "--adapter/--hook-policy/--seal-copy/--debug-hook/--gate-secrets/--read-gate/--write-gate/--artifact-audit/--shell-gate/--mcp-gate/--subagent-gate/--mcp-response-gate require stdin."
+                message: "--adapter/--hook-policy/--seal-copy/--debug-hook/--gate-secrets/--read-gate/--grep-gate/--write-gate/--artifact-audit/--shell-gate/--mcp-gate/--subagent-gate/--mcp-response-gate require stdin."
             )
         }
 

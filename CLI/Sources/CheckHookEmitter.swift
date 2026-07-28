@@ -101,6 +101,30 @@ struct CheckHookEmitter {
         )
     }
 
+    func emitGrepGateLimitExceeded(
+        adapter: CheckHookAdapter,
+        started: Date,
+        policy: CheckHookPolicy
+    ) {
+        let decision = PromptGrepGateDecision(
+            call: PromptGrepGateCall(),
+            permission: .deny,
+            reason: "Offsend: oversized Grep hook input denied.",
+            agentMessage: "Offsend: oversized Grep hook input denied.",
+            code: "invalid_input"
+        )
+        let rendered = PromptGrepGateRenderer.render(decision: decision, adapter: adapter)
+        writeHookOutput(rendered)
+        logDebug(
+            adapter: adapter,
+            policy: policy,
+            advice: nil,
+            exitCode: rendered.exitCode,
+            started: started,
+            error: "grep_gate_denied_oversized_stdin"
+        )
+    }
+
     func emitWriteGateLimitExceeded(
         adapter: CheckHookAdapter,
         started: Date,
@@ -155,15 +179,14 @@ struct CheckHookEmitter {
         )
     }
 
-    /// Oversized subagent-gate hook input: fail closed under
-    /// `context.subagents.mode: deny`, mirroring the invalid-JSON policy.
+    /// Oversized subagent-gate hook input: fail closed unless mode is `observe`.
     func emitSubagentGateLimitExceeded(
         adapter: CheckHookAdapter,
         started: Date,
         policy: CheckHookPolicy,
         subagentsConfig: OffsendProjectSubagentsConfig?
     ) {
-        guard OffsendContextEnforcementMode(rawValue: subagentsConfig?.mode ?? "") == .deny else {
+        guard PromptSubagentGate.shouldFailClosed(subagentsConfig: subagentsConfig) else {
             emitFailOpen(
                 adapter: adapter,
                 reason: .stdinTooLarge,
@@ -176,7 +199,7 @@ struct CheckHookEmitter {
         let decision = PromptSubagentGateDecision(
             call: PromptSubagentGateCall(task: ""),
             permission: .deny,
-            reason: "Offsend: oversized subagent hook input denied (context.subagents.mode: deny).",
+            reason: "Offsend: oversized subagent hook input denied.",
             code: "invalid_input"
         )
         let rendered = PromptSubagentGateRenderer.render(decision: decision, adapter: adapter)
@@ -326,6 +349,89 @@ struct CheckHookEmitter {
             exitCode: rendered.exitCode,
             started: started,
             error: denyReason
+        )
+    }
+
+    func emitGrepGate(
+        adapter: CheckHookAdapter,
+        rawJSON: String,
+        started: Date,
+        policy: CheckHookPolicy,
+        context: OffsendRuntimeContext,
+        disabledDetectors: Set<SensitiveEntityType> = [],
+        customDictionaries: [CustomDictionaryItem] = [],
+        readConfig: OffsendProjectReadConfig? = nil,
+        secretsOnly: Bool = true
+    ) async {
+        let call: PromptGrepGateCall
+        do {
+            call = try PromptGrepGate.parse(json: rawJSON, adapter: adapter)
+        } catch {
+            let decision = PromptGrepGateDecision(
+                call: PromptGrepGateCall(),
+                permission: .deny,
+                reason: "Offsend: unrecognized Grep hook input denied.",
+                agentMessage: "Offsend: unrecognized Grep hook input denied.",
+                code: "invalid_input"
+            )
+            let rendered = PromptGrepGateRenderer.render(decision: decision, adapter: adapter)
+            writeHookOutput(rendered)
+            logDebug(
+                adapter: adapter,
+                policy: policy,
+                advice: nil,
+                exitCode: rendered.exitCode,
+                started: started,
+                error: "grep_gate_invalid_input"
+            )
+            return
+        }
+
+        let sealMode = OffsendReadGateSecretMode(rawValue: readConfig?.onSecret ?? "") == .seal
+        var secretTypes: [String] = []
+        if !sealMode, let path = call.path {
+            let content: String?
+            if let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+               data.count <= PromptReadGate.maxContentBytes,
+               let text = String(data: data, encoding: .utf8) {
+                content = text
+            } else {
+                content = nil
+            }
+            if let content {
+                let scanDisabled = disabledDetectors
+                let scanned = await OffsendCheckService(context: context).runText(
+                    content,
+                    failPolicy: .block,
+                    disabledDetectors: scanDisabled,
+                    customDictionaries: customDictionaries
+                )
+                let textResult = filteringAuthenticatedSealTokens(in: scanned)
+                let secrets = PromptCheckAdviceBuilder.filterEntities(
+                    textResult.entities,
+                    secretsOnly: secretsOnly
+                )
+                secretTypes = Array(Set(secrets.map(\.type.rawValue))).sorted()
+                if textResult.opaqueScanOverflow {
+                    secretTypes.append("opaqueEncodedBlob")
+                }
+            }
+        }
+
+        let decision = PromptGrepGate.evaluate(
+            call: call,
+            readConfig: readConfig,
+            secretTypes: secretTypes
+        )
+        let rendered = PromptGrepGateRenderer.render(decision: decision, adapter: adapter)
+        writeHookOutput(rendered)
+        logDebug(
+            adapter: adapter,
+            policy: policy,
+            advice: nil,
+            exitCode: rendered.exitCode,
+            started: started,
+            error: decision.allowed ? nil : "grep_gate_\(decision.code)"
         )
     }
 
@@ -511,12 +617,13 @@ struct CheckHookEmitter {
         do {
             call = try PromptSubagentGate.parse(json: rawJSON, adapter: adapter)
         } catch {
-            // Explicit `context.subagents.mode: deny` means the user asked to block; fail closed there.
-            if OffsendContextEnforcementMode(rawValue: subagentsConfig?.mode ?? "") == .deny {
+            // Default deny (and explicit deny/ask): fail closed on unrecognized input.
+            // Only `observe` fail-opens so monitoring installs stay non-blocking.
+            if PromptSubagentGate.shouldFailClosed(subagentsConfig: subagentsConfig) {
                 let decision = PromptSubagentGateDecision(
                     call: PromptSubagentGateCall(task: ""),
                     permission: .deny,
-                    reason: "Offsend: unrecognized subagent hook input denied (context.subagents.mode: deny).",
+                    reason: "Offsend: unrecognized subagent hook input denied.",
                     code: "invalid_input"
                 )
                 let rendered = PromptSubagentGateRenderer.render(decision: decision, adapter: adapter)
