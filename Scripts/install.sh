@@ -13,6 +13,7 @@
 #   OFFSEND_REPO         GitHub repo (default: Offsend/Offsend)
 #   OFFSEND_INSTALL_DIR  Directory for the `offsend` command (default: /usr/local/bin)
 #   OFFSEND_PREFIX       macOS install root for binary + Frameworks (default: /opt/offsend/cli)
+#   GITHUB_TOKEN         Optional token, raises the GitHub API rate limit
 set -euo pipefail
 
 REPO="${OFFSEND_REPO:-Offsend/Offsend}"
@@ -145,10 +146,58 @@ ensure_directory() {
   exit 1
 }
 
+# Queries the GitHub API and turns every failure mode into an actionable
+# message. Plain `curl -f` would abort the script with no output at all, which
+# is what an anonymous caller hits after 60 requests per hour from one IP.
+github_api() {
+  local url="$1"
+  local response status body
+  local -a auth=()
+  if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+    auth=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
+  fi
+
+  response="$(curl -sSL -w '\n%{http_code}' \
+    -H "Accept: application/vnd.github+json" \
+    -H "X-GitHub-Api-Version: 2022-11-28" \
+    ${auth[@]+"${auth[@]}"} "$url" 2>/dev/null || true)"
+  status="${response##*$'\n'}"
+  body="${response%$'\n'*}"
+
+  case "$status" in
+    200)
+      printf '%s' "$body"
+      ;;
+    401|403|429)
+      if printf '%s' "$body" | grep -qi 'rate limit'; then
+        echo "GitHub API rate limit reached for this network." >&2
+        echo "Wait a few minutes, or re-run with a token:" >&2
+        echo "  GITHUB_TOKEN=<token> bash -c \"\$(curl -fsSL https://install.offsend.io/cli)\"" >&2
+      else
+        echo "GitHub API refused the request (HTTP ${status}): ${url}" >&2
+        echo "If GITHUB_TOKEN is set, check that it is valid and not expired." >&2
+      fi
+      exit 1
+      ;;
+    404)
+      echo "Not found: ${url}" >&2
+      echo "Check OFFSEND_VERSION (${VERSION}) and OFFSEND_REPO (${REPO})." >&2
+      exit 1
+      ;;
+    000|"")
+      echo "Could not reach the GitHub API. Check your network or proxy settings." >&2
+      exit 1
+      ;;
+    *)
+      echo "GitHub API request failed (HTTP ${status}): ${url}" >&2
+      exit 1
+      ;;
+  esac
+}
+
 resolve_latest_version() {
   local response tag
-  response="$(curl -fsSL -H "Accept: application/vnd.github+json" \
-    "https://api.github.com/repos/${REPO}/releases/latest")"
+  response="$(github_api "https://api.github.com/repos/${REPO}/releases/latest")"
   tag="$(printf '%s' "$response" | tr -d '\n' | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
   tag="${tag#v}"
   if [[ -z "$tag" ]]; then
@@ -160,6 +209,71 @@ resolve_latest_version() {
 
 release_base_url() {
   printf 'https://github.com/%s/releases/download/v%s' "$REPO" "$1"
+}
+
+file_sha256() {
+  local path="$1"
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$path" | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$path" | awk '{print $1}'
+  else
+    echo "Missing required command: shasum or sha256sum" >&2
+    exit 1
+  fi
+}
+
+fetch_asset_sha256() {
+  local version="$1"
+  local filename="$2"
+  local response assets remainder name_pattern digest
+
+  response="$(github_api "https://api.github.com/repos/${REPO}/releases/tags/v${version}")"
+
+  # Read the digest without a JSON parser: an install script cannot assume
+  # python3 or jq exists. Narrow to the assets array, cut to the named asset,
+  # then take the first digest that follows it -- GitHub emits `digest` after
+  # `name` inside the same asset object. The API pretty-prints, so every pattern
+  # has to tolerate whitespace around the colons.
+  assets="$(printf '%s' "$response" | tr -d '\n' \
+    | sed -n 's/.*"assets"[[:space:]]*:[[:space:]]*\[//p')"
+  if [[ -z "$assets" ]]; then
+    echo "Unexpected GitHub API response for ${REPO} v${version}: no assets array." >&2
+    exit 1
+  fi
+
+  name_pattern="\"name\"[[:space:]]*:[[:space:]]*\"${filename//./\\.}\""
+  if ! printf '%s' "$assets" | grep -q "$name_pattern"; then
+    echo "Release ${REPO} v${version} has no asset named ${filename}" >&2
+    exit 1
+  fi
+  remainder="$(printf '%s' "$assets" | sed -e "s/.*${name_pattern}//")"
+  digest="$(printf '%s' "$remainder" \
+    | grep -o '"digest"[[:space:]]*:[[:space:]]*"sha256:[0-9a-f]\{64\}"' \
+    | head -1 \
+    | sed -e 's/.*sha256://' -e 's/"$//' || true)"
+
+  if [[ -z "$digest" ]]; then
+    echo "Could not find SHA-256 digest for ${filename} in ${REPO} v${version}" >&2
+    echo "This release may predate GitHub asset digests; install a newer version." >&2
+    exit 1
+  fi
+  printf '%s' "$digest"
+}
+
+verify_download() {
+  local path="$1"
+  local expected="$2"
+  local actual
+
+  actual="$(file_sha256 "$path")"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "Checksum mismatch for $(basename "$path")" >&2
+    echo "  expected: ${expected}" >&2
+    echo "  actual:   ${actual}" >&2
+    exit 1
+  fi
+  echo "Checksum OK (${actual:0:12}...)"
 }
 
 detect_arch() {
@@ -175,7 +289,7 @@ detect_arch() {
 
 install_linux() {
   local arch="$1"
-  local tarball url workdir
+  local tarball url workdir expected_sha
 
   if using_default_linux_install_path && print_existing_linux_install_help; then
     exit 1
@@ -187,12 +301,14 @@ install_linux() {
 
   tarball="offsend-cli-${VERSION}-linux-${arch}.tar.gz"
   url="$(release_base_url "$VERSION")/${tarball}"
+  expected_sha="$(fetch_asset_sha256 "$VERSION" "$tarball")"
 
   workdir="$(mktemp -d)"
   trap 'rm -rf "$workdir"' RETURN
 
   echo "Downloading ${tarball}..."
   curl -fsSL "$url" -o "$workdir/$tarball"
+  verify_download "$workdir/$tarball" "$expected_sha"
   tar -xzf "$workdir/$tarball" -C "$workdir"
   test -x "$workdir/offsend"
 
@@ -204,7 +320,7 @@ install_linux() {
 }
 
 install_macos() {
-  local archive url workdir install_root
+  local archive url workdir install_root expected_sha
 
   if using_default_install_paths && print_existing_macos_install_help; then
     exit 1
@@ -214,6 +330,7 @@ install_macos() {
 
   archive="offsend-cli-${VERSION}.zip"
   url="$(release_base_url "$VERSION")/${archive}"
+  expected_sha="$(fetch_asset_sha256 "$VERSION" "$archive")"
   install_root="${PREFIX}/${VERSION}"
 
   workdir="$(mktemp -d)"
@@ -221,6 +338,7 @@ install_macos() {
 
   echo "Downloading ${archive}..."
   curl -fsSL "$url" -o "$workdir/$archive"
+  verify_download "$workdir/$archive" "$expected_sha"
   unzip -q "$workdir/$archive" -d "$workdir/extracted"
   test -x "$workdir/extracted/offsend"
   test -d "$workdir/extracted/Frameworks"

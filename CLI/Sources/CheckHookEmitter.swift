@@ -41,6 +41,29 @@ struct CheckHookEmitter {
         )
     }
 
+    func emitPolicyDrift(
+        adapter: CheckHookAdapter,
+        reason: String,
+        started: Date,
+        policy: CheckHookPolicy,
+        kind: CheckHookResponseRenderer.Kind
+    ) {
+        let rendered = CheckHookResponseRenderer.failClosed(
+            adapter: adapter,
+            reason: reason,
+            kind: kind
+        )
+        writeHookOutput(rendered)
+        logDebug(
+            adapter: adapter,
+            policy: policy,
+            advice: nil,
+            exitCode: rendered.exitCode,
+            started: started,
+            error: "policy_drift: \(reason)"
+        )
+    }
+
     func emitMCPResponseLimitExceeded(
         adapter: CheckHookAdapter,
         started: Date,
@@ -75,6 +98,24 @@ struct CheckHookEmitter {
             exitCode: rendered.exitCode,
             started: started,
             error: "read_gate_denied_oversized_stdin"
+        )
+    }
+
+    func emitWriteGateLimitExceeded(
+        adapter: CheckHookAdapter,
+        started: Date,
+        policy: CheckHookPolicy
+    ) {
+        let decision = PromptWriteGate.oversizedInputDecision()
+        let rendered = PromptWriteGateRenderer.render(decision: decision, adapter: adapter)
+        writeHookOutput(rendered)
+        logDebug(
+            adapter: adapter,
+            policy: policy,
+            advice: nil,
+            exitCode: rendered.exitCode,
+            started: started,
+            error: "write_gate_denied_oversized_stdin"
         )
     }
 
@@ -268,6 +309,40 @@ struct CheckHookEmitter {
         )
     }
 
+    func emitWriteGate(
+        adapter: CheckHookAdapter,
+        rawJSON: String,
+        started: Date,
+        policy: CheckHookPolicy,
+        projectRoot: URL
+    ) {
+        let decision: PromptWriteGateDecision
+        if rawJSON.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            decision = PromptWriteGate.emptyInputDecision()
+        } else {
+            do {
+                let input = try PromptWriteGate.parse(json: rawJSON, adapter: adapter)
+                decision = PromptWriteGate.evaluate(
+                    input: input,
+                    classifier: ExecutableArtifactClassifier(projectRoot: projectRoot)
+                )
+            } catch {
+                decision = PromptWriteGate.invalidInputDecision()
+            }
+        }
+
+        let rendered = PromptWriteGateRenderer.render(decision: decision, adapter: adapter)
+        writeHookOutput(rendered)
+        logDebug(
+            adapter: adapter,
+            policy: policy,
+            advice: nil,
+            exitCode: rendered.exitCode,
+            started: started,
+            error: decision.allowed ? nil : "write_gate_\(decision.permission.rawValue)"
+        )
+    }
+
     private func filteringAuthenticatedSealTokens(
         in result: OffsendTextCheckResult
     ) -> OffsendTextCheckResult {
@@ -336,11 +411,16 @@ struct CheckHookEmitter {
         adapter: CheckHookAdapter,
         rawJSON: String,
         started: Date,
-        policy: CheckHookPolicy
+        policy: CheckHookPolicy,
+        projectRoot: URL
     ) {
         let decision: PromptShellGateDecision
         do {
-            decision = try PromptShellGate.evaluate(json: rawJSON, adapter: adapter)
+            decision = try PromptShellGate.evaluate(
+                json: rawJSON,
+                adapter: adapter,
+                classifier: ExecutableArtifactClassifier(projectRoot: projectRoot)
+            )
         } catch {
             emitFailOpen(
                 adapter: adapter,
@@ -360,7 +440,7 @@ struct CheckHookEmitter {
             advice: nil,
             exitCode: rendered.exitCode,
             started: started,
-            error: decision.allowed ? nil : "shell_gate_ask"
+            error: decision.allowed ? nil : (decision.deny ? "shell_gate_deny" : "shell_gate_ask")
         )
     }
 

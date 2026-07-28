@@ -68,6 +68,19 @@ printf '%s\n' \
   "  exclude:" \
   "    - secrets.env" > "$repo/.offsend.yml"
 
+# Trusting or forgetting editor-gate policy must require a real user TTY.
+"$CLI_PATH" policy status --path "$repo" | grep -q "Policy snapshot: missing"
+set +e
+"$CLI_PATH" policy trust --path "$repo" >/dev/null 2>&1
+policy_trust_status="$?"
+"$CLI_PATH" policy forget --path "$repo" >/dev/null 2>&1
+policy_forget_status="$?"
+set -e
+if [[ "$policy_trust_status" -eq 0 || "$policy_forget_status" -eq 0 ]]; then
+  echo "Expected policy trust/forget to reject non-interactive execution" >&2
+  exit 1
+fi
+
 printf '%s\n' "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" > "$repo/secrets.env"
 git -C "$repo" add .offsend.yml secrets.env
 
@@ -429,6 +442,106 @@ if echo "$read_fail_open" | grep -q 'continue'; then
   echo "$read_fail_open" >&2
   exit 1
 fi
+
+# Semantic write-gate: executable host configuration denies; source files allow.
+write_hooks="{\"tool_name\":\"Write\",\"cwd\":\"$repo\",\"tool_input\":{\"file_path\":\".cursor/hooks.json\",\"content\":\"{}\"}}"
+write_envrc="{\"tool_name\":\"Write\",\"cwd\":\"$repo\",\"tool_input\":{\"file_path\":\".envrc\",\"content\":\"export PATH=./bin\"}}"
+write_source="{\"tool_name\":\"Write\",\"cwd\":\"$repo\",\"tool_input\":{\"file_path\":\"Sources/App.swift\",\"content\":\"print(1)\"}}"
+set +e
+write_deny="$(printf '%s' "$write_hooks" | "$CLI_PATH" check --adapter cursor --write-gate --no-notify --working-directory "$repo" 2>/dev/null)"
+write_envrc_deny="$(printf '%s' "$write_envrc" | "$CLI_PATH" check --adapter cursor --write-gate --no-notify --working-directory "$repo" 2>/dev/null)"
+write_allow="$(printf '%s' "$write_source" | "$CLI_PATH" check --adapter cursor --write-gate --no-notify --working-directory "$repo" 2>/dev/null)"
+set -e
+if ! echo "$write_deny" | grep -q '"deny"'; then
+  echo "Expected write-gate deny for .cursor/hooks.json" >&2
+  echo "$write_deny" >&2
+  exit 1
+fi
+if ! echo "$write_envrc_deny" | grep -q '"deny"'; then
+  echo "Expected write-gate deny for shell startup environment config" >&2
+  echo "$write_envrc_deny" >&2
+  exit 1
+fi
+if ! echo "$write_allow" | grep -q '"allow"'; then
+  echo "Expected write-gate allow for ordinary source" >&2
+  echo "$write_allow" >&2
+  exit 1
+fi
+
+# Offsend's own policy is a trust surface: the agent must not rewrite it.
+write_policy="{\"tool_name\":\"Write\",\"cwd\":\"$repo\",\"tool_input\":{\"file_path\":\".offsend.yml\",\"content\":\"version: 1\"}}"
+# Editor settings mix preferences with execution, so the decision follows content.
+settings_plain="{\"tool_name\":\"Write\",\"cwd\":\"$repo\",\"tool_input\":{\"file_path\":\".vscode/settings.json\",\"content\":\"{\\\"editor.tabSize\\\": 2}\"}}"
+settings_exec="{\"tool_name\":\"Write\",\"cwd\":\"$repo\",\"tool_input\":{\"file_path\":\".vscode/settings.json\",\"content\":\"{\\\"python.defaultInterpreterPath\\\": \\\"/tmp/py\\\"}\"}}"
+set +e
+write_policy_deny="$(printf '%s' "$write_policy" | "$CLI_PATH" check --adapter cursor --write-gate --no-notify --working-directory "$repo" 2>/dev/null)"
+settings_plain_allow="$(printf '%s' "$settings_plain" | "$CLI_PATH" check --adapter cursor --write-gate --no-notify --working-directory "$repo" 2>/dev/null)"
+settings_exec_deny="$(printf '%s' "$settings_exec" | "$CLI_PATH" check --adapter cursor --write-gate --no-notify --working-directory "$repo" 2>/dev/null)"
+set -e
+if ! echo "$write_policy_deny" | grep -q '"deny"'; then
+  echo "Expected write-gate deny for .offsend.yml" >&2
+  echo "$write_policy_deny" >&2
+  exit 1
+fi
+if ! echo "$settings_plain_allow" | grep -q '"allow"'; then
+  echo "Expected write-gate allow for ordinary editor settings" >&2
+  echo "$settings_plain_allow" >&2
+  exit 1
+fi
+if ! echo "$settings_exec_deny" | grep -q '"deny"'; then
+  echo "Expected write-gate deny for interpreter path in editor settings" >&2
+  echo "$settings_exec_deny" >&2
+  exit 1
+fi
+
+# An Edit that swaps only the value names no key, so the gate has to read the
+# settings file to see which setting the replacement lands on.
+mkdir -p "$repo/.vscode"
+printf '%s\n' '{"editor.tabSize": 2, "python.defaultInterpreterPath": "/usr/bin/python3"}' \
+  > "$repo/.vscode/settings.json"
+settings_value_swap="{\"tool_name\":\"Edit\",\"cwd\":\"$repo\",\"tool_input\":{\"file_path\":\".vscode/settings.json\",\"old_string\":\"/usr/bin/python3\",\"new_string\":\"/tmp/agent-bin/python\"}}"
+settings_tab_swap="{\"tool_name\":\"Edit\",\"cwd\":\"$repo\",\"tool_input\":{\"file_path\":\".vscode/settings.json\",\"old_string\":\"2\",\"new_string\":\"4\"}}"
+set +e
+settings_value_deny="$(printf '%s' "$settings_value_swap" | "$CLI_PATH" check --adapter cursor --write-gate --no-notify --working-directory "$repo" 2>/dev/null)"
+settings_tab_allow="$(printf '%s' "$settings_tab_swap" | "$CLI_PATH" check --adapter cursor --write-gate --no-notify --working-directory "$repo" 2>/dev/null)"
+set -e
+if ! echo "$settings_value_deny" | grep -q '"deny"'; then
+  echo "Expected write-gate deny for in-place interpreter path swap" >&2
+  echo "$settings_value_deny" >&2
+  exit 1
+fi
+if ! echo "$settings_tab_allow" | grep -q '"allow"'; then
+  echo "Expected write-gate allow for in-place ordinary setting swap" >&2
+  echo "$settings_tab_allow" >&2
+  exit 1
+fi
+rm -rf "$repo/.vscode"
+
+# Cursor publishes no tool_input schema for file tools, so an unfamiliar key
+# must still be classified. Cursor also ignores `ask` on preToolUse, so
+# unreadable payloads have to render as deny there.
+write_unknown_key="{\"tool_name\":\"Delete\",\"cwd\":\"$repo\",\"tool_input\":{\"target_paths\":[\"README.md\",\".cursor/hooks.json\"]}}"
+set +e
+write_unknown_deny="$(printf '%s' "$write_unknown_key" | "$CLI_PATH" check --adapter cursor --write-gate --no-notify --working-directory "$repo" 2>/dev/null)"
+write_empty="$(printf '' | "$CLI_PATH" check --adapter cursor --write-gate --no-notify --working-directory "$repo" 2>/dev/null)"
+write_empty_claude="$(printf '' | "$CLI_PATH" check --adapter claude --write-gate --no-notify --working-directory "$repo" 2>/dev/null)"
+set -e
+if ! echo "$write_unknown_deny" | grep -q '"deny"'; then
+  echo "Expected write-gate deny for unrecognized tool_input key naming a hook config" >&2
+  echo "$write_unknown_deny" >&2
+  exit 1
+fi
+if ! echo "$write_empty" | grep -q '"deny"'; then
+  echo "Expected empty Cursor write-gate payload to deny (ask is not enforced)" >&2
+  echo "$write_empty" >&2
+  exit 1
+fi
+if ! echo "$write_empty_claude" | grep -q '"ask"'; then
+  echo "Expected empty Claude write-gate payload to ask" >&2
+  echo "$write_empty_claude" >&2
+  exit 1
+fi
+
 # Hook input over the 2 MiB stdin limit fails closed: the payload (which
 # carries the file body for Cursor) cannot be scanned, so the read is denied.
 set +e
@@ -535,7 +648,7 @@ if ! echo "$unseal_ask" | grep -q '"ask"'; then
   echo "$unseal_ask" >&2
   exit 1
 fi
-# Refuse missing repository paths and preserve foreign wrappers unless forced.
+# Refuse missing repository paths and preserve unrelated legacy wrapper files.
 set +e
 "$CLI_PATH" hook install --path "$repo/missing-project" --target cursor --cli-path "$CLI_PATH" >/dev/null 2>&1
 missing_hook_status="$?"
@@ -551,8 +664,8 @@ set +e
 "$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" >/dev/null 2>&1
 foreign_wrapper_status="$?"
 set -e
-if [[ "$foreign_wrapper_status" -eq 0 ]] || ! grep -q 'custom-wrapper' "$repo/.offsend/hooks/check-prompt.sh"; then
-  echo "Expected AI hook install to preserve a foreign wrapper without --force" >&2
+if [[ "$foreign_wrapper_status" -ne 0 ]] || ! grep -q 'custom-wrapper' "$repo/.offsend/hooks/check-prompt.sh"; then
+  echo "Expected direct AI hook install to preserve an unrelated foreign wrapper" >&2
   exit 1
 fi
 
@@ -572,8 +685,8 @@ if ! "$CLI_PATH" hook status --path "$repo" --target all; then
   echo "hook status --target all should succeed when hooks are healthy" >&2
   exit 1
 fi
-if ! grep -q "check-prompt.sh" "$repo/.cursor/hooks.json"; then
-  echo "Expected cursor hooks.json to reference wrapper script" >&2
+if ! grep -q "OFFSEND_MANAGED_HOOK=1" "$repo/.cursor/hooks.json"; then
+  echo "Expected cursor hooks.json to invoke the managed Offsend CLI directly" >&2
   cat "$repo/.cursor/hooks.json" >&2
   exit 1
 fi
@@ -582,8 +695,8 @@ if ! grep -q "beforeShellExecution" "$repo/.cursor/hooks.json"; then
   cat "$repo/.cursor/hooks.json" >&2
   exit 1
 fi
-if ! grep -q -- "--no-notify" "$repo/.offsend/hooks/check-prompt.sh"; then
-  echo "Expected wrapper to pass --no-notify" >&2
+if ! grep -q -- "--no-notify" "$repo/.cursor/hooks.json"; then
+  echo "Expected managed hook command to pass --no-notify" >&2
   exit 1
 fi
 if ! grep -q "beforeReadFile" "$repo/.cursor/hooks.json"; then
@@ -591,17 +704,19 @@ if ! grep -q "beforeReadFile" "$repo/.cursor/hooks.json"; then
   cat "$repo/.cursor/hooks.json" >&2
   exit 1
 fi
-if [[ ! -x "$repo/.offsend/hooks/check-read.sh" ]]; then
-  echo "Expected check-read.sh wrapper" >&2
-  exit 1
-fi
-if ! grep -q "check-shell.sh" "$repo/.cursor/hooks.json"; then
-  echo "Expected shell-gate on by default" >&2
+if ! grep -q "preToolUse" "$repo/.cursor/hooks.json" || ! grep -q -- "--write-gate" "$repo/.cursor/hooks.json"; then
+  echo "Expected semantic write-gate on by default" >&2
   cat "$repo/.cursor/hooks.json" >&2
   exit 1
 fi
-if [[ ! -x "$repo/.offsend/hooks/check-shell.sh" ]]; then
-  echo "Expected check-shell.sh wrapper" >&2
+if ! grep -q "afterFileEdit" "$repo/.cursor/hooks.json" || ! grep -q -- "--artifact-audit" "$repo/.cursor/hooks.json"; then
+  echo "Expected post-write artifact provenance on by default" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+if ! grep -q -- "--shell-gate" "$repo/.cursor/hooks.json"; then
+  echo "Expected shell-gate on by default" >&2
+  cat "$repo/.cursor/hooks.json" >&2
   exit 1
 fi
 if ! grep -q "audit.sh" "$repo/.cursor/hooks.json"; then
@@ -609,7 +724,7 @@ if ! grep -q "audit.sh" "$repo/.cursor/hooks.json"; then
   cat "$repo/.cursor/hooks.json" >&2
   exit 1
 fi
-if ! grep -q "check-mcp.sh" "$repo/.cursor/hooks.json"; then
+if ! grep -q -- "--mcp-gate" "$repo/.cursor/hooks.json"; then
   echo "Expected mcp-gate on by default" >&2
   cat "$repo/.cursor/hooks.json" >&2
   exit 1
@@ -619,16 +734,12 @@ if ! grep -q "beforeMCPExecution" "$repo/.cursor/hooks.json"; then
   cat "$repo/.cursor/hooks.json" >&2
   exit 1
 fi
-if [[ ! -x "$repo/.offsend/hooks/check-mcp.sh" ]]; then
-  echo "Expected check-mcp.sh wrapper" >&2
-  exit 1
-fi
 if ! grep -q "failClosed" "$repo/.cursor/hooks.json"; then
   echo "Expected failClosed on MCP/subagent Cursor gates" >&2
   cat "$repo/.cursor/hooks.json" >&2
   exit 1
 fi
-if ! grep -q "check-subagent.sh" "$repo/.cursor/hooks.json"; then
+if ! grep -q -- "--subagent-gate" "$repo/.cursor/hooks.json"; then
   echo "Expected subagent-gate on by default for Cursor" >&2
   cat "$repo/.cursor/hooks.json" >&2
   exit 1
@@ -638,10 +749,6 @@ if ! grep -q "subagentStart" "$repo/.cursor/hooks.json"; then
   cat "$repo/.cursor/hooks.json" >&2
   exit 1
 fi
-if [[ ! -x "$repo/.offsend/hooks/check-subagent.sh" ]]; then
-  echo "Expected check-subagent.sh wrapper" >&2
-  exit 1
-fi
 
 "$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --no-read-gate
 if grep -q "beforeReadFile" "$repo/.cursor/hooks.json"; then
@@ -649,14 +756,23 @@ if grep -q "beforeReadFile" "$repo/.cursor/hooks.json"; then
   cat "$repo/.cursor/hooks.json" >&2
   exit 1
 fi
-if [[ -e "$repo/.offsend/hooks/check-read.sh" ]]; then
-  echo "Expected --no-read-gate to remove orphan check-read.sh" >&2
-  exit 1
-fi
 
 "$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --with-read-gate
 if ! grep -q "beforeReadFile" "$repo/.cursor/hooks.json"; then
   echo "Expected --with-read-gate alias to add beforeReadFile" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+
+"$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --no-write-gate
+if grep -q -- "--write-gate" "$repo/.cursor/hooks.json"; then
+  echo "Expected --no-write-gate to remove the managed preToolUse write entry" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+"$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --with-write-gate
+if ! grep -q -- "--write-gate" "$repo/.cursor/hooks.json"; then
+  echo "Expected --with-write-gate alias to restore semantic write protection" >&2
   cat "$repo/.cursor/hooks.json" >&2
   exit 1
 fi
@@ -674,10 +790,64 @@ if ! echo "$shell_allow" | grep -q '"allow"'; then
   echo "$shell_allow" >&2
   exit 1
 fi
+shell_exec_deny="$(printf '%s' "{\"cwd\":\"$repo\",\"command\":\"printf malicious > .cursor/hooks.json\"}" | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify --working-directory "$repo" 2>/dev/null)"
+if ! echo "$shell_exec_deny" | grep -q '"deny"'; then
+  echo "Expected shell-gate hard deny for direct executable-config write" >&2
+  echo "$shell_exec_deny" >&2
+  exit 1
+fi
+shell_git_config_deny="$(printf '%s' '{"command":"git config core.hooksPath .agent-hooks"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
+if ! echo "$shell_git_config_deny" | grep -q '"deny"'; then
+  echo "Expected shell-gate hard deny for execution-sensitive git config" >&2
+  echo "$shell_git_config_deny" >&2
+  exit 1
+fi
+shell_git_config_read="$(printf '%s' '{"command":"git config --get core.hooksPath"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
+if ! echo "$shell_git_config_read" | grep -q '"allow"'; then
+  echo "Expected shell-gate allow for read-only git config" >&2
+  echo "$shell_git_config_read" >&2
+  exit 1
+fi
+shell_docker_deny="$(printf '%s' '{"command":"docker run --rm alpine id"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
+if ! echo "$shell_docker_deny" | grep -q '"deny"'; then
+  echo "Expected shell-gate hard deny for host-side container execution" >&2
+  echo "$shell_docker_deny" >&2
+  exit 1
+fi
+shell_docker_ask="$(printf '%s' '{"command":"docker build ."}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
+if ! echo "$shell_docker_ask" | grep -q '"ask"'; then
+  echo "Expected shell-gate ask for lower-risk daemon mutation" >&2
+  echo "$shell_docker_ask" >&2
+  exit 1
+fi
+shell_docker_read="$(printf '%s' '{"command":"docker ps"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
+if ! echo "$shell_docker_read" | grep -q '"allow"'; then
+  echo "Expected shell-gate allow for Docker diagnostics" >&2
+  echo "$shell_docker_read" >&2
+  exit 1
+fi
+shell_env_deny="$(printf '%s' '{"command":"PATH=./bin:/usr/bin make"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify --working-directory "$repo" 2>/dev/null)"
+if ! echo "$shell_env_deny" | grep -q '"deny"'; then
+  echo "Expected shell-gate hard deny for workspace PATH poisoning" >&2
+  echo "$shell_env_deny" >&2
+  exit 1
+fi
+shell_env_ask="$(printf '%s' '{"command":"PATH=/opt/homebrew/bin:/usr/bin:$PATH make"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify --working-directory "$repo" 2>/dev/null)"
+if ! echo "$shell_env_ask" | grep -q '"ask"'; then
+  echo "Expected shell-gate ask for system-only PATH override" >&2
+  echo "$shell_env_ask" >&2
+  exit 1
+fi
+shell_git_metadata="$(printf '%s' '{"command":"GIT_AUTHOR_NAME=Bot git status"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
+if ! echo "$shell_git_metadata" | grep -q '"allow"'; then
+  echo "Expected shell-gate allow for safe Git metadata environment" >&2
+  echo "$shell_git_metadata" >&2
+  exit 1
+fi
 
 "$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --no-shell-gate
-if grep -q "check-shell.sh" "$repo/.cursor/hooks.json"; then
-  echo "Expected --no-shell-gate to remove the check-shell.sh entry" >&2
+if grep -q -- "--shell-gate" "$repo/.cursor/hooks.json"; then
+  echo "Expected --no-shell-gate to remove the managed shell-gate entry" >&2
   cat "$repo/.cursor/hooks.json" >&2
   exit 1
 fi
@@ -686,14 +856,9 @@ if ! grep -q "audit.sh" "$repo/.cursor/hooks.json"; then
   cat "$repo/.cursor/hooks.json" >&2
   exit 1
 fi
-if [[ -e "$repo/.offsend/hooks/check-shell.sh" ]]; then
-  echo "Expected --no-shell-gate to remove orphan check-shell.sh" >&2
-  exit 1
-fi
-
 "$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --with-shell-gate
-if ! grep -q "check-shell.sh" "$repo/.cursor/hooks.json"; then
-  echo "Expected --with-shell-gate alias to add check-shell.sh" >&2
+if ! grep -q -- "--shell-gate" "$repo/.cursor/hooks.json"; then
+  echo "Expected --with-shell-gate alias to add the shell-gate command" >&2
   cat "$repo/.cursor/hooks.json" >&2
   exit 1
 fi
@@ -761,31 +926,27 @@ if ! echo "$mcp_oversized_open" | grep -q '"allow"'; then
 fi
 
 "$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --no-mcp-gate
-if grep -q "check-mcp.sh" "$repo/.cursor/hooks.json"; then
-  echo "Expected --no-mcp-gate to remove the check-mcp.sh entry" >&2
+if grep -q -- "--mcp-gate" "$repo/.cursor/hooks.json"; then
+  echo "Expected --no-mcp-gate to remove the managed mcp-gate entry" >&2
   cat "$repo/.cursor/hooks.json" >&2
   exit 1
 fi
-if [[ -e "$repo/.offsend/hooks/check-mcp.sh" ]]; then
-  echo "Expected --no-mcp-gate to remove orphan check-mcp.sh" >&2
-  exit 1
-fi
-if ! grep -q "check-subagent.sh" "$repo/.cursor/hooks.json"; then
+if ! grep -q -- "--subagent-gate" "$repo/.cursor/hooks.json"; then
   echo "Expected --no-mcp-gate to keep subagent-gate" >&2
   cat "$repo/.cursor/hooks.json" >&2
   exit 1
 fi
 
 "$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --with-mcp-gate
-if ! grep -q "check-mcp.sh" "$repo/.cursor/hooks.json"; then
-  echo "Expected --with-mcp-gate alias to add check-mcp.sh" >&2
+if ! grep -q -- "--mcp-gate" "$repo/.cursor/hooks.json"; then
+  echo "Expected --with-mcp-gate alias to add the mcp-gate command" >&2
   cat "$repo/.cursor/hooks.json" >&2
   exit 1
 fi
 
 # MCP response gate: Cursor/Claude observe, warn, seal, fail-safe, install toggles.
-if ! grep -q "check-mcp-out.sh" "$repo/.cursor/hooks.json" || ! grep -q "postToolUse" "$repo/.cursor/hooks.json"; then
-  echo "Expected mcp-response-gate on by default (postToolUse + check-mcp-out.sh)" >&2
+if ! grep -q -- "--mcp-response-gate" "$repo/.cursor/hooks.json" || ! grep -q "postToolUse" "$repo/.cursor/hooks.json"; then
+  echo "Expected mcp-response-gate on by default (postToolUse + direct CLI command)" >&2
   cat "$repo/.cursor/hooks.json" >&2
   exit 1
 fi
@@ -794,11 +955,6 @@ if grep -q "afterMCPExecution" "$repo/.cursor/hooks.json"; then
   cat "$repo/.cursor/hooks.json" >&2
   exit 1
 fi
-if [[ ! -x "$repo/.offsend/hooks/check-mcp-out.sh" ]]; then
-  echo "Expected check-mcp-out.sh wrapper" >&2
-  exit 1
-fi
-
 # offsend:ignore-next-line
 mcpresp_cursor_payload='{"tool_name":"MCP:postgres/query","tool_output":"{\"value\":\"AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF\"}"}'
 set +e
@@ -959,19 +1115,15 @@ fi
 rm -f /tmp/offsend-mcpresp-key-stderr.$$
 
 "$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --no-mcp-response-gate
-if grep -q "check-mcp-out.sh" "$repo/.cursor/hooks.json"; then
-  echo "Expected --no-mcp-response-gate to remove the check-mcp-out.sh entry" >&2
+if grep -q -- "--mcp-response-gate" "$repo/.cursor/hooks.json"; then
+  echo "Expected --no-mcp-response-gate to remove the managed response-gate entry" >&2
   cat "$repo/.cursor/hooks.json" >&2
-  exit 1
-fi
-if [[ -e "$repo/.offsend/hooks/check-mcp-out.sh" ]]; then
-  echo "Expected --no-mcp-response-gate to remove orphan check-mcp-out.sh" >&2
   exit 1
 fi
 
 "$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --with-mcp-response-gate
-if ! grep -q "check-mcp-out.sh" "$repo/.cursor/hooks.json"; then
-  echo "Expected --with-mcp-response-gate alias to add check-mcp-out.sh" >&2
+if ! grep -q -- "--mcp-response-gate" "$repo/.cursor/hooks.json"; then
+  echo "Expected --with-mcp-response-gate alias to add the response-gate command" >&2
   cat "$repo/.cursor/hooks.json" >&2
   exit 1
 fi
@@ -998,30 +1150,26 @@ if ! echo "$subagent_fail_open" | grep -q 'permission'; then
 fi
 
 "$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --no-subagent-gate
-if grep -q "check-subagent.sh" "$repo/.cursor/hooks.json"; then
-  echo "Expected --no-subagent-gate to remove the check-subagent.sh entry" >&2
+if grep -q -- "--subagent-gate" "$repo/.cursor/hooks.json"; then
+  echo "Expected --no-subagent-gate to remove the managed subagent-gate entry" >&2
   cat "$repo/.cursor/hooks.json" >&2
   exit 1
 fi
-if [[ -e "$repo/.offsend/hooks/check-subagent.sh" ]]; then
-  echo "Expected --no-subagent-gate to remove orphan check-subagent.sh" >&2
-  exit 1
-fi
-if ! grep -q "check-mcp.sh" "$repo/.cursor/hooks.json"; then
+if ! grep -q -- "--mcp-gate" "$repo/.cursor/hooks.json"; then
   echo "Expected --no-subagent-gate to keep mcp-gate" >&2
   cat "$repo/.cursor/hooks.json" >&2
   exit 1
 fi
 
 "$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --with-subagent-gate
-if ! grep -q "check-subagent.sh" "$repo/.cursor/hooks.json"; then
-  echo "Expected --with-subagent-gate alias to add check-subagent.sh" >&2
+if ! grep -q -- "--subagent-gate" "$repo/.cursor/hooks.json"; then
+  echo "Expected --with-subagent-gate alias to add the subagent-gate command" >&2
   cat "$repo/.cursor/hooks.json" >&2
   exit 1
 fi
 
 "$CLI_PATH" hook uninstall --path "$repo" --target cursor
-if grep -q "check-prompt.sh" "$repo/.cursor/hooks.json" 2>/dev/null; then
+if grep -q "OFFSEND_MANAGED_HOOK=1" "$repo/.cursor/hooks.json" 2>/dev/null; then
   echo "Expected uninstall to remove Offsend cursor hook entry" >&2
   cat "$repo/.cursor/hooks.json" >&2
   exit 1
@@ -1043,20 +1191,20 @@ if [[ ! -x "$combined/.git/hooks/pre-commit" ]]; then
   echo "Expected default install to add the git pre-commit hook" >&2
   exit 1
 fi
-if ! grep -q "check-prompt.sh" "$combined/.cursor/hooks.json"; then
+if ! grep -q "OFFSEND_MANAGED_HOOK=1" "$combined/.cursor/hooks.json"; then
   echo "Expected default install to add the cursor hook" >&2
   exit 1
 fi
-if ! grep -q "check-prompt.sh" "$combined/.claude/settings.json"; then
+if ! grep -q "OFFSEND_MANAGED_HOOK=1" "$combined/.claude/settings.json"; then
   echo "Expected default install to add the claude hook" >&2
   exit 1
 fi
-if ! grep -q "PostToolUse" "$combined/.claude/settings.json" || ! grep -q "check-mcp-out.sh" "$combined/.claude/settings.json"; then
+if ! grep -q "PostToolUse" "$combined/.claude/settings.json" || ! grep -q -- "--mcp-response-gate" "$combined/.claude/settings.json"; then
   echo "Expected default claude install to add PostToolUse mcp-response-gate" >&2
   cat "$combined/.claude/settings.json" >&2
   exit 1
 fi
-if ! grep -q "check-prompt.sh" "$combined/.codex/hooks.json"; then
+if ! grep -q "OFFSEND_MANAGED_HOOK=1" "$combined/.codex/hooks.json"; then
   echo "Expected default install to add the codex hook (~/.codex detected)" >&2
   exit 1
 fi
@@ -1064,28 +1212,21 @@ if [[ -e "$combined/.windsurf/hooks.json" ]]; then
   echo "Expected default install to skip windsurf (not detected)" >&2
   exit 1
 fi
-# Multi-target install must keep check-read.sh for cursor/claude even after
-# installing gate-unsupported targets (codex) that run cleanup afterward.
-if [[ ! -x "$combined/.offsend/hooks/check-read.sh" ]]; then
-  echo "Expected default install to keep check-read.sh after codex install" >&2
-  ls -la "$combined/.offsend/hooks/" >&2
-  exit 1
-fi
+# Multi-target install must keep direct gates for cursor/claude after
+# installing gate-unsupported targets such as codex.
 if ! grep -q "beforeReadFile" "$combined/.cursor/hooks.json"; then
   echo "Expected default install to keep cursor beforeReadFile" >&2
   cat "$combined/.cursor/hooks.json" >&2
   exit 1
 fi
-if [[ ! -x "$combined/.offsend/hooks/check-mcp.sh" ]] || ! grep -q "beforeMCPExecution" "$combined/.cursor/hooks.json"; then
+if ! grep -q -- "--mcp-gate" "$combined/.cursor/hooks.json" || ! grep -q "beforeMCPExecution" "$combined/.cursor/hooks.json"; then
   echo "Expected default install to keep cursor mcp-gate after multi-target install" >&2
   cat "$combined/.cursor/hooks.json" >&2
-  ls -la "$combined/.offsend/hooks/" >&2
   exit 1
 fi
-if [[ ! -x "$combined/.offsend/hooks/check-subagent.sh" ]] || ! grep -q "subagentStart" "$combined/.cursor/hooks.json"; then
+if ! grep -q -- "--subagent-gate" "$combined/.cursor/hooks.json" || ! grep -q "subagentStart" "$combined/.cursor/hooks.json"; then
   echo "Expected default install to keep cursor subagent-gate after multi-target install" >&2
   cat "$combined/.cursor/hooks.json" >&2
-  ls -la "$combined/.offsend/hooks/" >&2
   exit 1
 fi
 
@@ -1097,7 +1238,7 @@ if [[ -e "$combined/.git/hooks/pre-commit" ]]; then
   echo "Expected default uninstall to remove the git hook" >&2
   exit 1
 fi
-if grep -q "check-prompt.sh" "$combined/.cursor/hooks.json" 2>/dev/null; then
+if grep -q "OFFSEND_MANAGED_HOOK=1" "$combined/.cursor/hooks.json" 2>/dev/null; then
   echo "Expected default uninstall to remove the cursor hook" >&2
   exit 1
 fi

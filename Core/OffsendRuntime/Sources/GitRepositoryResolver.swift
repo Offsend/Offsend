@@ -136,6 +136,15 @@ public struct GitRepositoryResolver: Sendable {
                 .appendingPathComponent("hooks", isDirectory: true)
     }
 
+    /// Resolves the repository-local Git config for normal repositories,
+    /// worktrees, and submodules.
+    public func configURL(in repositoryRoot: URL) -> URL {
+        gitPath("config", in: repositoryRoot)
+            ?? repositoryRoot
+                .appendingPathComponent(".git", isDirectory: true)
+                .appendingPathComponent("config", isDirectory: false)
+    }
+
     /// Resolves `.git/info/exclude` (worktrees/submodules aware). Falls back to
     /// `repositoryRoot/.git/info/exclude` when git cannot be invoked.
     public func infoExcludeURL(in repositoryRoot: URL) -> URL {
@@ -155,6 +164,86 @@ public struct GitRepositoryResolver: Sendable {
             workingDirectory: repositoryRoot
         )
         return output.split(separator: "\0", omittingEmptySubsequences: true).map(String.init)
+    }
+
+    /// Shared Git directory resolved without spawning `git`, for hook paths where
+    /// a subprocess costs more than the rest of the gate combined. Follows the
+    /// `.git` file of worktrees and submodules and their `commondir`, but unlike
+    /// `git rev-parse` it cannot see state outside the repository (`GIT_DIR`,
+    /// global config). Returns `nil` when the repository layout is unreadable.
+    public func commonGitDirectory(in repositoryRoot: URL) -> URL? {
+        let dotGit = repositoryRoot.appendingPathComponent(".git")
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: dotGit.path, isDirectory: &isDirectory) else {
+            return nil
+        }
+
+        var gitDirectory = dotGit.standardizedFileURL
+        if !isDirectory.boolValue {
+            // Worktrees and submodules replace `.git` with a `gitdir: <path>` file.
+            guard let pointer = try? String(contentsOf: dotGit, encoding: .utf8),
+                  let line = pointer.split(separator: "\n")
+                      .first(where: { $0.hasPrefix("gitdir:") }) else {
+                return nil
+            }
+            let target = line.dropFirst("gitdir:".count).trimmingCharacters(in: .whitespaces)
+            guard !target.isEmpty else { return nil }
+            gitDirectory = absoluteURL(target, relativeTo: repositoryRoot)
+        }
+
+        // A linked worktree keeps shared files (config, hooks) in the common directory.
+        if let commonDir = try? String(
+            contentsOf: gitDirectory.appendingPathComponent("commondir"),
+            encoding: .utf8
+        ) {
+            let target = commonDir.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !target.isEmpty {
+                gitDirectory = absoluteURL(target, relativeTo: gitDirectory)
+            }
+        }
+        return gitDirectory
+    }
+
+    /// Config file and hooks directory for trust-surface classification, resolved
+    /// without spawning `git`. `core.hooksPath` is honored only when the
+    /// repository config sets it; a global or system value is not visible here.
+    public func localTrustSurfaces(in repositoryRoot: URL) -> (config: URL, hooks: URL) {
+        let gitDirectory = commonGitDirectory(in: repositoryRoot)
+            ?? repositoryRoot.appendingPathComponent(".git", isDirectory: true)
+        let config = gitDirectory.appendingPathComponent("config", isDirectory: false)
+        let hooks = configuredHooksPath(in: config, repositoryRoot: repositoryRoot)
+            ?? gitDirectory.appendingPathComponent("hooks", isDirectory: true)
+        return (config.standardizedFileURL, hooks.standardizedFileURL)
+    }
+
+    /// `core.hooksPath` read straight out of the Git config INI file.
+    private func configuredHooksPath(in configURL: URL, repositoryRoot: URL) -> URL? {
+        guard let text = try? String(contentsOf: configURL, encoding: .utf8) else { return nil }
+        var inCoreSection = false
+        for rawLine in text.split(separator: "\n") {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("#") || line.hasPrefix(";") { continue }
+            if line.hasPrefix("[") {
+                inCoreSection = line.lowercased().hasPrefix("[core]")
+                continue
+            }
+            guard inCoreSection, let equals = line.firstIndex(of: "=") else { continue }
+            let key = line[..<equals].trimmingCharacters(in: .whitespaces).lowercased()
+            guard key == "hookspath" else { continue }
+            let value = line[line.index(after: equals)...]
+                .trimmingCharacters(in: .whitespaces)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+            guard !value.isEmpty else { return nil }
+            let expanded = (value as NSString).expandingTildeInPath
+            return absoluteURL(expanded, relativeTo: repositoryRoot)
+        }
+        return nil
+    }
+
+    private func absoluteURL(_ path: String, relativeTo base: URL) -> URL {
+        path.hasPrefix("/")
+            ? URL(fileURLWithPath: path).standardizedFileURL
+            : base.appendingPathComponent(path).standardizedFileURL
     }
 
     private func gitPath(_ path: String, in repositoryRoot: URL) -> URL? {

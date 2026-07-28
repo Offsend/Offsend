@@ -97,6 +97,105 @@ final class HookContractTests: XCTestCase {
         XCTAssertTrue(readmeClaude.allowed)
     }
 
+    func testWriteGateDeniesExecutableConfigurationFixtures() throws {
+        let classifier = ExecutableArtifactClassifier(
+            projectRoot: URL(fileURLWithPath: "/repo"),
+            gitResolver: GitRepositoryResolver(gitExecutable: "/nonexistent/git")
+        )
+        let cursorInput = try PromptWriteGate.parse(
+            json: loadFixture("cursor/preToolUse.Write.hooks.json"),
+            adapter: .cursor
+        )
+        let cursorDecision = PromptWriteGate.evaluate(
+            input: cursorInput,
+            classifier: classifier
+        )
+        XCTAssertFalse(cursorDecision.allowed)
+        XCTAssertTrue(
+            PromptWriteGateRenderer.render(decision: cursorDecision, adapter: .cursor)
+                .stdout.contains(#""permission":"deny""#)
+        )
+
+        let claudeInput = try PromptWriteGate.parse(
+            json: loadFixture("claude/PreToolUse.Edit.tasks.json"),
+            adapter: .claude
+        )
+        let claudeDecision = PromptWriteGate.evaluate(
+            input: claudeInput,
+            classifier: classifier
+        )
+        XCTAssertFalse(claudeDecision.allowed)
+        XCTAssertTrue(
+            PromptWriteGateRenderer.render(decision: claudeDecision, adapter: .claude)
+                .stdout.contains(#""permissionDecision":"deny""#)
+        )
+    }
+
+    /// Claude's multi-edit payload keeps one `file_path` and an `edits` list; the
+    /// replacement text has to reach content-conditional classification.
+    func testWriteGateReadsClaudeEditListPayload() throws {
+        let input = try PromptWriteGate.parse(
+            json: loadFixture("claude/PreToolUse.MultiEdit.gitconfig.json"),
+            adapter: .claude
+        )
+
+        XCTAssertEqual(input.toolName, "MultiEdit")
+        XCTAssertEqual(input.paths, ["/repo/.git/config"])
+        XCTAssertEqual(input.content?.contains("hooksPath"), true)
+
+        let decision = PromptWriteGate.evaluate(
+            input: input,
+            classifier: ExecutableArtifactClassifier(
+                projectRoot: URL(fileURLWithPath: "/repo"),
+                gitResolver: GitRepositoryResolver(gitExecutable: "/nonexistent/git")
+            )
+        )
+        XCTAssertEqual(decision.permission, .deny)
+    }
+
+    /// Cursor `afterFileEdit` has no `tool_input`, no `tool_name`, and no `cwd`;
+    /// the artifact audit and content inspection both run off this shape.
+    func testWriteGateReadsCursorAfterFileEditPayload() throws {
+        let input = try PromptWriteGate.parse(
+            json: loadFixture("cursor/afterFileEdit.settings.json"),
+            adapter: .cursor
+        )
+
+        XCTAssertEqual(input.paths, ["/repo/.vscode/settings.json"])
+        XCTAssertEqual(input.content?.contains("defaultInterpreterPath"), true)
+
+        let decision = PromptWriteGate.evaluate(
+            input: input,
+            classifier: ExecutableArtifactClassifier(
+                projectRoot: URL(fileURLWithPath: "/repo"),
+                gitResolver: GitRepositoryResolver(gitExecutable: "/nonexistent/git")
+            )
+        )
+        XCTAssertEqual(decision.permission, .deny)
+    }
+
+    /// Cursor does not publish a `tool_input` schema for its file tools, so an
+    /// unfamiliar key must not turn the gate into a no-op.
+    func testWriteGateClassifiesUnrecognizedToolInputKeys() throws {
+        let input = try PromptWriteGate.parse(
+            json: loadFixture("cursor/preToolUse.Delete.unknownKeys.json"),
+            adapter: .cursor
+        )
+
+        XCTAssertEqual(input.toolName, "Delete")
+        XCTAssertEqual(input.paths, ["/repo/README.md", "/repo/.cursor/hooks.json"])
+
+        let decision = PromptWriteGate.evaluate(
+            input: input,
+            classifier: ExecutableArtifactClassifier(
+                projectRoot: URL(fileURLWithPath: "/repo"),
+                gitResolver: GitRepositoryResolver(gitExecutable: "/nonexistent/git")
+            )
+        )
+        XCTAssertEqual(decision.permission, .deny)
+        XCTAssertEqual(decision.artifact?.kind, .editorHookConfig)
+    }
+
     func testReadGateDeniesSensitiveDirectoryPaths() throws {
         let kube = try PromptReadGate.evaluate(
             json: #"{"file_path":"/Users/me/.kube/config"}"#,

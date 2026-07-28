@@ -10,6 +10,8 @@ Product emphasis: credentials in agent context are **leverage for multi-step too
 
 Enforcement posture: **don’t stop the agent — swap the secrets for tokens.** Where the editor allows it, gates prefer substitution over dead-end denies: seal-for-agents gives the agent a sealed copy of a blocked file (`context.read.on_secret: seal`), and the MCP-response gate seals secrets in Cursor/Claude tool output (`context.mcp.responses: seal`). Work continues; plaintext stays out of model context; the user reverses tokens with `offsend unseal`. Blocking remains the default and the fallback when sealing is unavailable.
 
+Trust-handoff posture: the committed policy is reviewable team state, not automatically trusted runtime authority. `offsend policy trust` pins the reviewed policy outside the agent-writable workspace; drift fails editor gates closed. This hardens Offsend's own control plane without claiming containment of arbitrary IDE, Git, daemon, or host automation.
+
 ## Who it is for
 
 - Teams that share a repository and already use AI coding tools
@@ -32,6 +34,7 @@ Lead with: shared `.offsend.yml` in git → ignore files + hooks + CI. Multi-too
 ## Non-goals
 
 - Not a sandbox or full agent permission system
+- Not general protection against workspace files executed by IDEs or privileged host helpers
 - Not org-wide policy across every repository (repo-level baseline first)
 - Not “block everything by default” locally — prefer advise/warn for adoption; **block** for credentials/secrets and CI
 

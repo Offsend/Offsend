@@ -117,7 +117,7 @@ final class HookInstallRunnerTests: XCTestCase {
         XCTAssertFalse(outcome.excludeUpdated)
     }
 
-    func testInstallAIHooksFailsOnForeignWrapperWithoutForce() throws {
+    func testInstallAIHooksPreservesUnrelatedForeignWrapper() throws {
         let wrapper = root.appendingPathComponent(AIEditorHookInstaller.wrapperRelativePath)
         try FileManager.default.createDirectory(
             at: wrapper.deletingLastPathComponent(),
@@ -125,21 +125,17 @@ final class HookInstallRunnerTests: XCTestCase {
         )
         try "#!/bin/sh\necho custom-wrapper\n".write(to: wrapper, atomically: true, encoding: .utf8)
 
-        XCTAssertThrowsError(
-            try HookInstallRunner.installAIHooks(
-                [.cursor],
-                repositoryURL: root,
-                executable: "/tmp/offsend",
-                withReadGate: false,
-                withShellGate: false,
-                withMCPGate: false,
-                withSubagentGate: false
-            )
-        ) { error in
-            let failure = error as? HookInstallRunner.AIHookFailure
-            XCTAssertEqual(failure?.target, .cursor)
-            XCTAssertNotNil(failure?.message)
-        }
+        let outcome = try HookInstallRunner.installAIHooks(
+            [.cursor],
+            repositoryURL: root,
+            executable: "/tmp/offsend",
+            withReadGate: false,
+            withShellGate: false,
+            withMCPGate: false,
+            withSubagentGate: false
+        )
+        XCTAssertEqual(outcome.results.count, 1)
+        XCTAssertTrue(outcome.results[0].command.contains(AIEditorHookInstaller.managedCommandMarker))
         XCTAssertTrue(try String(contentsOf: wrapper, encoding: .utf8).contains("custom-wrapper"))
     }
 

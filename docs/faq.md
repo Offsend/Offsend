@@ -34,6 +34,9 @@ Teams tune the shared baseline with `offsend init --template …` and `check.det
 **Is Offsend a sandbox or agent permission system?**  
 No. Ignore files are the primary exclusion layer; hooks are defense-in-depth on supported operations; content scanning is a final check. It does not replace the editor’s own permission model.
 
+**Can an agent weaken `.offsend.yml` after hooks are installed?**
+Not in the direction that matters. Without a trusted snapshot, hooks read the live workspace policy but honor only the fields that tighten a gate — `check.exclude`, `detectors.disable`, and enforcement modes below the built-in default are ignored until you approve them. After reviewing the file, run `offsend policy trust` yourself in an interactive terminal. Offsend stores only its hash outside the workspace; later edits, deletion, or invalid YAML make editor gates fail closed until you review and trust again. `sync` never approves policy changes, and agent-shell attempts to run `policy trust` / `forget` or to write `.offsend.yml` are denied.
+
 ### What does Offsend cover vs not cover?
 
 | Covers | Does not cover |
@@ -42,6 +45,7 @@ No. Ignore files are the primary exclusion layer; hooks are defense-in-depth on 
 | Materialized AI ignore files + drift detection | Org-wide policy across every repository |
 | Content scan for secrets/credentials (`check`, hooks, CI) | Zero-day discovery, privilege escalation, lateral movement in infra |
 | Prompt / read / shell / MCP **args** / Cursor subagent gates | Ungated Claude subagents, cloud agent sessions |
+| User-approved policy snapshot outside the workspace | Containing arbitrary IDE tasks, Git helpers, venv discovery, Docker sockets, or other host automation |
 | MCP **response** sealing on Cursor/Claude (`context.mcp.responses: seal`); seal-for-agents read copies | Responses without active sealing (`observe`/`warn`, older hook install); missing keys safely withhold secret-bearing responses but stop that tool result |
 | Local agent-history audit / scrub after a leak | Replacing the editor’s own permission model |
 

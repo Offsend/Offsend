@@ -105,6 +105,24 @@ struct Check: AsyncParsableCommand {
     @Flag(
         name: .long,
         help: ArgumentHelp(
+            "Pre-write gate for executable workspace configuration (requires --adapter cursor|claude).",
+            visibility: .hidden
+        )
+    )
+    var writeGate = false
+
+    @Flag(
+        name: .long,
+        help: ArgumentHelp(
+            "Record post-write metadata for executable workspace artifacts (requires --adapter cursor|claude).",
+            visibility: .hidden
+        )
+    )
+    var artifactAudit = false
+
+    @Flag(
+        name: .long,
+        help: ArgumentHelp(
             "Sensitive-path gate for editor shell hooks; findings ask for confirmation (requires --adapter cursor|claude).",
             visibility: .hidden
         )
@@ -191,6 +209,9 @@ struct Check: AsyncParsableCommand {
             )
             return
         }
+        if let adapter, !enforceTrustedPolicy(adapter: adapter, started: started) {
+            return
+        }
         let rawText: String
         do {
             rawText = try CLIStdin.readUTF8()
@@ -209,6 +230,44 @@ struct Check: AsyncParsableCommand {
                 return
             }
             CLIError.exit(.error, message: error.message)
+        }
+
+        if writeGate, let adapter {
+            let workingURL = URL(
+                fileURLWithPath: workingDirectory ?? FileManager.default.currentDirectoryPath
+            ).standardizedFileURL
+            let projectRoot = (try? GitRepositoryResolver().repositoryRoot(startingAt: workingURL))
+                ?? workingURL
+            hookEmitter().emitWriteGate(
+                adapter: adapter,
+                rawJSON: rawText,
+                started: started,
+                policy: resolvedHookPolicy(for: adapter),
+                projectRoot: projectRoot
+            )
+            return
+        }
+
+        if artifactAudit, let adapter {
+            let workingURL = URL(
+                fileURLWithPath: workingDirectory ?? FileManager.default.currentDirectoryPath
+            ).standardizedFileURL
+            let projectRoot = (try? GitRepositoryResolver().repositoryRoot(startingAt: workingURL))
+                ?? workingURL
+            if let input = try? PromptWriteGate.parse(json: rawText, adapter: adapter) {
+                let ledger = ArtifactProvenanceLedger()
+                let classifier = ExecutableArtifactClassifier(projectRoot: projectRoot)
+                for path in input.paths {
+                    _ = ledger.record(
+                        path: path,
+                        projectRoot: projectRoot,
+                        adapter: adapter,
+                        toolName: input.toolName.isEmpty ? "afterFileEdit" : input.toolName,
+                        classifier: classifier
+                    )
+                }
+            }
+            return
         }
 
         if readGate, let adapter {
@@ -247,11 +306,17 @@ struct Check: AsyncParsableCommand {
         }
 
         if shellGate, let adapter {
+            let workingURL = URL(
+                fileURLWithPath: workingDirectory ?? FileManager.default.currentDirectoryPath
+            ).standardizedFileURL
+            let projectRoot = (try? GitRepositoryResolver().repositoryRoot(startingAt: workingURL))
+                ?? workingURL
             hookEmitter().emitShellGate(
                 adapter: adapter,
                 rawJSON: rawText,
                 started: started,
-                policy: resolvedHookPolicy(for: adapter)
+                policy: resolvedHookPolicy(for: adapter),
+                projectRoot: projectRoot
             )
             return
         }
@@ -412,6 +477,18 @@ struct Check: AsyncParsableCommand {
         if readGate, let adapter, adapter != .cursor, adapter != .claude {
             CLIError.exit(.error, message: "--read-gate supports --adapter cursor or claude.")
         }
+        if writeGate, adapter == nil {
+            CLIError.exit(.error, message: "--write-gate requires --adapter.")
+        }
+        if writeGate, let adapter, adapter != .cursor, adapter != .claude {
+            CLIError.exit(.error, message: "--write-gate supports --adapter cursor or claude.")
+        }
+        if artifactAudit, adapter == nil {
+            CLIError.exit(.error, message: "--artifact-audit requires --adapter.")
+        }
+        if artifactAudit, let adapter, adapter != .cursor, adapter != .claude {
+            CLIError.exit(.error, message: "--artifact-audit supports --adapter cursor or claude.")
+        }
         if shellGate, adapter == nil {
             CLIError.exit(.error, message: "--shell-gate requires --adapter.")
         }
@@ -436,11 +513,12 @@ struct Check: AsyncParsableCommand {
         if mcpResponseGate, let adapter, adapter != .cursor, adapter != .claude {
             CLIError.exit(.error, message: "--mcp-response-gate supports --adapter cursor or claude.")
         }
-        let gateFlags = [readGate, shellGate, mcpGate, subagentGate, mcpResponseGate].filter { $0 }.count
+        let gateFlags = [readGate, writeGate, artifactAudit, shellGate, mcpGate, subagentGate, mcpResponseGate]
+            .filter { $0 }.count
         if gateFlags > 1 {
             CLIError.exit(
                 .error,
-                message: "--read-gate, --shell-gate, --mcp-gate, --subagent-gate, and --mcp-response-gate are mutually exclusive."
+                message: "--read-gate, --write-gate, --artifact-audit, --shell-gate, --mcp-gate, --subagent-gate, and --mcp-response-gate are mutually exclusive."
             )
         }
     }
@@ -450,6 +528,7 @@ struct Check: AsyncParsableCommand {
         if subagentGate { return .subagentGate }
         if mcpGate { return .mcpGate }
         if shellGate { return .shellGate }
+        if writeGate { return .writeGate }
         if readGate { return .readGate }
         return .promptSubmit
     }
@@ -469,6 +548,14 @@ struct Check: AsyncParsableCommand {
         if readGate {
             // An unscannable read must not pass — same policy as oversized content.
             hookEmitter().emitReadGateLimitExceeded(
+                adapter: adapter,
+                started: started,
+                policy: policy
+            )
+            return true
+        }
+        if writeGate {
+            hookEmitter().emitWriteGateLimitExceeded(
                 adapter: adapter,
                 started: started,
                 policy: policy
@@ -588,13 +675,24 @@ struct Check: AsyncParsableCommand {
             projectConfig = try ProjectConfigLoader().load(from: workingURL)
         } catch {
             if let adapter {
-                hookEmitter().emitFailOpen(
-                    adapter: adapter,
-                    reason: .projectConfigInvalid(error.localizedDescription),
-                    started: started,
-                    policy: resolvedHookPolicy(for: adapter),
-                    kind: hookKind
-                )
+                let snapshotStatus = OffsendPolicySnapshotStore().status(directory: workingURL)
+                if snapshotStatus.hasSnapshot {
+                    hookEmitter().emitPolicyDrift(
+                        adapter: adapter,
+                        reason: "trusted project policy cannot be parsed",
+                        started: started,
+                        policy: resolvedHookPolicy(for: adapter),
+                        kind: hookKind
+                    )
+                } else {
+                    hookEmitter().emitFailOpen(
+                        adapter: adapter,
+                        reason: .projectConfigInvalid(error.localizedDescription),
+                        started: started,
+                        policy: resolvedHookPolicy(for: adapter),
+                        kind: hookKind
+                    )
+                }
                 return (nil, nil)
             }
             CLIError.exit(
@@ -603,7 +701,33 @@ struct Check: AsyncParsableCommand {
             )
         }
 
-        return (context, projectConfig)
+        // Editor gates read policy from a file the agent can rewrite. Without an
+        // explicit trust snapshot, honor only the fields that cannot loosen a
+        // gate — that is what makes deleting the snapshot pointless.
+        guard adapter != nil,
+              !OffsendPolicySnapshotStore().status(directory: workingURL).isTrusted else {
+            return (context, projectConfig)
+        }
+        return (context, OffsendPolicyTrustFilter.hardened(projectConfig))
+    }
+
+    private func enforceTrustedPolicy(adapter: CheckHookAdapter, started: Date) -> Bool {
+        let workingURL = URL(
+            fileURLWithPath: workingDirectory ?? FileManager.default.currentDirectoryPath
+        ).standardizedFileURL
+        switch OffsendPolicySnapshotStore().status(directory: workingURL) {
+        case .missing, .trusted:
+            return true
+        case .drift(_, let reason), .invalidSnapshot(let reason):
+            hookEmitter().emitPolicyDrift(
+                adapter: adapter,
+                reason: reason,
+                started: started,
+                policy: resolvedHookPolicy(for: adapter),
+                kind: hookKind
+            )
+            return false
+        }
     }
 
     private func emitGateSecretsJSON(from textResult: OffsendTextCheckResult) throws {
@@ -676,10 +800,10 @@ struct Check: AsyncParsableCommand {
         let outputFormat = CLIParse.outputFormat(format)
         let validatedFailOn = CLIParse.failPolicy(failOn)
 
-        if adapter != nil || hookPolicy != nil || sealCopy || debugHook || gateSecrets || readGate || shellGate || mcpGate || subagentGate || mcpResponseGate {
+        if adapter != nil || hookPolicy != nil || sealCopy || debugHook || gateSecrets || readGate || writeGate || artifactAudit || shellGate || mcpGate || subagentGate || mcpResponseGate {
             CLIError.exit(
                 .error,
-                message: "--adapter/--hook-policy/--seal-copy/--debug-hook/--gate-secrets/--read-gate/--shell-gate/--mcp-gate/--subagent-gate/--mcp-response-gate require stdin."
+                message: "--adapter/--hook-policy/--seal-copy/--debug-hook/--gate-secrets/--read-gate/--write-gate/--artifact-audit/--shell-gate/--mcp-gate/--subagent-gate/--mcp-response-gate require stdin."
             )
         }
 

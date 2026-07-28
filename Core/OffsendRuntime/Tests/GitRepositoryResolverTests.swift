@@ -79,6 +79,23 @@ final class GitRepositoryResolverTests: XCTestCase {
         )
     }
 
+    func testConfigURLFallsBackWhenGitUnavailable() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent(".git", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+
+        let config = GitRepositoryResolver(gitExecutable: "/nonexistent/git").configURL(in: root)
+
+        XCTAssertEqual(
+            config.standardizedFileURL.path,
+            root.appendingPathComponent(".git/config").standardizedFileURL.path
+        )
+    }
+
     func testHooksDirectoryHonorsCoreHooksPath() throws {
         let root = try makeGitRepository()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -145,6 +162,88 @@ final class GitRepositoryResolverTests: XCTestCase {
             safe.standardizedFileURL.path,
             destination.appendingPathComponent("src/secrets.env").standardizedFileURL.path
         )
+    }
+
+    // MARK: - Subprocess-free trust-surface resolution
+
+    /// The hook path resolves these without spawning git, so the invariant that
+    /// matters is that it agrees with what git itself reports.
+    func testLocalTrustSurfacesMatchGitForPlainRepository() throws {
+        let root = try makeGitRepository()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let resolver = GitRepositoryResolver()
+
+        let surfaces = resolver.localTrustSurfaces(in: root)
+        XCTAssertEqual(resolved(surfaces.config), resolved(resolver.configURL(in: root)))
+        XCTAssertEqual(resolved(surfaces.hooks), resolved(resolver.hooksDirectory(in: root)))
+    }
+
+    func testLocalTrustSurfacesMatchGitForLinkedWorktree() throws {
+        let root = try makeGitRepository()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let resolver = GitRepositoryResolver()
+        try resolver.runGit(
+            arguments: ["commit", "--allow-empty", "-m", "base"],
+            workingDirectory: root
+        )
+        let worktree = root.deletingLastPathComponent()
+            .appendingPathComponent("worktree-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: worktree) }
+        try resolver.runGit(
+            arguments: ["worktree", "add", worktree.path, "-b", "side"],
+            workingDirectory: root
+        )
+
+        // A linked worktree keeps config and hooks in the main repository.
+        let surfaces = resolver.localTrustSurfaces(in: worktree)
+        XCTAssertEqual(resolved(surfaces.config), resolved(resolver.configURL(in: worktree)))
+        XCTAssertEqual(resolved(surfaces.hooks), resolved(resolver.hooksDirectory(in: worktree)))
+        XCTAssertEqual(resolved(surfaces.config), resolved(resolver.configURL(in: root)))
+    }
+
+    func testLocalTrustSurfacesHonorRepositoryHooksPath() throws {
+        let root = try makeGitRepository()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let resolver = GitRepositoryResolver()
+        try resolver.runGit(
+            arguments: ["config", "core.hooksPath", ".githooks"],
+            workingDirectory: root
+        )
+
+        let surfaces = resolver.localTrustSurfaces(in: root)
+        XCTAssertEqual(resolved(surfaces.hooks), resolved(resolver.hooksDirectory(in: root)))
+        XCTAssertEqual(surfaces.hooks.lastPathComponent, ".githooks")
+    }
+
+    func testLocalTrustSurfacesFollowSubmoduleGitDirectoryPointer() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let realGitDirectory = root.appendingPathComponent("modules/child", isDirectory: true)
+        try FileManager.default.createDirectory(at: realGitDirectory, withIntermediateDirectories: true)
+        let submodule = root.appendingPathComponent("child", isDirectory: true)
+        try FileManager.default.createDirectory(at: submodule, withIntermediateDirectories: true)
+        try "gitdir: ../modules/child\n"
+            .write(to: submodule.appendingPathComponent(".git"), atomically: true, encoding: .utf8)
+
+        let surfaces = GitRepositoryResolver().localTrustSurfaces(in: submodule)
+        XCTAssertEqual(resolved(surfaces.config), resolved(realGitDirectory.appendingPathComponent("config")))
+        XCTAssertEqual(resolved(surfaces.hooks), resolved(realGitDirectory.appendingPathComponent("hooks")))
+    }
+
+    func testLocalTrustSurfacesFallBackWithoutGitDirectory() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+        let surfaces = GitRepositoryResolver().localTrustSurfaces(in: root)
+        XCTAssertEqual(resolved(surfaces.config), resolved(root.appendingPathComponent(".git/config")))
+        XCTAssertEqual(resolved(surfaces.hooks), resolved(root.appendingPathComponent(".git/hooks")))
+    }
+
+    private func resolved(_ url: URL) -> String {
+        url.standardizedFileURL.resolvingSymlinksInPath().path
     }
 
     private func makeGitRepository() throws -> URL {

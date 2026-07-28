@@ -95,6 +95,14 @@ offsend doctor
 
 `sync` materializes ignore files and installs hooks from the committed policy. No need to copy per-editor ignore rules by hand.
 
+After reviewing the committed `.offsend.yml`, explicitly trust it for editor gates:
+
+```bash
+offsend policy trust
+```
+
+This interactive step stores only a local hash outside the workspace. It is intentionally not part of `sync`: an agent must not be able to approve policy changes it made itself. Later policy changes make gates fail closed until each engineer reviews and trusts the new version.
+
 ## Defaults (adoption vs CI)
 
 | Surface | Typical mode |

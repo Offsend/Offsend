@@ -39,22 +39,31 @@ final class AIEditorHookInstallerTests: XCTestCase {
             hookPolicy: .softBlock
         )
 
-        XCTAssertTrue(result.command.contains(AIEditorHookInstaller.wrapperRelativePath))
-        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: result.wrapperPath))
+        XCTAssertTrue(result.command.contains(AIEditorHookInstaller.managedCommandMarker))
+        XCTAssertTrue(result.command.contains("sh -c"))
+        XCTAssertTrue(result.command.contains("/usr/local/bin/offsend"))
+        XCTAssertTrue(result.command.contains("command -v offsend"))
+        XCTAssertNil(result.wrapperPath)
 
         let data = try Data(contentsOf: configURL)
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         let hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
         let shellHooks = try XCTUnwrap(hooks["beforeShellExecution"] as? [[String: Any]])
-        XCTAssertEqual(shellHooks.count, 2) // foreign audit.sh + Offsend check-shell.sh
+        XCTAssertEqual(shellHooks.count, 2) // foreign audit.sh + Offsend shell gate
         XCTAssertTrue(shellHooks.contains { ($0["command"] as? String) == "./hooks/audit.sh" })
-        XCTAssertTrue(
-            shellHooks.contains { ($0["command"] as? String)?.contains("check-shell.sh") == true }
+        let managedShellHook = try XCTUnwrap(
+            shellHooks.first { ($0["command"] as? String)?.contains("--shell-gate") == true }
         )
+        // The shell-gate carries hard denials, so a crashed hook must block.
+        XCTAssertEqual(managedShellHook["failClosed"] as? Bool, true)
+        // The read-gate is friction, not a perimeter: it stays fail-open so a
+        // broken hook does not block every file read.
+        let readHooks = try XCTUnwrap(hooks["beforeReadFile"] as? [[String: Any]])
+        XCTAssertEqual(readHooks.first?["failClosed"] as? Bool, false)
         let beforeSubmit = try XCTUnwrap(hooks["beforeSubmitPrompt"] as? [[String: Any]])
         XCTAssertEqual(beforeSubmit.count, 1)
         let command = try XCTUnwrap(beforeSubmit.first?["command"] as? String)
-        XCTAssertTrue(command.contains(".offsend/hooks/check-prompt.sh"))
+        XCTAssertTrue(command.contains(AIEditorHookInstaller.managedCommandMarker))
         XCTAssertTrue(command.contains("soft-block"))
         XCTAssertEqual(beforeSubmit.first?["failClosed"] as? Bool, false)
         let status = installer.status(target: .cursor, repositoryPath: root)
@@ -93,50 +102,85 @@ final class AIEditorHookInstallerTests: XCTestCase {
         XCTAssertFalse(installer.status(target: .claude, repositoryPath: root).installed)
     }
 
-    func testWrapperFailOpenAndNoNotify() throws {
+    func testDirectCommandUsesPinnedCLIAndNoNotify() throws {
         let installer = AIEditorHookInstaller()
         let result = try installer.install(
             target: .windsurf,
             repositoryPath: root,
             cliExecutablePath: "/usr/local/bin/offsend"
         )
-        let script = try String(contentsOfFile: result.wrapperPath, encoding: .utf8)
-        XCTAssertTrue(script.contains("--no-notify"))
-        XCTAssertTrue(script.contains(AIEditorHookInstaller.managedMarker))
-        XCTAssertTrue(script.contains("continue"))
-        XCTAssertTrue(script.contains("windsurf) : ;;"))
+        XCTAssertTrue(result.command.contains("/usr/local/bin/offsend"))
+        XCTAssertTrue(result.command.contains("command -v offsend"))
+        XCTAssertTrue(result.command.contains("--no-notify"))
+        XCTAssertTrue(result.command.contains(AIEditorHookInstaller.managedCommandMarker))
+        XCTAssertNil(result.wrapperPath)
         XCTAssertEqual(AIEditorHookInstaller.defaultHookPolicy(for: .windsurf), .softBlock)
     }
 
-    func testWrapperPrefersInstallTimePathBeforePathLookup() throws {
+    func testPortableInstallUsesOffsendFromPath() throws {
         let installer = AIEditorHookInstaller()
         let result = try installer.install(
             target: .cursor,
             repositoryPath: root,
-            cliExecutablePath: "/usr/local/bin/offsend"
+            cliExecutablePath: "/usr/local/bin/offsend",
+            portableWrappers: true
         )
-        let script = try String(contentsOfFile: result.wrapperPath, encoding: .utf8)
-        XCTAssertTrue(script.contains("if [ -x \"${PREFERRED_BIN}\" ]; then"))
-        XCTAssertTrue(script.contains("OFFSEND_BIN=\"${PREFERRED_BIN}\""))
-        guard
-            let preferredRange = script.range(of: "OFFSEND_BIN=\"${PREFERRED_BIN}\""),
-            let pathLookupRange = script.range(of: "command -v offsend")
-        else {
-            return XCTFail("Expected pinned-path resolution before PATH lookup")
-        }
-        XCTAssertLessThan(preferredRange.lowerBound, pathLookupRange.lowerBound)
+        XCTAssertTrue(result.command.contains("OFFSEND_MANAGED_HOOK=1 offsend check"))
+        XCTAssertFalse(result.command.contains("/usr/local/bin/offsend"))
+    }
+
+    func testDirectCommandFallsBackToOffsendOnPath() throws {
+        let binDirectory = root.appendingPathComponent("bin", isDirectory: true)
+        try FileManager.default.createDirectory(at: binDirectory, withIntermediateDirectories: true)
+        let fallbackCLI = binDirectory.appendingPathComponent("offsend")
+        try "#!/bin/sh\nprintf '%s\\n' \"$*\"\n".write(
+            to: fallbackCLI,
+            atomically: true,
+            encoding: .utf8
+        )
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fallbackCLI.path)
+
+        let result = try AIEditorHookInstaller().install(
+            target: .cursor,
+            repositoryPath: root,
+            cliExecutablePath: root.appendingPathComponent("missing-offsend").path
+        )
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", result.command]
+        process.environment = [
+            "PATH": "\(binDirectory.path):/usr/bin:/bin",
+        ]
+        let output = Pipe()
+        process.standardOutput = output
+        try process.run()
+        process.waitUntilExit()
+
+        XCTAssertEqual(process.terminationStatus, 0)
+        let text = String(
+            data: output.fileHandleForReading.readDataToEndOfFile(),
+            encoding: .utf8
+        ) ?? ""
+        XCTAssertTrue(text.contains("check --adapter cursor"))
+        XCTAssertTrue(text.contains("--no-notify"))
     }
 
     func testValidateWrapperAcceptsManagedScript() throws {
-        let installer = AIEditorHookInstaller()
-        let result = try installer.install(
-            target: .cursor,
-            repositoryPath: root,
-            cliExecutablePath: "/usr/local/bin/offsend"
+        let wrapperURL = root.appendingPathComponent(AIEditorHookInstaller.wrapperRelativePath)
+        try FileManager.default.createDirectory(
+            at: wrapperURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
         )
-        let validation = installer.validateWrapper(at: URL(fileURLWithPath: result.wrapperPath))
+        let script = """
+        #!/bin/sh
+        # \(AIEditorHookInstaller.managedMarker) v\(AIEditorHookInstaller.managedVersion)
+        exit 0
+        """
+        try script.write(to: wrapperURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: wrapperURL.path)
+        let installer = AIEditorHookInstaller()
+        let validation = installer.validateWrapper(at: wrapperURL)
         XCTAssertEqual(validation, .ok)
-        let script = try String(contentsOfFile: result.wrapperPath, encoding: .utf8)
         XCTAssertEqual(
             AIEditorHookInstaller.parseManagedVersion(in: script),
             AIEditorHookInstaller.managedVersion
@@ -144,23 +188,15 @@ final class AIEditorHookInstallerTests: XCTestCase {
     }
 
     func testValidateWrapperDetectsTamperedScript() throws {
+        let wrapperURL = root.appendingPathComponent(AIEditorHookInstaller.wrapperRelativePath)
+        try FileManager.default.createDirectory(
+            at: wrapperURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try "#!/bin/sh\necho pwned".write(to: wrapperURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: wrapperURL.path)
         let installer = AIEditorHookInstaller()
-        let result = try installer.install(
-            target: .cursor,
-            repositoryPath: root,
-            cliExecutablePath: "/usr/local/bin/offsend"
-        )
-        try "#!/bin/sh\necho pwned".write(
-            to: URL(fileURLWithPath: result.wrapperPath),
-            atomically: true,
-            encoding: .utf8
-        )
-        try FileManager.default.setAttributes(
-            [.posixPermissions: 0o755],
-            ofItemAtPath: result.wrapperPath
-        )
-        XCTAssertEqual(installer.validateWrapper(at: URL(fileURLWithPath: result.wrapperPath)), .missingManagedMarker)
-        XCTAssertTrue(installer.status(target: .cursor, repositoryPath: root).broken)
+        XCTAssertEqual(installer.validateWrapper(at: wrapperURL), .missingManagedMarker)
     }
 
     func testValidateWrapperDetectsOutdatedVersion() throws {
@@ -180,7 +216,7 @@ final class AIEditorHookInstallerTests: XCTestCase {
         XCTAssertEqual(installer.validateWrapper(at: wrapperURL), .outdatedVersion(found: 0))
     }
 
-    func testInstallRefusesForeignWrapperWithoutForce() throws {
+    func testInstallPreservesForeignWorkspaceWrapper() throws {
         let wrapperURL = root.appendingPathComponent(AIEditorHookInstaller.wrapperRelativePath)
         try FileManager.default.createDirectory(
             at: wrapperURL.deletingLastPathComponent(),
@@ -188,23 +224,16 @@ final class AIEditorHookInstallerTests: XCTestCase {
         )
         try "#!/bin/sh\necho custom".write(to: wrapperURL, atomically: true, encoding: .utf8)
 
-        XCTAssertThrowsError(
-            try AIEditorHookInstaller().install(
-                target: .cursor,
-                repositoryPath: root,
-                cliExecutablePath: "/usr/local/bin/offsend"
-            )
-        ) { error in
-            guard case .wrapperAlreadyExists(let path) = error as? AIEditorHookInstallerError else {
-                return XCTFail("Unexpected error: \(error)")
-            }
-            XCTAssertEqual(path, wrapperURL.path)
-        }
+        let result = try AIEditorHookInstaller().install(
+            target: .cursor,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend"
+        )
         XCTAssertEqual(try String(contentsOf: wrapperURL, encoding: .utf8), "#!/bin/sh\necho custom")
-        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(".cursor/hooks.json").path))
+        XCTAssertTrue(result.command.contains(AIEditorHookInstaller.managedCommandMarker))
     }
 
-    func testInstallForceReplacesForeignWrapper() throws {
+    func testInstallForceStillPreservesUnrelatedForeignWrapper() throws {
         let wrapperURL = root.appendingPathComponent(AIEditorHookInstaller.wrapperRelativePath)
         try FileManager.default.createDirectory(
             at: wrapperURL.deletingLastPathComponent(),
@@ -219,10 +248,10 @@ final class AIEditorHookInstallerTests: XCTestCase {
             force: true
         )
 
-        XCTAssertTrue(try String(contentsOf: wrapperURL, encoding: .utf8).contains(AIEditorHookInstaller.managedMarker))
+        XCTAssertEqual(try String(contentsOf: wrapperURL, encoding: .utf8), "#!/bin/sh\necho custom")
     }
 
-    func testInstallPreflightsReadWrapperBeforeWritingPromptWrapper() throws {
+    func testInstallIgnoresForeignReadWrapper() throws {
         let readURL = root.appendingPathComponent(AIEditorHookInstaller.readWrapperRelativePath)
         try FileManager.default.createDirectory(
             at: readURL.deletingLastPathComponent(),
@@ -230,19 +259,14 @@ final class AIEditorHookInstallerTests: XCTestCase {
         )
         try "#!/bin/sh\necho custom".write(to: readURL, atomically: true, encoding: .utf8)
 
-        XCTAssertThrowsError(
-            try AIEditorHookInstaller().install(
-                target: .cursor,
-                repositoryPath: root,
-                cliExecutablePath: "/usr/local/bin/offsend",
-                withReadGate: true
-            )
+        let result = try AIEditorHookInstaller().install(
+            target: .cursor,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend",
+            withReadGate: true
         )
-        XCTAssertFalse(
-            FileManager.default.fileExists(
-                atPath: root.appendingPathComponent(AIEditorHookInstaller.wrapperRelativePath).path
-            )
-        )
+        XCTAssertTrue(result.withReadGate)
+        XCTAssertEqual(try String(contentsOf: readURL, encoding: .utf8), "#!/bin/sh\necho custom")
     }
 
     func testInstallPreflightsInvalidConfigBeforeWritingWrapper() throws {
@@ -290,21 +314,22 @@ final class AIEditorHookInstallerTests: XCTestCase {
     }
 
     func testUninstallPreservesForeignWrapper() throws {
+        let wrapperURL = root.appendingPathComponent(AIEditorHookInstaller.wrapperRelativePath)
+        try FileManager.default.createDirectory(
+            at: wrapperURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try "#!/bin/sh\necho custom".write(to: wrapperURL, atomically: true, encoding: .utf8)
         let installer = AIEditorHookInstaller()
-        let result = try installer.install(
+        _ = try installer.install(
             target: .cursor,
             repositoryPath: root,
             cliExecutablePath: "/usr/local/bin/offsend"
         )
-        try "#!/bin/sh\necho custom".write(
-            to: URL(fileURLWithPath: result.wrapperPath),
-            atomically: true,
-            encoding: .utf8
-        )
 
         try installer.uninstall(target: .cursor, repositoryPath: root)
 
-        XCTAssertTrue(FileManager.default.fileExists(atPath: result.wrapperPath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: wrapperURL.path))
     }
 
     func testManagedMarkerOutsideHeaderIsRejected() {
@@ -372,14 +397,13 @@ final class AIEditorHookInstallerTests: XCTestCase {
             withShellGate: true
         )
         XCTAssertTrue(result.withShellGate)
-        let shellPath = try XCTUnwrap(result.shellWrapperPath)
-        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: shellPath))
+        XCTAssertNil(result.shellWrapperPath)
 
         let data = try Data(contentsOf: URL(fileURLWithPath: result.configPath))
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         let hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
         let shellHooks = try XCTUnwrap(hooks["beforeShellExecution"] as? [[String: Any]])
-        XCTAssertTrue((shellHooks.first?["command"] as? String)?.contains("check-shell.sh") == true)
+        XCTAssertTrue((shellHooks.first?["command"] as? String)?.contains("--shell-gate") == true)
     }
 
     func testShellGateOnByDefault() throws {
@@ -390,13 +414,13 @@ final class AIEditorHookInstallerTests: XCTestCase {
             cliExecutablePath: "/usr/local/bin/offsend"
         )
         XCTAssertTrue(result.withShellGate)
-        XCTAssertNotNil(result.shellWrapperPath)
+        XCTAssertNil(result.shellWrapperPath)
 
         let data = try Data(contentsOf: URL(fileURLWithPath: result.configPath))
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         let hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
         let shellHooks = try XCTUnwrap(hooks["beforeShellExecution"] as? [[String: Any]])
-        XCTAssertTrue((shellHooks.first?["command"] as? String)?.contains("check-shell.sh") == true)
+        XCTAssertTrue((shellHooks.first?["command"] as? String)?.contains("--shell-gate") == true)
 
         let status = installer.status(target: .cursor, repositoryPath: root)
         XCTAssertTrue(status.shellGate)
@@ -412,21 +436,16 @@ final class AIEditorHookInstallerTests: XCTestCase {
             cliExecutablePath: "/usr/local/bin/offsend"
         )
         XCTAssertTrue(result.withMCPGate)
-        XCTAssertNotNil(result.mcpWrapperPath)
+        XCTAssertNil(result.mcpWrapperPath)
 
         let data = try Data(contentsOf: URL(fileURLWithPath: result.configPath))
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         let hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
         let mcpHooks = try XCTUnwrap(hooks["beforeMCPExecution"] as? [[String: Any]])
-        XCTAssertTrue((mcpHooks.first?["command"] as? String)?.contains("check-mcp.sh") == true)
+        let mcpCommand = try XCTUnwrap(mcpHooks.first?["command"] as? String)
+        XCTAssertTrue(mcpCommand.contains("--mcp-gate"))
+        XCTAssertTrue(mcpCommand.contains("--secrets-only"))
         XCTAssertEqual(mcpHooks.first?["failClosed"] as? Bool, true)
-
-        let wrapper = try String(
-            contentsOf: URL(fileURLWithPath: result.mcpWrapperPath!),
-            encoding: .utf8
-        )
-        XCTAssertTrue(wrapper.contains("--mcp-gate"))
-        XCTAssertTrue(wrapper.contains("--secrets-only"))
     }
 
     func testSubagentGateOnByDefaultForCursorOnly() throws {
@@ -437,12 +456,12 @@ final class AIEditorHookInstallerTests: XCTestCase {
             cliExecutablePath: "/usr/local/bin/offsend"
         )
         XCTAssertTrue(cursor.withSubagentGate)
-        XCTAssertNotNil(cursor.subagentWrapperPath)
+        XCTAssertNil(cursor.subagentWrapperPath)
         let data = try Data(contentsOf: URL(fileURLWithPath: cursor.configPath))
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         let hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
         let subagentHooks = try XCTUnwrap(hooks["subagentStart"] as? [[String: Any]])
-        XCTAssertTrue((subagentHooks.first?["command"] as? String)?.contains("check-subagent.sh") == true)
+        XCTAssertTrue((subagentHooks.first?["command"] as? String)?.contains("--subagent-gate") == true)
         XCTAssertEqual(subagentHooks.first?["failClosed"] as? Bool, true)
         XCTAssertTrue(installer.status(target: .cursor, repositoryPath: root).subagentGate)
 
@@ -491,21 +510,20 @@ final class AIEditorHookInstallerTests: XCTestCase {
             cliExecutablePath: "/usr/local/bin/offsend"
         )
         XCTAssertTrue(result.withMCPResponseGate)
-        let wrapperPath = try XCTUnwrap(result.mcpResponseWrapperPath)
-        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: wrapperPath))
+        XCTAssertNil(result.mcpResponseWrapperPath)
 
         let data = try Data(contentsOf: URL(fileURLWithPath: result.configPath))
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         let hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
         let responseHooks = try XCTUnwrap(hooks["postToolUse"] as? [[String: Any]])
-        XCTAssertTrue((responseHooks.first?["command"] as? String)?.contains("check-mcp-out.sh") == true)
+        let responseCommand = try XCTUnwrap(responseHooks.first?["command"] as? String)
+        XCTAssertTrue(responseCommand.contains("--mcp-response-gate"))
+        XCTAssertTrue(responseCommand.contains("--secrets-only"))
+        XCTAssertTrue(responseCommand.contains(AIEditorHookInstaller.managedCommandMarker))
         XCTAssertEqual(responseHooks.first?["matcher"] as? String, AIEditorHookInstaller.cursorMCPMatcher)
         XCTAssertEqual(responseHooks.first?["failClosed"] as? Bool, false)
         XCTAssertNil(hooks["afterMCPExecution"])
 
-        let wrapper = try String(contentsOf: URL(fileURLWithPath: wrapperPath), encoding: .utf8)
-        XCTAssertTrue(wrapper.contains("--mcp-response-gate"))
-        XCTAssertTrue(wrapper.contains("--secrets-only"))
         let status = installer.status(target: .cursor, repositoryPath: root)
         XCTAssertTrue(status.mcpResponseGate)
         XCTAssertTrue(status.mcpResponseReplacement)
@@ -527,7 +545,9 @@ final class AIEditorHookInstallerTests: XCTestCase {
         let managed = try XCTUnwrap(
             postGroups.first { group in
                 let nested = group["hooks"] as? [[String: Any]] ?? []
-                return nested.contains { ($0["command"] as? String)?.contains("check-mcp-out.sh") == true }
+                return nested.contains {
+                    ($0["command"] as? String)?.contains("--mcp-response-gate") == true
+                }
             }
         )
         XCTAssertEqual(managed["matcher"] as? String, AIEditorHookInstaller.claudeMCPMatcher)
@@ -648,7 +668,8 @@ final class AIEditorHookInstallerTests: XCTestCase {
         let hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
         let preToolUse = try XCTUnwrap(hooks["PreToolUse"] as? [[String: Any]])
         let matchers = preToolUse.compactMap { $0["matcher"] as? String }
-        XCTAssertTrue(matchers.contains("Read|Edit|Write"))
+        XCTAssertTrue(matchers.contains("Read"))
+        XCTAssertTrue(matchers.contains(AIEditorHookInstaller.claudeWriteMatcher))
         XCTAssertTrue(matchers.contains("Bash"))
         XCTAssertTrue(matchers.contains(AIEditorHookInstaller.claudeMCPMatcher))
 
@@ -675,15 +696,14 @@ final class AIEditorHookInstallerTests: XCTestCase {
             withReadGate: true
         )
         XCTAssertTrue(result.withReadGate)
-        XCTAssertNotNil(result.readWrapperPath)
-        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: result.readWrapperPath!))
+        XCTAssertNil(result.readWrapperPath)
 
         let data = try Data(contentsOf: URL(fileURLWithPath: result.configPath))
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         let hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
         XCTAssertNotNil(hooks["beforeSubmitPrompt"])
         let readHooks = try XCTUnwrap(hooks["beforeReadFile"] as? [[String: Any]])
-        XCTAssertTrue((readHooks.first?["command"] as? String)?.contains("check-read.sh") == true)
+        XCTAssertTrue((readHooks.first?["command"] as? String)?.contains("--read-gate") == true)
     }
 
     func testReadGateOnByDefault() throws {
@@ -715,7 +735,74 @@ final class AIEditorHookInstallerTests: XCTestCase {
         XCTAssertNil(hooks["beforeReadFile"])
     }
 
-    func testReinstallWithoutReadGateRemovesOrphanWrapper() throws {
+    func testWriteGateOnByDefaultAndCanOptOut() throws {
+        let installer = AIEditorHookInstaller()
+        let result = try installer.install(
+            target: .cursor,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend"
+        )
+        XCTAssertTrue(result.withWriteGate)
+        var data = try Data(contentsOf: URL(fileURLWithPath: result.configPath))
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        var hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
+        let writeHooks = try XCTUnwrap(hooks["preToolUse"] as? [[String: Any]])
+        XCTAssertEqual(writeHooks.first?["matcher"] as? String, AIEditorHookInstaller.cursorWriteMatcher)
+        XCTAssertTrue((writeHooks.first?["command"] as? String)?.contains("--write-gate") == true)
+        XCTAssertTrue(installer.status(target: .cursor, repositoryPath: root).writeGate)
+
+        let disabled = try installer.install(
+            target: .cursor,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend",
+            withWriteGate: false
+        )
+        XCTAssertFalse(disabled.withWriteGate)
+        data = try Data(contentsOf: URL(fileURLWithPath: disabled.configPath))
+        object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
+        XCTAssertNil(hooks["preToolUse"])
+    }
+
+    func testArtifactAuditInstallsForCursorAndClaude() throws {
+        let installer = AIEditorHookInstaller()
+        let cursor = try installer.install(
+            target: .cursor,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend"
+        )
+        XCTAssertTrue(cursor.withArtifactAudit)
+        var data = try Data(contentsOf: URL(fileURLWithPath: cursor.configPath))
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        var hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
+        let afterFileEdit = try XCTUnwrap(hooks["afterFileEdit"] as? [[String: Any]])
+        XCTAssertTrue(
+            (afterFileEdit.first?["command"] as? String)?.contains("--artifact-audit") == true
+        )
+        XCTAssertTrue(installer.status(target: .cursor, repositoryPath: root).artifactAudit)
+
+        let claude = try installer.install(
+            target: .claude,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend"
+        )
+        data = try Data(contentsOf: URL(fileURLWithPath: claude.configPath))
+        object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
+        let postGroups = try XCTUnwrap(hooks["PostToolUse"] as? [[String: Any]])
+        let auditGroup = try XCTUnwrap(
+            postGroups.first { group in
+                group["matcher"] as? String == AIEditorHookInstaller.claudeWriteMatcher
+                    && ((group["hooks"] as? [[String: Any]])?.contains {
+                        ($0["command"] as? String)?.contains("--artifact-audit") == true
+                    } ?? false)
+            }
+        )
+        XCTAssertEqual(auditGroup["matcher"] as? String, AIEditorHookInstaller.claudeWriteMatcher)
+        XCTAssertTrue(installer.status(target: .claude, repositoryPath: root).artifactAudit)
+    }
+
+    func testDirectInstallNeverCreatesReadWrapper() throws {
         let installer = AIEditorHookInstaller()
         _ = try installer.install(
             target: .cursor,
@@ -724,7 +811,7 @@ final class AIEditorHookInstallerTests: XCTestCase {
             withReadGate: true
         )
         let readPath = root.appendingPathComponent(AIEditorHookInstaller.readWrapperRelativePath).path
-        XCTAssertTrue(FileManager.default.fileExists(atPath: readPath))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: readPath))
 
         _ = try installer.install(
             target: .cursor,
@@ -739,13 +826,34 @@ final class AIEditorHookInstallerTests: XCTestCase {
     /// (JSON `\/` escaping previously made cleanup think the wrapper was unused).
     func testWindsurfInstallPreservesCursorReadGateWrapper() throws {
         let installer = AIEditorHookInstaller()
-        _ = try installer.install(
-            target: .cursor,
-            repositoryPath: root,
-            cliExecutablePath: "/usr/local/bin/offsend",
-            withReadGate: true
+        let cursorConfig = root.appendingPathComponent(".cursor/hooks.json")
+        try FileManager.default.createDirectory(
+            at: cursorConfig.deletingLastPathComponent(),
+            withIntermediateDirectories: true
         )
         let readURL = root.appendingPathComponent(AIEditorHookInstaller.readWrapperRelativePath)
+        try FileManager.default.createDirectory(
+            at: readURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let wrapper = """
+        #!/bin/sh
+        # \(AIEditorHookInstaller.managedMarker) v\(AIEditorHookInstaller.managedVersion) read-gate
+        exit 0
+        """
+        try wrapper.write(to: readURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: readURL.path)
+        try """
+        {
+          "version": 1,
+          "hooks": {
+            "beforeReadFile": [
+              {"command": ".offsend/hooks/check-read.sh cursor"}
+            ]
+          },
+          "_offsend": {"managed": true, "marker": "\(AIEditorHookInstaller.managedMarker)"}
+        }
+        """.write(to: cursorConfig, atomically: true, encoding: .utf8)
         XCTAssertTrue(FileManager.default.fileExists(atPath: readURL.path))
 
         _ = try installer.install(
@@ -762,6 +870,76 @@ final class AIEditorHookInstallerTests: XCTestCase {
         let status = installer.status(target: .cursor, repositoryPath: root)
         XCTAssertTrue(status.installed)
         XCTAssertFalse(status.broken)
+    }
+
+    func testReinstallMigratesLegacyWorkspaceWrappers() throws {
+        let promptURL = root.appendingPathComponent(AIEditorHookInstaller.wrapperRelativePath)
+        let readURL = root.appendingPathComponent(AIEditorHookInstaller.readWrapperRelativePath)
+        try FileManager.default.createDirectory(
+            at: promptURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        for (url, suffix) in [(promptURL, ""), (readURL, " read-gate")] {
+            try """
+            #!/bin/sh
+            # \(AIEditorHookInstaller.managedMarker) v\(AIEditorHookInstaller.managedVersion)\(suffix)
+            exit 0
+            """.write(to: url, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+        }
+        let configURL = root.appendingPathComponent(".cursor/hooks.json")
+        try FileManager.default.createDirectory(
+            at: configURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try """
+        {
+          "version": 1,
+          "hooks": {
+            "beforeSubmitPrompt": [{"command": ".offsend/hooks/check-prompt.sh cursor soft-block"}],
+            "beforeReadFile": [{"command": ".offsend/hooks/check-read.sh cursor"}]
+          },
+          "_offsend": {"managed": true, "marker": "\(AIEditorHookInstaller.managedMarker)"}
+        }
+        """.write(to: configURL, atomically: true, encoding: .utf8)
+
+        let installer = AIEditorHookInstaller()
+        _ = try installer.install(
+            target: .cursor,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend"
+        )
+
+        let config = try String(contentsOf: configURL, encoding: .utf8)
+        XCTAssertTrue(config.contains(AIEditorHookInstaller.managedCommandMarker))
+        XCTAssertFalse(config.contains(AIEditorHookInstaller.wrapperRelativePath))
+        XCTAssertFalse(config.contains(AIEditorHookInstaller.readWrapperRelativePath))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: promptURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: readURL.path))
+        XCTAssertFalse(installer.status(target: .cursor, repositoryPath: root).usesWorkspaceWrappers)
+    }
+
+    /// Stripping the hook entries but leaving `_offsend` behind is what an agent
+    /// disabling the gates would produce; it must not read as a healthy install.
+    func testStaleManagedMetadataWithoutHookEntriesIsNotInstalled() throws {
+        let installer = AIEditorHookInstaller()
+        let result = try installer.install(
+            target: .cursor,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend"
+        )
+        let configURL = URL(fileURLWithPath: result.configPath)
+        XCTAssertTrue(installer.status(target: .cursor, repositoryPath: root).installed)
+
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: configURL)) as? [String: Any]
+        )
+        XCTAssertNotNil(object["_offsend"])
+        object["hooks"] = [String: Any]()
+        try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+            .write(to: configURL)
+
+        XCTAssertFalse(installer.status(target: .cursor, repositoryPath: root).installed)
     }
 
     /// Escaped-slash config text must still count as a reference (legacy writes).
