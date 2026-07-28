@@ -78,10 +78,16 @@ public struct OffsendProjectReadConfig: Codable, Equatable, Sendable {
     }
 }
 
-/// Shell-gate enforcement for sensitive-path / lower-risk findings.
+/// Shell-gate enforcement for named-sensitive-path / lower-risk findings.
+/// Host trust surfaces from the closed list always deny and ignore this.
 public struct OffsendProjectShellConfig: Codable, Equatable, Sendable {
-    /// `ask` (confirm) or `deny` (block). Default when unset: `deny` — Cursor
-    /// does not reliably pause on `ask` for `beforeShellExecution`.
+    /// `ask` (confirm) or `deny` (block). Default when unset: `deny`.
+    ///
+    /// `ask` is only honored where the editor enforces it. Claude Code enforces
+    /// `PreToolUse` `ask`; Cursor accepts `ask` in the `beforeShellExecution`
+    /// schema but does not act on it, so there `ask` degrades to allow-and-warn.
+    /// That is why the default is `deny` and why `offsend doctor` reports the
+    /// per-editor outcome instead of the configured intent alone.
     public var mode: String?
 
     public init(mode: String? = nil) {

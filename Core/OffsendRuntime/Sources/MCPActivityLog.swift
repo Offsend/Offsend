@@ -1,10 +1,5 @@
 import Foundation
 import StorageCore
-#if canImport(Darwin)
-import Darwin
-#elseif canImport(Glibc)
-import Glibc
-#endif
 
 /// Append-only local log of MCP gate events (server/tool + outcome only; never payloads).
 /// Always written from MCP hooks so `offsend show` / `doctor` can suggest rules.
@@ -77,11 +72,8 @@ public enum MCPActivityLog {
         fileManager: FileManager = .default,
         now: Date = Date()
     ) {
-        do {
-            try ensurePrivateDirectory(url.deletingLastPathComponent(), fileManager: fileManager)
-            rotateIfNeeded(at: url, fileManager: fileManager)
-
-            var object: [String: Any] = [
+        LocalAuditLogFile.appendJSONLine(
+            [
                 "ts": ISO8601DateFormatter().string(from: now),
                 "kind": entry.kind,
                 "server": sanitize(entry.server),
@@ -89,16 +81,11 @@ public enum MCPActivityLog {
                 "code": sanitize(entry.code),
                 "secretTypes": entry.secretTypes.map(sanitize).sorted(),
                 "fieldsTransformed": entry.fieldsTransformed,
-            ]
-            guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]),
-                  let line = String(data: data, encoding: .utf8),
-                  let payload = (line + "\n").data(using: .utf8) else {
-                return
-            }
-            try appendSecurely(payload, to: url)
-        } catch {
-            // Best-effort only.
-        }
+            ],
+            to: url,
+            fileManager: fileManager,
+            maxBytes: maxLogBytes
+        )
     }
 
     /// Newest-first summaries, capped.
@@ -170,18 +157,7 @@ public enum MCPActivityLog {
         fileManager: FileManager = .default,
         maxBytes: Int = maxLogBytes
     ) {
-        guard let attrs = try? fileManager.attributesOfItem(atPath: url.path),
-              attrs[.type] as? FileAttributeType == .typeRegular,
-              let size = attrs[.size] as? NSNumber,
-              size.intValue > maxBytes else {
-            return
-        }
-        try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
-        let rotated = url.appendingPathExtension("1")
-        try? fileManager.removeItem(at: rotated)
-        if (try? fileManager.moveItem(at: url, to: rotated)) != nil {
-            try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: rotated.path)
-        }
+        LocalAuditLogFile.rotateIfNeeded(at: url, fileManager: fileManager, maxBytes: maxBytes)
     }
 
     // MARK: - Internals
@@ -210,42 +186,7 @@ public enum MCPActivityLog {
     }
 
     private static func sanitize(_ text: String) -> String {
-        let trimmed = String(text.prefix(120))
-        let home = NSHomeDirectory()
-        guard !home.isEmpty else { return trimmed }
-        return trimmed.replacingOccurrences(of: home, with: "~")
-    }
-
-    private static func ensurePrivateDirectory(
-        _ directory: URL,
-        fileManager: FileManager
-    ) throws {
-        if !fileManager.fileExists(atPath: directory.path) {
-            try fileManager.createDirectory(
-                at: directory,
-                withIntermediateDirectories: true,
-                attributes: [.posixPermissions: 0o700]
-            )
-        }
-        try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
-    }
-
-    private static func appendSecurely(_ data: Data, to url: URL) throws {
-        let descriptor = open(
-            url.path,
-            O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW,
-            mode_t(0o600)
-        )
-        guard descriptor >= 0 else {
-            throw CocoaError(.fileWriteNoPermission)
-        }
-        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
-        defer { try? handle.close() }
-        guard fchmod(descriptor, mode_t(0o600)) == 0 else {
-            throw CocoaError(.fileWriteNoPermission)
-        }
-        try handle.write(contentsOf: data)
-        try handle.close()
+        LocalAuditLogFile.sanitize(text)
     }
 }
 

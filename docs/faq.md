@@ -32,7 +32,7 @@ Adoption-friendly locally, strict for secrets and CI:
 Teams tune the shared baseline with `offsend init --template …` and `check.detectors.disable` — not by maintaining separate ignore files per engineer. See [configuration](configuration.md).
 
 **Is Offsend a sandbox or agent permission system?**  
-No. Ignore files are the primary exclusion layer; hooks are defense-in-depth on supported operations; content scanning is a final check. It does not replace the editor’s own permission model.
+No — and yes, optionally. Ignore files and hooks are the primary layers; they are not kernel enforcement. For reads/egress that hooks cannot decide from command text, set [`sandbox.enabled: true`](configuration.md#sandbox): `offsend sync` materializes each editor's own sandbox (or a [nono](https://nono.sh) profile when installed), and `doctor` / `check --policy` verify drift. Offsend **writes and checks** that config; it does not wrap a running agent. Install nono yourself (`brew install nono`) when you want it for Claude Code / Codex.
 
 **Can an agent weaken `.offsend.yml` after hooks are installed?**
 Not in the direction that matters. Without a trusted snapshot, hooks read the live workspace policy but honor only the fields that tighten a gate — `check.exclude`, `detectors.disable`, and enforcement modes below the built-in default are ignored until you approve them. After reviewing the file, run `offsend policy trust` yourself in an interactive terminal. Offsend stores only its hash outside the workspace; later edits, deletion, or invalid YAML make editor gates fail closed until you review and trust again. `sync` never approves policy changes, and agent-shell attempts to run `policy trust` / `forget` or to write `.offsend.yml` are denied.
@@ -41,15 +41,16 @@ Not in the direction that matters. Without a trusted snapshot, hooks read the li
 
 | Covers | Does not cover |
 | --- | --- |
-| Shared AI context boundary in `.offsend.yml` (committed with the repo) | Network / process sandbox or “agent escape” containment |
+| Shared AI context boundary in `.offsend.yml` (committed with the repo) | Replacing the editor’s own permission UI / allowlists |
 | Materialized AI ignore files + drift detection | Org-wide policy across every repository |
 | Content scan for secrets/credentials (`check`, hooks, CI) | Zero-day discovery, privilege escalation, lateral movement in infra |
 | Prompt / read / shell / MCP **args** / Cursor subagent gates | Ungated Claude subagents, cloud agent sessions |
-| User-approved policy snapshot outside the workspace | Containing arbitrary IDE tasks, Git helpers, venv discovery, Docker sockets, or other host automation |
+| Optional OS sandbox config (`sandbox.enabled`) — generate + verify | Applying `nono` for you (you launch with `nono run …`); Cursor IDE wrap; Windsurf sandbox |
+| User-approved policy snapshot outside the workspace | Containing arbitrary IDE tasks, Git helpers, venv discovery, or host automation outside static shell argv |
 | MCP **response** sealing on Cursor/Claude (`context.mcp.responses: seal`); seal-for-agents read copies | Responses without active sealing (`observe`/`warn`, older hook install); missing keys safely withhold secret-bearing responses but stop that tool result |
-| Local agent-history audit / scrub after a leak | Replacing the editor’s own permission model |
+| Local agent-history audit / scrub after a leak | Undoing secrets already sent to a remote/cloud agent |
 
-Credentials in agent context are leverage for further tool use (read, shell, MCP), not only a privacy leak. Prefer `offsend protect` + ignore files first; hooks are defense-in-depth. Details: [what hooks cover / do not cover](cli.md#what-hooks-cover).
+Credentials in agent context are leverage for further tool use (read, shell, MCP), not only a privacy leak. Prefer `offsend protect` + ignore files first; hooks are defense-in-depth; sandbox when you need kernel egress denial. Details: [what hooks cover / do not cover](cli.md#what-hooks-cover), [sandbox](configuration.md#sandbox).
 
 **Does `offsend show` read file contents?**  
 No for path exposure — paths and ignore rules only. Optional sections may report MCP inventory, transcript *counts*, and ignore drift. Content scanning of paths is `offsend check`; of agent history is `offsend history audit` or `offsend show --scan-history` / `context.history.scan_in_show`.
@@ -67,7 +68,7 @@ Yes. After clone or init, `offsend sync` installs git + detected AI-editor hooks
 Yes, with seal-for-agents: set `context.read.on_secret: seal` (plus a seal key via `offsend keygen --default`). The read-gate still denies the original file but hands the agent a sealed copy where findings are `{{TYPE:v1.…}}` tokens. The user restores agent outputs with `offsend unseal`; the shell-gate blocks (default `context.shell.mode: deny`) or asks (`mode: ask`) before the agent runs `unseal` itself. Seal / MCP-seal scans ignore `check.detectors.disable` so enabled detector classes and custom dictionaries cannot silently remain plaintext; fuzzy `highEntropyString` remains excluded. `doctor` reports this policy difference as `seal-detector-gap`. Large, wrapped, and multiple base64/hex blobs in files the agent reads (including terminal transcripts) are decode-probed; scan-budget overflow denies/withholds instead of allowing an unscanned tail.
 
 **Are AI-editor hooks a hard block on every way to read a file?**
-No. They are defense-in-depth on known editor paths (prompt, `@file`, Read/Edit/Write, shell, MCP tool **args** + **responses**, Cursor subagent tasks). Prefer `offsend protect` / AI ignore files first so secrets never enter context. With `context.mcp.responses: seal`, responses are sealed when a key is available; without a key, secret-bearing responses are withheld instead of passed through. Other gaps remain: Claude subagents, cloud sessions, renamed copies without secret-shaped content, and secrets already written to local transcripts (`offsend history audit` / `scrub`). See [what hooks cover / do not cover](cli.md#what-hooks-cover).
+No. They are defense-in-depth on known editor paths (prompt, `@file`, Read/Edit/Write, shell, MCP tool **args** + **responses**, Cursor subagent tasks). Prefer `offsend protect` / AI ignore files first. For enumeration/egress that hooks cannot decide from command text, use [`sandbox.enabled`](configuration.md#sandbox). Other gaps remain: Claude subagents, cloud sessions, renamed copies without secret-shaped content, and secrets already in local transcripts (`offsend history audit` / `scrub`). See [what hooks cover / do not cover](cli.md#what-hooks-cover).
 
 **Secrets already landed in local agent transcripts — what then?**  
 ```bash

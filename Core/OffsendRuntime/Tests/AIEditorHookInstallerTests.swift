@@ -428,6 +428,66 @@ final class AIEditorHookInstallerTests: XCTestCase {
         XCTAssertTrue(status.mcpGate)
     }
 
+    /// The audit hook reports on a command that already ran, so it must never be
+    /// installed fail-closed: a crash in it would block shells it cannot protect.
+    func testShellAuditOnByDefaultAndFailsOpen() throws {
+        let installer = AIEditorHookInstaller()
+        let result = try installer.install(
+            target: .cursor,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend"
+        )
+        XCTAssertTrue(result.withShellAudit)
+
+        let data = try Data(contentsOf: URL(fileURLWithPath: result.configPath))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
+        let auditHooks = try XCTUnwrap(hooks["afterShellExecution"] as? [[String: Any]])
+        let auditCommand = try XCTUnwrap(auditHooks.first?["command"] as? String)
+        XCTAssertTrue(auditCommand.contains("--shell-audit"))
+        XCTAssertNotEqual(auditHooks.first?["failClosed"] as? Bool, true)
+
+        XCTAssertTrue(installer.status(target: .cursor, repositoryPath: root).shellAudit)
+    }
+
+    func testShellAuditForClaudeMatchesBashPostToolUse() throws {
+        let installer = AIEditorHookInstaller()
+        let result = try installer.install(
+            target: .claude,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend"
+        )
+        XCTAssertTrue(result.withShellAudit)
+
+        let data = try Data(contentsOf: URL(fileURLWithPath: result.configPath))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
+        let postToolUse = try XCTUnwrap(hooks["PostToolUse"] as? [[String: Any]])
+        let bashGroup = try XCTUnwrap(postToolUse.first { $0["matcher"] as? String == "Bash" })
+        let commands = try XCTUnwrap(bashGroup["hooks"] as? [[String: Any]])
+        XCTAssertTrue((commands.first?["command"] as? String)?.contains("--shell-audit") == true)
+    }
+
+    func testShellAuditCanBeDisabled() throws {
+        let installer = AIEditorHookInstaller()
+        let result = try installer.install(
+            target: .cursor,
+            repositoryPath: root,
+            cliExecutablePath: "/usr/local/bin/offsend",
+            withShellAudit: false
+        )
+        XCTAssertFalse(result.withShellAudit)
+
+        let data = try Data(contentsOf: URL(fileURLWithPath: result.configPath))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let hooks = try XCTUnwrap(object["hooks"] as? [String: Any])
+        let auditHooks = (hooks["afterShellExecution"] as? [[String: Any]]) ?? []
+        XCTAssertFalse(
+            auditHooks.contains { ($0["command"] as? String)?.contains("--shell-audit") == true }
+        )
+        XCTAssertFalse(installer.status(target: .cursor, repositoryPath: root).shellAudit)
+    }
+
     func testMCPGateOnByDefaultWithFailClosed() throws {
         let installer = AIEditorHookInstaller()
         let result = try installer.install(

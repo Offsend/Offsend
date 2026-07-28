@@ -100,6 +100,28 @@ final class ShellInvocationExtractorTests: XCTestCase {
         XCTAssertTrue(ruby.contains("id_rsa") || ruby.contains("File.read('id_rsa')"))
     }
 
+    func testAllTokensExposeQuotedNamesInsideHeredocBodies() {
+        let tokens = ShellInvocationExtractor.allTokens(in: """
+        python3 <<'PY'
+        print(open('.env').read())
+        PY
+        """)
+        // The lexer eats the quotes, so the raw body has to survive alongside it.
+        XCTAssertTrue(tokens.contains { $0.contains("open('.env')") }, tokens.description)
+    }
+
+    func testHeredocExtraction() {
+        let docs = ShellInvocationExtractor.heredocs(in: """
+        python3 <<'PY'
+        print(1)
+        PY
+        """)
+        XCTAssertEqual(docs.count, 1)
+        XCTAssertEqual(docs.first?.tag, "PY")
+        XCTAssertTrue(docs.first?.body.contains("print(1)") == true)
+        XCTAssertTrue(docs.first?.preface.contains("python3") == true)
+    }
+
     func testCommandSubstitutionBodiesAreCollected() {
         XCTAssertEqual(
             ShellInvocationExtractor.commandSubstitutionBodies(in: #"cat $(echo cert.pem)"#),

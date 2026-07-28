@@ -823,6 +823,12 @@ if ! echo "$shell_concat_deny" | grep -q '"deny"'; then
   echo "$shell_concat_deny" >&2
   exit 1
 fi
+shell_python_print_allow="$(printf '%s' '{"command":"python3 -c '"'"'print(1+1)'"'"'"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
+if echo "$shell_python_print_allow" | grep -Eq '"permission"[[:space:]]*:[[:space:]]*"(deny|ask)"'; then
+  echo "Expected shell-gate allow for benign python3 -c print" >&2
+  echo "$shell_python_print_allow" >&2
+  exit 1
+fi
 shell_ignore_repo="$workdir/shell-ignore"
 mkdir -p "$shell_ignore_repo"
 printf '%s\n' \
@@ -897,6 +903,63 @@ if ! echo "$shell_git_metadata" | grep -q '"allow"'; then
   exit 1
 fi
 
+# Stated non-goals: reading files by enumeration is NOT prevented.
+#
+# These vectors must stay ALLOWED. They are not oversights — a blocklist of
+# filesystem API names, encodings, and interpreter invocation forms grows with
+# the attacker's ingenuity, never closes, and produces false positives on
+# ordinary code, so SECURITY.md ("Shell-gate rule admission") rejects such
+# rules by policy. This block exists so that re-adding one fails CI and forces
+# the boundary to be discussed rather than the table extended. Move the line
+# here only together with an enforcement layer that actually closes it
+# (an OS sandbox denying egress), never with another signature.
+shell_nongoal_repo="$workdir/shell-non-goals"
+mkdir -p "$shell_nongoal_repo/fixtures"
+printf '%s\n' \
+  "version: 1" \
+  "ignore:" \
+  "  patterns:" \
+  "    - fixtures/" > "$shell_nongoal_repo/.offsend.yml"
+# offsend:ignore-next-line
+printf '%s\n' 'AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF' > "$shell_nongoal_repo/fixtures/.env"
+shell_nongoal_payload() {
+  python3 -c 'import json,sys; print(json.dumps({"command": sys.argv[1]}))' "$1"
+}
+while IFS= read -r nongoal_command; do
+  [[ -n "$nongoal_command" ]] || continue
+  nongoal_out="$(shell_nongoal_payload "$nongoal_command" | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify --working-directory "$shell_nongoal_repo" 2>/dev/null)"
+  if echo "$nongoal_out" | grep -Eq '"permission"[[:space:]]*:[[:space:]]*"(deny|ask)"'; then
+    echo "Expected ALLOW for a stated non-goal: $nongoal_command" >&2
+    echo "Enumeration without a named path is out of the shell-gate's scope." >&2
+    echo "See SECURITY.md, 'Shell-gate rule admission', before changing this." >&2
+    echo "$nongoal_out" >&2
+    exit 1
+  fi
+done <<'NONGOALS'
+find . -type f -exec cat {} +
+grep -rn 'sk-' .
+tar cf - . | base64
+python3 -c 'import io,glob,os; [print(io.FileIO(p).readall()) for p in glob.iglob("**/*", recursive=True) if os.path.isfile(p)]'
+python3 -c 'import json; print(json.load(open("package.json")))'
+NONGOALS
+# A heredoc-fed walker is the same non-goal in multi-line form. Heredoc bodies are
+# still swept for path *names*, so this stays allowed only while it names none.
+shell_nongoal_heredoc="$(printf 'python3 <<%sPY%s\nimport pathlib\nprint([p.name for p in pathlib.Path(".").rglob("*")])\nPY' "'" "'")"
+nongoal_heredoc_out="$(shell_nongoal_payload "$shell_nongoal_heredoc" | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify --working-directory "$shell_nongoal_repo" 2>/dev/null)"
+if echo "$nongoal_heredoc_out" | grep -Eq '"permission"[[:space:]]*:[[:space:]]*"(deny|ask)"'; then
+  echo "Expected ALLOW for a heredoc walker that names no protected path" >&2
+  echo "$nongoal_heredoc_out" >&2
+  exit 1
+fi
+# The other half of the same rewiring: a name inside a heredoc body is still seen.
+shell_heredoc_named="$(printf 'python3 <<%sPY%s\nprint(open("fixtures/app.log").read())\nPY' "'" "'")"
+heredoc_named_out="$(shell_nongoal_payload "$shell_heredoc_named" | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify --working-directory "$shell_nongoal_repo" 2>/dev/null)"
+if ! echo "$heredoc_named_out" | grep -q '"deny"'; then
+  echo "Expected deny for a protected path named inside a heredoc body" >&2
+  echo "$heredoc_named_out" >&2
+  exit 1
+fi
+
 # context.shell.mode: ask reaches the gate only for a user-trusted policy.
 shell_ask_repo="$workdir/shell-ask"
 shell_ask_home="$workdir/shell-ask-home"
@@ -966,6 +1029,85 @@ shell_trusted_deny="$(printf '%s' '{"command":"git config core.hooksPath .agent-
 if ! echo "$shell_trusted_deny" | grep -q '"deny"'; then
   echo "Expected control-plane deny to survive mode: ask" >&2
   echo "$shell_trusted_deny" >&2
+  exit 1
+fi
+
+# Shell-output audit: a printed secret is recorded and notified, never blocked.
+shell_audit_repo="$workdir/shell-audit"
+mkdir -p "$shell_audit_repo"
+# The audit log lives in the user-local store, next to mcp-activity.log, so the
+# assertions below read the last line rather than the whole file.
+shell_audit_log="$HOME/Library/Application Support/Offsend/shell-output-audit.log"
+if [[ ! -d "$(dirname "$shell_audit_log")" ]]; then
+  shell_audit_log="${XDG_CONFIG_HOME:-$HOME/.config}/offsend/shell-output-audit.log"
+fi
+set +e
+# offsend:ignore-next-line
+shell_audit_out="$(printf '%s' '{"command":"printenv AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF","output":"AKIA1234567890ABCDEF","sandbox":false}' | "$CLI_PATH" check --adapter cursor --shell-audit --no-notify --working-directory "$shell_audit_repo" 2>"$workdir/shell-audit.err")"
+shell_audit_status="$?"
+set -e
+if [[ "$shell_audit_status" -ne 0 ]]; then
+  echo "Expected shell-audit to exit 0: a post-hoc finding must not look like a hook failure" >&2
+  cat "$workdir/shell-audit.err" >&2
+  exit 1
+fi
+if echo "$shell_audit_out" | grep -Eq '"permission"[[:space:]]*:[[:space:]]*"(deny|ask)"'; then
+  echo "Expected shell-audit to stay observational, not emit a permission decision" >&2
+  echo "$shell_audit_out" >&2
+  exit 1
+fi
+if ! grep -q 'awsAccessKeyId' "$workdir/shell-audit.err"; then
+  echo "Expected shell-audit to report the detected secret type on stderr" >&2
+  cat "$workdir/shell-audit.err" >&2
+  exit 1
+fi
+if [[ ! -f "$shell_audit_log" ]]; then
+  echo "Expected shell-audit to record the finding in $shell_audit_log" >&2
+  exit 1
+fi
+shell_audit_line="$(tail -n 1 "$shell_audit_log")"
+if ! echo "$shell_audit_line" | grep -q 'awsAccessKeyId'; then
+  echo "Expected the audit log to name the detector type" >&2
+  echo "$shell_audit_line" >&2
+  exit 1
+fi
+# The value is already in the model context; copying it to disk would only add a
+# second exposure — including when the secret sits in the command itself.
+if echo "$shell_audit_line" | grep -q 'AKIA1234567890ABCDEF'; then
+  echo "Audit log must never contain the secret value" >&2
+  exit 1
+fi
+if ! echo "$shell_audit_line" | grep -q 'OFFSEND_REDACTED_awsAccessKeyId'; then
+  echo "Expected the logged command to keep a redaction marker in place of the secret" >&2
+  echo "$shell_audit_line" >&2
+  exit 1
+fi
+printf '%s' '{"command":"ls -la src","output":"README.md"}' | "$CLI_PATH" check --adapter cursor --shell-audit --no-notify --working-directory "$shell_audit_repo" >/dev/null 2>"$workdir/shell-audit-clean.err"
+if [[ -s "$workdir/shell-audit-clean.err" ]]; then
+  echo "Expected no shell-audit output for clean command output" >&2
+  cat "$workdir/shell-audit-clean.err" >&2
+  exit 1
+fi
+if ! grep -q -- "--shell-audit" "$repo/.cursor/hooks.json"; then
+  echo "Expected shell-output audit on by default" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+if ! grep -q "afterShellExecution" "$repo/.cursor/hooks.json"; then
+  echo "Expected afterShellExecution event for the shell-output audit" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+"$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --no-shell-audit
+if grep -q -- "--shell-audit" "$repo/.cursor/hooks.json"; then
+  echo "Expected --no-shell-audit to remove the managed audit entry" >&2
+  cat "$repo/.cursor/hooks.json" >&2
+  exit 1
+fi
+"$CLI_PATH" hook install --path "$repo" --target cursor --cli-path "$CLI_PATH" --with-shell-audit
+if ! grep -q -- "--shell-audit" "$repo/.cursor/hooks.json"; then
+  echo "Expected --with-shell-audit alias to restore the audit entry" >&2
+  cat "$repo/.cursor/hooks.json" >&2
   exit 1
 fi
 
@@ -1590,5 +1732,124 @@ if [[ "$missing_status" -ne 2 ]]; then
   exit 1
 fi
 rm -f /tmp/offsend-sync-missing.$$
+
+# --- sandbox: declaration -> native configs, verification, shell-gate bridge ---
+# The layer the shell-gate declines to close. Assertions stay on Cursor because
+# it is never wrapped by nono, so the outcome does not depend on what the CI
+# machine happens to have installed.
+sandbox_repo="$workdir/sandbox-repo"
+sandbox_home="$workdir/sandbox-home"
+mkdir -p "$sandbox_repo" "$sandbox_home"
+git -C "$sandbox_repo" init >/dev/null
+git -C "$sandbox_repo" config user.email "ci@example.com"
+git -C "$sandbox_repo" config user.name "Offsend CI"
+printf '%s\n' \
+  "version: 1" \
+  "" \
+  "ignore:" \
+  "  patterns:" \
+  "    - \"secrets/\"" \
+  "    - \"*.pem\"" \
+  "" \
+  "sandbox:" \
+  "  enabled: true" \
+  "  network:" \
+  "    default: deny" \
+  "    allow: []" > "$sandbox_repo/.offsend.yml"
+
+HOME="$sandbox_home" "$CLI_PATH" sync --path "$sandbox_repo" --no-hooks --format json \
+  >/tmp/offsend-sandbox-sync.$$ 2>/tmp/offsend-sandbox-sync-err.$$
+if [[ ! -f "$sandbox_repo/.cursor/sandbox.json" ]]; then
+  echo "Expected sandbox.enabled to materialize .cursor/sandbox.json" >&2
+  cat /tmp/offsend-sandbox-sync-err.$$ >&2
+  exit 1
+fi
+if ! grep -q '"default"[[:space:]]*:[[:space:]]*"deny"' "$sandbox_repo/.cursor/sandbox.json"; then
+  echo "Expected Cursor sandbox network default deny" >&2
+  cat "$sandbox_repo/.cursor/sandbox.json" >&2
+  exit 1
+fi
+if ! grep -q '"mechanism"[[:space:]]*:[[:space:]]*"cursorNative"' /tmp/offsend-sandbox-sync.$$; then
+  echo "Expected sync JSON to name the mechanism chosen for cursor" >&2
+  cat /tmp/offsend-sandbox-sync.$$ >&2
+  exit 1
+fi
+# Basename globs cannot be expressed as sandbox paths and must be reported, not
+# expanded against the current tree — an expanded list goes stale silently.
+if ! grep -q '\*\.pem' /tmp/offsend-sandbox-sync.$$; then
+  echo "Expected sync JSON to report *.pem as an uncovered sandbox pattern" >&2
+  cat /tmp/offsend-sandbox-sync.$$ >&2
+  exit 1
+fi
+rm -f /tmp/offsend-sandbox-sync.$$ /tmp/offsend-sandbox-sync-err.$$
+
+set +e
+HOME="$sandbox_home" "$CLI_PATH" check --policy "$sandbox_repo" --format json \
+  >/tmp/offsend-sandbox-policy.$$ 2>/dev/null
+sandbox_policy_status="$?"
+set -e
+if [[ "$sandbox_policy_status" -ne 0 ]]; then
+  echo "Expected check --policy to pass on freshly synced sandbox configs, got $sandbox_policy_status" >&2
+  cat /tmp/offsend-sandbox-policy.$$ >&2
+  exit 1
+fi
+rm -f /tmp/offsend-sandbox-policy.$$
+
+# Hook install rewrites .claude/settings.json, where the Claude sandbox block
+# also lives. A full sync must leave that block intact, or verification would
+# report drift against Offsend's own writes.
+HOME="$sandbox_home" "$CLI_PATH" sync --path "$sandbox_repo" --format json >/dev/null 2>&1
+if ! grep -q '"sandbox"' "$sandbox_repo/.claude/settings.json"; then
+  echo "Expected hook install to preserve the Claude sandbox block" >&2
+  cat "$sandbox_repo/.claude/settings.json" >&2
+  exit 1
+fi
+set +e
+HOME="$sandbox_home" "$CLI_PATH" check --policy "$sandbox_repo" --format json \
+  >/tmp/offsend-sandbox-drift.$$ 2>/dev/null
+sandbox_drift_status="$?"
+set -e
+if [[ "$sandbox_drift_status" -ne 0 ]]; then
+  echo "Expected no sandbox drift after a full sync, got $sandbox_drift_status" >&2
+  cat /tmp/offsend-sandbox-drift.$$ >&2
+  exit 1
+fi
+rm -f /tmp/offsend-sandbox-drift.$$
+
+# insecure_none keeps the file in place while removing the sandbox: exactly the
+# kind of weakening verification exists for.
+printf '%s\n' '{"type":"insecure_none","networkPolicy":{"default":"deny","allow":[]}}' \
+  > "$sandbox_repo/.cursor/sandbox.json"
+set +e
+HOME="$sandbox_home" "$CLI_PATH" check --policy "$sandbox_repo" --format json \
+  >/tmp/offsend-sandbox-weak.$$ 2>/dev/null
+sandbox_weak_status="$?"
+set -e
+if [[ "$sandbox_weak_status" -eq 0 ]]; then
+  echo "Expected check --policy to fail on a weakened sandbox (insecure_none)" >&2
+  cat /tmp/offsend-sandbox-weak.$$ >&2
+  exit 1
+fi
+if ! grep -q 'insecure_none' /tmp/offsend-sandbox-weak.$$; then
+  echo "Expected the failing finding to name insecure_none" >&2
+  cat /tmp/offsend-sandbox-weak.$$ >&2
+  exit 1
+fi
+rm -f /tmp/offsend-sandbox-weak.$$
+
+# The bridge: one boolean the editor states per command. A rewritten command
+# cannot change it, which is why this rule is admissible while a signature is not.
+sandbox_unsandboxed="$(printf '%s' '{"command":"ls","sandbox":false}' | HOME="$sandbox_home" "$CLI_PATH" check --adapter cursor --shell-gate --no-notify --working-directory "$sandbox_repo" 2>/dev/null)"
+if ! echo "$sandbox_unsandboxed" | grep -q '"deny"'; then
+  echo "Expected shell-gate deny for an unsandboxed command under sandbox.enabled" >&2
+  echo "$sandbox_unsandboxed" >&2
+  exit 1
+fi
+sandbox_sandboxed="$(printf '%s' '{"command":"ls","sandbox":true}' | HOME="$sandbox_home" "$CLI_PATH" check --adapter cursor --shell-gate --no-notify --working-directory "$sandbox_repo" 2>/dev/null)"
+if ! echo "$sandbox_sandboxed" | grep -q '"allow"'; then
+  echo "Expected shell-gate allow for a sandboxed command" >&2
+  echo "$sandbox_sandboxed" >&2
+  exit 1
+fi
 
 echo "CLI E2E smoke passed."

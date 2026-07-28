@@ -454,7 +454,8 @@ struct CheckHookEmitter {
         policy: CheckHookPolicy,
         projectRoot: URL,
         shellConfig: OffsendProjectShellConfig? = nil,
-        protectedPatterns: [String] = []
+        protectedPatterns: [String] = [],
+        sandboxRequired: Bool = false
     ) {
         let decision: PromptShellGateDecision
         do {
@@ -465,7 +466,8 @@ struct CheckHookEmitter {
                 shellConfig: shellConfig,
                 protectedPatterns: protectedPatterns,
                 projectRoot: projectRoot,
-                defaultCWD: projectRoot.path
+                defaultCWD: projectRoot.path,
+                sandboxRequired: sandboxRequired
             )
         } catch {
             let denied = PromptShellGate.invalidInputDecision()
@@ -848,6 +850,89 @@ struct CheckHookEmitter {
             exitCode: rendered.exitCode,
             started: started,
             error: decision.hasFindings ? responseCode : nil
+        )
+    }
+
+    /// Cursor `afterShellExecution` / Claude `PostToolUse` (Bash). Reports secrets
+    /// printed by a command that already ran; it cannot and does not block.
+    func emitShellAudit(
+        adapter: CheckHookAdapter,
+        rawJSON: String,
+        started: Date,
+        policy: CheckHookPolicy,
+        context: OffsendRuntimeContext,
+        disabledDetectors: Set<SensitiveEntityType> = [],
+        customDictionaries: [CustomDictionaryItem] = [],
+        secretsOnly: Bool = true
+    ) async {
+        let input: PromptShellAuditInput
+        do {
+            input = try PromptShellAuditGate.parse(json: rawJSON, adapter: adapter)
+        } catch {
+            emitFailOpen(
+                adapter: adapter,
+                reason: .invalidJSON,
+                started: started,
+                policy: policy,
+                kind: .shellAudit
+            )
+            return
+        }
+
+        var secretTypes: [String] = []
+        if !input.output.isEmpty {
+            let scanned = await OffsendCheckService(context: context).runText(
+                input.output,
+                failPolicy: .block,
+                disabledDetectors: disabledDetectors,
+                customDictionaries: customDictionaries
+            )
+            // Seal tokens the gates themselves produced are not a new leak.
+            let textResult = filteringAuthenticatedSealTokens(in: scanned)
+            let secrets = PromptCheckAdviceBuilder.filterEntities(
+                textResult.entities,
+                secretsOnly: secretsOnly
+            )
+            secretTypes = Array(Set(secrets.map(\.type.rawValue))).sorted()
+        }
+
+        let decision = PromptShellAuditGate.evaluate(input: input, secretTypes: secretTypes)
+        let rendered = PromptShellAuditGateRenderer.render(decision: decision, adapter: adapter)
+        writeHookOutput(rendered)
+
+        if decision.hasFindings {
+            // The command itself can carry a secret (`curl -H "Authorization: …"`),
+            // and it is the one field this log copies verbatim. Redact with every
+            // detector, not just the secret-shaped ones: over-redacting a command
+            // costs readability, under-redacting writes a credential to disk.
+            let commandScan = await OffsendCheckService(context: context).runText(
+                input.command,
+                failPolicy: .block,
+                disabledDetectors: disabledDetectors,
+                customDictionaries: customDictionaries
+            )
+            let safeCommand = OffsendHistoryService.redact(
+                text: input.command,
+                entities: filteringAuthenticatedSealTokens(in: commandScan).entities
+            ).text
+            ShellOutputAuditLog.append(
+                ShellOutputAuditLog.Entry(
+                    command: safeCommand,
+                    secretTypes: decision.secretTypes,
+                    sandboxed: input.sandboxed
+                )
+            )
+            if notify {
+                postNotification(body: decision.reason)
+            }
+        }
+        logDebug(
+            adapter: adapter,
+            policy: policy,
+            advice: nil,
+            exitCode: rendered.exitCode,
+            started: started,
+            error: decision.hasFindings ? "shell_output_secrets" : nil
         )
     }
 

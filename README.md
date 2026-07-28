@@ -42,8 +42,9 @@ No install yet? [Scan a public GitHub repo with Check](https://check.offsend.io)
 | **Content** | Scan files, staged diffs, or stdin for secrets and custom terms | `check` |
 | **Team / CI** | Same boundary on every PR; fail when secrets or ignore drift appear | [GitHub Action](https://offsend.io/github-action), `check --policy` |
 | **Runtime** | Gate prompts, reads, shell, MCP; **seal** secrets in MCP responses / denied reads; audit agent history | `sync`, `hook install`, `keygen`, `seal` / `unseal`, `history` |
+| **Sandbox** | Optional OS sandbox from `.offsend.yml` — Offsend writes editor/nono config and verifies it; the kernel enforces | `sync`, `doctor`, `check --policy` |
 
-Defense-in-depth: ignore files first, then hooks. Hooks do not replace keeping secrets out of the workspace — see [what hooks cover](docs/cli.md#what-hooks-cover).
+Defense-in-depth: ignore files first, then hooks, then an OS sandbox when you need egress (or reads) actually denied. Hooks are not a sandbox — see [what hooks cover](docs/cli.md#what-hooks-cover) and [`sandbox`](docs/configuration.md#sandbox).
 
 ## Quick Start
 
@@ -78,7 +79,7 @@ git add .offsend.yml && git commit -m "Add AI context policy"
 # add the GitHub Action so PRs fail on secrets / ignore drift (see below)
 
 # every clone
-offsend sync                   # materialize AI ignore files + install hooks
+offsend sync                   # ignore files + hooks (+ sandbox configs if enabled)
 ```
 
 Rules live in `.offsend.yml` — that file is the source of truth. AI ignore files are generated artifacts and stay out of git by default (`ignore.commit: false`). Teammates do not copy `.cursorignore` by hand; they run `sync`. Full walkthrough: [Add Offsend to a team repo](docs/team.md).
@@ -134,7 +135,7 @@ Without a key, secret-bearing responses are **withheld** (not passed through). R
 | Command | Purpose |
 | --- | --- |
 | `offsend show` | Sensitive paths visible to AI (+ MCP inventory, agent-history hint, ignore drift) |
-| `offsend sync` | Apply `.offsend.yml`: materialize AI ignore files + install hooks (post-clone, idempotent) |
+| `offsend sync` | Apply `.offsend.yml`: ignore files, hooks, and optional sandbox configs (post-clone, idempotent) |
 | `offsend protect` | Promote exposed paths to `.offsend.yml` and sync AI ignore files |
 | `offsend ignore` | Add ignore patterns to `.offsend.yml` (auto-materializes; use `sync` after hand-edits) |
 | `offsend check` | Scan contents (files, `--staged`, stdin, or editor hook JSON) |
@@ -142,7 +143,7 @@ Without a key, secret-bearing responses are **withheld** (not passed through). R
 | `offsend keygen --default` | Personal seal key for MCP / read seal modes |
 | `offsend seal` / `unseal` | Replace secrets with tokens / restore plaintext |
 | `offsend history audit` | Find secrets already written into local Cursor/Claude transcripts |
-| `offsend doctor` | Verify install, hooks, ignore drift, MCP policy, seal key, next steps |
+| `offsend doctor` | Verify install, hooks, ignore drift, MCP policy, seal key, sandbox, next steps |
 
 ```bash
 # CI — fail the PR when secrets or managed ignore drift appear
@@ -166,7 +167,7 @@ Essentials above; reference depth in `docs/`:
 | [docs/README.md](docs/README.md) | Index and suggested reading path |
 | [docs/team.md](docs/team.md) | Add Offsend to a team repository |
 | [docs/cli.md](docs/cli.md) | Commands, flags, exit codes, AI-editor hooks (incl. MCP seal) |
-| [docs/configuration.md](docs/configuration.md) | `.offsend.yml` reference (`check`, `ignore`, `hooks`, `context`) |
+| [docs/configuration.md](docs/configuration.md) | `.offsend.yml` reference (`check`, `ignore`, `hooks`, `context`, `sandbox`) |
 | [docs/faq.md](docs/faq.md) | FAQ, coverage limits, privacy |
 | [docs/macos-app.md](docs/macos-app.md) | Desktop app, Free vs Pro, App vs CLI |
 | [.offsend.yml.example](.offsend.yml.example) | Annotated config starter |

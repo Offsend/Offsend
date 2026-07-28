@@ -127,4 +127,54 @@ final class OffsendCheckPolicyConfigTests: XCTestCase {
             "Tools outside ignore.tools are not audited: \(report.policyFindings)"
         )
     }
+
+    func testTrackedIgnorePatternsFailPolicy() async throws {
+        let resolver = GitRepositoryResolver()
+        try resolver.runGit(arguments: ["init"], workingDirectory: root)
+        try writeConfig(
+            """
+            ignore:
+              commit: false
+              patterns:
+                - ".env*"
+                - "secrets/"
+            """
+        )
+        try "SECRET=1".write(
+            to: root.appendingPathComponent(".env"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("secrets", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        try #"{"k":"v"}"#.write(
+            to: root.appendingPathComponent("secrets/credentials.json"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "ok".write(
+            to: root.appendingPathComponent("README.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        // Force-add in case a global exclude would skip .env.
+        try resolver.runGit(
+            arguments: ["add", "-f", ".env", "secrets/credentials.json", "README.md"],
+            workingDirectory: root
+        )
+
+        let report = await runPolicyCheck()
+        XCTAssertTrue(
+            report.policyFindings.contains {
+                $0.status == .fail && $0.message.contains("Git tracks paths covered by ignore.patterns")
+            },
+            "Tracked ignore.patterns must fail policy: \(report.policyFindings)"
+        )
+        XCTAssertTrue(
+            report.policyFindings.contains { $0.message.contains(".env") },
+            report.policyFindings.map(\.message).joined(separator: " | ")
+        )
+    }
 }

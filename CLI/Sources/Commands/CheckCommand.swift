@@ -132,6 +132,15 @@ struct Check: AsyncParsableCommand {
     @Flag(
         name: .long,
         help: ArgumentHelp(
+            "Post-hoc audit of shell output: log and notify on secrets a command printed (requires --adapter cursor|claude). Never blocks.",
+            visibility: .hidden
+        )
+    )
+    var shellAudit = false
+
+    @Flag(
+        name: .long,
+        help: ArgumentHelp(
             "MCP tool-call gate for editor hooks: server policy + path/secret scan in args (requires --adapter cursor|claude).",
             visibility: .hidden
         )
@@ -319,7 +328,33 @@ struct Check: AsyncParsableCommand {
                 policy: resolvedHookPolicy(for: adapter),
                 projectRoot: projectRoot,
                 shellConfig: shellPolicy?.context?.shell,
-                protectedPatterns: shellPolicy?.ignore?.patterns ?? []
+                protectedPatterns: shellPolicy?.ignore?.patterns ?? [],
+                sandboxRequired: shellPolicy?.sandbox?.enabled == true
+            )
+            return
+        }
+
+        if shellAudit, let adapter {
+            let (context, projectConfig) = loadStdinRuntime(adapter: adapter, started: started)
+            guard let context else { return }
+            let resolved = OptionsResolver.resolveCheckOptions(
+                overrides: CLICheckOverrides(
+                    policySpecified: false,
+                    policyValue: false,
+                    failOn: CLIParse.failPolicy(failOn)
+                ),
+                projectConfig: projectConfig,
+                staged: false
+            )
+            await hookEmitter().emitShellAudit(
+                adapter: adapter,
+                rawJSON: rawText,
+                started: started,
+                policy: resolvedHookPolicy(for: adapter),
+                context: context,
+                disabledDetectors: resolved.disabledDetectors,
+                customDictionaries: resolved.customDictionaries,
+                secretsOnly: secretsOnly
             )
             return
         }
@@ -516,6 +551,12 @@ struct Check: AsyncParsableCommand {
         if shellGate, let adapter, adapter != .cursor, adapter != .claude {
             CLIError.exit(.error, message: "--shell-gate supports --adapter cursor or claude.")
         }
+        if shellAudit, adapter == nil {
+            CLIError.exit(.error, message: "--shell-audit requires --adapter.")
+        }
+        if shellAudit, let adapter, adapter != .cursor, adapter != .claude {
+            CLIError.exit(.error, message: "--shell-audit supports --adapter cursor or claude.")
+        }
         if mcpGate, adapter == nil {
             CLIError.exit(.error, message: "--mcp-gate requires --adapter.")
         }
@@ -534,17 +575,21 @@ struct Check: AsyncParsableCommand {
         if mcpResponseGate, let adapter, adapter != .cursor, adapter != .claude {
             CLIError.exit(.error, message: "--mcp-response-gate supports --adapter cursor or claude.")
         }
-        let gateFlags = [readGate, writeGate, artifactAudit, shellGate, mcpGate, subagentGate, mcpResponseGate]
+        let gateFlags = [
+            readGate, writeGate, artifactAudit, shellGate, shellAudit,
+            mcpGate, subagentGate, mcpResponseGate,
+        ]
             .filter { $0 }.count
         if gateFlags > 1 {
             CLIError.exit(
                 .error,
-                message: "--read-gate, --write-gate, --artifact-audit, --shell-gate, --mcp-gate, --subagent-gate, and --mcp-response-gate are mutually exclusive."
+                message: "--read-gate, --write-gate, --artifact-audit, --shell-gate, --shell-audit, --mcp-gate, --subagent-gate, and --mcp-response-gate are mutually exclusive."
             )
         }
     }
 
     private var hookKind: CheckHookResponseRenderer.Kind {
+        if shellAudit { return .shellAudit }
         if mcpResponseGate { return .mcpResponseGate }
         if subagentGate { return .subagentGate }
         if mcpGate { return .mcpGate }

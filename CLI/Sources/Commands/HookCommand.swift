@@ -69,6 +69,13 @@ struct HookInstall: ParsableCommand {
     var shellGate: Bool?
 
     @Flag(
+        name: [.customLong("shell-audit"), .customLong("with-shell-audit")],
+        inversion: .prefixedNo,
+        help: "Post-hoc audit of shell output — log and notify on secrets a command printed (Cursor afterShellExecution / Claude PostToolUse Bash). Reports only; it cannot block. On by default for cursor/claude; disable with --no-shell-audit."
+    )
+    var shellAudit: Bool?
+
+    @Flag(
         name: [.customLong("mcp-gate"), .customLong("with-mcp-gate")],
         inversion: .prefixedNo,
         help: "MCP tool-call gates — server policy + path/secret scan in args (Cursor beforeMCPExecution / Claude PreToolUse mcp__*). On by default for cursor/claude; disable with --no-mcp-gate."
@@ -137,6 +144,9 @@ struct HookInstall: ParsableCommand {
             }
             if shellGate != nil {
                 CLIError.exit(.error, message: "--shell-gate/--no-shell-gate requires an AI-editor target.")
+            }
+            if shellAudit != nil {
+                CLIError.exit(.error, message: "--shell-audit/--no-shell-audit requires an AI-editor target.")
             }
             if mcpGate != nil {
                 CLIError.exit(.error, message: "--mcp-gate/--no-mcp-gate requires an AI-editor target.")
@@ -244,6 +254,7 @@ struct HookInstall: ParsableCommand {
         let enableReadGate = readGate ?? true
         let enableWriteGate = writeGate ?? true
         let enableShellGate = shellGate ?? true
+        let enableShellAudit = shellAudit ?? true
         let enableMCPGate = mcpGate ?? true
         let enableSubagentGate = subagentGate ?? true
         let enableMCPResponseGate = mcpResponseGate ?? true
@@ -270,6 +281,15 @@ struct HookInstall: ParsableCommand {
             for skipped in unsupported {
                 fputs(
                     "warning: --shell-gate is not supported for \(skipped.rawValue); installing prompt hook only.\n",
+                    stderr
+                )
+            }
+        }
+        if shellAudit == true {
+            let unsupported = aiTargets.filter { !gateSupported.contains($0) }
+            for skipped in unsupported {
+                fputs(
+                    "warning: --shell-audit is not supported for \(skipped.rawValue); installing prompt hook only.\n",
                     stderr
                 )
             }
@@ -312,6 +332,7 @@ struct HookInstall: ParsableCommand {
                 withReadGate: enableReadGate,
                 withWriteGate: enableWriteGate,
                 withShellGate: enableShellGate,
+                withShellAudit: enableShellAudit,
                 withMCPGate: enableMCPGate,
                 withSubagentGate: enableSubagentGate,
                 withMCPResponseGate: enableMCPResponseGate
@@ -662,6 +683,9 @@ struct HookStatus: ParsableCommand {
         if AIEditorHookInstaller.supportsFileGates(target), !status.shellGate {
             detail += "; warning: shell-gate missing — re-run offsend hook install --target \(target.rawValue)"
         }
+        if AIEditorHookInstaller.supportsFileGates(target), !status.shellAudit {
+            detail += "; warning: shell-output audit missing — re-run offsend hook install --target \(target.rawValue)"
+        }
         if AIEditorHookInstaller.supportsFileGates(target), !status.mcpGate {
             detail += "; warning: mcp-gate missing — re-run offsend hook install --target \(target.rawValue)"
         }
@@ -687,6 +711,7 @@ struct HookStatus: ParsableCommand {
             "writeGate": status.writeGate,
             "artifactAudit": status.artifactAudit,
             "shellGate": status.shellGate,
+            "shellAudit": status.shellAudit,
             "mcpGate": status.mcpGate,
             "subagentGate": status.subagentGate,
             "mcpResponseGate": status.mcpResponseGate,
@@ -698,6 +723,7 @@ struct HookStatus: ParsableCommand {
                 if !status.writeGate { warnings.append("write-gate missing") }
                 if !status.artifactAudit { warnings.append("post-write artifact audit missing") }
                 if !status.shellGate { warnings.append("shell-gate missing") }
+                if !status.shellAudit { warnings.append("shell-output audit missing") }
                 if !status.mcpGate { warnings.append("mcp-gate missing") }
                 if !status.mcpResponseGate { warnings.append("mcp-response-gate missing") }
             }

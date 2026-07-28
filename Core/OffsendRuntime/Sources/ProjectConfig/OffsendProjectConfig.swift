@@ -7,19 +7,22 @@ public struct OffsendProjectConfig: Codable, Equatable, Sendable {
     public var ignore: OffsendProjectIgnoreConfig?
     public var hooks: OffsendProjectHooksConfig?
     public var context: OffsendProjectContextConfig?
+    public var sandbox: OffsendProjectSandboxConfig?
 
     public init(
         version: Int = 1,
         check: OffsendProjectCheckConfig? = nil,
         ignore: OffsendProjectIgnoreConfig? = nil,
         hooks: OffsendProjectHooksConfig? = nil,
-        context: OffsendProjectContextConfig? = nil
+        context: OffsendProjectContextConfig? = nil,
+        sandbox: OffsendProjectSandboxConfig? = nil
     ) {
         self.version = version
         self.check = check
         self.ignore = ignore
         self.hooks = hooks
         self.context = context
+        self.sandbox = sandbox
     }
 }
 

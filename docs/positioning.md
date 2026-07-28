@@ -6,7 +6,7 @@ Internal framing for product copy, docs, and posts. Not a feature list.
 
 Commit an AI context boundary next to the code — like `.gitignore`, but for what agents may read. Teammates inherit it on clone; CI can fail when the boundary drifts or secrets appear.
 
-Product emphasis: credentials in agent context are **leverage for multi-step tool use** (read / shell / MCP), not only a privacy leak. Offsend reduces that fuel; it is not a sandbox.
+Product emphasis: credentials in agent context are **leverage for multi-step tool use** (read / shell / MCP), not only a privacy leak. Offsend reduces that fuel. Optional [`sandbox.enabled`](configuration.md#sandbox) generates and verifies OS sandbox config; Offsend still does not replace the editor’s permission model or wrap a running agent.
 
 Enforcement posture: **don’t stop the agent — swap the secrets for tokens.** Where the editor allows it, gates prefer substitution over dead-end denies: seal-for-agents gives the agent a sealed copy of a blocked file (`context.read.on_secret: seal`), and the MCP-response gate seals secrets in Cursor/Claude tool output (`context.mcp.responses: seal`). Work continues; plaintext stays out of model context; the user reverses tokens with `offsend unseal`. Blocking remains the default and the fallback when sealing is unavailable.
 
@@ -22,7 +22,7 @@ Trust-handoff posture: the committed policy is reviewable team state, not automa
 ## Who it is not for (today)
 
 - High-trust “always allow” environments where each engineer owns tool config and enforcement is undesirable
-- Orgs that only want a sandbox / replacement for the agent’s permission model
+- Orgs that only want a full agent permission system / escape containment (Offsend can materialize sandbox config; it does not enforce process launch)
 - People whose main pain is rate-limit hopping between personal AI subscriptions
 
 ## Messaging test
@@ -33,7 +33,8 @@ Lead with: shared `.offsend.yml` in git → ignore files + hooks + CI. Multi-too
 
 ## Non-goals
 
-- Not a sandbox or full agent permission system
+- Not a full agent permission system or escape containment
+- Not applying `nono` / process wrappers for you (generate + verify only)
 - Not general protection against workspace files executed by IDEs or privileged host helpers
 - Not org-wide policy across every repository (repo-level baseline first)
 - Not “block everything by default” locally — prefer advise/warn for adoption; **block** for credentials/secrets and CI

@@ -166,8 +166,14 @@ context:
 
   # --- shell-gate (agent shell commands) -------------------------------------
   shell:
-    # ask | deny — default when unset: deny (Cursor does not reliably pause on ask).
-    # Control-plane findings always deny. mode: ask needs offsend policy trust.
+    # ask | deny — default when unset: deny. Claude enforces ask; Cursor accepts
+    # ask in the beforeShellExecution schema but does not act on it, so there ask
+    # degrades to allow-and-warn. Host trust surfaces always deny regardless.
+    # mode: ask needs offsend policy trust.
+    #
+    # Reading a secret the command never names (filesystem walks, find -exec,
+    # interpreter APIs) is out of scope here — that is the sandbox's job, see
+    # `sandbox` below. Do not expect this gate to close it.
     mode: deny
 
   # --- MCP call + response gates (Cursor / Claude) ---------------------------
@@ -273,6 +279,34 @@ context:
     # true → show/doctor content-scan transcripts (same detectors as history audit).
     # Default/unset: count files only. One-shot: offsend show --scan-history
     scan_in_show: false
+
+# -----------------------------------------------------------------------------
+# sandbox — OS-level isolation for agent commands
+# The layer hooks cannot reach: a hook sees a command as text, a sandbox is
+# enforced by the kernel and cannot be loosened once applied. Materialized by
+# offsend sync into each detected editor's own sandbox configuration.
+# -----------------------------------------------------------------------------
+sandbox:
+  # true → sync writes native sandbox configs; unset/false → nothing configured.
+  # true tightens, so it applies without policy trust; false loosens, so editor
+  # gates ignore it until offsend policy trust. An agent editing this file
+  # therefore cannot switch off its own sandbox.
+  enabled: true
+
+  network:
+    # deny (default when unset) | allow. Egress denial is the only guarantee
+    # every mechanism keeps — read-deny exists in Claude/nono but not in
+    # Cursor/Codex. allow needs offsend policy trust.
+    default: deny
+    # Domains still reachable under default: deny. Each entry widens egress, so
+    # a non-empty list needs offsend policy trust.
+    allow: []
+
+  # No mechanism is named here, the same way ignore.patterns never names
+  # .cursorignore: Offsend picks one per editor (nono for CLI agents when
+  # installed, otherwise the editor's own sandbox) and doctor prints the choice,
+  # the reason, and the position reached. Replacing the tool later is not a
+  # migration, because nobody wrote the tool's name down.
 
 # =============================================================================
 # Notes (not YAML keys)

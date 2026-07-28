@@ -24,9 +24,19 @@ public struct PromptShellGateDecision: Equatable, Sendable {
 /// Best-effort gate for Cursor `beforeShellExecution` / Claude `PreToolUse` (Bash).
 /// Tokenizes the command and flags sensitive path tokens (same heuristics as the
 /// read-gate path heuristics, including symlink targets when the path exists).
-/// Does not parse full shell grammar and never reads file contents. Sensitive-path
-/// findings follow `context.shell.mode` (`deny` by default; `ask` when configured
-/// and trusted). Control-plane findings always deny.
+/// Does not parse full shell grammar and never reads file contents.
+///
+/// Exactly two kinds of rule exist, and no third kind is admitted:
+/// - a **host trust surface** from a closed list (policy control plane,
+///   execution-sensitive `git config`, executable workspace artifacts,
+///   environment poisoning, privileged daemons, `offsend unseal`) always denies;
+/// - a **named sensitive path** follows `context.shell.mode`.
+///
+/// Reading a secret the command never names — filesystem walks, `find -exec`,
+/// interpreter APIs — is out of scope by construction: only the command text is
+/// visible here, so any blocklist of API names grows with attacker ingenuity
+/// rather than with the host's trust surfaces. That layer belongs to the OS
+/// sandbox (`sandbox.enabled`), not to this gate. See SECURITY.md.
 public enum PromptShellGate {
     public static func evaluate(
         json: String,
@@ -35,7 +45,8 @@ public enum PromptShellGate {
         shellConfig: OffsendProjectShellConfig? = nil,
         protectedPatterns: [String] = [],
         projectRoot: URL? = nil,
-        defaultCWD: String? = nil
+        defaultCWD: String? = nil,
+        sandboxRequired: Bool = false
     ) throws -> PromptShellGateDecision {
         guard let data = json.data(using: .utf8),
               let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
@@ -52,7 +63,9 @@ public enum PromptShellGate {
             classifier: classifier,
             shellConfig: shellConfig,
             protectedPatterns: protectedPatterns,
-            projectRoot: projectRoot
+            projectRoot: projectRoot,
+            sandboxRequired: sandboxRequired,
+            sandboxed: root["sandbox"] as? Bool
         )
     }
 
@@ -102,11 +115,30 @@ public enum PromptShellGate {
         classifier: ExecutableArtifactClassifier? = nil,
         shellConfig: OffsendProjectShellConfig? = nil,
         protectedPatterns: [String] = [],
-        projectRoot: URL? = nil
+        projectRoot: URL? = nil,
+        sandboxRequired: Bool = false,
+        sandboxed: Bool? = nil
     ) -> PromptShellGateDecision {
         let mode = OffsendShellGateMode.effective(shellConfig?.mode)
         let modeDenies = mode == .deny
         var findings: [Finding] = []
+
+        // The bridge between `sandbox.enabled` and this gate: the platform states
+        // per command whether it runs sandboxed, so the rule reads one boolean it
+        // does not have to guess. Silence when the flag is absent — an editor that
+        // reports nothing is unknown, not unsandboxed.
+        if sandboxRequired, sandboxed == false {
+            findings.append(Finding(
+                label: "unsandboxed session",
+                reason: modeDenies
+                    ? "Offsend blocked this command because .offsend.yml requires a sandbox and "
+                        + "the editor reports this command runs outside one. Restart the agent in a "
+                        + "sandboxed run mode, or run the command yourself."
+                    : "Offsend: .offsend.yml requires a sandbox and this command runs outside one. "
+                        + "Confirm explicitly before running it unsandboxed.",
+                deny: modeDenies
+            ))
+        }
 
         if let mutation = policyMutation(in: command) {
             findings.append(Finding(
@@ -145,17 +177,17 @@ public enum PromptShellGate {
                 deny: denied
             ))
         }
-        // `offsend unseal` restores sealed plaintext; the agent must not quietly
-        // unseal what the read/MCP gates just sealed.
+        // `offsend unseal` undoes what the read / MCP gates just did, so it is
+        // Offsend's own control plane rather than a data path, and belongs with
+        // `offsend policy` on the always-deny list.
         if referencesUnseal(command) {
             findings.append(Finding(
                 label: "offsend unseal",
-                reason: modeDenies
-                    ? "Offsend blocked `offsend unseal` — it restores sealed secrets to plaintext. "
-                        + "Run unseal yourself outside the agent session."
-                    : "Offsend: command runs `offsend unseal` — it restores sealed secrets to plaintext. "
-                        + "Confirm before running; unseal output belongs to the user, not the agent context.",
-                deny: modeDenies
+                reason: "Offsend blocked `offsend unseal` — it restores sealed secrets to "
+                    + "plaintext, undoing the read and MCP gates. Run unseal yourself "
+                    + "outside the agent session; its output belongs to you, not to the "
+                    + "agent context.",
+                deny: true
             ))
         }
 

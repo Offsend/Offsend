@@ -71,6 +71,7 @@ public struct AIEditorHookInstallResult: Equatable, Sendable {
     public let withWriteGate: Bool
     public let withArtifactAudit: Bool
     public let withShellGate: Bool
+    public let withShellAudit: Bool
     public let withMCPGate: Bool
     public let withSubagentGate: Bool
     public let withMCPResponseGate: Bool
@@ -90,6 +91,7 @@ public struct AIEditorHookInstallResult: Equatable, Sendable {
         withWriteGate: Bool = false,
         withArtifactAudit: Bool = false,
         withShellGate: Bool = false,
+        withShellAudit: Bool = false,
         withMCPGate: Bool = false,
         withSubagentGate: Bool = false,
         withMCPResponseGate: Bool = false
@@ -108,6 +110,7 @@ public struct AIEditorHookInstallResult: Equatable, Sendable {
         self.withWriteGate = withWriteGate
         self.withArtifactAudit = withArtifactAudit
         self.withShellGate = withShellGate
+        self.withShellAudit = withShellAudit
         self.withMCPGate = withMCPGate
         self.withSubagentGate = withSubagentGate
         self.withMCPResponseGate = withMCPResponseGate
@@ -129,6 +132,8 @@ public struct AIEditorHookTargetStatus: Equatable, Sendable {
     public let artifactAudit: Bool
     /// Config references the shell-gate wrapper (`check-shell.sh`).
     public let shellGate: Bool
+    /// Config scans shell output after execution (observational only).
+    public let shellAudit: Bool
     /// Config references the MCP-gate wrapper (`check-mcp.sh`).
     public let mcpGate: Bool
     /// Config references the subagent-gate wrapper (`check-subagent.sh`). Cursor only.
@@ -147,6 +152,7 @@ public struct AIEditorHookTargetStatus: Equatable, Sendable {
         writeGate: Bool = false,
         artifactAudit: Bool = false,
         shellGate: Bool = false,
+        shellAudit: Bool = false,
         mcpGate: Bool = false,
         subagentGate: Bool = false,
         mcpResponseGate: Bool = false,
@@ -160,6 +166,7 @@ public struct AIEditorHookTargetStatus: Equatable, Sendable {
         self.writeGate = writeGate
         self.artifactAudit = artifactAudit
         self.shellGate = shellGate
+        self.shellAudit = shellAudit
         self.mcpGate = mcpGate
         self.subagentGate = subagentGate
         self.mcpResponseGate = mcpResponseGate
@@ -228,6 +235,7 @@ public struct AIEditorHookInstaller: Sendable {
         withReadGate: Bool = true,
         withWriteGate: Bool = true,
         withShellGate: Bool = true,
+        withShellAudit: Bool = true,
         withMCPGate: Bool = true,
         withSubagentGate: Bool = true,
         withMCPResponseGate: Bool = true,
@@ -247,6 +255,7 @@ public struct AIEditorHookInstaller: Sendable {
         let enableWriteGate = withWriteGate && gateSupported
         let enableArtifactAudit = gateSupported
         let enableShellGate = withShellGate && gateSupported
+        let enableShellAudit = withShellAudit && gateSupported
         let enableMCPGate = withMCPGate && gateSupported
         let enableSubagentGate = withSubagentGate && Self.supportsSubagentGate(target)
         let enableMCPResponseGate = withMCPResponseGate && gateSupported
@@ -273,6 +282,9 @@ public struct AIEditorHookInstaller: Sendable {
                     ? makeArtifactAuditCommand(target: target, executable: executable)
                     : nil,
                 shellCommand: enableShellGate ? makeShellCommand(target: target, executable: executable) : nil,
+                shellAuditCommand: enableShellAudit
+                    ? makeShellAuditCommand(target: target, executable: executable)
+                    : nil,
                 mcpCommand: enableMCPGate ? makeMCPCommand(target: target, executable: executable) : nil,
                 subagentCommand: enableSubagentGate ? makeSubagentCommand(target: target, executable: executable) : nil,
                 mcpResponseCommand: enableMCPResponseGate ? makeMCPResponseCommand(target: target, executable: executable) : nil,
@@ -291,6 +303,9 @@ public struct AIEditorHookInstaller: Sendable {
                     ? makeArtifactAuditCommand(target: target, executable: executable)
                     : nil,
                 shellCommand: enableShellGate ? makeShellCommand(target: target, executable: executable) : nil,
+                shellAuditCommand: enableShellAudit
+                    ? makeShellAuditCommand(target: target, executable: executable)
+                    : nil,
                 mcpCommand: enableMCPGate ? makeMCPCommand(target: target, executable: executable) : nil,
                 mcpResponseCommand: enableMCPResponseGate ? makeMCPResponseCommand(target: target, executable: executable) : nil,
                 at: configURL
@@ -328,6 +343,7 @@ public struct AIEditorHookInstaller: Sendable {
             withWriteGate: enableWriteGate,
             withArtifactAudit: enableArtifactAudit,
             withShellGate: enableShellGate,
+            withShellAudit: enableShellAudit,
             withMCPGate: enableMCPGate,
             withSubagentGate: enableSubagentGate,
             withMCPResponseGate: enableMCPResponseGate
@@ -400,12 +416,13 @@ public struct AIEditorHookInstaller: Sendable {
             let writeRemoved = try removeManagedFromEventArray(at: configURL, event: "preToolUse")
             let auditRemoved = try removeManagedFromEventArray(at: configURL, event: "afterFileEdit")
             let shellRemoved = try removeManagedFromEventArray(at: configURL, event: "beforeShellExecution")
+            let shellAuditRemoved = try removeManagedFromEventArray(at: configURL, event: "afterShellExecution")
             let mcpRemoved = try removeManagedFromEventArray(at: configURL, event: "beforeMCPExecution")
             let subagentRemoved = try removeManagedFromEventArray(at: configURL, event: "subagentStart")
             let mcpResponseRemoved = try removeManagedFromEventArray(at: configURL, event: "afterMCPExecution")
             let postToolRemoved = try removeManagedFromEventArray(at: configURL, event: "postToolUse")
-            removed = promptRemoved || readRemoved || writeRemoved || auditRemoved || shellRemoved || mcpRemoved || subagentRemoved
-                || mcpResponseRemoved || postToolRemoved
+            removed = promptRemoved || readRemoved || writeRemoved || auditRemoved || shellRemoved || shellAuditRemoved
+                || mcpRemoved || subagentRemoved || mcpResponseRemoved || postToolRemoved
         case .windsurf:
             removed = try removeManagedFromEventArray(at: configURL, event: "pre_user_prompt")
         case .codex:
@@ -473,6 +490,7 @@ public struct AIEditorHookInstaller: Sendable {
             || managedConfig(contents, containsFlag: "--shell-gate")
         let shellURL = repositoryPath.appendingPathComponent(Self.shellWrapperRelativePath)
         let shellOK = !shellWrapperUsed || validateWrapper(at: shellURL) == .ok
+        let shellAuditUsed = managedConfig(contents, containsFlag: "--shell-audit")
         let mcpWrapperUsed = Self.configTextReferences(contents, relativePath: Self.mcpWrapperRelativePath)
         let mcpUsed = mcpWrapperUsed
             || managedConfig(contents, containsFlag: "--mcp-gate")
@@ -502,6 +520,7 @@ public struct AIEditorHookInstaller: Sendable {
             writeGate: writeUsed,
             artifactAudit: artifactAuditUsed,
             shellGate: shellUsed,
+            shellAudit: shellAuditUsed,
             mcpGate: mcpUsed,
             subagentGate: subagentUsed,
             mcpResponseGate: mcpResponseUsed,
@@ -655,6 +674,14 @@ public struct AIEditorHookInstaller: Sendable {
             + "--shell-gate --no-notify"
     }
 
+    public func makeShellAuditCommand(
+        target: AIEditorHookTarget,
+        executable: String = "offsend"
+    ) -> String {
+        "\(Self.managedCommandMarker) \(executable) check --adapter \(target.adapter.rawValue) "
+            + "--shell-audit --secrets-only"
+    }
+
     public func makeMCPCommand(target: AIEditorHookTarget, executable: String = "offsend") -> String {
         "\(Self.managedCommandMarker) \(executable) check --adapter \(target.adapter.rawValue) "
             + "--mcp-gate --secrets-only --no-notify"
@@ -710,6 +737,7 @@ public struct AIEditorHookInstaller: Sendable {
         writeCommand: String?,
         artifactAuditCommand: String?,
         shellCommand: String?,
+        shellAuditCommand: String?,
         mcpCommand: String?,
         subagentCommand: String?,
         mcpResponseCommand: String?,
@@ -747,6 +775,13 @@ public struct AIEditorHookInstaller: Sendable {
             event: "beforeShellExecution",
             command: shellCommand,
             failClosed: true
+        )
+        // Observational: there is no decision to lose, so a crashed audit hook
+        // must not block the command it can only report on.
+        setManagedCursorGate(
+            &hooks,
+            event: "afterShellExecution",
+            command: shellAuditCommand
         )
         // Security-critical: fail closed when the MCP hook crashes or times out.
         setManagedCursorGate(&hooks, event: "beforeMCPExecution", command: mcpCommand, failClosed: true)
@@ -842,6 +877,7 @@ public struct AIEditorHookInstaller: Sendable {
         writeCommand: String?,
         artifactAuditCommand: String?,
         shellCommand: String?,
+        shellAuditCommand: String?,
         mcpCommand: String?,
         mcpResponseCommand: String?,
         at url: URL
@@ -896,6 +932,11 @@ public struct AIEditorHookInstaller: Sendable {
         if let artifactAuditCommand {
             postToolGroups.append(
                 managedClaudeToolGroup(matcher: Self.claudeWriteMatcher, command: artifactAuditCommand)
+            )
+        }
+        if let shellAuditCommand {
+            postToolGroups.append(
+                managedClaudeToolGroup(matcher: "Bash", command: shellAuditCommand)
             )
         }
         if postToolGroups.isEmpty {

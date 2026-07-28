@@ -538,6 +538,110 @@ final class ProjectConfigTests: XCTestCase {
         )
         let issues = ProjectConfigValidator.validate(invalid)
         XCTAssertTrue(issues.contains { $0.contains("context.shell.mode 'observe'") }, issues.joined())
+
+        // `mode` is the only shell knob; a per-channel interpreter knob closed one
+        // channel out of many and is rejected as an unknown key.
+        let interpretersYAML = """
+        version: 1
+        context:
+          shell:
+            mode: deny
+            interpreters: deny
+        """
+        let structureIssues = ProjectConfigValidator.validateYAMLStructure(interpretersYAML)
+        XCTAssertTrue(
+            structureIssues.contains { $0.contains("context.shell") && $0.contains("interpreters") },
+            structureIssues.joined()
+        )
+    }
+
+    func testSandboxConfigParsesAndValidates() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent(".git"),
+            withIntermediateDirectories: true
+        )
+
+        let yaml = """
+        version: 1
+        sandbox:
+          enabled: true
+          network:
+            default: deny
+            allow:
+              - npmjs.org
+        """
+        try yaml.write(to: root.appendingPathComponent(".offsend.yml"), atomically: true, encoding: .utf8)
+        let config = try XCTUnwrap(ProjectConfigLoader().load(from: root))
+        XCTAssertEqual(config.sandbox?.enabled, true)
+        XCTAssertEqual(config.sandbox?.network?.default, "deny")
+        XCTAssertEqual(config.sandbox?.network?.allow, ["npmjs.org"])
+        XCTAssertTrue(ProjectConfigValidator.validate(config).isEmpty)
+        XCTAssertTrue(ProjectConfigValidator.validateYAMLStructure(yaml).isEmpty)
+    }
+
+    /// Naming a mechanism is the one thing this schema refuses, so that swapping
+    /// the tool later never becomes a config migration.
+    func testSandboxRejectsMechanismKeysAndBadValues() {
+        let backendIssues = ProjectConfigValidator.validateYAMLStructure(
+            """
+            version: 1
+            sandbox:
+              enabled: true
+              backend: nono
+            """
+        )
+        XCTAssertTrue(
+            backendIssues.contains { $0.contains("sandbox.backend is not a setting") },
+            backendIssues.joined()
+        )
+
+        let shapeIssues = ProjectConfigValidator.validateYAMLStructure(
+            """
+            version: 1
+            sandbox:
+              enabled: true
+              network:
+                default: deny
+                allow: npmjs.org
+            """
+        )
+        XCTAssertTrue(
+            shapeIssues.contains { $0.contains("sandbox.network.allow must be a list") },
+            shapeIssues.joined()
+        )
+
+        let valueIssues = ProjectConfigValidator.validate(
+            OffsendProjectConfig(
+                sandbox: OffsendProjectSandboxConfig(
+                    enabled: true,
+                    network: OffsendProjectSandboxNetworkConfig(default: "ask", allow: ["  "])
+                )
+            )
+        )
+        XCTAssertTrue(
+            valueIssues.contains { $0.contains("sandbox.network.default 'ask'") },
+            valueIssues.joined()
+        )
+        XCTAssertTrue(
+            valueIssues.contains { $0.contains("sandbox.network.allow has 1 empty") },
+            valueIssues.joined()
+        )
+
+        let orphanIssues = ProjectConfigValidator.validate(
+            OffsendProjectConfig(
+                sandbox: OffsendProjectSandboxConfig(
+                    network: OffsendProjectSandboxNetworkConfig(default: "deny")
+                )
+            )
+        )
+        XCTAssertTrue(
+            orphanIssues.contains { $0.contains("sandbox.network has no effect") },
+            orphanIssues.joined()
+        )
     }
 
     func testParseYesNoDefaults() {
