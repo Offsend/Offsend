@@ -453,6 +453,18 @@ public struct OffsendDoctor: Sendable {
                     )
                 )
             }
+            let missingShellAudit = AIEditorHookTarget.allCases.filter { target in
+                guard AIEditorHookInstaller.supportsFileGates(target) else { return false }
+                let status = installer.status(target: target, repositoryPath: cwd)
+                return status.installed && !status.shellAudit
+            }
+            checks.append(
+                Self.shellOutputAuditCheck(
+                    missingTargets: missingShellAudit,
+                    findings: ShellOutputAuditLog.recentSummaries()
+                )
+            )
+
             let gitConfigGateActive = AIEditorHookTarget.allCases.contains { target in
                 guard AIEditorHookInstaller.supportsFileGates(target) else { return false }
                 let status = installer.status(target: target, repositoryPath: cwd)
@@ -557,6 +569,31 @@ public struct OffsendDoctor: Sendable {
         let sealKeyPath = sealKeyURL.path
         let sealKeyAvailable = fileManager.fileExists(atPath: sealKeyPath)
         let projectConfig = try? configLoader.load(from: cwd)
+
+        if projectConfig?.sandbox?.enabled == true {
+            let sandboxTargets = AIEditorHookTarget.detectedTargets(
+                repositoryPath: cwd,
+                homeDirectory: home,
+                fileManager: fileManager
+            )
+            let sandboxPlan = SandboxSyncService(fileManager: fileManager).run(
+                repositoryURL: cwd,
+                config: projectConfig,
+                targets: sandboxTargets,
+                dryRun: true
+            )
+            checks.append(contentsOf: Self.sandboxChecks(
+                report: sandboxPlan,
+                audit: SandboxPolicyAudit.findings(
+                    repositoryURL: cwd,
+                    config: projectConfig,
+                    targets: sandboxTargets,
+                    homeDirectory: home,
+                    fileManager: fileManager
+                )
+            ))
+        }
+
         let mcpInventory = OffsendMCPInventory(fileManager: fileManager).collect(
             projectRoot: cwd,
             homeDirectory: home,
@@ -1362,12 +1399,97 @@ public struct OffsendDoctor: Sendable {
         )
     }
 
+    /// Reports the observational audit of shell output. Deliberately never `.fail`:
+    /// the audit cannot prevent anything, so a missing one is a lost audit trail,
+    /// not a broken defence.
+    static func shellOutputAuditCheck(
+        missingTargets: [AIEditorHookTarget],
+        findings: [ShellOutputAuditLog.HitSummary]
+    ) -> DoctorCheck {
+        if !missingTargets.isEmpty {
+            let names = missingTargets.map(\.rawValue).joined(separator: ", ")
+            return DoctorCheck(
+                name: "shell-output-audit",
+                status: .warn,
+                message: "Shell output is not audited for \(names), so a secret printed by a command leaves no record to rotate from. Re-run: offsend hook install --target cursor|claude (on by default; use --no-shell-audit to opt out)"
+            )
+        }
+        var message = "Secrets printed by shell commands are recorded for rotation. This runs after the command and cannot prevent the leak: by the time it fires the value is already in the agent context. To stop the leak instead of logging it, deny egress with a sandbox."
+        if !findings.isEmpty {
+            let recent = findings
+                .map { "\($0.command) (\($0.secretTypes.joined(separator: ", ")))" }
+                .joined(separator: "; ")
+            message += " Rotate what these commands printed: \(recent)."
+        }
+        return DoctorCheck(
+            name: "shell-output-audit",
+            status: findings.isEmpty ? .ok : .warn,
+            message: message
+        )
+    }
+
+    /// Reports which mechanism was chosen for each editor and the position it
+    /// actually reaches. Offsend picks the mechanism without asking, so the choice
+    /// has to be inspectable — an automatic decision nobody can read is worse than
+    /// a config field.
+    static func sandboxChecks(
+        report: SandboxSyncService.Report,
+        audit: [SandboxPolicyAudit.Finding]
+    ) -> [DoctorCheck] {
+        guard report.enabled else { return [] }
+        var checks: [DoctorCheck] = []
+
+        for plan in report.plans {
+            var reached = plan.guarantee.egressDenied ? "egress denied" : "no egress control"
+            reached += plan.guarantee.readDeniable
+                ? ", named reads deniable"
+                : ", no read-deny (read-only there means read everywhere)"
+            checks.append(
+                DoctorCheck(
+                    name: "sandbox-\(plan.target.rawValue)",
+                    status: plan.mechanism == .unavailable ? .warn : .ok,
+                    message: "\(plan.mechanism.rawValue): \(plan.reason). Reaches: \(reached)."
+                )
+            )
+        }
+
+        if !report.uncoveredPatterns.isEmpty {
+            checks.append(
+                DoctorCheck(
+                    name: "sandbox-coverage",
+                    status: .warn,
+                    message: "ignore.patterns not expressible as sandbox paths: "
+                        + report.uncoveredPatterns.joined(separator: ", ")
+                        + ". Sandboxes deny paths, these are basename globs, and expanding them against "
+                        + "the current tree would go stale on the next matching file. Name a directory to cover them."
+                )
+            )
+        }
+
+        for step in report.manualSteps {
+            checks.append(
+                DoctorCheck(name: "sandbox-launch", status: .warn, message: step)
+            )
+        }
+
+        if !audit.isEmpty {
+            checks.append(
+                DoctorCheck(
+                    name: "sandbox-policy",
+                    status: audit.contains(where: \.isFailure) ? .fail : .warn,
+                    message: audit.map(\.message).joined(separator: " ")
+                )
+            )
+        }
+        return checks
+    }
+
     static func environmentInvocationCheck(shellGateActive: Bool) -> DoctorCheck {
         DoctorCheck(
             name: "environment-invocation-gate",
             status: shellGateActive ? .ok : .warn,
             message: shellGateActive
-                ? "Static PATH, loader, Git-helper, and interpreter-startup environment overrides are gated. Process APIs, generated scripts, command substitution, and already-poisoned parent environments remain residual gaps."
+                ? "Static PATH, loader, Git-helper, and interpreter-startup environment overrides are gated. Reading a file is not: a command that enumerates or prints files is only stopped when the path it names is recognised, and what it prints cannot be redacted — shell output is an open channel the hooks can observe but not rewrite. Already-poisoned parent environments are a residual gap. To stop a leak rather than record it, deny egress with a sandbox."
                 : "Environment invocation gate is inactive without a healthy shell-gate. Re-run: offsend hook install --target cursor|claude"
         )
     }

@@ -73,7 +73,7 @@ hooks:
 # Optional AI-context controls (MCP policy, response seal, shell gate, …)
 # context:
 #   shell:
-#     mode: deny         # ask | deny — default deny (Cursor does not reliably pause on ask)
+#     mode: deny         # ask | deny — default deny (Cursor does not enforce ask for shell hooks)
 #   mcp:
 #     mode: ask          # observe | ask | deny
 #     allow: [github]    # non-empty allow = allowlist mode
@@ -178,7 +178,7 @@ Locally, prefer reviewing with `doctor` / `show` and advise-only `init` checks. 
 
 ### `check.policy`
 
-When `true`, `offsend check` also runs workspace policy checks for ignore files, exposed sensitive paths, and managed ignore drift. When `false`, it scans file contents only.
+When `true`, `offsend check` also runs workspace policy checks for ignore files, exposed sensitive paths, managed ignore drift, and **git-tracked paths covered by `ignore.patterns`** (committed secrets bypass local AI gates via clone / raw URLs). When `false`, it scans file contents only.
 
 ### Strict credentials mode
 
@@ -310,14 +310,16 @@ Optional shell-gate enforcement for Cursor `beforeShellExecution` / Claude Bash 
 
 | Field | Description |
 | --- | --- |
-| `mode` | `ask` (confirm) or `deny` (block). **Default when unset: `deny`**. Cursor does not reliably pause on `ask` for shell hooks, so the built-in default blocks sensitive-path and other ask-class findings. Control-plane findings (policy trust/forget, execution-sensitive `git config`, hard-denied daemons/environment) always deny regardless of mode. Until `offsend policy trust`, `mode: ask` is ignored so an agent-writable policy cannot loosen the gate |
+| `mode` | `ask` (confirm) or `deny` (block) for findings about a named sensitive path. **Default when unset: `deny`**, because Cursor accepts `ask` from `beforeShellExecution` but does not actually pause on it — the command runs and the reason only reaches you as a warning. Control-plane findings (policy trust/forget, execution-sensitive `git config`, hard-denied daemons and environment overrides) always deny regardless of mode: those are the surfaces that decide what runs next. Until `offsend policy trust`, `mode: ask` is ignored so an agent-writable policy cannot loosen the gate |
+
+`mode` is the only field. There is no per-channel knob for interpreters or heredocs, because the gate reads a command as text: it can tell you which sensitive path a command names, and it cannot tell you what a program will read once it runs. Read [what the shell-gate does not do](cli.md#what-the-shell-gate-does-not-do) before relying on it; preventing a read or an egress needs enforcement below the hook layer, such as an OS sandbox or the editor's own command allowlist.
 
 Read at runtime — changing it does not require reinstalling hooks. Invalid / oversized shell-gate hook input is denied (fail-closed).
 
 ```yaml
 context:
   shell:
-    mode: deny   # or ask (requires trusted policy to take effect)
+    mode: deny            # or ask (requires trusted policy to take effect)
 ```
 
 ### `context.mcp`
@@ -383,6 +385,46 @@ Workflow:
 | `audit` | When `false`, `offsend show` skips the agent-history section (default: audit) |
 | `scrub_on_protect` | When `true`, `offsend protect` also runs history scrub (honors `--dry-run`) |
 | `scan_in_show` | When `true`, `offsend show` / `doctor` content-scan local transcripts (same detectors as `history audit`). Default / unset: count files only. One-shot alternative: `offsend show --scan-history` |
+
+### `sandbox`
+
+Declares that agent commands must run under an OS sandbox. This is the layer the shell-gate cannot reach: hooks see a command as text, while a sandbox is enforced by the kernel and cannot be loosened once applied.
+
+```yaml
+sandbox:
+  enabled: true
+  network:
+    default: deny         # or allow (requires trusted policy to take effect)
+    allow: []             # domains reachable despite default: deny
+```
+
+| Field | Description |
+| --- | --- |
+| `enabled` | `true` makes `offsend sync` materialize the sandbox into each detected editor's own configuration. Unset / `false` means no sandbox is configured |
+| `network.default` | `deny` (default when unset) or `allow` |
+| `network.allow` | Domains still reachable under `default: deny` |
+
+No mechanism is named here, the same way `ignore.patterns` never names `.cursorignore`. Offsend picks one per editor and `offsend doctor` prints the choice, the reason, and the position it reached.
+
+`enabled: true` tightens, so it applies without a trusted policy. `enabled: false`, `network.default: allow`, and every `network.allow` entry loosen, so editor gates ignore them until `offsend policy trust`. Practical effect: an agent editing `.offsend.yml` cannot switch off its own sandbox or append its own exfiltration endpoint.
+
+#### What each editor actually reaches
+
+Egress denial is the only portable guarantee, so `enabled: true` does not mean the same protection everywhere:
+
+| Editor | Mechanism | Egress denied | Named reads deniable |
+| --- | --- | --- | --- |
+| Claude Code | `nono` when installed, else Claude's own sandbox | yes | yes |
+| Codex | `nono` when installed, else `~/.codex/config.toml` (outside the repo; Offsend does not write it) | yes | no — `read-only` there means read everywhere |
+| Cursor | Cursor's own sandbox (`.cursor/sandbox.json`) | yes | no — only additive read paths; `~/.ssh` stays readable |
+| Windsurf | none | no | no |
+
+Further limits worth knowing before relying on this:
+
+- Offsend cannot **apply** `nono`: hooks run inside an already-started agent, while a wrapper applies at launch. `offsend sync` writes the profile under `.offsend/nono/` and prints the `nono run` command; `doctor` repeats it.
+- Cursor decides per command whether to sandbox, and commands needing access outside the workspace run unsandboxed. The shell-gate bridges that gap: with `sandbox.enabled: true`, a command the editor reports as unsandboxed follows `context.shell.mode`.
+- `ignore.patterns` is mostly basename globs (`*.pem`, `.env*`), while sandboxes deny paths. Expanding globs against the current tree would go stale on the next matching file, so `doctor` lists what could not be expressed instead. Name a directory to cover those.
+- With `enabled: true`, `check --policy` fails on the four values that keep a sandbox nominally on while removing what it was for: Cursor `insecure_none`, Claude `allowUnsandboxedCommands: true` and `filesystem.disabled: true`, Codex `sandbox_mode = "danger-full-access"`.
 
 ---
 

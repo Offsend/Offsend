@@ -28,6 +28,21 @@ public struct ShellInvocation: Equatable, Sendable {
     }
 }
 
+/// A shell heredoc (`<<TAG` / `<<'TAG'` / `<<-TAG`) and the body until the
+/// closing tag line.
+public struct ShellHeredoc: Equatable, Sendable {
+    public let tag: String
+    public let body: String
+    /// Rough text of the command line before `<<` (used to attribute stdin vs redirect).
+    public let preface: String
+
+    public init(tag: String, body: String, preface: String) {
+        self.tag = tag
+        self.body = body
+        self.preface = preface
+    }
+}
+
 /// Shared static analysis of an agent shell command: one lexer, one wrapper
 /// table, one place that looks inside `sh -c "…"`, interpreter `-c`/`-e`
 /// payloads, and `$(…)` bodies.
@@ -116,6 +131,11 @@ public enum ShellInvocationExtractor {
         var result: [String] = []
         collectTokens(command, depth: 0, normalizeStaticConcats: false, into: &result)
         return result
+    }
+
+    /// Heredoc bodies (`cmd <<TAG … TAG`, `<<'TAG'`, `<<-TAG`).
+    public static func heredocs(in command: String) -> [ShellHeredoc] {
+        extractHeredocs(in: command)
     }
 
     public static func executableName(_ token: String) -> String {
@@ -298,6 +318,12 @@ public enum ShellInvocationExtractor {
                 into: &result
             )
         }
+        // A heredoc body reaches the lexer as ordinary text, so `open('.env')`
+        // arrives as `open(.env)` and the quoted name is gone before path
+        // candidates are gathered. Keep the raw body so quoted fragments survive.
+        for heredoc in extractHeredocs(in: normalized) {
+            result.append(heredoc.body)
+        }
     }
 
     /// Bodies of `$(…)` substitutions (best-effort, quote-aware nesting).
@@ -476,6 +502,137 @@ public enum ShellInvocationExtractor {
             return nil
         }
         return ShellAssignment(name: name, value: String(token[token.index(after: equals)...]))
+    }
+
+    /// Best-effort heredoc extraction outside quotes.
+    private static func extractHeredocs(in command: String) -> [ShellHeredoc] {
+        var result: [ShellHeredoc] = []
+        let characters = Array(command)
+        var index = 0
+        var quote: Character?
+        var escaped = false
+        var lineStart = 0
+
+        while index < characters.count {
+            let character = characters[index]
+            if escaped {
+                escaped = false
+                index += 1
+                continue
+            }
+            if character == "\\", quote != "'" {
+                escaped = true
+                index += 1
+                continue
+            }
+            if let active = quote {
+                if character == active { quote = nil }
+                index += 1
+                continue
+            }
+            if character == "'" || character == "\"" {
+                quote = character
+                index += 1
+                continue
+            }
+            if character == "\n" {
+                lineStart = index + 1
+                index += 1
+                continue
+            }
+            // Heredoc operator: << or <<-
+            if character == "<", index + 1 < characters.count, characters[index + 1] == "<" {
+                let operatorStart = index
+                index += 2
+                if index < characters.count, characters[index] == "-" {
+                    index += 1
+                }
+                while index < characters.count, characters[index].isWhitespace,
+                      characters[index] != "\n" {
+                    index += 1
+                }
+                guard let tagInfo = readHeredocTag(in: characters, from: index) else {
+                    continue
+                }
+                index = tagInfo.end
+                // Remainder of the opener line until newline.
+                while index < characters.count, characters[index] != "\n" {
+                    index += 1
+                }
+                guard index < characters.count else { break }
+                index += 1 // skip newline after opener
+                let bodyStart = index
+                let closing = tagInfo.tag
+                var bodyEnd = bodyStart
+                var found = false
+                while index <= characters.count {
+                    let atEnd = index == characters.count
+                    let atNewline = !atEnd && characters[index] == "\n"
+                    if atEnd || atNewline {
+                        let line = String(characters[bodyEnd..<index])
+                        // `<<-` strips leading tabs from the closing tag.
+                        let trimmed = String(line.drop(while: { $0 == "\t" }))
+                        if trimmed == closing {
+                            let body = String(characters[bodyStart..<bodyEnd])
+                            let preface = String(characters[lineStart..<operatorStart])
+                                .trimmingCharacters(in: .whitespaces)
+                            result.append(ShellHeredoc(tag: closing, body: body, preface: preface))
+                            found = true
+                            if atNewline {
+                                lineStart = index + 1
+                                index += 1
+                            }
+                            break
+                        }
+                        if atEnd { break }
+                        index += 1
+                        bodyEnd = index
+                        continue
+                    }
+                    index += 1
+                }
+                if !found { break }
+                continue
+            }
+            index += 1
+        }
+        return result
+    }
+
+    private static func readHeredocTag(
+        in characters: [Character],
+        from start: Int
+    ) -> (tag: String, end: Int)? {
+        guard start < characters.count else { return nil }
+        var index = start
+        let quote: Character?
+        if characters[index] == "'" || characters[index] == "\"" {
+            quote = characters[index]
+            index += 1
+        } else {
+            quote = nil
+        }
+        var tag = ""
+        while index < characters.count {
+            let character = characters[index]
+            if let quote {
+                if character == quote {
+                    index += 1
+                    break
+                }
+                tag.append(character)
+                index += 1
+                continue
+            }
+            if character.isWhitespace || character == ";" || character == "|"
+                || character == "&" || character == "<" || character == ">" {
+                break
+            }
+            tag.append(character)
+            index += 1
+        }
+        guard !tag.isEmpty else { return nil }
+        return (tag, index)
     }
 
     /// Small shell lexer sufficient for static argv recognition. Quotes are

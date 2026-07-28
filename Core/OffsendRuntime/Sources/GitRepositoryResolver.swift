@@ -166,6 +166,15 @@ public struct GitRepositoryResolver: Sendable {
         return output.split(separator: "\0", omittingEmptySubsequences: true).map(String.init)
     }
 
+    /// Every path currently tracked by git (`git ls-files -z`).
+    public func allTrackedRelativePaths(in repositoryRoot: URL) throws -> [String] {
+        let output = try runGit(
+            arguments: ["ls-files", "-z"],
+            workingDirectory: repositoryRoot
+        )
+        return output.split(separator: "\0", omittingEmptySubsequences: true).map(String.init)
+    }
+
     /// Shared Git directory resolved without spawning `git`, for hook paths where
     /// a subprocess costs more than the rest of the gate combined. Follows the
     /// `.git` file of worktrees and submodules and their `commondir`, but unlike

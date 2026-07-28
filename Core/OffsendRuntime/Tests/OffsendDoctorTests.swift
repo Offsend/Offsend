@@ -158,11 +158,41 @@ final class OffsendDoctorTests: XCTestCase {
         let active = OffsendDoctor.environmentInvocationCheck(shellGateActive: true)
         XCTAssertEqual(active.name, "environment-invocation-gate")
         XCTAssertEqual(active.status, .ok)
-        XCTAssertTrue(active.message.contains("already-poisoned parent environments"))
+        XCTAssertTrue(active.message.contains("Already-poisoned parent environments"))
+        // The check must state the limit users most often assume away.
+        XCTAssertTrue(active.message.contains("Reading a file is not"))
 
         let inactive = OffsendDoctor.environmentInvocationCheck(shellGateActive: false)
         XCTAssertEqual(inactive.status, .warn)
         XCTAssertTrue(inactive.message.contains("shell-gate"))
+    }
+
+    func testShellOutputAuditCheckWarnsOnMissingCoverage() {
+        let missing = OffsendDoctor.shellOutputAuditCheck(missingTargets: [.cursor], findings: [])
+        XCTAssertEqual(missing.name, "shell-output-audit")
+        XCTAssertEqual(missing.status, .warn)
+        XCTAssertTrue(missing.message.contains("cursor"))
+    }
+
+    /// Covered but quiet is the only state that may read as `ok`; a recorded
+    /// finding is an outstanding rotation, so it must stay visible.
+    func testShellOutputAuditCheckReportsFindingsAsWork() {
+        let clean = OffsendDoctor.shellOutputAuditCheck(missingTargets: [], findings: [])
+        XCTAssertEqual(clean.status, .ok)
+        XCTAssertTrue(clean.message.contains("cannot prevent the leak"))
+
+        let hit = OffsendDoctor.shellOutputAuditCheck(
+            missingTargets: [],
+            findings: [
+                ShellOutputAuditLog.HitSummary(
+                    command: "printenv",
+                    count: 2,
+                    secretTypes: ["openAIAPIKey"]
+                )
+            ]
+        )
+        XCTAssertEqual(hit.status, .warn)
+        XCTAssertTrue(hit.message.contains("printenv (openAIAPIKey)"))
     }
 
     // MARK: - needsIgnoreMaterialization (fresh-clone detection)

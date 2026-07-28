@@ -12,7 +12,29 @@ public enum OffsendPolicyTrustFilter {
         guard var config else { return nil }
         config.check = hardened(check: config.check)
         config.context = hardened(context: config.context)
+        config.sandbox = hardened(sandbox: config.sandbox)
         return config
+    }
+
+    /// `enabled: true` only tightens, so it survives. Everything that could widen
+    /// what a sandboxed command reaches is dropped: an agent that can rewrite
+    /// `.offsend.yml` must not be able to switch off its own sandbox, and must not
+    /// be able to append the endpoint it wants to exfiltrate to.
+    private static func hardened(
+        sandbox: OffsendProjectSandboxConfig?
+    ) -> OffsendProjectSandboxConfig? {
+        guard var sandbox else { return nil }
+        if sandbox.enabled != true {
+            sandbox.enabled = nil
+        }
+        if var network = sandbox.network {
+            if network.default != OffsendSandboxNetworkDefault.deny.rawValue {
+                network.default = nil
+            }
+            network.allow = nil
+            sandbox.network = network
+        }
+        return sandbox
     }
 
     private static func hardened(check: OffsendProjectCheckConfig?) -> OffsendProjectCheckConfig? {

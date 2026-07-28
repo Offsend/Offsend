@@ -63,6 +63,40 @@ final class OffsendPolicyTrustFilterTests: XCTestCase {
         XCTAssertEqual(tightened?.context?.shell?.mode, "deny")
     }
 
+    /// An agent that can rewrite `.offsend.yml` must not be able to switch off
+    /// its own sandbox, nor to append the endpoint it wants to reach.
+    func testSandboxSurvivesOnlyWhereItTightens() {
+        let loosened = OffsendPolicyTrustFilter.hardened(
+            OffsendProjectConfig(
+                sandbox: OffsendProjectSandboxConfig(
+                    enabled: false,
+                    network: OffsendProjectSandboxNetworkConfig(
+                        default: "allow",
+                        allow: ["attacker.example"]
+                    )
+                )
+            )
+        )
+
+        XCTAssertNil(loosened?.sandbox?.enabled)
+        XCTAssertNil(loosened?.sandbox?.network?.default)
+        XCTAssertNil(loosened?.sandbox?.network?.allow)
+
+        let tightened = OffsendPolicyTrustFilter.hardened(
+            OffsendProjectConfig(
+                sandbox: OffsendProjectSandboxConfig(
+                    enabled: true,
+                    network: OffsendProjectSandboxNetworkConfig(default: "deny", allow: ["npmjs.org"])
+                )
+            )
+        )
+
+        XCTAssertEqual(tightened?.sandbox?.enabled, true)
+        XCTAssertEqual(tightened?.sandbox?.network?.default, "deny")
+        // Even alongside `default: deny`, an allowlist entry widens egress.
+        XCTAssertNil(tightened?.sandbox?.network?.allow)
+    }
+
     func testHardenedDefaultsMatchAbsentPolicy() {
         let hardened = OffsendPolicyTrustFilter.hardened(
             OffsendProjectConfig(

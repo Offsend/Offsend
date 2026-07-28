@@ -137,7 +137,17 @@ public struct OffsendCheckService: Sendable {
                         )
                     )
                 }
+                policyFindings.append(contentsOf: trackedIgnorePatternFindings(
+                    directoryURL: policyDirectoryURL,
+                    patterns: patterns
+                ))
             }
+            policyFindings.append(contentsOf: SandboxPolicyAudit.findings(
+                repositoryURL: policyDirectoryURL,
+                config: projectConfig
+            ).map {
+                PolicyCheckFinding(message: $0.message, status: $0.isFailure ? .fail : .warning)
+            })
         }
 
         return CheckReport(
@@ -426,6 +436,41 @@ public struct OffsendCheckService: Sendable {
         }
 
         return findings
+    }
+
+    /// Fail when `ignore.patterns` covers paths that git still tracks — local
+    /// AI gates cannot protect bytes already public on origin (WebFetch / clone).
+    private func trackedIgnorePatternFindings(
+        directoryURL: URL,
+        patterns: [String]
+    ) -> [PolicyCheckFinding] {
+        let resolver = GitRepositoryResolver()
+        let repoRoot: URL
+        do {
+            repoRoot = try resolver.repositoryRoot(startingAt: directoryURL)
+        } catch {
+            return []
+        }
+        let tracked: [String]
+        do {
+            tracked = try resolver.allTrackedRelativePaths(in: repoRoot)
+        } catch {
+            return []
+        }
+        let hits = tracked.filter { path in
+            IgnorePatternPathMatcher.isIgnored(relativePath: path, ignoreLines: patterns)
+        }
+        guard !hits.isEmpty else { return [] }
+        let shown = hits.prefix(8).joined(separator: ", ")
+        let suffix = hits.count > 8 ? " (+\(hits.count - 8) more)" : ""
+        return [
+            PolicyCheckFinding(
+                message: "Git tracks paths covered by ignore.patterns: \(shown)\(suffix). "
+                    + "Local AI gates cannot protect committed bytes (clone / raw.githubusercontent). "
+                    + "Remove with `git rm --cached <path>`, keep secrets out of the default branch, and rotate if leaked.",
+                status: .fail
+            )
+        ]
     }
 
     private func relativePath(for fileURL: URL, workingDirectory: URL) -> String {

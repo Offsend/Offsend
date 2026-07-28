@@ -12,7 +12,13 @@ public enum ProjectConfigValidator {
         }
 
         var issues: [String] = []
-        issues.append(contentsOf: unknownKeys(in: root, allowed: ["version", "check", "ignore", "hooks", "context"], path: "root"))
+        issues.append(
+            contentsOf: unknownKeys(
+                in: root,
+                allowed: ["version", "check", "ignore", "hooks", "context", "sandbox"],
+                path: "root"
+            )
+        )
 
         if let check = root["check"] as? [String: Any] {
             issues.append(
@@ -56,6 +62,40 @@ public enum ProjectConfigValidator {
                     path: "hooks"
                 )
             )
+        }
+
+        if let sandbox = root["sandbox"] as? [String: Any] {
+            issues.append(
+                contentsOf: unknownKeys(
+                    in: sandbox,
+                    allowed: ["enabled", "network"],
+                    path: "sandbox"
+                )
+            )
+            // A misspelled mechanism key would otherwise be silently dropped, and
+            // the user would believe they had chosen a backend.
+            for key in ["backend", "tool", "mechanism", "provider"] where sandbox[key] != nil {
+                issues.append(
+                    "sandbox.\(key) is not a setting: Offsend picks the mechanism from what is "
+                        + "installed and prints the choice in offsend doctor."
+                )
+            }
+            if let network = sandbox["network"] as? [String: Any] {
+                issues.append(
+                    contentsOf: unknownKeys(
+                        in: network,
+                        allowed: ["default", "allow"],
+                        path: "sandbox.network"
+                    )
+                )
+                if let allow = network["allow"], !(allow is [Any]) {
+                    issues.append("sandbox.network.allow must be a list.")
+                }
+            } else if sandbox["network"] != nil {
+                issues.append("sandbox.network must be a mapping.")
+            }
+        } else if root["sandbox"] != nil {
+            issues.append("sandbox must be a mapping.")
         }
 
         if let context = root["context"] as? [String: Any] {
@@ -177,6 +217,24 @@ public enum ProjectConfigValidator {
             issues.append(
                 "context.shell.mode '\(shellMode)' is invalid (use \(validValues(OffsendShellGateMode.self)))."
             )
+        }
+
+        if let networkDefault = config.sandbox?.network?.default,
+           OffsendSandboxNetworkDefault(rawValue: networkDefault) == nil {
+            issues.append(
+                "sandbox.network.default '\(networkDefault)' is invalid "
+                    + "(use \(validValues(OffsendSandboxNetworkDefault.self)))."
+            )
+        }
+
+        let blankEgressEntries = (config.sandbox?.network?.allow ?? [])
+            .filter { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        if !blankEgressEntries.isEmpty {
+            issues.append("sandbox.network.allow has \(blankEgressEntries.count) empty entry/entries.")
+        }
+
+        if config.sandbox?.enabled != true, config.sandbox?.network != nil {
+            issues.append("sandbox.network has no effect while sandbox.enabled is not true.")
         }
 
         if let responses = config.context?.mcp?.responses,

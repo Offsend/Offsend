@@ -103,6 +103,7 @@ Behavior notes:
 - When `hooks.publish` is `false` (default), installed editor hook configs are added to the local git exclude so they stay untracked.
 - Ignore materialization writes a managed block (`# >>> offsend managed` … `# <<< offsend managed`) into each AI ignore file; user lines outside the block are preserved. When `ignore.commit` is `false` (default), also updates `.gitignore` so those files stay untracked; when it is `true`, stale offsend entries are removed from `.gitignore`.
 - Prefer `sync` after clone or after editing `.offsend.yml` by hand. For ignore files only (no hooks), use `--no-hooks`. Fine-grained hook control remains on [`hook install`](#hook-install).
+- With [`sandbox.enabled: true`](configuration.md#sandbox), `sync` also materializes each detected editor's own sandbox configuration (`.cursor/sandbox.json`, the `sandbox` block of `.claude/settings.json`, a nono profile under `.offsend/nono/`) and prints which mechanism was chosen for each editor and what it reaches. Offsend cannot *apply* a process wrapper to an already-running agent, so for nono it prints the `nono run` command instead of promising enforcement. Codex reads only `~/.codex/config.toml`, outside the repository, and is reported rather than written.
 
 ---
 
@@ -123,9 +124,11 @@ offsend doctor --no-follow
 
 Exits `2` when any check has status `fail`. AI hooks and seal key warnings are informational (`warn`).
 
-Checks include `cursor-version` on macOS (warn below Cursor 3.0 because of CVE-2026-48124), `ignore-sync` / `rules-drift` (shared `.offsend.yml` vs materialized ignore and privacy rule files), `ai-hook-trust-root` (legacy repo-local executable wrappers), `ai-write-gate` / `ai-artifact-audit` / `ai-shell-gate` / `ai-mcp-gate` / `ai-mcp-response-gate` (warn when Cursor/Claude are installed without those gates), `trust-surface-map` (editor/Git/shell startup configs and observe-only venv interpreters), `artifact-provenance` (last 30 days of post-write trust-surface metadata), `privileged-daemons` (common Docker/Podman/containerd/BuildKit endpoints and shell-gate coverage), `environment-invocation-gate` (PATH/loader/Git/interpreter environment coverage and residual gaps), `hook-coverage-gaps` (residual limits when AI hooks are installed: MCP responses on Cursor, Claude subagents, Cursor open tabs, cloud sessions), `seal-detector-gap` (seal / MCP-seal with credential detectors listed under `check.detectors.disable`, or `url` disabled under seal), `mcp-inventory` (configured MCP servers + policy), and `next-actions` (ranked hints: shared policy → sync / drift repair → protect → gates → history audit/scrub when transcripts exist → git hook). Legacy `ai-wrapper-*` checks remain during migration. By default `show` / doctor **count** transcript files; enable content scan with `context.history.scan_in_show: true` or `offsend show --scan-history` (then doctor can suggest `history scrub` on real findings). Otherwise run `history audit`. In a TTY, doctor may offer to run the first suggested command. JSON includes `suggestedActions`. See also [FAQ → covers / does not cover](faq.md#what-does-offsend-cover-vs-not-cover).
+Checks include `cursor-version` on macOS (warn below Cursor 3.0 because of CVE-2026-48124), `ignore-sync` / `rules-drift` (shared `.offsend.yml` vs materialized ignore and privacy rule files), `ai-hook-trust-root` (legacy repo-local executable wrappers), `ai-write-gate` / `ai-artifact-audit` / `ai-shell-gate` / `ai-mcp-gate` / `ai-mcp-response-gate` (warn when Cursor/Claude are installed without those gates), `shell-output-audit` (coverage of the post-hoc output audit, plus commands whose printed secrets still need rotating), `trust-surface-map` (editor/Git/shell startup configs and observe-only venv interpreters), `artifact-provenance` (last 30 days of post-write trust-surface metadata), `privileged-daemons` (common Docker/Podman/containerd/BuildKit endpoints and shell-gate coverage), `environment-invocation-gate` (PATH/loader/Git/interpreter environment coverage, and the fact that file reads are not prevented), `hook-coverage-gaps` (residual limits when AI hooks are installed: MCP responses on Cursor, Claude subagents, Cursor open tabs, cloud sessions), `seal-detector-gap` (seal / MCP-seal with credential detectors listed under `check.detectors.disable`, or `url` disabled under seal), `mcp-inventory` (configured MCP servers + policy), and `next-actions` (ranked hints: shared policy → sync / drift repair → protect → gates → history audit/scrub when transcripts exist → git hook). Legacy `ai-wrapper-*` checks remain during migration. By default `show` / doctor **count** transcript files; enable content scan with `context.history.scan_in_show: true` or `offsend show --scan-history` (then doctor can suggest `history scrub` on real findings). Otherwise run `history audit`. In a TTY, doctor may offer to run the first suggested command. JSON includes `suggestedActions`. See also [FAQ → covers / does not cover](faq.md#what-does-offsend-cover-vs-not-cover).
 
 When a shell-gate is installed, `git-config-invocation-gate` confirms static execution-sensitive Git invocation checks are active and names the remaining dynamic-command attribution gaps.
+
+With [`sandbox.enabled: true`](configuration.md#sandbox), doctor adds `sandbox-<editor>` (the mechanism chosen, why, and the position it reaches — egress denial everywhere, named-read denial only where the mechanism has it), `sandbox-coverage` (`ignore.patterns` that are basename globs and therefore not expressible as sandbox paths), `sandbox-launch` (the `nono run` command Offsend cannot run for you), and `sandbox-policy`, which **fails** on config drift and on the four values that keep a sandbox nominally on while removing its point: Cursor `insecure_none`, Claude `allowUnsandboxedCommands: true` / `filesystem.disabled: true`, Codex `sandbox_mode = "danger-full-access"`. The same checks run in `offsend check --policy`.
 
 ---
 
@@ -235,7 +238,7 @@ offsend check --format json --verbose
 | --- | --- |
 | `[paths…]` | Files or directories (recursive). Omit with `--staged`, `--policy`, or `--stdin` |
 | `--staged` | Scan staged files only (exports git blobs to a temp dir) |
-| `--policy` | Also run workspace policy checks (ignore files, exposed paths) |
+| `--policy` | Also run workspace policy checks (ignore files, exposed paths, managed ignore drift, git-tracked `ignore.patterns`) |
 | `--fail-on block\|warn\|none` | Exit policy (default from `.offsend.yml` or `block`) |
 | `--format text\|json` | Report format |
 | `--quiet` | Findings and errors only |
@@ -283,6 +286,7 @@ offsend check --adapter claude --write-gate --no-notify  # executable-config wri
 | `--write-gate` | off | Fail-closed agent-write gate for executable editor/Git configuration |
 | `--artifact-audit` | off | Post-write metadata recorder for executable trust surfaces (installed-hook plumbing) |
 | `--shell-gate` | — | Sensitive-path gate for Cursor / Claude shell hooks (`context.shell.mode`; default `deny`) |
+| `--shell-audit` | — | Post-hoc audit of shell **output** for Cursor / Claude: log and notify on secrets a command printed. Reports only; cannot block |
 | `--mcp-gate` | — | MCP tool-call gate for Cursor / Claude: `context.mcp` policy + path/secret scan in args |
 | `--mcp-response-gate` | — | MCP tool-**response** gate: secret-scan the response per `context.mcp.responses` (`observe`/`warn`/`seal`). Cursor and Claude `PostToolUse` can rewrite MCP output in `seal` mode |
 | `--subagent-gate` | — | Subagent spawn gate for Cursor: secret-scan task text |
@@ -415,13 +419,14 @@ offsend hook install --target cursor --no-mcp-gate
 | `--read-gate` / `--no-read-gate` | File-read path gates (**Cursor + Claude only**). **On by default**; `--no-read-gate` disables |
 | `--write-gate` / `--no-write-gate` | Semantic pre-write gate for executable workspace configuration (**Cursor + Claude only**). **On by default**; deny is fail-closed |
 | `--shell-gate` / `--no-shell-gate` | Shell-command gate (**Cursor + Claude only**). **On by default**; sensitive-path / ask-class findings follow `context.shell.mode` (default **deny**); control-plane findings always deny. Cursor `beforeShellExecution` with `failClosed: true`. `--no-shell-gate` disables |
+| `--shell-audit` / `--no-shell-audit` | Shell-**output** audit (**Cursor + Claude only**). **On by default**; Cursor `afterShellExecution`, Claude `PostToolUse` matcher `Bash`. Never fail-closed: it reports on a command that already ran and cannot block. `--no-shell-audit` disables |
 | `--mcp-gate` / `--no-mcp-gate` | MCP tool-call gate (**Cursor + Claude only**). **On by default**; Cursor `beforeMCPExecution` with `failClosed: true`. `--no-mcp-gate` disables |
 | `--mcp-response-gate` / `--no-mcp-response-gate` | MCP tool-**response** gate (**Cursor + Claude only**). **On by default**; Cursor `postToolUse` matcher `MCP:.*`, Claude `PostToolUse` matcher `mcp__.*`; both can rewrite output in `seal` mode. `--no-mcp-response-gate` disables |
 | `--subagent-gate` / `--no-subagent-gate` | Subagent spawn gate (**Cursor only**). **On by default**; `subagentStart` with `failClosed: true`. `--no-subagent-gate` disables |
 | `--cli-path PATH` | CLI executable referenced by local editor-hook commands |
 | `--force` | Overwrite a foreign git hook; managed editor entries refresh automatically |
 
-Gate flags also accept `--with-read-gate` / `--with-write-gate` / `--with-shell-gate` / `--with-mcp-gate` / `--with-mcp-response-gate` / `--with-subagent-gate` as aliases.
+Gate flags also accept `--with-read-gate` / `--with-write-gate` / `--with-shell-gate` / `--with-shell-audit` / `--with-mcp-gate` / `--with-mcp-response-gate` / `--with-subagent-gate` as aliases.
 
 Install **merges** into existing editor configs and does not remove foreign hooks. Managed entries invoke the installed Offsend CLI directly, so agent-writable repo-local shell wrappers are not part of the execution path. Local configs prefer the install-time CLI path and safely fall back to `offsend` from `PATH` after package-manager moves; published configs use `PATH` directly.
 
@@ -496,6 +501,7 @@ Treat editor hooks as **defense-in-depth**, not a hard perimeter. Prefer this st
 | Editor Read tools | Read-gate | Cursor `beforeReadFile`; Claude `PreToolUse` (`Read`) |
 | Editor Edit / Write tools targeting executable configuration | Write-gate | Cursor `preToolUse` (`Write\|Edit`); Claude `PreToolUse` (`Edit\|Write`) |
 | Agent shell (`Bash` / `beforeShellExecution`) | Shell-gate | On by default for Cursor/Claude; sensitive paths, safe PATH/HOME overrides, and lower-risk daemon mutations follow `context.shell.mode` (default **deny**); control-plane, environment injection, container execution, and direct privileged-socket operations hard-deny. Invalid / oversized hook input fails closed |
+| Agent shell **output** (`afterShellExecution` / `PostToolUse Bash`) | Shell-output audit | On by default for Cursor/Claude. Reports only: neither editor accepts a replacement for terminal output, so secrets a command printed are logged and notified for rotation, not withheld |
 | MCP tool calls | MCP-gate | On by default for Cursor/Claude; Cursor `beforeMCPExecution` (`failClosed: true`); Claude `PreToolUse` (`mcp__.*`). Policy + path/secret scan on **args**; see `context.mcp` in `.offsend.yml` |
 | MCP tool responses | MCP-response-gate | On by default for Cursor/Claude; `PostToolUse` can **replace** the output — `context.mcp.responses: seal` swaps secrets for `{{…}}` tokens before model consumption |
 | Subagent spawn (Cursor Task) | Subagent-gate | On by default for Cursor `subagentStart`; secret-scan of the task prompt (`deny` on findings; no `ask`). Claude subagents are not gated — rely on AI ignore |
@@ -507,6 +513,7 @@ These walk past a path-based file hook by design. Close them with ignore rules a
 | Bypass | Why the hook misses it | What to use instead |
 | --- | --- | --- |
 | **Shell without shell-gate** | `cat` / `grep` / `sed` read the file outside the Read tool (older installs, or `--no-shell-gate`) | Re-run `offsend hook install --target cursor\|claude` (shell-gate is on by default) |
+| **Shell reads that name no path** | `find … -exec cat`, a recursive `grep`, or any interpreter one-liner that walks the tree. The hook sees only command text, and what a program will read is undecidable from it — this is a [stated non-goal](#what-the-shell-gate-does-not-do), asserted as allowed in CI | An OS sandbox that denies egress, or Cursor's own shell command allowlist. The shell-output audit tells you what to rotate afterwards |
 | **Indirect executable-config mutation** | Dynamic commands, generated scripts, MCP tools, or custom binaries may not expose the final path or invocation as static shell arguments | The shell-gate hard-denies recognized execution-sensitive `git config`, `git -c`, and `--config-env` calls. Dynamic Git and daemon clients remain residual gaps |
 | **Privileged daemon through an indirect client** | MCP tools, generated scripts, custom binaries, remote contexts, or dynamically built endpoints can hide Docker/Podman/containerd access | Shell-gate denies recognized container execution and direct socket clients; remove unnecessary socket access and require manual review for daemon operations |
 | **Environment poisoning outside static shell argv** | Process APIs, command substitution, generated scripts, parent-process state, or custom launchers can hide PATH/loader/helper overrides | Shell-gate denies recognized execution-sensitive assignments; write-gate protects common shell/direnv startup files; start agents from a clean environment |
@@ -569,13 +576,26 @@ Cursor may not always enforce `beforeReadFile` deny (known IDE limitation; open 
 
 Installed by default for Cursor and Claude (disable with `--no-shell-gate`). Gates agent shell commands (Cursor `beforeShellExecution`, Claude `PreToolUse` matcher `Bash`). Without it, `cat` / `grep` / `sed` on a sensitive file bypass the read-gate entirely.
 
-The command line is tokenized and checked against the same sensitive-path heuristics as the read-gate (`cat .env`, `cp ~/.ssh/id_rsa …`, `--key-file=prod.key`). Sensitive-file and other ask-class findings follow **`context.shell.mode`** — default **`deny`** (Cursor does not reliably pause on `ask` for shell hooks). Set `context.shell.mode: ask` after `offsend policy trust` to restore confirmation prompts. Control-plane mutations are always hard-denied: trusted-policy approval, direct executable-config paths, and static execution-sensitive Git settings such as `core.hooksPath`, `alias.*`, credential/diff/merge/filter helpers, `difftool.*.cmd` / `mergetool.*.cmd`, `diff.*.textconv`, `init.templateDir`, `protocol.*.allow`, editors/pagers, includes, and `git -c` / `--config-env` overrides. Ordinary Git settings and read-only `git config --get` operations remain allowed. Unrecognized or oversized shell-gate hook input is denied (fail-closed).
+There are exactly two kinds of findings, and knowing which is which tells you whether `mode` applies:
 
-Every check shares one lexer and one command extractor, so the wrapped forms of a command are recognized like the direct one: quoting (`cat '.git'/config`), redirection (`printf x >.envrc`), launchers (`env`, `sudo`, `timeout`, `nice`, `xargs`, `stdbuf`, `nohup`, `setsid`), inline shell scripts (`bash -c '…'`, `bash -lc '…'`, `env -S '…'`), interpreter payloads (`python3 -c '…'`, `node -e '…'`, `ruby -e '…'`), and `$(…)` command-substitution bodies. Adjacent static string concatenations inside interpreter payloads (`Path("c"+"ert"+".pem")`) are joined before the path sweep; ordinary quoted data is not rewritten. Paths matching committed `ignore.patterns` are shell-sensitive too, including generic protected directories such as `fixtures/`. Nested scripts are followed a few levels deep and then treated as opaque. Text merely passed as data (`printf '%s' "git config …"`) is not treated as an invocation. When one command trips several checks, all findings are reported together rather than one per attempt.
+1. **Control-plane mutation → always denied**, regardless of `mode`. These are the surfaces that decide what runs next: trusted-policy approval and `offsend unseal`, direct executable-config paths, static execution-sensitive Git settings (`core.hooksPath`, `alias.*`, credential/diff/merge/filter helpers, `difftool.*.cmd` / `mergetool.*.cmd`, `diff.*.textconv`, `init.templateDir`, `protocol.*.allow`, editors/pagers, includes, `git -c` / `--config-env`), privileged daemons, and execution-sensitive environment overrides. The list is closed by what the host trusts, not by what an attacker might try next.
+2. **A named sensitive path → `context.shell.mode`**, default **`deny`**. Same path heuristics as the read-gate (`cat .env`, `cp ~/.ssh/id_rsa …`, `--key-file=prod.key`), plus paths matching committed `ignore.patterns`, including protected directories such as `fixtures/`.
 
-This is invocation-aware static argv recognition, not a full shell interpreter. `eval`, unresolved `$var` (without a visible assignment in the same command), `chr()` / runtime encoding, generated scripts, MCP tools, custom binaries, and environment-array injection can hide the final operation and remain residual gaps; `offsend doctor` reports this boundary as `git-config-invocation-gate`.
+Ordinary Git settings and read-only `git config --get` remain allowed. Unrecognized or oversized shell-gate hook input is denied (fail-closed). When one command trips several checks, all findings are reported together rather than one per attempt.
 
-The shell-gate does **not** scan command stdout. Encoded exfil (base64/hex dumps printed by the agent, then read back from a terminal transcript) is handled on the **read-gate** content path: contiguous and commonly wrapped blobs are decoded and re-scanned before deny/seal. Candidate-count and decoded-byte budgets bound CPU; overflow fails closed rather than allowing an attacker to hide a secret behind decoys.
+With [`sandbox.enabled: true`](configuration.md#sandbox) there is one more finding of the second kind: a command the editor itself reports as running **outside** a sandbox follows `mode`. Cursor states this per command, and commands needing access outside the workspace run unsandboxed — so a policy that asks for a sandbox is not silently downgraded when the run mode does not provide one. When the editor reports nothing, the gate stays silent: unknown is not the same as unsandboxed.
+
+Every check shares one lexer and one command extractor, so the wrapped forms of a command are recognized like the direct one: quoting (`cat '.git'/config`), redirection (`printf x >.envrc`), launchers (`env`, `sudo`, `timeout`, `nice`, `xargs`, `stdbuf`, `nohup`, `setsid`), inline shell scripts (`bash -c '…'`, `bash -lc '…'`, `env -S '…'`), interpreter payloads (`python3 -c '…'`, `node -e '…'`, `ruby -e '…'`), heredoc bodies (`python3 <<'PY' … PY`), and `$(…)` command-substitution bodies. Adjacent static string concatenations inside interpreter payloads (`Path("c"+"ert"+".pem")`) are joined before the path sweep; ordinary quoted data is not rewritten. Nested scripts are followed a few levels deep and then treated as opaque. Text merely passed as data (`printf '%s' "git config …"`) is not treated as an invocation. All of this serves one purpose: widening where a **path name** can be spotted. None of it judges behavior.
+
+#### What the shell-gate does not do
+
+The hook sees the text of a command and nothing else. What that command will read is undecidable from its text, so the gate does not attempt it:
+
+- **Reading files by enumeration is not prevented.** `find . -type f -exec cat {} +`, `grep -rn 'sk-' .`, `tar cf - . | base64`, and any interpreter one-liner that walks the tree are **allowed** — none of them names a sensitive path. `Scripts/ci_cli_e2e.sh` asserts that they stay allowed, so re-adding a blocklist of filesystem API names breaks CI on purpose: such a list grows with attacker ingenuity and gives a false sense of a closed door while producing false positives on `json.load(open(…))`.
+- **Command output cannot be redacted.** Cursor's `afterShellExecution` and Claude's `PostToolUse` receive terminal output but accept no replacement for it. Secrets a command prints are recorded for rotation by the [shell-output audit](#shell-output-audit-on-by-default); they are not withheld from the agent.
+- **Dynamic construction hides the operation.** `eval`, unresolved `$var`, encoded payloads, MCP tools, custom binaries, and environment-array injection are outside static argv recognition. `offsend doctor` reports this boundary as `git-config-invocation-gate` and `environment-invocation-gate`.
+
+If you need reading or exfiltration actually prevented rather than reported, that requires enforcement below the hook layer: an OS sandbox denying egress, or Cursor's own shell command allowlist. Encoded exfil that comes back through a file is still handled on the **read-gate** content path: contiguous and commonly wrapped blobs are decoded and re-scanned before deny/seal, with candidate-count and decoded-byte budgets that fail closed on overflow.
 
 The same gate recognizes Docker, Podman, nerdctl, containerd (`ctr`), BuildKit (`buildctl`), and the VM managers behind Docker on macOS (Colima, Lima, OrbStack) — `colima ssh`, `limactl shell`, and `orb run` are denied because those VMs mount the host home directory. Container launch/attach operations (`run`, `create`, `exec`, `start`, Compose `up`, etc.), elevated flags/plugins, direct known socket access, and explicit daemon endpoints are hard-denied because execution happens outside the agent sandbox. Builds and lower-risk daemon mutations return `ask`; diagnostics such as `docker ps`, `version`, and `inspect` are allowed. `doctor` reports common local endpoints as `privileged-daemons`. Dynamic clients and remote contexts that are not visible in static argv remain outside coverage.
 
@@ -583,7 +603,15 @@ Execution-sensitive environment overrides are classified before command-specific
 
 `offsend doctor` and `offsend hook status` warn when Cursor/Claude hooks are installed without a shell-gate (common for older installs). Re-run `offsend hook install --target cursor` (or `claude`) to add it.
 
-Note: Cursor currently enforces only `deny` reliably; `ask` may not pause the command in all versions (known IDE limitation). That is why `context.shell.mode` defaults to `deny`.
+Note on `ask`: Cursor accepts `permission: "ask"` from `beforeShellExecution` but does not act on it — the command runs and the reason is shown as a warning after the fact. Claude does pause. That asymmetry is why `context.shell.mode` defaults to `deny`; on Cursor, choosing `ask` means choosing allow-and-warn.
+
+### Shell-output audit (on by default)
+
+Installed by default for Cursor and Claude (disable with `--no-shell-audit`). Runs the secret detectors over what a shell command printed (Cursor `afterShellExecution`, Claude `PostToolUse` matcher `Bash`), records findings in a user-local `0600` log (`shell-output-audit.log`), and notifies you.
+
+This is **a rotation signal and an audit trail, not prevention.** It runs after the command, and neither editor lets a shell hook rewrite terminal output, so by the time it fires the value is already in the agent's context. The only honest promise is that you learn which credential to rotate. The hook always exits 0 and never returns a permission decision, so a finding cannot be mistaken for a block or for a broken hook.
+
+The log records the timestamp, the command, the detector type names, and whether the editor reported the command as sandboxed. Secret **values** are never written — including when the secret is in the command itself (`curl -H "Authorization: …"`), which is redacted to `OFFSEND_REDACTED_<type>` before the line is appended. Output beyond 256 KiB is not scanned, and the notification says so. The log rotates at 256 KiB, and `doctor` reports coverage plus commands still awaiting rotation as `shell-output-audit`.
 
 ### MCP-gate (on by default)
 
@@ -819,7 +847,7 @@ Or install the CLI and run:
 offsend check --staged --policy --fail-on block
 ```
 
-With `--policy`, `fail-on: block` fails on critical secrets, exposed required paths / missing ignore files, and **managed ignore drift** (local AI ignore files missing patterns from `.offsend.yml`). Fix drift with `offsend sync`; change the shared rules in `.offsend.yml`, not only in one editor’s ignore file.
+With `--policy`, `fail-on: block` fails on critical secrets, exposed required paths / missing ignore files, **managed ignore drift** (local AI ignore files missing patterns from `.offsend.yml`), and **git-tracked paths covered by `ignore.patterns`** (secrets on the default branch remain fetchable even when local AI gates deny them). Fix drift with `offsend sync`; remove tracked secrets with `git rm --cached <path>` and keep them out of the default branch; change the shared rules in `.offsend.yml`, not only in one editor’s ignore file.
 
 Team walkthrough: [team.md](team.md).
 

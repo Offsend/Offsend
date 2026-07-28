@@ -19,6 +19,9 @@ public enum CheckHookResponseRenderer {
         /// Cursor `postToolUse` / Claude `PostToolUse` (MCP tools).
         /// Post-execution transformation; never returns a permission shape.
         case mcpResponseGate
+        /// Cursor `afterShellExecution` / Claude `PostToolUse` (Bash).
+        /// Observational: the response can carry nothing the editor will act on.
+        case shellAudit
     }
 
     /// Allow through after an infrastructure error. `reason` is a short public code.
@@ -55,7 +58,7 @@ public enum CheckHookResponseRenderer {
             case .windsurf, .codex:
                 return CheckHookAdapterOutput(stdout: "", stderr: stderr, exitCode: 0)
             }
-        case .mcpResponseGate:
+        case .mcpResponseGate, .shellAudit:
             switch adapter {
             case .cursor, .claude:
                 return CheckHookAdapterOutput(stdout: "{}", stderr: stderr, exitCode: 0)
@@ -131,6 +134,10 @@ public enum CheckHookResponseRenderer {
             case .windsurf, .codex:
                 return CheckHookAdapterOutput(stdout: "", stderr: message + "\n", exitCode: 2)
             }
+        case .shellAudit:
+            // Post-hoc and unable to change anything: there is nothing to fail
+            // closed onto, so drift is reported on stderr only.
+            return CheckHookAdapterOutput(stdout: "{}", stderr: stderr, exitCode: 0)
         case .mcpResponseGate:
             switch adapter {
             case .cursor:

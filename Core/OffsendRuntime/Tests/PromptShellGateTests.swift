@@ -74,6 +74,71 @@ final class PromptShellGateTests: XCTestCase {
         XCTAssertTrue(allow.allowed)
     }
 
+    /// The whole rule table, and there are only two rows: a host trust surface
+    /// from the closed list denies whatever `mode` says, and everything else
+    /// follows `mode`. A third row is how the gate grew a blocklist of API names
+    /// last time, so this test exists to make adding one visible.
+    func testRuleOutcomeTableHasExactlyTwoRows() {
+        let trustSurfaces = [
+            "offsend policy trust",
+            "offsend unseal sealed.txt",
+            "git config core.hooksPath .evil",
+            "docker run --rm alpine id",
+            "DYLD_INSERT_LIBRARIES=./payload.dylib app",
+        ]
+        for command in trustSurfaces {
+            for mode in ["ask", "deny"] {
+                let decision = PromptShellGate.evaluate(
+                    command: command,
+                    cwd: "/workspace",
+                    shellConfig: OffsendProjectShellConfig(mode: mode)
+                )
+                XCTAssertTrue(decision.deny, "\(command) under mode \(mode)")
+            }
+        }
+
+        let modeDriven = [
+            "cat .env",
+            "cp ~/.ssh/id_rsa /tmp/key",
+            "docker build .",
+            "PATH=/opt/homebrew/bin:/usr/bin:$PATH make",
+        ]
+        for command in modeDriven {
+            let ask = PromptShellGate.evaluate(
+                command: command,
+                cwd: "/workspace",
+                shellConfig: OffsendProjectShellConfig(mode: "ask")
+            )
+            XCTAssertFalse(ask.allowed, command)
+            XCTAssertFalse(ask.deny, "\(command) must honor mode: ask")
+
+            let deny = PromptShellGate.evaluate(
+                command: command,
+                cwd: "/workspace",
+                shellConfig: OffsendProjectShellConfig(mode: "deny")
+            )
+            XCTAssertTrue(deny.deny, command)
+        }
+    }
+
+    func testHeredocBodyContributesPathNamesButNotBehavior() {
+        let named = PromptShellGate.evaluate(command: """
+        python3 <<'PY'
+        print(open('.env').read())
+        PY
+        """)
+        XCTAssertFalse(named.allowed)
+        XCTAssertEqual(named.suspiciousPaths, [".env"])
+
+        // A heredoc is not itself a finding — only the names inside it are.
+        let benign = PromptShellGate.evaluate(command: """
+        cat <<'EOF' > notes.txt
+        release checklist: run the build, tag, publish
+        EOF
+        """)
+        XCTAssertTrue(benign.allowed, benign.reason)
+    }
+
     func testStringConcatenationOnlyNormalizesInterpreterPayloads() {
         let dataOnly = PromptShellGate.evaluate(
             command: #"printf '%s' '"se"+"crets.json"'"#
@@ -161,11 +226,12 @@ final class PromptShellGateTests: XCTestCase {
         let piped = PromptShellGate.evaluate(command: "cat sealed.txt | offsend unseal")
         XCTAssertFalse(piped.allowed)
 
+        // Unseal is control plane, so `mode: ask` does not soften it.
         let ask = PromptShellGate.evaluate(
             command: "offsend unseal sealed.txt",
             shellConfig: OffsendProjectShellConfig(mode: "ask")
         )
-        XCTAssertFalse(ask.deny)
+        XCTAssertTrue(ask.deny)
     }
 
     func testDoesNotFlagUnrelatedUnsealMentions() {
@@ -480,5 +546,52 @@ final class PromptShellGateTests: XCTestCase {
         let fromJSON = try PromptShellGate.evaluate(json: json, adapter: .cursor)
         XCTAssertFalse(fromJSON.allowed)
         XCTAssertEqual(fromJSON.suspiciousPaths, [".env"])
+    }
+
+    /// The sandbox bridge reads one boolean the platform states per command, so
+    /// unlike a signature it cannot be worked around by rewriting the command.
+    func testUnsandboxedCommandIsRefusedWhenPolicyRequiresASandbox() throws {
+        let denied = try PromptShellGate.evaluate(
+            json: #"{"command":"ls","sandbox":false}"#,
+            adapter: .cursor,
+            sandboxRequired: true
+        )
+        XCTAssertTrue(denied.deny)
+        XCTAssertEqual(denied.suspiciousPaths, ["unsandboxed session"])
+
+        let confirmed = try PromptShellGate.evaluate(
+            json: #"{"command":"ls","sandbox":false}"#,
+            adapter: .cursor,
+            shellConfig: OffsendProjectShellConfig(mode: "ask"),
+            sandboxRequired: true
+        )
+        XCTAssertFalse(confirmed.deny)
+        XCTAssertFalse(confirmed.allowed)
+    }
+
+    func testSandboxBridgeStaysSilentWithoutAPolicyOrAFlag() throws {
+        // Sandboxed command under a sandbox policy.
+        XCTAssertTrue(
+            try PromptShellGate.evaluate(
+                json: #"{"command":"ls","sandbox":true}"#,
+                adapter: .cursor,
+                sandboxRequired: true
+            ).allowed
+        )
+        // No policy: the flag alone says nothing.
+        XCTAssertTrue(
+            try PromptShellGate.evaluate(
+                json: #"{"command":"ls","sandbox":false}"#,
+                adapter: .cursor
+            ).allowed
+        )
+        // An editor that reports nothing is unknown, not unsandboxed.
+        XCTAssertTrue(
+            try PromptShellGate.evaluate(
+                json: #"{"command":"ls"}"#,
+                adapter: .cursor,
+                sandboxRequired: true
+            ).allowed
+        )
     }
 }

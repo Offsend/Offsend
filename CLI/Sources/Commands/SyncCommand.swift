@@ -56,6 +56,9 @@ struct Sync: ParsableCommand {
             dryRun: dryRun
         )
 
+        let repositoryURL = URL(fileURLWithPath: ignoreReport.directoryPath)
+        let sandboxReport = syncSandbox(repositoryURL: repositoryURL)
+
         var hookErrors: [String] = []
         let hooks: HooksSection
         if dryRun {
@@ -66,7 +69,7 @@ struct Sync: ParsableCommand {
             hooks = .skipped(reason: "ignore sync failed")
         } else {
             hooks = installHooks(
-                repositoryURL: URL(fileURLWithPath: ignoreReport.directoryPath),
+                repositoryURL: repositoryURL,
                 errors: &hookErrors
             )
         }
@@ -74,14 +77,38 @@ struct Sync: ParsableCommand {
         let useColor = CLIColor.enabled(for: outputFormat)
         switch outputFormat {
         case .text:
-            renderText(ignoreReport: ignoreReport, hooks: hooks, useColor: useColor)
+            renderText(
+                ignoreReport: ignoreReport,
+                sandbox: sandboxReport,
+                hooks: hooks,
+                useColor: useColor
+            )
         case .json:
-            renderJSON(ignoreReport: ignoreReport, hooks: hooks)
+            renderJSON(ignoreReport: ignoreReport, sandbox: sandboxReport, hooks: hooks)
         }
 
-        if ignoreReport.hasErrors || !hookErrors.isEmpty {
+        if ignoreReport.hasErrors || !hookErrors.isEmpty || !sandboxReport.errors.isEmpty {
             throw ExitCode(OffsendExitCode.error.rawValue)
         }
+    }
+
+    /// Materializes `sandbox` into each editor's native sandbox config. Skipped
+    /// silently when the policy does not ask for one, so nothing appears in the
+    /// output for projects that never opted in.
+    private func syncSandbox(repositoryURL: URL) -> SandboxSyncService.Report {
+        guard let config = (try? ProjectConfigLoader().load(from: repositoryURL)) ?? nil else {
+            return SandboxSyncService.Report(enabled: false)
+        }
+        let targets = AIEditorHookTarget.detectedTargets(
+            repositoryPath: repositoryURL,
+            homeDirectory: defaultHomeDirectory()
+        )
+        return SandboxSyncService().run(
+            repositoryURL: repositoryURL,
+            config: config,
+            targets: targets,
+            dryRun: dryRun
+        )
     }
 
     /// Git failures (e.g. a foreign pre-commit hook) downgrade to warnings so
@@ -144,11 +171,41 @@ struct Sync: ParsableCommand {
         )
     }
 
-    private func renderText(ignoreReport: IgnoreSyncReport, hooks: HooksSection, useColor: Bool) {
+    private func renderText(
+        ignoreReport: IgnoreSyncReport,
+        sandbox: SandboxSyncService.Report,
+        hooks: HooksSection,
+        useColor: Bool
+    ) {
         let ui = CLIText(useColor: useColor)
         let syncText = IgnoreSyncReporter().render(ignoreReport, format: .text, useColor: useColor)
         if !syncText.isEmpty {
             print(syncText)
+        }
+
+        if sandbox.enabled {
+            print("")
+            print(ui.section("Sandbox"))
+            for plan in sandbox.plans {
+                let line = "\(plan.target.rawValue): \(plan.mechanism.rawValue) — \(plan.reason)"
+                print(plan.mechanism == .unavailable ? ui.hint(line) : ui.ok(line))
+                print(ui.hint("  reaches: \(guaranteeSummary(plan.guarantee))"))
+            }
+            for change in sandbox.changes where change.kind != .unchanged {
+                print(ui.ok("\(change.kind.rawValue) \(change.relativePath)"))
+            }
+            if !sandbox.uncoveredPatterns.isEmpty {
+                print(ui.hint(
+                    "Not expressible as sandbox paths (basename globs): "
+                        + sandbox.uncoveredPatterns.joined(separator: ", ")
+                ))
+            }
+            for step in sandbox.manualSteps {
+                print(ui.hint(step))
+            }
+            for error in sandbox.errors {
+                print(ui.fail(error))
+            }
         }
 
         switch hooks {
@@ -177,7 +234,20 @@ struct Sync: ParsableCommand {
         }
     }
 
-    private func renderJSON(ignoreReport: IgnoreSyncReport, hooks: HooksSection) {
+    private func guaranteeSummary(_ guarantee: SandboxGuarantee) -> String {
+        var reached: [String] = []
+        if guarantee.egressDenied {
+            reached.append("egress denied")
+        }
+        reached.append(guarantee.readDeniable ? "read-deny available" : "no read-deny")
+        return reached.joined(separator: ", ")
+    }
+
+    private func renderJSON(
+        ignoreReport: IgnoreSyncReport,
+        sandbox: SandboxSyncService.Report,
+        hooks: HooksSection
+    ) {
         var hooksPayload: [String: Any]
         switch hooks {
         case .skipped(let reason):
@@ -233,11 +303,36 @@ struct Sync: ParsableCommand {
             "excludePath": ignoreReport.excludePath as Any,
             "errors": ignoreReport.errors,
             "hooks": hooksPayload,
+            "sandbox": sandboxPayload(sandbox),
         ]
         if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]),
            let json = String(data: data, encoding: .utf8) {
             print(json)
         }
+    }
+
+    private func sandboxPayload(_ report: SandboxSyncService.Report) -> [String: Any] {
+        guard report.enabled else {
+            return ["enabled": false]
+        }
+        return [
+            "enabled": true,
+            "targets": report.plans.map { plan in
+                [
+                    "target": plan.target.rawValue,
+                    "mechanism": plan.mechanism.rawValue,
+                    "reason": plan.reason,
+                    "egressDenied": plan.guarantee.egressDenied,
+                    "readDeniable": plan.guarantee.readDeniable,
+                ]
+            },
+            "files": report.changes.map {
+                ["path": $0.relativePath, "status": $0.kind.rawValue]
+            },
+            "uncoveredPatterns": report.uncoveredPatterns,
+            "manualSteps": report.manualSteps,
+            "errors": report.errors,
+        ]
     }
 }
 

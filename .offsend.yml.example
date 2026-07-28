@@ -100,7 +100,7 @@ hooks:
 #     on_secret: block        # block | seal — seal: deny hands the agent a sealed copy
 #                             # (secrets → {{TYPE:v1.…}} tokens; needs a seal key: offsend keygen --default)
 #   shell:
-#     mode: deny              # ask | deny — default deny (Cursor does not reliably pause on ask)
+#     mode: deny              # ask | deny — default deny (Cursor ignores ask for shell hooks)
 #   mcp:
 #     mode: ask               # observe | ask | deny (deny also fails closed on bad hook input)
 #     allow: [github]         # non-empty allow = allowlist mode
@@ -132,3 +132,15 @@ hooks:
 #     scrub_on_protect: false # `offsend protect` also runs history scrub
 #     scan_in_show: false     # content-scan transcripts in show/doctor (or: show --scan-history)
 # Editor prompts stay soft-block unless: offsend hook install --hook-policy block
+
+# OS sandbox for agent commands — the layer hooks cannot reach. `offsend sync`
+# materializes this into each editor's own sandbox config; `doctor` prints which
+# mechanism was chosen and what it actually reaches. Egress denial is the only
+# guarantee every editor keeps: read-deny exists in Claude/nono, not Cursor/Codex.
+# See docs/configuration.md#sandbox.
+# sandbox:
+#   enabled: true             # true tightens, so it applies without policy trust;
+#                             # false loosens, so gates ignore it until: offsend policy trust
+#   network:
+#     default: deny           # deny | allow (allow needs a trusted policy)
+#     allow: []               # domains still reachable under default: deny
