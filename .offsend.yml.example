@@ -133,14 +133,12 @@ hooks:
 #     scan_in_show: false     # content-scan transcripts in show/doctor (or: show --scan-history)
 # Editor prompts stay soft-block unless: offsend hook install --hook-policy block
 
-# OS sandbox for agent commands — the layer hooks cannot reach. `offsend sync`
-# materializes this into each editor's own sandbox config; `doctor` prints which
-# mechanism was chosen and what it actually reaches. Egress denial is the only
-# guarantee every editor keeps: read-deny exists in Claude/nono, not Cursor/Codex.
+# OS sandbox for agent commands — the layer hooks cannot reach.
+# `offsend sync` writes editor/nono config; `doctor` prints what it reaches.
+# Install nono for Claude/Codex when you want it: brew install nono
 # See docs/configuration.md#sandbox.
 # sandbox:
-#   enabled: true             # true tightens, so it applies without policy trust;
-#                             # false loosens, so gates ignore it until: offsend policy trust
+#   enabled: true             # true tightens (no policy trust); false needs trust
 #   network:
 #     default: deny           # deny | allow (allow needs a trusted policy)
 #     allow: []               # domains still reachable under default: deny

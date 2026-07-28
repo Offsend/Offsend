@@ -95,6 +95,25 @@ offsend doctor
 
 `sync` materializes ignore files and installs hooks from the committed policy. No need to copy per-editor ignore rules by hand.
 
+### Optional: OS sandbox
+
+When hooks are not enough (enumeration without a named path, egress), enable kernel enforcement in the shared policy:
+
+```yaml
+# in .offsend.yml
+sandbox:
+  enabled: true
+  network:
+    default: deny
+```
+
+```bash
+brew install nono    # recommended for Claude Code / Codex; skipped if absent
+offsend sync && offsend doctor
+```
+
+Offsend writes editor/nono config and verifies it; for nono you still start the agent with the printed `nono run …` command. Details: [configuration → sandbox](configuration.md#sandbox).
+
 After reviewing the committed `.offsend.yml`, explicitly trust it for editor gates:
 
 ```bash

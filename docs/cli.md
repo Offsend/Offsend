@@ -48,7 +48,7 @@ The package is `offsend-cli`; the command is `offsend`. The macOS app also ships
 | Command | Purpose |
 | --- | --- |
 | [`offsend init`](#offsend-init) | Create `.offsend.yml` (wizard + ignore-file sync + optional baseline check) |
-| [`offsend sync`](#offsend-sync) | Apply `.offsend.yml`: materialize AI ignore files + install hooks (post-clone) |
+| [`offsend sync`](#offsend-sync) | Apply `.offsend.yml`: ignore files + hooks (+ sandbox configs if enabled) |
 | [`offsend edit`](#offsend-edit) | Open `.offsend.yml` in `$EDITOR` |
 | [`offsend protect`](#offsend-protect) | Hide exposed sensitive paths from AI (promote to `.offsend.yml` + sync) |
 | [`offsend show`](#offsend-show) | List sensitive paths visible to AI tools (no file contents); `--report` for anonymized JSON |
@@ -60,7 +60,7 @@ The package is `offsend-cli`; the command is `offsend`. The macOS app also ships
 | [`offsend seal`](#offsend-seal) | Replace secrets with reversible seal tokens |
 | [`offsend unseal`](#offsend-unseal) | Restore plaintext from seal tokens |
 | [`offsend keygen`](#offsend-keygen) | Generate a 32-byte seal key |
-| [`offsend doctor`](#offsend-doctor) | Verify CLI, git, settings, hooks, seal key |
+| [`offsend doctor`](#offsend-doctor) | Verify CLI, git, settings, hooks, seal key, sandbox |
 
 ---
 
@@ -103,7 +103,7 @@ Behavior notes:
 - When `hooks.publish` is `false` (default), installed editor hook configs are added to the local git exclude so they stay untracked.
 - Ignore materialization writes a managed block (`# >>> offsend managed` … `# <<< offsend managed`) into each AI ignore file; user lines outside the block are preserved. When `ignore.commit` is `false` (default), also updates `.gitignore` so those files stay untracked; when it is `true`, stale offsend entries are removed from `.gitignore`.
 - Prefer `sync` after clone or after editing `.offsend.yml` by hand. For ignore files only (no hooks), use `--no-hooks`. Fine-grained hook control remains on [`hook install`](#hook-install).
-- With [`sandbox.enabled: true`](configuration.md#sandbox), `sync` also materializes each detected editor's own sandbox configuration (`.cursor/sandbox.json`, the `sandbox` block of `.claude/settings.json`, a nono profile under `.offsend/nono/`) and prints which mechanism was chosen for each editor and what it reaches. Offsend cannot *apply* a process wrapper to an already-running agent, so for nono it prints the `nono run` command instead of promising enforcement. Codex reads only `~/.codex/config.toml`, outside the repository, and is reported rather than written.
+- With [`sandbox.enabled: true`](configuration.md#sandbox), also writes each editor's sandbox config (`.cursor/sandbox.json`, Claude `sandbox` settings, `.offsend/nono/` profile when nono is on `PATH`) and prints the chosen mechanism. Offsend does not install nono (`brew install nono`) and cannot wrap a running agent — for nono it prints `nono run …`. Codex's `~/.codex/config.toml` is reported, not written.
 
 ---
 
@@ -128,7 +128,7 @@ Checks include `cursor-version` on macOS (warn below Cursor 3.0 because of CVE-2
 
 When a shell-gate is installed, `git-config-invocation-gate` confirms static execution-sensitive Git invocation checks are active and names the remaining dynamic-command attribution gaps.
 
-With [`sandbox.enabled: true`](configuration.md#sandbox), doctor adds `sandbox-<editor>` (the mechanism chosen, why, and the position it reaches — egress denial everywhere, named-read denial only where the mechanism has it), `sandbox-coverage` (`ignore.patterns` that are basename globs and therefore not expressible as sandbox paths), `sandbox-launch` (the `nono run` command Offsend cannot run for you), and `sandbox-policy`, which **fails** on config drift and on the four values that keep a sandbox nominally on while removing its point: Cursor `insecure_none`, Claude `allowUnsandboxedCommands: true` / `filesystem.disabled: true`, Codex `sandbox_mode = "danger-full-access"`. The same checks run in `offsend check --policy`.
+With [`sandbox.enabled: true`](configuration.md#sandbox), doctor also reports `sandbox-<editor>` (mechanism + reach), `sandbox-coverage` (basename globs that cannot become sandbox paths), `sandbox-launch` (`nono run …` when needed), and `sandbox-policy` (**fail** on drift or hollow configs: Cursor `insecure_none`, Claude `allowUnsandboxedCommands` / `filesystem.disabled`, Codex `danger-full-access`). Same checks run in `offsend check --policy`.
 
 ---
 
@@ -513,7 +513,7 @@ These walk past a path-based file hook by design. Close them with ignore rules a
 | Bypass | Why the hook misses it | What to use instead |
 | --- | --- | --- |
 | **Shell without shell-gate** | `cat` / `grep` / `sed` read the file outside the Read tool (older installs, or `--no-shell-gate`) | Re-run `offsend hook install --target cursor\|claude` (shell-gate is on by default) |
-| **Shell reads that name no path** | `find … -exec cat`, a recursive `grep`, or any interpreter one-liner that walks the tree. The hook sees only command text, and what a program will read is undecidable from it — this is a [stated non-goal](#what-the-shell-gate-does-not-do), asserted as allowed in CI | An OS sandbox that denies egress, or Cursor's own shell command allowlist. The shell-output audit tells you what to rotate afterwards |
+| **Shell reads that name no path** | `find … -exec cat`, a recursive `grep`, or any interpreter one-liner that walks the tree. The hook sees only command text — [stated non-goal](#what-the-shell-gate-does-not-do), asserted ALLOW in CI | [`sandbox.enabled: true`](configuration.md#sandbox) (egress denial), or Cursor's shell allowlist. Shell-output audit tells you what to rotate afterwards |
 | **Indirect executable-config mutation** | Dynamic commands, generated scripts, MCP tools, or custom binaries may not expose the final path or invocation as static shell arguments | The shell-gate hard-denies recognized execution-sensitive `git config`, `git -c`, and `--config-env` calls. Dynamic Git and daemon clients remain residual gaps |
 | **Privileged daemon through an indirect client** | MCP tools, generated scripts, custom binaries, remote contexts, or dynamically built endpoints can hide Docker/Podman/containerd access | Shell-gate denies recognized container execution and direct socket clients; remove unnecessary socket access and require manual review for daemon operations |
 | **Environment poisoning outside static shell argv** | Process APIs, command substitution, generated scripts, parent-process state, or custom launchers can hide PATH/loader/helper overrides | Shell-gate denies recognized execution-sensitive assignments; write-gate protects common shell/direnv startup files; start agents from a clean environment |
@@ -595,7 +595,7 @@ The hook sees the text of a command and nothing else. What that command will rea
 - **Command output cannot be redacted.** Cursor's `afterShellExecution` and Claude's `PostToolUse` receive terminal output but accept no replacement for it. Secrets a command prints are recorded for rotation by the [shell-output audit](#shell-output-audit-on-by-default); they are not withheld from the agent.
 - **Dynamic construction hides the operation.** `eval`, unresolved `$var`, encoded payloads, MCP tools, custom binaries, and environment-array injection are outside static argv recognition. `offsend doctor` reports this boundary as `git-config-invocation-gate` and `environment-invocation-gate`.
 
-If you need reading or exfiltration actually prevented rather than reported, that requires enforcement below the hook layer: an OS sandbox denying egress, or Cursor's own shell command allowlist. Encoded exfil that comes back through a file is still handled on the **read-gate** content path: contiguous and commonly wrapped blobs are decoded and re-scanned before deny/seal, with candidate-count and decoded-byte budgets that fail closed on overflow.
+If you need reading or exfiltration actually prevented rather than reported, use [`sandbox.enabled: true`](configuration.md#sandbox) (kernel egress denial) or Cursor's own shell command allowlist. Encoded exfil that comes back through a file is still handled on the **read-gate** content path: contiguous and commonly wrapped blobs are decoded and re-scanned before deny/seal, with candidate-count and decoded-byte budgets that fail closed on overflow.
 
 The same gate recognizes Docker, Podman, nerdctl, containerd (`ctr`), BuildKit (`buildctl`), and the VM managers behind Docker on macOS (Colima, Lima, OrbStack) — `colima ssh`, `limactl shell`, and `orb run` are denied because those VMs mount the host home directory. Container launch/attach operations (`run`, `create`, `exec`, `start`, Compose `up`, etc.), elevated flags/plugins, direct known socket access, and explicit daemon endpoints are hard-denied because execution happens outside the agent sandbox. Builds and lower-risk daemon mutations return `ask`; diagnostics such as `docker ps`, `version`, and `inspect` are allowed. `doctor` reports common local endpoints as `privileged-daemons`. Dynamic clients and remote contexts that are not visible in static argv remain outside coverage.
 
