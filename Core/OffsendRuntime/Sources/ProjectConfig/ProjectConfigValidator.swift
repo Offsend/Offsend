@@ -62,7 +62,7 @@ public enum ProjectConfigValidator {
             issues.append(
                 contentsOf: unknownKeys(
                     in: context,
-                    allowed: ["mcp", "subagents", "history", "read"],
+                    allowed: ["mcp", "subagents", "history", "read", "shell"],
                     path: "context"
                 )
             )
@@ -82,6 +82,15 @@ public enum ProjectConfigValidator {
                         in: read,
                         allowed: ["on_secret"],
                         path: "context.read"
+                    )
+                )
+            }
+            if let shell = context["shell"] as? [String: Any] {
+                issues.append(
+                    contentsOf: unknownKeys(
+                        in: shell,
+                        allowed: ["mode"],
+                        path: "context.shell"
                     )
                 )
             }
@@ -160,6 +169,13 @@ public enum ProjectConfigValidator {
            OffsendReadGateSecretMode(rawValue: onSecret) == nil {
             issues.append(
                 "context.read.on_secret '\(onSecret)' is invalid (use \(validValues(OffsendReadGateSecretMode.self)))."
+            )
+        }
+
+        if let shellMode = config.context?.shell?.mode,
+           OffsendShellGateMode(rawValue: shellMode) == nil {
+            issues.append(
+                "context.shell.mode '\(shellMode)' is invalid (use \(validValues(OffsendShellGateMode.self)))."
             )
         }
 

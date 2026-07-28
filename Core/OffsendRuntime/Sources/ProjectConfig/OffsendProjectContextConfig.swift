@@ -6,17 +6,20 @@ public struct OffsendProjectContextConfig: Codable, Equatable, Sendable {
     public var subagents: OffsendProjectSubagentsConfig?
     public var history: OffsendProjectHistoryConfig?
     public var read: OffsendProjectReadConfig?
+    public var shell: OffsendProjectShellConfig?
 
     public init(
         mcp: OffsendProjectMCPConfig? = nil,
         subagents: OffsendProjectSubagentsConfig? = nil,
         history: OffsendProjectHistoryConfig? = nil,
-        read: OffsendProjectReadConfig? = nil
+        read: OffsendProjectReadConfig? = nil,
+        shell: OffsendProjectShellConfig? = nil
     ) {
         self.mcp = mcp
         self.subagents = subagents
         self.history = history
         self.read = read
+        self.shell = shell
     }
 }
 
@@ -75,6 +78,17 @@ public struct OffsendProjectReadConfig: Codable, Equatable, Sendable {
     }
 }
 
+/// Shell-gate enforcement for sensitive-path / lower-risk findings.
+public struct OffsendProjectShellConfig: Codable, Equatable, Sendable {
+    /// `ask` (confirm) or `deny` (block). Default when unset: `deny` — Cursor
+    /// does not reliably pause on `ask` for `beforeShellExecution`.
+    public var mode: String?
+
+    public init(mode: String? = nil) {
+        self.mode = mode
+    }
+}
+
 public struct OffsendProjectSubagentsConfig: Codable, Equatable, Sendable {
     public var mode: String?
     public var scanTask: Bool?
@@ -127,4 +141,15 @@ public enum OffsendMCPResponseMode: String, CaseIterable, Sendable {
     case observe
     case warn
     case seal
+}
+
+/// `context.shell.mode` values.
+public enum OffsendShellGateMode: String, CaseIterable, Sendable {
+    case ask
+    case deny
+
+    /// Effective mode for editor shell-gate. Unset → `deny` (Cursor ask gap).
+    public static func effective(_ raw: String?) -> OffsendShellGateMode {
+        OffsendShellGateMode(rawValue: raw ?? "") ?? .deny
+    }
 }

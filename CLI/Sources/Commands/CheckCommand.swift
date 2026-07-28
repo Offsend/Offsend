@@ -316,7 +316,8 @@ struct Check: AsyncParsableCommand {
                 rawJSON: rawText,
                 started: started,
                 policy: resolvedHookPolicy(for: adapter),
-                projectRoot: projectRoot
+                projectRoot: projectRoot,
+                shellConfig: shellGateConfig(workingURL: workingURL)
             )
             return
         }
@@ -534,7 +535,7 @@ struct Check: AsyncParsableCommand {
     }
 
     /// Gate-specific handling for stdin over the byte limit. Returns false when
-    /// the caller should fall back to the generic fail-open path (prompt/shell).
+    /// the caller should fall back to the generic fail-open path (prompt).
     private func emitStdinLimitExceeded(adapter: CheckHookAdapter, started: Date) -> Bool {
         let policy = resolvedHookPolicy(for: adapter)
         if mcpResponseGate {
@@ -548,6 +549,14 @@ struct Check: AsyncParsableCommand {
         if readGate {
             // An unscannable read must not pass — same policy as oversized content.
             hookEmitter().emitReadGateLimitExceeded(
+                adapter: adapter,
+                started: started,
+                policy: policy
+            )
+            return true
+        }
+        if shellGate {
+            hookEmitter().emitShellGateLimitExceeded(
                 adapter: adapter,
                 started: started,
                 policy: policy
@@ -643,6 +652,20 @@ struct Check: AsyncParsableCommand {
             )
             return nil
         }
+    }
+
+    /// Shell-gate policy, loaded best effort. Unlike the other gates this never
+    /// fails open: an unreadable or invalid policy falls back to the built-in
+    /// default (deny) and the command is still evaluated. Snapshot drift is
+    /// already handled by `enforceTrustedPolicy` before stdin is read.
+    private func shellGateConfig(workingURL: URL) -> OffsendProjectShellConfig? {
+        guard let config = (try? ProjectConfigLoader().load(from: workingURL)) ?? nil else {
+            return nil
+        }
+        guard OffsendPolicySnapshotStore().status(directory: workingURL).isTrusted else {
+            return OffsendPolicyTrustFilter.hardened(config)?.context?.shell
+        }
+        return config.context?.shell
     }
 
     private func loadStdinRuntime(

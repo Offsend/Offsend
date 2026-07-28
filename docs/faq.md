@@ -67,7 +67,7 @@ Yes. After clone or init, `offsend sync` installs git + detected AI-editor hooks
 No. They are defense-in-depth on known editor paths (prompt, `@file`, Read/Edit/Write, shell, MCP tool **args** + **responses**, Cursor subagent tasks). Prefer `offsend protect` / AI ignore files first so secrets never enter context. With `context.mcp.responses: seal`, responses are sealed when a key is available; without a key, secret-bearing responses are withheld instead of passed through. Other gaps remain: Claude subagents, cloud sessions, and secrets already written to local transcripts (`offsend history audit` / `scrub`). See [what hooks cover / do not cover](cli.md#what-hooks-cover).
 
 **Can the agent keep working when a read is denied because of secrets?**  
-Yes, with seal-for-agents: set `context.read.on_secret: seal` (plus a seal key via `offsend keygen --default`). The read-gate still denies the original file but hands the agent a sealed copy where secrets are `{{TYPE:v1.…}}` tokens. The user restores agent outputs with `offsend unseal`; the shell-gate asks before the agent runs `unseal` itself.
+Yes, with seal-for-agents: set `context.read.on_secret: seal` (plus a seal key via `offsend keygen --default`). The read-gate still denies the original file but hands the agent a sealed copy where secrets are `{{TYPE:v1.…}}` tokens. The user restores agent outputs with `offsend unseal`; the shell-gate blocks (default `context.shell.mode: deny`) or asks (`mode: ask`) before the agent runs `unseal` itself.
 
 **Secrets already landed in local agent transcripts — what then?**  
 ```bash

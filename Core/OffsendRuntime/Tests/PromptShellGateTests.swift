@@ -11,8 +11,57 @@ final class PromptShellGateTests: XCTestCase {
     func testFlagsEnvFileRead() {
         let decision = PromptShellGate.evaluate(command: "cat .env")
         XCTAssertFalse(decision.allowed)
+        XCTAssertTrue(decision.deny) // default context.shell.mode is deny
         XCTAssertEqual(decision.suspiciousPaths, [".env"])
         XCTAssertTrue(decision.reason.contains(".env"))
+    }
+
+    func testSensitivePathModeAskVsDeny() {
+        let ask = PromptShellGate.evaluate(
+            command: "cat .env",
+            shellConfig: OffsendProjectShellConfig(mode: "ask")
+        )
+        XCTAssertFalse(ask.allowed)
+        XCTAssertFalse(ask.deny)
+        XCTAssertTrue(
+            PromptShellGateRenderer.render(decision: ask, adapter: .cursor)
+                .stdout.contains(#""permission":"ask""#)
+        )
+
+        let deny = PromptShellGate.evaluate(
+            command: "cat cert.pem",
+            shellConfig: OffsendProjectShellConfig(mode: "deny")
+        )
+        XCTAssertTrue(deny.deny)
+        XCTAssertTrue(
+            PromptShellGateRenderer.render(decision: deny, adapter: .cursor)
+                .stdout.contains(#""permission":"deny""#)
+        )
+    }
+
+    func testSeesSensitivePathsInInterpreterScriptsAndSubstitutions() {
+        for command in [
+            #"python3 -c "open('cert.pem')""#,
+            #"python3 -copen('cert.pem')"#,
+            #"node -e "require('fs').readFileSync('.env')""#,
+            #"ruby -e "File.read('secrets/prod.key')""#,
+            #"cat $(echo cert.pem)"#,
+            #"cat $(printf '%s' .env)"#,
+            "f=cert.pem; cat $f",
+        ] {
+            let decision = PromptShellGate.evaluate(command: command)
+            XCTAssertFalse(decision.allowed, command)
+            XCTAssertTrue(decision.deny, command)
+        }
+    }
+
+    func testInvalidInputDecisionDenies() {
+        let decision = PromptShellGate.invalidInputDecision()
+        XCTAssertTrue(decision.deny)
+        XCTAssertTrue(
+            PromptShellGateRenderer.render(decision: decision, adapter: .cursor)
+                .stdout.contains(#""permission":"deny""#)
+        )
     }
 
     func testFlagsAdditionalCredentialPaths() {
@@ -42,9 +91,10 @@ final class PromptShellGateTests: XCTestCase {
         XCTAssertTrue(PromptShellGate.evaluate(command: "ls -la --color=auto src").allowed)
     }
 
-    func testAsksOnOffsendUnseal() {
+    func testDeniesOffsendUnsealByDefault() {
         let direct = PromptShellGate.evaluate(command: "offsend unseal --key-name work < sealed.txt")
         XCTAssertFalse(direct.allowed)
+        XCTAssertTrue(direct.deny)
         XCTAssertEqual(direct.suspiciousPaths, ["offsend unseal"])
         XCTAssertTrue(direct.reason.contains("unseal"))
 
@@ -53,6 +103,12 @@ final class PromptShellGateTests: XCTestCase {
 
         let piped = PromptShellGate.evaluate(command: "cat sealed.txt | offsend unseal")
         XCTAssertFalse(piped.allowed)
+
+        let ask = PromptShellGate.evaluate(
+            command: "offsend unseal sealed.txt",
+            shellConfig: OffsendProjectShellConfig(mode: "ask")
+        )
+        XCTAssertFalse(ask.deny)
     }
 
     func testDoesNotFlagUnrelatedUnsealMentions() {
@@ -137,7 +193,7 @@ final class PromptShellGateTests: XCTestCase {
         }
     }
 
-    func testAsksOnContentConditionalEditorSettings() throws {
+    func testContentConditionalEditorSettingsHonorShellMode() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -147,15 +203,23 @@ final class PromptShellGateTests: XCTestCase {
             gitResolver: GitRepositoryResolver(gitExecutable: "/nonexistent/git")
         )
 
-        let decision = PromptShellGate.evaluate(
+        let denied = PromptShellGate.evaluate(
             command: "printf '{}' > .vscode/settings.json",
             cwd: root.path,
             classifier: classifier
         )
+        XCTAssertTrue(denied.deny)
+        XCTAssertFalse(denied.allowed)
+        XCTAssertTrue(denied.reason.contains("settings.json"))
 
-        XCTAssertFalse(decision.deny)
-        XCTAssertFalse(decision.allowed)
-        XCTAssertTrue(decision.reason.contains("settings.json"))
+        let ask = PromptShellGate.evaluate(
+            command: "printf '{}' > .vscode/settings.json",
+            cwd: root.path,
+            classifier: classifier,
+            shellConfig: OffsendProjectShellConfig(mode: "ask")
+        )
+        XCTAssertFalse(ask.deny)
+        XCTAssertFalse(ask.allowed)
     }
 
     func testDeniesExecutionSensitiveGitConfigMutations() {
@@ -201,12 +265,19 @@ final class PromptShellGateTests: XCTestCase {
         }
     }
 
-    func testAsksForLowerRiskDaemonMutationAndAllowsDiagnostics() {
-        let build = PromptShellGate.evaluate(command: "docker build .")
-        XCTAssertFalse(build.allowed)
-        XCTAssertFalse(build.deny)
+    func testLowerRiskDaemonMutationHonorsShellMode() {
+        let denied = PromptShellGate.evaluate(command: "docker build .")
+        XCTAssertFalse(denied.allowed)
+        XCTAssertTrue(denied.deny)
+
+        let ask = PromptShellGate.evaluate(
+            command: "docker build .",
+            shellConfig: OffsendProjectShellConfig(mode: "ask")
+        )
+        XCTAssertFalse(ask.allowed)
+        XCTAssertFalse(ask.deny)
         XCTAssertTrue(
-            PromptShellGateRenderer.render(decision: build, adapter: .cursor)
+            PromptShellGateRenderer.render(decision: ask, adapter: .cursor)
                 .stdout.contains(#""permission":"ask""#)
         )
 
@@ -229,13 +300,21 @@ final class PromptShellGateTests: XCTestCase {
         }
     }
 
-    func testAsksForSystemPathOverrideAndAllowsSafeGitMetadata() {
-        let path = PromptShellGate.evaluate(
+    func testSystemPathOverrideHonorsShellMode() {
+        let denied = PromptShellGate.evaluate(
             command: "PATH=/opt/homebrew/bin:/usr/bin:$PATH make",
             cwd: "/workspace"
         )
-        XCTAssertFalse(path.allowed)
-        XCTAssertFalse(path.deny)
+        XCTAssertFalse(denied.allowed)
+        XCTAssertTrue(denied.deny)
+
+        let ask = PromptShellGate.evaluate(
+            command: "PATH=/opt/homebrew/bin:/usr/bin:$PATH make",
+            cwd: "/workspace",
+            shellConfig: OffsendProjectShellConfig(mode: "ask")
+        )
+        XCTAssertFalse(ask.allowed)
+        XCTAssertFalse(ask.deny)
 
         XCTAssertTrue(
             PromptShellGate.evaluate(command: "GIT_AUTHOR_NAME=Bot git status").allowed
@@ -257,10 +336,10 @@ final class PromptShellGateTests: XCTestCase {
         XCTAssertThrowsError(try PromptShellGate.evaluate(json: "{}", adapter: .cursor))
     }
 
-    func testCursorRendererAsksOnFindings() {
+    func testCursorRendererDeniesSensitiveFindingsByDefault() {
         let decision = PromptShellGate.evaluate(command: "cat .env")
         let output = PromptShellGateRenderer.render(decision: decision, adapter: .cursor)
-        XCTAssertTrue(output.stdout.contains("\"permission\":\"ask\""))
+        XCTAssertTrue(output.stdout.contains("\"permission\":\"deny\""))
         XCTAssertTrue(output.stdout.contains("user_message"))
         XCTAssertEqual(output.exitCode, 0)
 
@@ -271,10 +350,10 @@ final class PromptShellGateTests: XCTestCase {
         XCTAssertTrue(allowed.stdout.contains("\"permission\":\"allow\""))
     }
 
-    func testClaudeRendererAsksOnFindings() {
+    func testClaudeRendererDeniesSensitiveFindingsByDefault() {
         let decision = PromptShellGate.evaluate(command: "cat .env")
         let output = PromptShellGateRenderer.render(decision: decision, adapter: .claude)
-        XCTAssertTrue(output.stdout.contains("\"permissionDecision\":\"ask\""))
+        XCTAssertTrue(output.stdout.contains("\"permissionDecision\":\"deny\""))
         XCTAssertEqual(output.exitCode, 0)
 
         let allowed = PromptShellGateRenderer.render(

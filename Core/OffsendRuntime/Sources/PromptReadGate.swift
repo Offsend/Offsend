@@ -178,6 +178,15 @@ public enum PromptReadGate {
         )
     }
 
+    /// Deny for unrecognized / unparseable read-gate hook input (fail-closed).
+    public static func invalidInputDecision() -> PromptReadGateDecision {
+        PromptReadGateDecision(
+            path: "",
+            allowed: false,
+            reason: "Offsend: unrecognized read-gate hook input denied."
+        )
+    }
+
     public static func contentExceedsLimit(for input: PromptReadGateInput) -> Bool {
         resolveContentResult(for: input) == .oversized
     }

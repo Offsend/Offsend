@@ -29,12 +29,22 @@ public enum OffsendPolicyTrustFilter {
         guard var context else { return nil }
         context.mcp = hardened(mcp: context.mcp)
         context.subagents = hardened(subagents: context.subagents)
+        context.shell = hardened(shell: context.shell)
         // `context.read.on_secret` is deliberately not filtered. `seal` still
         // denies the read and keeps detected secrets out of context; it only
         // hands over the non-secret remainder of a blocked file. Neutralizing it
         // would disable seal-for-agents for everyone who has not run
         // `offsend policy trust`, which is a worse trade than that residual.
         return context
+    }
+
+    private static func hardened(shell: OffsendProjectShellConfig?) -> OffsendProjectShellConfig? {
+        guard var shell else { return nil }
+        // Default is deny; ask would loosen the gate until the policy is trusted.
+        if shell.mode != OffsendShellGateMode.deny.rawValue {
+            shell.mode = nil
+        }
+        return shell
     }
 
     private static func hardened(mcp: OffsendProjectMCPConfig?) -> OffsendProjectMCPConfig? {

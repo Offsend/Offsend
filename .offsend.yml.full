@@ -151,9 +151,9 @@ hooks:
   ignore_exclude: false
 
 # -----------------------------------------------------------------------------
-# context — AI-editor gates (read / MCP / subagents / history)
+# context — AI-editor gates (read / shell / MCP / subagents / history)
 # Used by show, doctor, sync / hook install. Changing most values does not
-# require reinstalling hooks (read.on_secret is read at runtime).
+# require reinstalling hooks (read.on_secret / shell.mode are read at runtime).
 # -----------------------------------------------------------------------------
 context:
   # --- read-gate (file reads by the agent) -----------------------------------
@@ -163,6 +163,12 @@ context:
     #   seal  — deny, but hand the agent a sealed copy ({{TYPE:v1.…}} tokens).
     #           Needs: offsend keygen --default. Without a key → plain deny.
     on_secret: block
+
+  # --- shell-gate (agent shell commands) -------------------------------------
+  shell:
+    # ask | deny — default when unset: deny (Cursor does not reliably pause on ask).
+    # Control-plane findings always deny. mode: ask needs offsend policy trust.
+    mode: deny
 
   # --- MCP call + response gates (Cursor / Claude) ---------------------------
   mcp:

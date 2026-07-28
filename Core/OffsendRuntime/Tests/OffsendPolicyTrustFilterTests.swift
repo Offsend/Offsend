@@ -30,7 +30,8 @@ final class OffsendPolicyTrustFilterTests: XCTestCase {
                         rules: [OffsendMCPRule(match: .init(server: "*"), mode: "observe")]
                     ),
                     subagents: OffsendProjectSubagentsConfig(mode: "ask", scanTask: false),
-                    read: OffsendProjectReadConfig(onSecret: "seal")
+                    read: OffsendProjectReadConfig(onSecret: "seal"),
+                    shell: OffsendProjectShellConfig(mode: "ask")
                 )
             )
         )
@@ -39,6 +40,8 @@ final class OffsendPolicyTrustFilterTests: XCTestCase {
         XCTAssertNil(loosened?.context?.mcp?.rules?.first?.mode)
         XCTAssertNil(loosened?.context?.subagents?.mode)
         XCTAssertNil(loosened?.context?.subagents?.scanTask)
+        // Shell default is deny; ask would loosen an untrusted policy.
+        XCTAssertNil(loosened?.context?.shell?.mode)
         // Seal still denies the read and withholds detected secrets, so it
         // survives an untrusted policy.
         XCTAssertEqual(loosened?.context?.read?.onSecret, "seal")
@@ -47,7 +50,8 @@ final class OffsendPolicyTrustFilterTests: XCTestCase {
             OffsendProjectConfig(
                 context: OffsendProjectContextConfig(
                     mcp: OffsendProjectMCPConfig(mode: "deny", deny: ["*"], responses: "seal"),
-                    subagents: OffsendProjectSubagentsConfig(mode: "deny", scanTask: true)
+                    subagents: OffsendProjectSubagentsConfig(mode: "deny", scanTask: true),
+                    shell: OffsendProjectShellConfig(mode: "deny")
                 )
             )
         )
@@ -56,6 +60,7 @@ final class OffsendPolicyTrustFilterTests: XCTestCase {
         XCTAssertEqual(tightened?.context?.mcp?.deny, ["*"])
         XCTAssertEqual(tightened?.context?.mcp?.responses, "seal")
         XCTAssertEqual(tightened?.context?.subagents?.mode, "deny")
+        XCTAssertEqual(tightened?.context?.shell?.mode, "deny")
     }
 
     func testHardenedDefaultsMatchAbsentPolicy() {

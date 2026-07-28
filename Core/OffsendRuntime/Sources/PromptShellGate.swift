@@ -8,7 +8,9 @@ public struct PromptShellGateDecision: Equatable, Sendable {
     /// Control-plane mutations must be denied in agent shells, not merely confirmed.
     public let deny: Bool
 
-    public var allowed: Bool { suspiciousPaths.isEmpty }
+    /// True only when there are no findings. A hard deny with an empty label
+    /// list (invalid / oversized input) is still not allowed.
+    public var allowed: Bool { suspiciousPaths.isEmpty && !deny }
 
     public init(command: String, suspiciousPaths: [String], reason: String, deny: Bool = false) {
         self.command = command
@@ -21,13 +23,15 @@ public struct PromptShellGateDecision: Equatable, Sendable {
 /// Best-effort gate for Cursor `beforeShellExecution` / Claude `PreToolUse` (Bash).
 /// Tokenizes the command and flags sensitive path tokens (same heuristics as the
 /// read-gate path heuristics, including symlink targets when the path exists).
-/// Does not parse shell grammar and never reads file contents; findings ask for
-/// user confirmation instead of blocking.
+/// Does not parse full shell grammar and never reads file contents. Sensitive-path
+/// findings follow `context.shell.mode` (`deny` by default; `ask` when configured
+/// and trusted). Control-plane findings always deny.
 public enum PromptShellGate {
     public static func evaluate(
         json: String,
         adapter: CheckHookAdapter,
-        classifier: ExecutableArtifactClassifier? = nil
+        classifier: ExecutableArtifactClassifier? = nil,
+        shellConfig: OffsendProjectShellConfig? = nil
     ) throws -> PromptShellGateDecision {
         guard let data = json.data(using: .utf8),
               let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
@@ -37,7 +41,28 @@ public enum PromptShellGate {
             throw PromptHookInputError.invalidJSON
         }
         let cwd = (root["cwd"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-        return evaluate(command: command, cwd: cwd, classifier: classifier)
+        return evaluate(command: command, cwd: cwd, classifier: classifier, shellConfig: shellConfig)
+    }
+
+    /// Deny for unrecognized / unparseable shell-gate hook input (fail-closed).
+    public static func invalidInputDecision() -> PromptShellGateDecision {
+        PromptShellGateDecision(
+            command: "",
+            suspiciousPaths: [],
+            reason: "Offsend: unrecognized shell-gate hook input denied.",
+            deny: true
+        )
+    }
+
+    /// Deny for hook input over the stdin byte limit (fail-closed).
+    public static func oversizedStdinDecision() -> PromptShellGateDecision {
+        PromptShellGateDecision(
+            command: "",
+            suspiciousPaths: [],
+            reason: "Offsend: blocked this shell command — hook input exceeds the "
+                + "\(CheckHookLimits.maxStdinBytes)-byte safety limit and cannot be scanned.",
+            deny: true
+        )
     }
 
     /// One reason the command was flagged. A command can trip several gates at
@@ -62,8 +87,11 @@ public enum PromptShellGate {
     public static func evaluate(
         command: String,
         cwd: String? = nil,
-        classifier: ExecutableArtifactClassifier? = nil
+        classifier: ExecutableArtifactClassifier? = nil,
+        shellConfig: OffsendProjectShellConfig? = nil
     ) -> PromptShellGateDecision {
+        let mode = OffsendShellGateMode.effective(shellConfig?.mode)
+        let modeDenies = mode == .deny
         var findings: [Finding] = []
 
         if let mutation = policyMutation(in: command) {
@@ -75,7 +103,7 @@ public enum PromptShellGate {
             ))
         }
         if let environment = EnvironmentPoisoningClassifier.classify(command: command, cwd: cwd) {
-            let denied = environment.risk == .deny
+            let denied = environment.risk == .deny || modeDenies
             findings.append(Finding(
                 label: "environment \(environment.variable)",
                 reason: denied
@@ -94,7 +122,7 @@ public enum PromptShellGate {
             ))
         }
         if let daemon = PrivilegedDaemonInvocationClassifier.classify(command: command) {
-            let denied = daemon.risk == .deny
+            let denied = daemon.risk == .deny || modeDenies
             findings.append(Finding(
                 label: "\(daemon.surface): \(daemon.operation)",
                 reason: denied
@@ -104,13 +132,16 @@ public enum PromptShellGate {
             ))
         }
         // `offsend unseal` restores sealed plaintext; the agent must not quietly
-        // unseal what the read/MCP gates just sealed. Ask the user first.
+        // unseal what the read/MCP gates just sealed.
         if referencesUnseal(command) {
             findings.append(Finding(
                 label: "offsend unseal",
-                reason: "Offsend: command runs `offsend unseal` — it restores sealed secrets to plaintext. "
-                    + "Confirm before running; unseal output belongs to the user, not the agent context.",
-                deny: false
+                reason: modeDenies
+                    ? "Offsend blocked `offsend unseal` — it restores sealed secrets to plaintext. "
+                        + "Run unseal yourself outside the agent session."
+                    : "Offsend: command runs `offsend unseal` — it restores sealed secrets to plaintext. "
+                        + "Confirm before running; unseal output belongs to the user, not the agent context.",
+                deny: modeDenies
             ))
         }
 
@@ -119,10 +150,15 @@ public enum PromptShellGate {
             findings.append(contentsOf: artifactFindings(
                 candidates: candidates,
                 cwd: cwd,
-                classifier: classifier
+                classifier: classifier,
+                modeDenies: modeDenies
             ))
         }
-        findings.append(contentsOf: sensitivePathFindings(candidates: candidates, cwd: cwd))
+        findings.append(contentsOf: sensitivePathFindings(
+            candidates: candidates,
+            cwd: cwd,
+            modeDenies: modeDenies
+        ))
 
         guard !findings.isEmpty else {
             return PromptShellGateDecision(command: command, suspiciousPaths: [], reason: "")
@@ -142,7 +178,8 @@ public enum PromptShellGate {
     private static func artifactFindings(
         candidates: [String],
         cwd: String?,
-        classifier: ExecutableArtifactClassifier
+        classifier: ExecutableArtifactClassifier,
+        modeDenies: Bool
     ) -> [Finding] {
         var findings: [Finding] = []
         var seen = Set<String>()
@@ -160,12 +197,14 @@ public enum PromptShellGate {
             case .denyWhenContentExecutable:
                 // A shell command carries no parsed content, so the gate cannot
                 // tell an ordinary settings edit from an injected interpreter
-                // path. Ask instead of guessing.
+                // path. Mode deny blocks; ask confirms.
                 findings.append(Finding(
                     label: artifact.path,
-                    reason: "Offsend: command targets editor configuration (\(name)) that can carry "
-                        + "interpreter paths, terminal profiles, or task commands. Confirm before running.",
-                    deny: false
+                    reason: modeDenies
+                        ? "Offsend blocked this command because it targets editor configuration (\(name)) that can carry interpreter paths, terminal profiles, or task commands. Review and edit this trust surface manually."
+                        : "Offsend: command targets editor configuration (\(name)) that can carry "
+                            + "interpreter paths, terminal profiles, or task commands. Confirm before running.",
+                    deny: modeDenies
                 ))
             case .observe:
                 continue
@@ -174,7 +213,11 @@ public enum PromptShellGate {
         return findings
     }
 
-    private static func sensitivePathFindings(candidates: [String], cwd: String?) -> [Finding] {
+    private static func sensitivePathFindings(
+        candidates: [String],
+        cwd: String?,
+        modeDenies: Bool
+    ) -> [Finding] {
         var seen = Set<String>()
         var suspicious: [String] = []
         for candidate in candidates {
@@ -184,11 +227,15 @@ public enum PromptShellGate {
             }
         }
         guard !suspicious.isEmpty else { return [] }
+        let names = suspicious.joined(separator: ", ")
         return [Finding(
             labels: suspicious,
-            reason: "Offsend: command touches sensitive path (\(suspicious.joined(separator: ", "))). "
-                + "Confirm before running — secrets can fuel further tool use.",
-            deny: false
+            reason: modeDenies
+                ? "Offsend blocked this command because it touches sensitive path (\(names)). "
+                    + "Secrets can fuel further tool use — prefer env vars / AI ignore files."
+                : "Offsend: command touches sensitive path (\(names)). "
+                    + "Confirm before running — secrets can fuel further tool use.",
+            deny: modeDenies
         )]
     }
 
@@ -245,22 +292,71 @@ public enum PromptShellGate {
         }
     }
 
-    /// Lexed tokens, including those inside nested `-c` scripts. Redirections are
-    /// unglued from their target and `VAR=value` / `--flag=value` contribute the
-    /// value part.
+    /// Lexed tokens, including those inside nested shell / interpreter scripts and
+    /// `$(…)` bodies. Redirections are unglued from their target and `VAR=value` /
+    /// `--flag=value` contribute the value part. Opaque tokens also contribute
+    /// quoted / path-shaped substrings (`open('cert.pem')`).
     static func pathCandidates(in command: String) -> [String] {
-        let strippable = CharacterSet(charactersIn: "()<>,")
+        let strippable = CharacterSet(charactersIn: "()<>,;[]{}")
         var candidates: [String] = []
-        for rawToken in ShellInvocationExtractor.allTokens(in: command) {
-            var candidate = strippingRedirection(rawToken).trimmingCharacters(in: strippable)
-            if let equals = candidate.firstIndex(of: "=") {
+        var seen = Set<String>()
+        func append(_ raw: String) {
+            var candidate = strippingRedirection(raw).trimmingCharacters(in: strippable)
+            if let equals = candidate.firstIndex(of: "="),
+               equals != candidate.startIndex {
                 candidate = String(candidate[candidate.index(after: equals)...])
                     .trimmingCharacters(in: strippable)
             }
-            guard !candidate.isEmpty, !candidate.hasPrefix("-") else { continue }
-            candidates.append(candidate)
+            // `$HOME/.ssh/id_rsa` → keep; bare `$f` is not a path candidate.
+            if candidate.hasPrefix("$") {
+                if let slash = candidate.firstIndex(of: "/") {
+                    candidate = String(candidate[slash...])
+                } else if candidate.hasPrefix("${"),
+                          let close = candidate.firstIndex(of: "}"),
+                          close < candidate.endIndex,
+                          candidate[candidate.index(after: close)...].first == "/" {
+                    candidate = String(candidate[candidate.index(after: close)...])
+                } else {
+                    return
+                }
+            }
+            guard !candidate.isEmpty, !candidate.hasPrefix("-") else { return }
+            if seen.insert(candidate).inserted {
+                candidates.append(candidate)
+            }
+        }
+
+        for rawToken in ShellInvocationExtractor.allTokens(in: command) {
+            append(rawToken)
+            for embedded in embeddedPathFragments(in: rawToken) {
+                append(embedded)
+            }
         }
         return candidates
+    }
+
+    /// Path-like fragments buried inside opaque tokens (`open('cert.pem')`).
+    private static func embeddedPathFragments(in token: String) -> [String] {
+        var fragments: [String] = []
+        let characters = Array(token)
+        var index = 0
+        while index < characters.count {
+            let character = characters[index]
+            if character == "'" || character == "\"" {
+                let quote = character
+                index += 1
+                var fragment = ""
+                while index < characters.count, characters[index] != quote {
+                    fragment.append(characters[index])
+                    index += 1
+                }
+                if !fragment.isEmpty { fragments.append(fragment) }
+                if index < characters.count { index += 1 }
+                continue
+            }
+            index += 1
+        }
+        return fragments
     }
 
     /// Drops a leading redirection operator so `2>>.envrc` yields `.envrc`,
@@ -281,7 +377,8 @@ public enum PromptShellGate {
 }
 
 public enum PromptShellGateRenderer {
-    /// Findings produce `ask` (user confirmation), never a hard deny.
+    /// Findings produce `ask` or `deny` depending on `context.shell.mode` and
+    /// whether the finding is control-plane (always deny).
     public static func render(
         decision: PromptShellGateDecision,
         adapter: CheckHookAdapter

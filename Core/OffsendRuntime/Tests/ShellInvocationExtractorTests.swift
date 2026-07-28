@@ -88,4 +88,24 @@ final class ShellInvocationExtractorTests: XCTestCase {
         XCTAssertTrue(tokens.contains(".env"))
         XCTAssertFalse(tokens.contains("&&"))
     }
+
+    func testAllTokensIncludesInterpreterInlineScripts() {
+        let python = ShellInvocationExtractor.allTokens(in: #"python3 -c "open('cert.pem')""#)
+        XCTAssertTrue(python.contains("open('cert.pem')") || python.contains("cert.pem"))
+
+        let node = ShellInvocationExtractor.allTokens(in: #"node -e "require('fs').readFileSync('.env')""#)
+        XCTAssertTrue(node.contains(".env") || node.contains("require('fs').readFileSync('.env')"))
+
+        let ruby = ShellInvocationExtractor.allTokens(in: #"ruby -e "File.read('id_rsa')""#)
+        XCTAssertTrue(ruby.contains("id_rsa") || ruby.contains("File.read('id_rsa')"))
+    }
+
+    func testCommandSubstitutionBodiesAreCollected() {
+        XCTAssertEqual(
+            ShellInvocationExtractor.commandSubstitutionBodies(in: #"cat $(echo cert.pem)"#),
+            ["echo cert.pem"]
+        )
+        let tokens = ShellInvocationExtractor.allTokens(in: #"cat $(printf '%s' .env)"#)
+        XCTAssertTrue(tokens.contains(".env") || tokens.contains("printf"))
+    }
 }
