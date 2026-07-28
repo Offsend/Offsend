@@ -155,9 +155,9 @@ These `offsend_privacy.*` files are fully owned by Offsend: manual edits are res
 
 ### `hooks.ignore_exclude`
 
-When `false` (default), the editor **read-gate** honors `check.exclude`: reading a project file that matches an exclude pattern is allowed without the sensitive-path check or content scan (useful for docs and test fixtures containing example keys). The presented path **and** its symlink-resolved target must both be inside the repository and excluded — a benign excluded link name cannot smuggle a sensitive target past the gate. Paths outside the repository are never treated as excluded.
+When `false` (default), editor file-context gates honor `check.exclude`: an explicit Read and an `@file` / attachment in a submitted prompt skip path/content scanning when the project file matches an exclude pattern (useful for docs and test fixtures containing example keys). The presented path **and** its symlink-resolved target must both be inside the repository and excluded — a benign excluded link name cannot smuggle a sensitive target past the gate. Paths outside the repository are never treated as excluded. Because this loosens protection, editor gates ignore `check.exclude` until the policy is trusted.
 
-Set `true` to make the read-gate check every path regardless of `check.exclude` (strictest defense-in-depth):
+Set `true` to make both read and prompt-attachment gates check every path regardless of `check.exclude` (strictest defense-in-depth):
 
 ```yaml
 hooks:
@@ -248,6 +248,8 @@ Do not exclude secret-bearing files (for example `.env`, `*.pem`) — those shou
 Detector IDs to turn off for this project. Unknown IDs are ignored.
 
 This is how teams **tune** a shared baseline without abandoning `.offsend.yml`: keep credential detectors on, disable noisy non-secret detectors (for example `phone`, `email`) that do not match your threat model. Prefer editing this list over maintaining separate per-engineer ignore rules.
+
+When `context.read.on_secret: seal` or `context.mcp.responses: seal` is active, agent-facing seal scans intentionally ignore this disable list: concrete detector and custom-dictionary findings are sealed rather than left plaintext (`highEntropyString` stays excluded because it is fuzzy/noisy). `offsend doctor` reports `seal-detector-gap` when seal mode and a disable list coexist. Ordinary `offsend check` still honors `disable` as written.
 
 Supported IDs:
 

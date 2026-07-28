@@ -311,13 +311,15 @@ struct Check: AsyncParsableCommand {
             ).standardizedFileURL
             let projectRoot = (try? GitRepositoryResolver().repositoryRoot(startingAt: workingURL))
                 ?? workingURL
+            let shellPolicy = shellGatePolicy(workingURL: workingURL)
             hookEmitter().emitShellGate(
                 adapter: adapter,
                 rawJSON: rawText,
                 started: started,
                 policy: resolvedHookPolicy(for: adapter),
                 projectRoot: projectRoot,
-                shellConfig: shellGateConfig(workingURL: workingURL)
+                shellConfig: shellPolicy?.context?.shell,
+                protectedPatterns: shellPolicy?.ignore?.patterns ?? []
             )
             return
         }
@@ -422,7 +424,25 @@ struct Check: AsyncParsableCommand {
         )
 
         let service = OffsendCheckService(context: context!)
-        let scanText = promptScanText(payload: promptPayload, fallback: rawText)
+        let promptWorkingURL = URL(
+            fileURLWithPath: workingDirectory ?? FileManager.default.currentDirectoryPath
+        ).standardizedFileURL
+        let promptProjectRoot = (try? GitRepositoryResolver().repositoryRoot(
+            startingAt: promptWorkingURL
+        )) ?? promptWorkingURL
+        let promptExcludePatterns = (projectConfig?.hooks?.ignoresCheckExclude ?? false)
+            ? []
+            : resolved.excludePatterns
+        let includedAttachmentPaths = promptAttachmentPaths(
+            payload: promptPayload,
+            excludePatterns: promptExcludePatterns,
+            projectRoot: promptProjectRoot
+        )
+        let scanText = promptScanText(
+            payload: promptPayload,
+            fallback: rawText,
+            attachmentPaths: includedAttachmentPaths
+        )
         let textResult = await service.runText(
             scanText,
             failPolicy: resolved.failPolicy,
@@ -434,7 +454,7 @@ struct Check: AsyncParsableCommand {
             try await hookEmitter().emitAdapter(
                 adapter: adapter,
                 textResult: textResult,
-                attachmentPaths: promptPayload?.attachmentPaths ?? [],
+                attachmentPaths: includedAttachmentPaths,
                 context: context!,
                 started: started,
                 policy: resolvedHookPolicy(for: adapter)
@@ -604,19 +624,44 @@ struct Check: AsyncParsableCommand {
 
     /// Prompt text plus bounded contents of `@mentions` / attachments so secrets in
     /// referenced files are caught before the model turn starts.
-    private func promptScanText(payload: ParsedPromptPayload?, fallback: String) -> String {
+    private func promptScanText(
+        payload: ParsedPromptPayload?,
+        fallback: String,
+        attachmentPaths: [String]
+    ) -> String {
         guard let payload else { return fallback }
         let cwd = payload.cwd
             ?? workingDirectory
             ?? FileManager.default.currentDirectoryPath
         var parts = [payload.prompt]
-        for path in payload.attachmentPaths {
+        for path in attachmentPaths {
             let resolved = PromptReadGate.resolveFilesystemPath(path, cwd: cwd)
             if let content = PromptReadGate.loadContentPrefix(fromPath: resolved) {
                 parts.append(content)
             }
         }
         return parts.joined(separator: "\n")
+    }
+
+    /// Apply the same trusted `check.exclude` semantics as beforeReadFile.
+    /// Symlink targets must also remain inside the project and excluded.
+    private func promptAttachmentPaths(
+        payload: ParsedPromptPayload?,
+        excludePatterns: [String],
+        projectRoot: URL
+    ) -> [String] {
+        guard let payload else { return [] }
+        let cwd = payload.cwd
+            ?? workingDirectory
+            ?? FileManager.default.currentDirectoryPath
+        return payload.attachmentPaths.filter { path in
+            !PromptReadGate.isExcluded(
+                path: path,
+                cwd: cwd,
+                excludePatterns: excludePatterns,
+                projectRoot: projectRoot
+            )
+        }
     }
 
     private func parsePromptPayload(
@@ -658,14 +703,14 @@ struct Check: AsyncParsableCommand {
     /// fails open: an unreadable or invalid policy falls back to the built-in
     /// default (deny) and the command is still evaluated. Snapshot drift is
     /// already handled by `enforceTrustedPolicy` before stdin is read.
-    private func shellGateConfig(workingURL: URL) -> OffsendProjectShellConfig? {
+    private func shellGatePolicy(workingURL: URL) -> OffsendProjectConfig? {
         guard let config = (try? ProjectConfigLoader().load(from: workingURL)) ?? nil else {
             return nil
         }
         guard OffsendPolicySnapshotStore().status(directory: workingURL).isTrusted else {
-            return OffsendPolicyTrustFilter.hardened(config)?.context?.shell
+            return OffsendPolicyTrustFilter.hardened(config)
         }
-        return config.context?.shell
+        return config
     }
 
     private func loadStdinRuntime(

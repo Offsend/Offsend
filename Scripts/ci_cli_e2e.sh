@@ -562,6 +562,11 @@ mkdir -p "$seal_read_repo" "$seal_read_home"
 printf '%s\n' \
   "version: 1" \
   "" \
+  "check:" \
+  "  detectors:" \
+  "    disable:" \
+  "      - email" \
+  "" \
   "context:" \
   "  read:" \
   "    on_secret: seal" > "$seal_read_repo/.offsend.yml"
@@ -623,6 +628,31 @@ if ! HOME="$seal_read_home" "$CLI_PATH" check "$sealed_copy_path" --fail-on bloc
   exit 1
 fi
 rm -f "$sealed_copy_path"
+
+# Seal mode ignores check.detectors.disable: PII must not remain plaintext.
+read_seal_pii_payload='{"file_path":"/repo/customer.txt","content":"owner=security-team@corp.test"}'
+read_seal_pii_out="$(printf '%s' "$read_seal_pii_payload" | HOME="$seal_read_home" "$CLI_PATH" check --adapter cursor --read-gate --no-notify --working-directory "$seal_read_repo" 2>/dev/null)"
+pii_copy_path="$(echo "$read_seal_pii_out" | sed 's|\\/|/|g' | { grep -o '/[^"]*offsend-seal/sealed-[^"]*\.txt' || true; } | head -1)"
+if [[ -z "$pii_copy_path" || ! -f "$pii_copy_path" ]] || grep -q 'security-team@corp.test' "$pii_copy_path"; then
+  echo "Expected seal-mode to override disabled email detector and remove plaintext PII" >&2
+  echo "$read_seal_pii_out" >&2
+  exit 1
+fi
+rm -f "$pii_copy_path"
+
+# Encoded terminal output is decoded/re-scanned and the encoded span is sealed.
+# offsend:ignore-next-line
+encoded_secret="$(printf '%s' 'OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyzABCDEF123456' | base64 | tr -d '\n')"
+read_encoded_payload="$(printf '{"file_path":"/repo/terminal.txt","content":"%s"}' "$encoded_secret")"
+read_encoded_out="$(printf '%s' "$read_encoded_payload" | HOME="$seal_read_home" "$CLI_PATH" check --adapter cursor --read-gate --no-notify --working-directory "$seal_read_repo" 2>/dev/null)"
+encoded_copy_path="$(echo "$read_encoded_out" | sed 's|\\/|/|g' | { grep -o '/[^"]*offsend-seal/sealed-[^"]*\.txt' || true; } | head -1)"
+if [[ -z "$encoded_copy_path" || ! -f "$encoded_copy_path" ]] \
+   || grep -q "${encoded_secret:0:16}" "$encoded_copy_path"; then
+  echo "Expected encoded secret dump to be sealed before terminal Read" >&2
+  echo "$read_encoded_out" >&2
+  exit 1
+fi
+rm -f "$encoded_copy_path"
 
 # Without a key, seal mode degrades to the plain deny (no agent_message).
 no_seal_key_home="$workdir/seal-read-nokey"
@@ -786,6 +816,26 @@ if ! echo "$shell_secret_deny" | grep -q '"deny"'; then
   echo "$shell_secret_deny" >&2
   exit 1
 fi
+# F1: adjacent string concat inside python -c must still deny sensitive paths.
+shell_concat_deny="$(printf '%s' '{"command":"python3 -c '"'"'from pathlib import Path; Path(\"c\"+\"ert\"+\".p\"+\"em\").read_text()'"'"'"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
+if ! echo "$shell_concat_deny" | grep -q '"deny"'; then
+  echo "Expected shell-gate deny for python string-concat path to cert.pem" >&2
+  echo "$shell_concat_deny" >&2
+  exit 1
+fi
+shell_ignore_repo="$workdir/shell-ignore"
+mkdir -p "$shell_ignore_repo"
+printf '%s\n' \
+  "version: 1" \
+  "ignore:" \
+  "  patterns:" \
+  "    - fixtures/" > "$shell_ignore_repo/.offsend.yml"
+shell_ignore_concat_deny="$(printf '%s' '{"command":"python3 -c '"'"'from pathlib import Path; list(Path(\"f\"+\"ixtures\").iterdir())'"'"'"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify --working-directory "$shell_ignore_repo" 2>/dev/null)"
+if ! echo "$shell_ignore_concat_deny" | grep -q '"deny"'; then
+  echo "Expected shell-gate deny for reconstructed path protected by ignore.patterns" >&2
+  echo "$shell_ignore_concat_deny" >&2
+  exit 1
+fi
 shell_allow="$(printf '%s' '{"command":"ls -la src"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
 if ! echo "$shell_allow" | grep -q '"allow"'; then
   echo "Expected shell-gate allow for 'ls -la src'" >&2
@@ -854,14 +904,29 @@ mkdir -p "$shell_ask_repo" "$shell_ask_home"
 printf '%s\n' \
   "version: 1" \
   "" \
+  "check:" \
+  "  exclude:" \
+  "    - docs/**" \
+  "" \
   "context:" \
   "  shell:" \
   "    mode: ask" > "$shell_ask_repo/.offsend.yml"
+mkdir -p "$shell_ask_repo/docs"
+# offsend:ignore-next-line
+printf '%s\n' 'AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF' > "$shell_ask_repo/docs/example.txt"
+prompt_exclude_payload="$(printf '{"prompt":"review @docs/example.txt","cwd":"%s"}' "$shell_ask_repo")"
 
 shell_untrusted_ask="$(printf '%s' '{"command":"cat .env"}' | HOME="$shell_ask_home" "$CLI_PATH" check --adapter cursor --shell-gate --no-notify --working-directory "$shell_ask_repo" 2>/dev/null)"
 if ! echo "$shell_untrusted_ask" | grep -q '"deny"'; then
   echo "Expected untrusted context.shell.mode: ask to stay at the deny default" >&2
   echo "$shell_untrusted_ask" >&2
+  exit 1
+fi
+# Untrusted check.exclude is ignored, including for @mentions.
+prompt_exclude_untrusted="$(printf '%s' "$prompt_exclude_payload" | HOME="$shell_ask_home" "$CLI_PATH" check --adapter cursor --hook-policy soft-block --no-notify --working-directory "$shell_ask_repo" 2>/dev/null)"
+if ! echo "$prompt_exclude_untrusted" | grep -q '"continue":false\|"continue": false'; then
+  echo "Expected untrusted check.exclude to be ignored for @file prompt scan" >&2
+  echo "$prompt_exclude_untrusted" >&2
   exit 1
 fi
 
@@ -881,6 +946,13 @@ esac
 if ! HOME="$shell_ask_home" "$CLI_PATH" policy status --path "$shell_ask_repo" | grep -q "Policy snapshot: trusted"; then
   echo "Expected pty-driven policy trust to record a snapshot" >&2
   HOME="$shell_ask_home" "$CLI_PATH" policy status --path "$shell_ask_repo" >&2
+  exit 1
+fi
+
+prompt_exclude_trusted="$(printf '%s' "$prompt_exclude_payload" | HOME="$shell_ask_home" "$CLI_PATH" check --adapter cursor --hook-policy soft-block --no-notify --working-directory "$shell_ask_repo" 2>/dev/null)"
+if ! echo "$prompt_exclude_trusted" | grep -q '"continue":true\|"continue": true'; then
+  echo "Expected trusted check.exclude to skip @file content in prompt gate" >&2
+  echo "$prompt_exclude_trusted" >&2
   exit 1
 fi
 

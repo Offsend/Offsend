@@ -37,11 +37,20 @@ public struct OffsendTextCheckResult: Sendable {
     public let report: CheckReport
     public let entities: [SensitiveEntity]
     public let scannedText: String
+    /// Opaque encoded candidates exceeded the bounded decode/scan budget.
+    /// Agent-facing gates must deny/withhold rather than allow an unscanned tail.
+    public let opaqueScanOverflow: Bool
 
-    public init(report: CheckReport, entities: [SensitiveEntity], scannedText: String) {
+    public init(
+        report: CheckReport,
+        entities: [SensitiveEntity],
+        scannedText: String,
+        opaqueScanOverflow: Bool = false
+    ) {
         self.report = report
         self.entities = entities
         self.scannedText = scannedText
+        self.opaqueScanOverflow = opaqueScanOverflow
     }
 }
 
@@ -160,10 +169,16 @@ public struct OffsendCheckService: Sendable {
         )
         // `{{TYPE:v1.…}}` seal tokens are already-protected values; their
         // ciphertext bodies must not re-trigger detectors.
-        let scannedEntities = filterSealTokenFindings(
+        var scannedEntities = filterSealTokenFindings(
             detection.entities,
             in: detection.scannedText
         )
+        let opaqueScan = await opaqueEncodedSecretEntities(
+            in: detection.scannedText,
+            options: detectionOptions,
+            existing: scannedEntities
+        )
+        scannedEntities.append(contentsOf: opaqueScan.entities)
         let assessment = riskScorer.assess(scannedEntities)
         let findings: [FileCheckFinding]
         if assessment.recommendedAction == .allow {
@@ -197,8 +212,56 @@ public struct OffsendCheckService: Sendable {
         return OffsendTextCheckResult(
             report: report,
             entities: adviceEntities,
-            scannedText: detection.scannedText
+            scannedText: detection.scannedText,
+            opaqueScanOverflow: opaqueScan.overflow
         )
+    }
+
+    /// Decode large base64/hex runs and re-scan the plaintext. When the decoded
+    /// payload holds a critical secret, flag the encoded span in the source so
+    /// read-gate deny/seal covers terminal exfil dumps.
+    private func opaqueEncodedSecretEntities(
+        in scannedText: String,
+        options: DetectionOptions,
+        existing: [SensitiveEntity]
+    ) async -> (entities: [SensitiveEntity], overflow: Bool) {
+        let extraction = OpaqueEncodedBlobExtractor.extract(in: scannedText)
+        guard !extraction.blobs.isEmpty else {
+            return ([], extraction.exceededSafetyBudget)
+        }
+
+        var extras: [SensitiveEntity] = []
+        for blob in extraction.blobs {
+            // Skip spans already covered by a critical plaintext hit. Fuzzy
+            // `highEntropyString` on the encoded run itself must not block the
+            // decode probe — that is the F2 exfil path.
+            if existing.contains(where: {
+                $0.range.overlaps(blob.range) && $0.type.countsAsCriticalSecret
+            }) {
+                continue
+            }
+            var nestedOptions = options
+            // Decoded payloads are small; keep AI off and honorInlineIgnore false.
+            nestedOptions.maximumLength = OpaqueEncodedBlobExtractor.maxDecodedBytes
+            let nested = await detector.scan(
+                DetectionRequest(text: blob.decodedUTF8, options: nestedOptions)
+            )
+            let critical = filterSealTokenFindings(nested.entities, in: nested.scannedText)
+                .filter(\.type.countsAsCriticalSecret)
+            guard let strongest = critical.max(by: { $0.confidence < $1.confidence }) else {
+                continue
+            }
+            extras.append(
+                SensitiveEntity(
+                    type: strongest.type,
+                    range: blob.range,
+                    value: String(scannedText[blob.range]),
+                    confidence: strongest.confidence,
+                    source: .secret
+                )
+            )
+        }
+        return (extras, extraction.exceededSafetyBudget)
     }
 
     /// Scans files concurrently while keeping findings in the input order.

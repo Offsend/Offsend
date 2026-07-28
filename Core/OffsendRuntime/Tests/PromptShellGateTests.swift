@@ -55,6 +55,63 @@ final class PromptShellGateTests: XCTestCase {
         }
     }
 
+    func testSeesSensitivePathsReconstructedFromStringConcatenation() {
+        for command in [
+            #"python3 -c 'from pathlib import Path; Path("c"+"ert"+".p"+"em").read_text()'"#,
+            #"python3 -c 'open("c"+"ert"+".pem")'"#,
+            #"python3 -c "open('s'+'ecrets'+'/credentials.json')""#,
+            #"node -e 'require("fs").readFileSync("."+"env")'"#,
+        ] {
+            let decision = PromptShellGate.evaluate(command: command)
+            XCTAssertFalse(decision.allowed, command)
+            XCTAssertTrue(decision.deny, command)
+        }
+
+        // Benign concat must not trip the gate.
+        let allow = PromptShellGate.evaluate(
+            command: #"python3 -c 'print("hel"+"lo"+"world")'"#
+        )
+        XCTAssertTrue(allow.allowed)
+    }
+
+    func testStringConcatenationOnlyNormalizesInterpreterPayloads() {
+        let dataOnly = PromptShellGate.evaluate(
+            command: #"printf '%s' '"se"+"crets.json"'"#
+        )
+        XCTAssertTrue(dataOnly.allowed)
+    }
+
+    func testIgnorePatternsProtectReconstructedDirectories() {
+        let root = URL(fileURLWithPath: "/tmp/offsend-shell-root", isDirectory: true)
+        for command in [
+            #"python3 -c 'from pathlib import Path; list(Path("s"+"ecrets").iterdir())'"#,
+            #"python3 -c 'from pathlib import Path; list(Path("f"+"ixtures").iterdir())'"#,
+        ] {
+            let decision = PromptShellGate.evaluate(
+                command: command,
+                cwd: root.path,
+                protectedPatterns: ["secrets/", "fixtures/"],
+                projectRoot: root
+            )
+            XCTAssertFalse(decision.allowed, command)
+            XCTAssertTrue(decision.deny, command)
+        }
+    }
+
+    func testJSONEvaluationUsesDefaultCWDForProtectedPatterns() throws {
+        let root = URL(fileURLWithPath: "/tmp/offsend-shell-root", isDirectory: true)
+        let json = #"{"command":"python3 -c 'from pathlib import Path; list(Path(\"f\"+\"ixtures\").iterdir())'"}"#
+        let decision = try PromptShellGate.evaluate(
+            json: json,
+            adapter: .cursor,
+            protectedPatterns: ["fixtures/"],
+            projectRoot: root,
+            defaultCWD: root.path
+        )
+        XCTAssertFalse(decision.allowed)
+        XCTAssertTrue(decision.deny)
+    }
+
     func testInvalidInputDecisionDenies() {
         let decision = PromptShellGate.invalidInputDecision()
         XCTAssertTrue(decision.deny)

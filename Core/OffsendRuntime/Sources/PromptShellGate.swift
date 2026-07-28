@@ -1,4 +1,5 @@
 import Foundation
+import WorkspacePolicyCore
 
 public struct PromptShellGateDecision: Equatable, Sendable {
     public let command: String
@@ -31,7 +32,10 @@ public enum PromptShellGate {
         json: String,
         adapter: CheckHookAdapter,
         classifier: ExecutableArtifactClassifier? = nil,
-        shellConfig: OffsendProjectShellConfig? = nil
+        shellConfig: OffsendProjectShellConfig? = nil,
+        protectedPatterns: [String] = [],
+        projectRoot: URL? = nil,
+        defaultCWD: String? = nil
     ) throws -> PromptShellGateDecision {
         guard let data = json.data(using: .utf8),
               let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
@@ -41,7 +45,15 @@ public enum PromptShellGate {
             throw PromptHookInputError.invalidJSON
         }
         let cwd = (root["cwd"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-        return evaluate(command: command, cwd: cwd, classifier: classifier, shellConfig: shellConfig)
+            ?? defaultCWD
+        return evaluate(
+            command: command,
+            cwd: cwd,
+            classifier: classifier,
+            shellConfig: shellConfig,
+            protectedPatterns: protectedPatterns,
+            projectRoot: projectRoot
+        )
     }
 
     /// Deny for unrecognized / unparseable shell-gate hook input (fail-closed).
@@ -88,7 +100,9 @@ public enum PromptShellGate {
         command: String,
         cwd: String? = nil,
         classifier: ExecutableArtifactClassifier? = nil,
-        shellConfig: OffsendProjectShellConfig? = nil
+        shellConfig: OffsendProjectShellConfig? = nil,
+        protectedPatterns: [String] = [],
+        projectRoot: URL? = nil
     ) -> PromptShellGateDecision {
         let mode = OffsendShellGateMode.effective(shellConfig?.mode)
         let modeDenies = mode == .deny
@@ -157,7 +171,9 @@ public enum PromptShellGate {
         findings.append(contentsOf: sensitivePathFindings(
             candidates: candidates,
             cwd: cwd,
-            modeDenies: modeDenies
+            modeDenies: modeDenies,
+            protectedPatterns: protectedPatterns,
+            projectRoot: projectRoot
         ))
 
         guard !findings.isEmpty else {
@@ -216,12 +232,21 @@ public enum PromptShellGate {
     private static func sensitivePathFindings(
         candidates: [String],
         cwd: String?,
-        modeDenies: Bool
+        modeDenies: Bool,
+        protectedPatterns: [String],
+        projectRoot: URL?
     ) -> [Finding] {
         var seen = Set<String>()
         var suspicious: [String] = []
         for candidate in candidates {
-            guard let name = firstSuspiciousBasename(in: candidate, cwd: cwd) else { continue }
+            let name = firstSuspiciousBasename(in: candidate, cwd: cwd)
+                ?? protectedPathBasename(
+                    candidate,
+                    cwd: cwd,
+                    patterns: protectedPatterns,
+                    projectRoot: projectRoot
+                )
+            guard let name else { continue }
             if seen.insert(name.lowercased()).inserted {
                 suspicious.append(name)
             }
@@ -237,6 +262,30 @@ public enum PromptShellGate {
                     + "Confirm before running — secrets can fuel further tool use.",
             deny: modeDenies
         )]
+    }
+
+    /// `ignore.patterns` is the source-of-truth context boundary. A path under
+    /// that boundary must be shell-sensitive even when its basename is generic
+    /// (`fixtures/`, `private-data/`, etc.).
+    private static func protectedPathBasename(
+        _ candidate: String,
+        cwd: String?,
+        patterns: [String],
+        projectRoot: URL?
+    ) -> String? {
+        guard !patterns.isEmpty, let projectRoot else { return nil }
+        let root = projectRoot.standardizedFileURL.path
+        for absolute in PromptReadGate.sensitivityCheckPaths(for: candidate, cwd: cwd) {
+            guard absolute == root || absolute.hasPrefix(root + "/") else { continue }
+            let relative = absolute == root ? "" : String(absolute.dropFirst(root.count + 1))
+            guard !relative.isEmpty,
+                  IgnorePatternPathMatcher.isIgnored(
+                      relativePath: relative,
+                      ignoreLines: patterns
+                  ) else { continue }
+            return URL(fileURLWithPath: absolute).lastPathComponent
+        }
+        return nil
     }
 
     /// True when the command invokes `offsend … unseal` (any path to the binary).
@@ -295,7 +344,9 @@ public enum PromptShellGate {
     /// Lexed tokens, including those inside nested shell / interpreter scripts and
     /// `$(…)` bodies. Redirections are unglued from their target and `VAR=value` /
     /// `--flag=value` contribute the value part. Opaque tokens also contribute
-    /// quoted / path-shaped substrings (`open('cert.pem')`).
+    /// quoted / path-shaped substrings (`open('cert.pem')`). Adjacent static
+    /// string concatenations in interpreter payloads (`"c"+"ert"+".pem"`) are
+    /// joined before the sweep so path heuristics see the reconstructed name.
     static func pathCandidates(in command: String) -> [String] {
         let strippable = CharacterSet(charactersIn: "()<>,;[]{}")
         var candidates: [String] = []

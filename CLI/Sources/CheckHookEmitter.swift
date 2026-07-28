@@ -260,19 +260,36 @@ struct CheckHookEmitter {
             }
         }
 
+        // Seal mode keeps credential detectors on even when listed under
+        // check.detectors.disable (bypass F4).
+        let sealMode = OffsendReadGateSecretMode(rawValue: readConfig?.onSecret ?? "") == .seal
+        let scanDisabled = sealMode
+            ? SealDetectionPolicy.effectiveDisabledDetectors(disabledDetectors)
+            : disabledDetectors
+
         if decision.allowed, let content = resolvedContent {
             let scanned = await OffsendCheckService(context: context).runText(
                 content,
                 failPolicy: .block,
-                disabledDetectors: disabledDetectors,
+                disabledDetectors: scanDisabled,
                 customDictionaries: customDictionaries
             )
             let textResult = filteringAuthenticatedSealTokens(in: scanned)
             scanResult = textResult
-            if let secretDeny = PromptReadGate.decisionForSecretEntities(
+            if textResult.opaqueScanOverflow {
+                decision = PromptReadGateDecision(
+                    path: input.path,
+                    allowed: false,
+                    reason: "Offsend: blocked reading encoded content because the bounded "
+                        + "base64/hex scan budget was exceeded. Split or inspect it manually."
+                )
+                denyReason = "read_gate_denied_opaque_overflow"
+            } else if let secretDeny = PromptReadGate.decisionForSecretEntities(
                 path: input.path,
-                entities: textResult.entities,
-                secretsOnly: secretsOnly
+                entities: sealMode
+                    ? SealDetectionPolicy.entitiesForSeal(textResult.entities)
+                    : textResult.entities,
+                secretsOnly: sealMode ? false : secretsOnly
             ) {
                 decision = secretDeny
                 denyReason = "read_gate_denied_secrets"
@@ -282,19 +299,18 @@ struct CheckHookEmitter {
         // context.read.on_secret: seal — swap the dead-end deny for a deny that
         // hands the agent a sealed copy. Any failure (no key, no scannable
         // content, no entities) falls back to the plain deny above.
-        if !decision.allowed,
-           OffsendReadGateSecretMode(rawValue: readConfig?.onSecret ?? "") == .seal {
+        if !decision.allowed, sealMode, scanResult?.opaqueScanOverflow != true {
             if scanResult == nil,
                let content = resolvedContent ?? PromptReadGate.resolveContent(for: input) {
                 let scanned = await OffsendCheckService(context: context).runText(
                     content,
                     failPolicy: .block,
-                    disabledDetectors: disabledDetectors,
+                    disabledDetectors: scanDisabled,
                     customDictionaries: customDictionaries
                 )
                 scanResult = filteringAuthenticatedSealTokens(in: scanned)
             }
-            if let scanResult,
+            if let scanResult, !scanResult.opaqueScanOverflow,
                let sealed = sealedReadDecision(input: input, scanResult: scanResult, context: context) {
                 decision = sealed
                 denyReason = "read_gate_denied_sealed_copy"
@@ -368,7 +384,8 @@ struct CheckHookEmitter {
         return OffsendTextCheckResult(
             report: result.report,
             entities: entities,
-            scannedText: result.scannedText
+            scannedText: result.scannedText,
+            opaqueScanOverflow: result.opaqueScanOverflow
         )
     }
 
@@ -381,8 +398,8 @@ struct CheckHookEmitter {
         context: OffsendRuntimeContext
     ) -> PromptReadGateDecision? {
         let gateEntities = PromptCheckAdviceBuilder.filterEntities(
-            scanResult.entities,
-            secretsOnly: secretsOnly
+            SealDetectionPolicy.entitiesForSeal(scanResult.entities),
+            secretsOnly: false
         )
         guard !gateEntities.isEmpty else { return nil }
         let resolvedKeyFile = keyFile.map {
@@ -436,7 +453,8 @@ struct CheckHookEmitter {
         started: Date,
         policy: CheckHookPolicy,
         projectRoot: URL,
-        shellConfig: OffsendProjectShellConfig? = nil
+        shellConfig: OffsendProjectShellConfig? = nil,
+        protectedPatterns: [String] = []
     ) {
         let decision: PromptShellGateDecision
         do {
@@ -444,7 +462,10 @@ struct CheckHookEmitter {
                 json: rawJSON,
                 adapter: adapter,
                 classifier: ExecutableArtifactClassifier(projectRoot: projectRoot),
-                shellConfig: shellConfig
+                shellConfig: shellConfig,
+                protectedPatterns: protectedPatterns,
+                projectRoot: projectRoot,
+                defaultCWD: projectRoot.path
             )
         } catch {
             let denied = PromptShellGate.invalidInputDecision()
@@ -532,6 +553,9 @@ struct CheckHookEmitter {
                 secretsOnly: secretsOnly
             )
             secretTypes = Array(Set(secrets.map(\.type.rawValue))).sorted()
+            if textResult.opaqueScanOverflow {
+                secretTypes.append("opaqueEncodedBlob")
+            }
         }
 
         let decision = PromptSubagentGate.evaluate(
@@ -743,15 +767,23 @@ struct CheckHookEmitter {
             let scanned = await OffsendCheckService(context: context).runText(
                 workingText,
                 failPolicy: .block,
-                disabledDetectors: disabledDetectors,
+                disabledDetectors: mode == .seal
+                    ? SealDetectionPolicy.effectiveDisabledDetectors(disabledDetectors)
+                    : disabledDetectors,
                 customDictionaries: customDictionaries
             )
             let textResult = filteringAuthenticatedSealTokens(in: scanned)
-            let secrets = PromptCheckAdviceBuilder.filterEntities(
-                textResult.entities,
-                secretsOnly: secretsOnly
-            )
+            let secrets = mode == .seal
+                ? SealDetectionPolicy.entitiesForSeal(textResult.entities)
+                : PromptCheckAdviceBuilder.filterEntities(
+                    textResult.entities,
+                    secretsOnly: secretsOnly
+                )
             secretTypes = Array(Set(secrets.map(\.type.rawValue))).sorted()
+            if textResult.opaqueScanOverflow {
+                secretTypes.append("opaqueEncodedBlob")
+                sealFailed = true
+            }
 
             if mode == .seal,
                !sealFailed,

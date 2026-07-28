@@ -841,6 +841,10 @@ public struct OffsendDoctor: Sendable {
             )
         }
 
+        if let sealGap = sealDetectorGapCheck(loader: configLoader, directory: cwd) {
+            checks.append(sealGap)
+        }
+
         let next = nextActionsCheck(
             cwd: cwd,
             configLoader: configLoader,
@@ -1057,6 +1061,37 @@ public struct OffsendDoctor: Sendable {
                 message: "\(configURL.path): \(error.localizedDescription)"
             )
         }
+    }
+
+    /// Warn when seal mode coexists with `check.detectors.disable` entries that
+    /// would have weakened sealing before credential detectors were forced on.
+    private func sealDetectorGapCheck(
+        loader: ProjectConfigLoader,
+        directory: URL
+    ) -> DoctorCheck? {
+        guard let config = try? loader.load(from: directory) else { return nil }
+        return Self.sealDetectorGapCheck(config: config)
+    }
+
+    static func sealDetectorGapCheck(config: OffsendProjectConfig) -> DoctorCheck? {
+        let readSeal = OffsendReadGateSecretMode(rawValue: config.context?.read?.onSecret ?? "") == .seal
+        let mcpSeal = OffsendMCPResponseMode(rawValue: config.context?.mcp?.responses ?? "") == .seal
+        guard readSeal || mcpSeal else { return nil }
+
+        let disabled = SealDetectionPolicy.configuredDisabledIDs(
+            config.check?.detectors?.disable
+        )
+        if !disabled.isEmpty {
+            return DoctorCheck(
+                name: "seal-detector-gap",
+                status: .warn,
+                message: "Seal mode is on while check.detectors.disable lists "
+                    + "(\(disabled.joined(separator: ", "))). Agent-facing seal/MCP-seal "
+                    + "scans intentionally ignore that disable list so detected values do not "
+                    + "remain plaintext; ordinary `offsend check` still honors it."
+            )
+        }
+        return nil
     }
 
     private func projectConfigErrorMessage(_ error: ProjectConfigLoaderError, path: String) -> String {
