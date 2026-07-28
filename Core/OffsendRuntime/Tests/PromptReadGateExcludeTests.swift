@@ -24,6 +24,17 @@ final class PromptReadGateExcludeTests: XCTestCase {
         )
     }
 
+    func testRelativeAttachmentUsesPromptCWDForExclude() {
+        XCTAssertTrue(
+            PromptReadGate.isExcluded(
+                path: "docs/cli.md",
+                cwd: root.path,
+                excludePatterns: ["docs/**"],
+                projectRoot: root
+            )
+        )
+    }
+
     func testNonMatchingPathIsNotExcluded() {
         XCTAssertFalse(
             PromptReadGate.isExcluded(

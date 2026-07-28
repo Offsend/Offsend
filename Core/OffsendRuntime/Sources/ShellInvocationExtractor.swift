@@ -114,7 +114,7 @@ public enum ShellInvocationExtractor {
     /// structure.
     public static func allTokens(in command: String) -> [String] {
         var result: [String] = []
-        collectTokens(command, depth: 0, into: &result)
+        collectTokens(command, depth: 0, normalizeStaticConcats: false, into: &result)
         return result
     }
 
@@ -263,17 +263,40 @@ public enum ShellInvocationExtractor {
 
     // MARK: - Tokens
 
-    private static func collectTokens(_ command: String, depth: Int, into result: inout [String]) {
+    private static func collectTokens(
+        _ command: String,
+        depth: Int,
+        normalizeStaticConcats: Bool,
+        into result: inout [String]
+    ) {
         guard depth <= maxDepth else { return }
-        let tokens = tokens(command)
-        result.append(contentsOf: tokens.filter { !isSeparator($0) })
-        for segment in segments(tokens) {
+        let normalized = normalizeStaticConcats
+            ? InterpreterScriptPathNormalizer.joiningAdjacentStringLiterals(command)
+            : command
+        // Preserve the normalized source as an opaque token so pathCandidates
+        // can inspect quoted fragments before the lexer removes their quotes.
+        if normalizeStaticConcats, normalized != command {
+            result.append(normalized)
+        }
+        let lexed = tokens(normalized)
+        result.append(contentsOf: lexed.filter { !isSeparator($0) })
+        for segment in segments(lexed) {
             for script in nestedScripts(in: segment) {
-                collectTokens(script, depth: depth + 1, into: &result)
+                collectTokens(
+                    script.source,
+                    depth: depth + 1,
+                    normalizeStaticConcats: script.normalizeStaticConcats,
+                    into: &result
+                )
             }
         }
-        for body in commandSubstitutionBodies(in: command) {
-            collectTokens(body, depth: depth + 1, into: &result)
+        for body in commandSubstitutionBodies(in: normalized) {
+            collectTokens(
+                body,
+                depth: depth + 1,
+                normalizeStaticConcats: false,
+                into: &result
+            )
         }
     }
 
@@ -367,8 +390,13 @@ public enum ShellInvocationExtractor {
 
     /// Script strings anywhere in a segment, so `timeout 5 bash -c '…'` and
     /// `python3 -c '…'` are swept even when not the first token.
-    private static func nestedScripts(in segment: [String]) -> [String] {
-        var scripts: [String] = []
+    private struct NestedScript {
+        let source: String
+        let normalizeStaticConcats: Bool
+    }
+
+    private static func nestedScripts(in segment: [String]) -> [NestedScript] {
+        var scripts: [NestedScript] = []
         var pendingShell = false
         var pendingInterpreter: Character?
         for (index, token) in segment.enumerated() {
@@ -384,24 +412,27 @@ public enum ShellInvocationExtractor {
                 continue
             }
             if let script = splitStringScript(token, next: segment[safe: index + 1]) {
-                scripts.append(script)
+                scripts.append(NestedScript(source: script, normalizeStaticConcats: false))
                 continue
             }
             if pendingShell, token.hasPrefix("-"), !token.hasPrefix("--"),
                token.dropFirst().contains("c"), let script = segment[safe: index + 1] {
-                scripts.append(script)
+                scripts.append(NestedScript(source: script, normalizeStaticConcats: false))
                 pendingShell = false
                 continue
             }
             if let option = pendingInterpreter {
                 let flag = "-\(option)"
                 if token == flag, let script = segment[safe: index + 1] {
-                    scripts.append(script)
+                    scripts.append(NestedScript(source: script, normalizeStaticConcats: true))
                     pendingInterpreter = nil
                     continue
                 }
                 if token.hasPrefix(flag), token.count > flag.count {
-                    scripts.append(String(token.dropFirst(flag.count)))
+                    scripts.append(NestedScript(
+                        source: String(token.dropFirst(flag.count)),
+                        normalizeStaticConcats: true
+                    ))
                     pendingInterpreter = nil
                     continue
                 }

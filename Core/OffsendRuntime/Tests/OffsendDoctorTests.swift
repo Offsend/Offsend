@@ -22,6 +22,34 @@ final class OffsendDoctorTests: XCTestCase {
         )
     }
 
+    func testSealDetectorGapWarnsThatDisableIsIgnoredForSeal() {
+        let config = OffsendProjectConfig(
+            check: OffsendProjectCheckConfig(
+                detectors: OffsendProjectDetectorsConfig(
+                    disable: ["url", "governmentId"]
+                )
+            ),
+            context: OffsendProjectContextConfig(
+                read: OffsendProjectReadConfig(onSecret: "seal")
+            )
+        )
+
+        let check = OffsendDoctor.sealDetectorGapCheck(config: config)
+        XCTAssertEqual(check?.name, "seal-detector-gap")
+        XCTAssertEqual(check?.status, .warn)
+        XCTAssertTrue(check?.message.contains("governmentId") == true)
+        XCTAssertTrue(check?.message.contains("intentionally ignore") == true)
+    }
+
+    func testSealDetectorGapIsAbsentOutsideSealMode() {
+        let config = OffsendProjectConfig(
+            check: OffsendProjectCheckConfig(
+                detectors: OffsendProjectDetectorsConfig(disable: ["url"])
+            )
+        )
+        XCTAssertNil(OffsendDoctor.sealDetectorGapCheck(config: config))
+    }
+
     // MARK: - Cursor minimum version
 
     func testCursorVersionCheckAcceptsVersionThreeOrNewer() {

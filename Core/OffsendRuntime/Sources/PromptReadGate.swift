@@ -83,12 +83,13 @@ public enum PromptReadGate {
     /// name cannot smuggle a sensitive target past the gate.
     public static func isExcluded(
         path: String,
+        cwd: String? = nil,
         excludePatterns: [String],
         projectRoot: URL
     ) -> Bool {
         guard !excludePatterns.isEmpty else { return false }
         let rootPath = projectRoot.standardizedFileURL.path
-        return sensitivityCheckPaths(for: path).allSatisfy { candidate in
+        return sensitivityCheckPaths(for: path, cwd: cwd).allSatisfy { candidate in
             guard candidate.hasPrefix(rootPath + "/") else { return false }
             let relative = String(candidate.dropFirst(rootPath.count + 1))
             return PathExcludeMatcher.isExcluded(relativePath: relative, patterns: excludePatterns)
