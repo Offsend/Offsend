@@ -29,10 +29,11 @@ public struct ShellInvocation: Equatable, Sendable {
 }
 
 /// Shared static analysis of an agent shell command: one lexer, one wrapper
-/// table, one place that looks inside `sh -c "…"`.
+/// table, one place that looks inside `sh -c "…"`, interpreter `-c`/`-e`
+/// payloads, and `$(…)` bodies.
 ///
-/// This is deliberately not a shell interpreter. `eval`, variable expansion,
-/// command substitution, and generated scripts stay outside static argv
+/// This is deliberately not a shell interpreter. `eval`, unresolved `$var`,
+/// generated scripts, and environment-array injection stay outside static argv
 /// recognition and are reported as residual gaps.
 public enum ShellInvocationExtractor {
     /// Nested `-c` scripts are followed this deep; beyond it the payload is
@@ -85,6 +86,21 @@ public enum ShellInvocationExtractor {
 
     private static let shellNames: Set<String> = [
         "sh", "bash", "zsh", "dash", "ksh", "mksh", "ash", "busybox",
+    ]
+
+    /// Interpreters whose `-c` / `-e` payload is swept for path tokens.
+    /// Value is the short option letter (`c` or `e`).
+    private static let inlineInterpreterOptions: [String: Character] = [
+        "python": "c",
+        "python2": "c",
+        "python3": "c",
+        "pypy": "c",
+        "pypy3": "c",
+        "node": "e",
+        "nodejs": "e",
+        "ruby": "e",
+        "perl": "e",
+        "php": "r",
     ]
 
     // MARK: - Public API
@@ -167,16 +183,30 @@ public enum ShellInvocationExtractor {
         let arguments = Array(segment[index...])
         var result = [ShellInvocation(assignments: assignments, arguments: arguments)]
         if let script = inlineScript(in: arguments) {
-            result.append(contentsOf: invocations(in: script, depth: depth + 1))
+            // Shell `-c` payloads may contain further shell; interpreter payloads
+            // are path-swept via `allTokens` / `nestedScripts` instead.
+            if let first = arguments.first, shellNames.contains(executableName(first)) {
+                result.append(contentsOf: invocations(in: script, depth: depth + 1))
+            }
         }
         return result
     }
 
-    /// The script string of a `sh -c "…"` style invocation, if this argv is one.
+    /// The script string of a `sh -c "…"` or `python3 -c "…"` / `node -e "…"`
+    /// style invocation, if this argv is one.
     private static func inlineScript(in arguments: [String]) -> String? {
-        guard let first = arguments.first, shellNames.contains(executableName(first)) else {
-            return nil
+        guard let first = arguments.first else { return nil }
+        let name = executableName(first)
+        if shellNames.contains(name) {
+            return shellInlineScript(in: arguments)
         }
+        if let option = inlineInterpreterOptions[name] {
+            return interpreterInlineScript(in: arguments, option: option)
+        }
+        return nil
+    }
+
+    private static func shellInlineScript(in arguments: [String]) -> String? {
         var index = 1
         while index < arguments.count {
             let token = arguments[index]
@@ -196,6 +226,27 @@ public enum ShellInvocationExtractor {
                 continue
             }
             // A bare positional is a script file, not an inline command.
+            return nil
+        }
+        return nil
+    }
+
+    private static func interpreterInlineScript(in arguments: [String], option: Character) -> String? {
+        let flag = "-\(option)"
+        var index = 1
+        while index < arguments.count {
+            let token = arguments[index]
+            if token == flag {
+                return arguments[safe: index + 1]
+            }
+            // Combined form: `python3 -copen('x')` / `node -econsole.log(1)`.
+            if token.hasPrefix(flag), token.count > flag.count {
+                return String(token.dropFirst(flag.count))
+            }
+            if token.hasPrefix("-") {
+                index += 1
+                continue
+            }
             return nil
         }
         return nil
@@ -221,27 +272,146 @@ public enum ShellInvocationExtractor {
                 collectTokens(script, depth: depth + 1, into: &result)
             }
         }
+        for body in commandSubstitutionBodies(in: command) {
+            collectTokens(body, depth: depth + 1, into: &result)
+        }
     }
 
-    /// Script strings anywhere in a segment, so `timeout 5 bash -c '…'` is
-    /// swept even though the shell is not the first token.
+    /// Bodies of `$(…)` substitutions (best-effort, quote-aware nesting).
+    static func commandSubstitutionBodies(in command: String) -> [String] {
+        var bodies: [String] = []
+        let characters = Array(command)
+        var index = 0
+        var quote: Character?
+        var escaped = false
+        while index < characters.count {
+            let character = characters[index]
+            if escaped {
+                escaped = false
+                index += 1
+                continue
+            }
+            if character == "\\", quote != "'" {
+                escaped = true
+                index += 1
+                continue
+            }
+            if let active = quote {
+                if character == active { quote = nil }
+                index += 1
+                continue
+            }
+            if character == "'" || character == "\"" {
+                quote = character
+                index += 1
+                continue
+            }
+            if character == "$", index + 1 < characters.count, characters[index + 1] == "(" {
+                index += 2
+                var depth = 1
+                var body = ""
+                var innerQuote: Character?
+                var innerEscaped = false
+                while index < characters.count, depth > 0 {
+                    let inner = characters[index]
+                    if innerEscaped {
+                        body.append(inner)
+                        innerEscaped = false
+                        index += 1
+                        continue
+                    }
+                    if inner == "\\", innerQuote != "'" {
+                        body.append(inner)
+                        innerEscaped = true
+                        index += 1
+                        continue
+                    }
+                    if let active = innerQuote {
+                        body.append(inner)
+                        if inner == active { innerQuote = nil }
+                        index += 1
+                        continue
+                    }
+                    if inner == "'" || inner == "\"" {
+                        innerQuote = inner
+                        body.append(inner)
+                        index += 1
+                        continue
+                    }
+                    if inner == "(" {
+                        depth += 1
+                        body.append(inner)
+                        index += 1
+                        continue
+                    }
+                    if inner == ")" {
+                        depth -= 1
+                        if depth == 0 {
+                            index += 1
+                            break
+                        }
+                        body.append(inner)
+                        index += 1
+                        continue
+                    }
+                    body.append(inner)
+                    index += 1
+                }
+                if !body.isEmpty { bodies.append(body) }
+                continue
+            }
+            index += 1
+        }
+        return bodies
+    }
+
+    /// Script strings anywhere in a segment, so `timeout 5 bash -c '…'` and
+    /// `python3 -c '…'` are swept even when not the first token.
     private static func nestedScripts(in segment: [String]) -> [String] {
         var scripts: [String] = []
-        var sawShell = false
+        var pendingShell = false
+        var pendingInterpreter: Character?
         for (index, token) in segment.enumerated() {
-            if shellNames.contains(executableName(token)) {
-                sawShell = true
+            let name = executableName(token)
+            if shellNames.contains(name) {
+                pendingShell = true
+                pendingInterpreter = nil
+                continue
+            }
+            if let option = inlineInterpreterOptions[name] {
+                pendingInterpreter = option
+                pendingShell = false
                 continue
             }
             if let script = splitStringScript(token, next: segment[safe: index + 1]) {
                 scripts.append(script)
                 continue
             }
-            guard sawShell, token.hasPrefix("-"), !token.hasPrefix("--"),
-                  token.dropFirst().contains("c"), let script = segment[safe: index + 1] else {
+            if pendingShell, token.hasPrefix("-"), !token.hasPrefix("--"),
+               token.dropFirst().contains("c"), let script = segment[safe: index + 1] {
+                scripts.append(script)
+                pendingShell = false
                 continue
             }
-            scripts.append(script)
+            if let option = pendingInterpreter {
+                let flag = "-\(option)"
+                if token == flag, let script = segment[safe: index + 1] {
+                    scripts.append(script)
+                    pendingInterpreter = nil
+                    continue
+                }
+                if token.hasPrefix(flag), token.count > flag.count {
+                    scripts.append(String(token.dropFirst(flag.count)))
+                    pendingInterpreter = nil
+                    continue
+                }
+                if !token.hasPrefix("-") {
+                    pendingInterpreter = nil
+                }
+            }
+            if !token.hasPrefix("-") {
+                pendingShell = false
+            }
         }
         return scripts
     }

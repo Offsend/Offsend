@@ -207,12 +207,16 @@ struct CheckHookEmitter {
         do {
             input = try PromptReadGate.parse(json: rawJSON, adapter: adapter)
         } catch {
-            emitFailOpen(
+            let decision = PromptReadGate.invalidInputDecision()
+            let rendered = PromptReadGateRenderer.render(decision: decision, adapter: adapter)
+            writeHookOutput(rendered)
+            logDebug(
                 adapter: adapter,
-                reason: .invalidJSON,
-                started: started,
                 policy: policy,
-                kind: .readGate
+                advice: nil,
+                exitCode: rendered.exitCode,
+                started: started,
+                error: "read_gate_invalid_input"
             )
             return
         }
@@ -407,27 +411,52 @@ struct CheckHookEmitter {
         }
     }
 
+    /// Oversized shell-gate hook input cannot be scanned — deny (fail-closed).
+    func emitShellGateLimitExceeded(
+        adapter: CheckHookAdapter,
+        started: Date,
+        policy: CheckHookPolicy
+    ) {
+        let decision = PromptShellGate.oversizedStdinDecision()
+        let rendered = PromptShellGateRenderer.render(decision: decision, adapter: adapter)
+        writeHookOutput(rendered)
+        logDebug(
+            adapter: adapter,
+            policy: policy,
+            advice: nil,
+            exitCode: rendered.exitCode,
+            started: started,
+            error: "shell_gate_stdin_too_large"
+        )
+    }
+
     func emitShellGate(
         adapter: CheckHookAdapter,
         rawJSON: String,
         started: Date,
         policy: CheckHookPolicy,
-        projectRoot: URL
+        projectRoot: URL,
+        shellConfig: OffsendProjectShellConfig? = nil
     ) {
         let decision: PromptShellGateDecision
         do {
             decision = try PromptShellGate.evaluate(
                 json: rawJSON,
                 adapter: adapter,
-                classifier: ExecutableArtifactClassifier(projectRoot: projectRoot)
+                classifier: ExecutableArtifactClassifier(projectRoot: projectRoot),
+                shellConfig: shellConfig
             )
         } catch {
-            emitFailOpen(
+            let denied = PromptShellGate.invalidInputDecision()
+            let rendered = PromptShellGateRenderer.render(decision: denied, adapter: adapter)
+            writeHookOutput(rendered)
+            logDebug(
                 adapter: adapter,
-                reason: .invalidJSON,
-                started: started,
                 policy: policy,
-                kind: .shellGate
+                advice: nil,
+                exitCode: rendered.exitCode,
+                started: started,
+                error: "shell_gate_invalid_input"
             )
             return
         }

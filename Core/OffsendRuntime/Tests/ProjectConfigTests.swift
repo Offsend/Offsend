@@ -512,6 +512,34 @@ final class ProjectConfigTests: XCTestCase {
         XCTAssertEqual(config.context?.history?.audit, true)
     }
 
+    func testContextShellModeParsesAndValidates() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
+
+        let yaml = """
+        version: 1
+        context:
+          shell:
+            mode: ask
+        """
+        try yaml.write(to: root.appendingPathComponent(".offsend.yml"), atomically: true, encoding: .utf8)
+        let config = try XCTUnwrap(ProjectConfigLoader().load(from: root))
+        XCTAssertEqual(config.context?.shell?.mode, "ask")
+        XCTAssertTrue(ProjectConfigValidator.validate(config).isEmpty)
+        XCTAssertTrue(ProjectConfigValidator.validateYAMLStructure(yaml).isEmpty)
+
+        let invalid = OffsendProjectConfig(
+            context: OffsendProjectContextConfig(
+                shell: OffsendProjectShellConfig(mode: "observe")
+            )
+        )
+        let issues = ProjectConfigValidator.validate(invalid)
+        XCTAssertTrue(issues.contains { $0.contains("context.shell.mode 'observe'") }, issues.joined())
+    }
+
     func testParseYesNoDefaults() {
         XCTAssertEqual(ProjectConfigTemplates.parseYesNo("", defaultYes: true), true)
         XCTAssertEqual(ProjectConfigTemplates.parseYesNo("n", defaultYes: true), false)

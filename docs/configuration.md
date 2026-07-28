@@ -70,8 +70,10 @@ hooks:
   policy: false
   publish: false
 
-# Optional AI-context controls (MCP policy, response seal, …)
+# Optional AI-context controls (MCP policy, response seal, shell gate, …)
 # context:
+#   shell:
+#     mode: deny         # ask | deny — default deny (Cursor does not reliably pause on ask)
 #   mcp:
 #     mode: ask          # observe | ask | deny
 #     allow: [github]    # non-empty allow = allowlist mode
@@ -284,7 +286,7 @@ Whether AI editor hook configs (`.cursor/hooks.json`, `.claude/settings.json`, �
 
 Cursor/Claude installs also include a semantic write-gate by default. It hard-denies agent Edit/Write operations against executable trust surfaces (editor hook configs, `.vscode/tasks.json` / `launch.json`, anything inside a Git directory, global Git config, shell/direnv startup files, SSH directories, launch agents, Python startup hooks, and this file itself). This is intentionally not controlled by agent-writable project policy; use the explicit local install flag `--no-write-gate` only when accepting that risk.
 
-Until you run `offsend policy trust`, editor gates apply only the settings below that tighten a gate. `check.exclude`, `check.detectors.disable`, `context.mcp.mode` / `rules[].mode` below `ask`, `context.subagents.mode` below `deny`, and `context.subagents.scan_task: false` take effect for `offsend check` on the command line but are ignored by editor gates until the policy is trusted. See [`offsend policy`](cli.md#offsend-policy).
+Until you run `offsend policy trust`, editor gates apply only the settings below that tighten a gate. `check.exclude`, `check.detectors.disable`, `context.mcp.mode` / `rules[].mode` below `ask`, `context.shell.mode` below `deny`, `context.subagents.mode` below `deny`, and `context.subagents.scan_task: false` take effect for `offsend check` on the command line but are ignored by editor gates until the policy is trusted. See [`offsend policy`](cli.md#offsend-policy).
 
 The same installs add post-write provenance for Cursor `afterFileEdit` and Claude `PostToolUse Edit|Write`. Only metadata and hashes are written to a rotating user-local `0600` ledger; project content and absolute repository paths are excluded. This audit is local install behavior, not agent-writable project policy.
 
@@ -297,6 +299,24 @@ Optional read-gate behavior when a file read is denied because of detected secre
 | `on_secret` | `block` (default) — plain deny. `seal` — deny, but write a sealed copy (secrets replaced with `{{TYPE:v1.…}}` tokens) and hand the agent its path so work continues without plaintext in context. Requires a seal key (`offsend keygen --default`); without one, falls back to plain deny |
 
 Read at runtime by the read-gate — changing it does not require reinstalling hooks. Sealed copies are exclusively created without following symlinks in a private temp directory, use `0600` permissions, and are cleaned up after ~1 hour. Tokens use fresh random AES-GCM nonces while remaining compatible with existing `v1` tokens. The user can restore agent outputs containing tokens with `offsend unseal`. Note the honest boundary: seal mode keeps plaintext out of transcripts and model context, but a local agent with access to your seal key is not sandboxed by this.
+
+Unrecognized / invalid read-gate hook JSON is **denied** (fail-closed), matching oversized stdin handling.
+
+### `context.shell`
+
+Optional shell-gate enforcement for Cursor `beforeShellExecution` / Claude Bash PreToolUse:
+
+| Field | Description |
+| --- | --- |
+| `mode` | `ask` (confirm) or `deny` (block). **Default when unset: `deny`**. Cursor does not reliably pause on `ask` for shell hooks, so the built-in default blocks sensitive-path and other ask-class findings. Control-plane findings (policy trust/forget, execution-sensitive `git config`, hard-denied daemons/environment) always deny regardless of mode. Until `offsend policy trust`, `mode: ask` is ignored so an agent-writable policy cannot loosen the gate |
+
+Read at runtime — changing it does not require reinstalling hooks. Invalid / oversized shell-gate hook input is denied (fail-closed).
+
+```yaml
+context:
+  shell:
+    mode: deny   # or ask (requires trusted policy to take effect)
+```
 
 ### `context.mcp`
 

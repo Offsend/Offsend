@@ -116,6 +116,7 @@ fi
 
 # Prompt stdin check + adapters.
 set +e
+# offsend:ignore-next-line
 stdin_json_output="$(printf '%s' 'AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF' | "$CLI_PATH" check --stdin --format json --fail-on none --quiet)"
 stdin_json_status="$?"
 set -e
@@ -128,7 +129,7 @@ if ! echo "$stdin_json_output" | grep -q 'awsAccessKeyId\|<stdin>'; then
   echo "$stdin_json_output" >&2
   exit 1
 fi
-
+# offsend:ignore-next-line
 hook_payload='{"prompt":"AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF please deploy"}'
 set +e
 adapter_output="$(printf '%s' "$hook_payload" | "$CLI_PATH" check --adapter cursor --hook-policy advise --no-notify 2>/tmp/offsend-adapter-stderr.$$)"
@@ -180,7 +181,7 @@ if ! echo "$claude_output" | grep -q 'systemMessage'; then
   echo "$claude_output" >&2
   exit 1
 fi
-
+# offsend:ignore-next-line
 windsurf_payload='{"agent_action_name":"pre_user_prompt","tool_info":{"user_prompt":"AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF please deploy"}}'
 set +e
 printf '%s' "$windsurf_payload" | "$CLI_PATH" check --adapter windsurf --hook-policy block --no-notify >/dev/null 2>/tmp/offsend-windsurf-stderr.$$
@@ -393,6 +394,7 @@ if ! echo "$email_gate" | grep -q '"hasSecrets":false\|"hasSecrets": false'; the
   exit 1
 fi
 set +e
+# offsend:ignore-next-line
 akia_gate="$(printf '%s' 'AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF' | "$CLI_PATH" check --stdin --gate-secrets 2>/dev/null)"
 akia_gate_status="$?"
 set -e
@@ -639,13 +641,13 @@ if echo "$read_nokey_out" | grep -q 'agent_message'; then
   exit 1
 fi
 
-# Shell gate asks before the agent runs offsend unseal.
+# Shell gate stops the agent before it runs offsend unseal.
 set +e
-unseal_ask="$(printf '%s' '{"command":"offsend unseal sealed.txt"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
+unseal_deny="$(printf '%s' '{"command":"offsend unseal sealed.txt"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
 set -e
-if ! echo "$unseal_ask" | grep -q '"ask"'; then
-  echo "Expected shell-gate ask for offsend unseal" >&2
-  echo "$unseal_ask" >&2
+if ! echo "$unseal_deny" | grep -q '"deny"'; then
+  echo "Expected shell-gate deny for offsend unseal" >&2
+  echo "$unseal_deny" >&2
   exit 1
 fi
 # Refuse missing repository paths and preserve unrelated legacy wrapper files.
@@ -777,11 +779,11 @@ if ! grep -q -- "--write-gate" "$repo/.cursor/hooks.json"; then
   exit 1
 fi
 
-# Shell gate is on by default: ask on sensitive paths, allow otherwise.
-shell_ask="$(printf '%s' '{"command":"cat .env"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
-if ! echo "$shell_ask" | grep -q '"ask"'; then
-  echo "Expected shell-gate ask for 'cat .env'" >&2
-  echo "$shell_ask" >&2
+# Shell gate is on by default: deny on sensitive paths, allow otherwise.
+shell_secret_deny="$(printf '%s' '{"command":"cat .env"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
+if ! echo "$shell_secret_deny" | grep -q '"deny"'; then
+  echo "Expected shell-gate deny for 'cat .env'" >&2
+  echo "$shell_secret_deny" >&2
   exit 1
 fi
 shell_allow="$(printf '%s' '{"command":"ls -la src"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
@@ -814,10 +816,10 @@ if ! echo "$shell_docker_deny" | grep -q '"deny"'; then
   echo "$shell_docker_deny" >&2
   exit 1
 fi
-shell_docker_ask="$(printf '%s' '{"command":"docker build ."}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
-if ! echo "$shell_docker_ask" | grep -q '"ask"'; then
-  echo "Expected shell-gate ask for lower-risk daemon mutation" >&2
-  echo "$shell_docker_ask" >&2
+shell_docker_build="$(printf '%s' '{"command":"docker build ."}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
+if ! echo "$shell_docker_build" | grep -q '"deny"'; then
+  echo "Expected shell-gate deny for lower-risk daemon mutation in default deny mode" >&2
+  echo "$shell_docker_build" >&2
   exit 1
 fi
 shell_docker_read="$(printf '%s' '{"command":"docker ps"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
@@ -832,16 +834,66 @@ if ! echo "$shell_env_deny" | grep -q '"deny"'; then
   echo "$shell_env_deny" >&2
   exit 1
 fi
-shell_env_ask="$(printf '%s' '{"command":"PATH=/opt/homebrew/bin:/usr/bin:$PATH make"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify --working-directory "$repo" 2>/dev/null)"
-if ! echo "$shell_env_ask" | grep -q '"ask"'; then
-  echo "Expected shell-gate ask for system-only PATH override" >&2
-  echo "$shell_env_ask" >&2
+shell_env_system="$(printf '%s' '{"command":"PATH=/opt/homebrew/bin:/usr/bin:$PATH make"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify --working-directory "$repo" 2>/dev/null)"
+if ! echo "$shell_env_system" | grep -q '"deny"'; then
+  echo "Expected shell-gate deny for system-only PATH override in default deny mode" >&2
+  echo "$shell_env_system" >&2
   exit 1
 fi
 shell_git_metadata="$(printf '%s' '{"command":"GIT_AUTHOR_NAME=Bot git status"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
 if ! echo "$shell_git_metadata" | grep -q '"allow"'; then
   echo "Expected shell-gate allow for safe Git metadata environment" >&2
   echo "$shell_git_metadata" >&2
+  exit 1
+fi
+
+# context.shell.mode: ask reaches the gate only for a user-trusted policy.
+shell_ask_repo="$workdir/shell-ask"
+shell_ask_home="$workdir/shell-ask-home"
+mkdir -p "$shell_ask_repo" "$shell_ask_home"
+printf '%s\n' \
+  "version: 1" \
+  "" \
+  "context:" \
+  "  shell:" \
+  "    mode: ask" > "$shell_ask_repo/.offsend.yml"
+
+shell_untrusted_ask="$(printf '%s' '{"command":"cat .env"}' | HOME="$shell_ask_home" "$CLI_PATH" check --adapter cursor --shell-gate --no-notify --working-directory "$shell_ask_repo" 2>/dev/null)"
+if ! echo "$shell_untrusted_ask" | grep -q '"deny"'; then
+  echo "Expected untrusted context.shell.mode: ask to stay at the deny default" >&2
+  echo "$shell_untrusted_ask" >&2
+  exit 1
+fi
+
+# Trusting requires a real terminal, so drive the confirmation through a pty.
+# The leading sleep matters: without it the prompt reads EOF before the answer
+# arrives, and `policy trust` silently declines with exit code 0.
+case "$(uname -s)" in
+  Darwin)
+    { sleep 1; printf 'y\ny\ny\n'; } | HOME="$shell_ask_home" \
+      script -q /dev/null "$CLI_PATH" policy trust --path "$shell_ask_repo" >/dev/null 2>&1
+    ;;
+  *)
+    { sleep 1; printf 'y\ny\ny\n'; } | HOME="$shell_ask_home" \
+      script -qe -c "\"$CLI_PATH\" policy trust --path \"$shell_ask_repo\"" /dev/null >/dev/null 2>&1
+    ;;
+esac
+if ! HOME="$shell_ask_home" "$CLI_PATH" policy status --path "$shell_ask_repo" | grep -q "Policy snapshot: trusted"; then
+  echo "Expected pty-driven policy trust to record a snapshot" >&2
+  HOME="$shell_ask_home" "$CLI_PATH" policy status --path "$shell_ask_repo" >&2
+  exit 1
+fi
+
+shell_trusted_ask="$(printf '%s' '{"command":"cat .env"}' | HOME="$shell_ask_home" "$CLI_PATH" check --adapter cursor --shell-gate --no-notify --working-directory "$shell_ask_repo" 2>/dev/null)"
+if ! echo "$shell_trusted_ask" | grep -q '"ask"'; then
+  echo "Expected trusted context.shell.mode: ask to downgrade the deny default" >&2
+  echo "$shell_trusted_ask" >&2
+  exit 1
+fi
+shell_trusted_deny="$(printf '%s' '{"command":"git config core.hooksPath .agent-hooks"}' | HOME="$shell_ask_home" "$CLI_PATH" check --adapter cursor --shell-gate --no-notify --working-directory "$shell_ask_repo" 2>/dev/null)"
+if ! echo "$shell_trusted_deny" | grep -q '"deny"'; then
+  echo "Expected control-plane deny to survive mode: ask" >&2
+  echo "$shell_trusted_deny" >&2
   exit 1
 fi
 
