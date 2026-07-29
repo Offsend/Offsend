@@ -103,7 +103,7 @@ Behavior notes:
 - When `hooks.publish` is `false` (default), installed editor hook configs are added to the local git exclude so they stay untracked.
 - Ignore materialization writes a managed block (`# >>> offsend managed` … `# <<< offsend managed`) into each AI ignore file; user lines outside the block are preserved. When `ignore.commit` is `false` (default), also updates `.gitignore` so those files stay untracked; when it is `true`, stale offsend entries are removed from `.gitignore`.
 - Prefer `sync` after clone or after editing `.offsend.yml` by hand. For ignore files only (no hooks), use `--no-hooks`. Fine-grained hook control remains on [`hook install`](#hook-install).
-- With [`sandbox.enabled: true`](configuration.md#sandbox), also writes each editor's sandbox config (`.cursor/sandbox.json`, Claude `sandbox` settings, `.offsend/nono/` profile when nono is on `PATH`) and prints the chosen mechanism. Offsend does not install nono (`brew install nono`) and cannot wrap a running agent — for nono it prints `nono run …`. Codex's `~/.codex/config.toml` is reported, not written.
+- With [`sandbox.enabled: true`](configuration.md#sandbox), also writes each editor's sandbox config (`.cursor/sandbox.json`, Claude `sandbox` settings, `.offsend/nono/` profile when nono is on `PATH`) and prints the chosen mechanism. Offsend does not install nono (`brew install nono`). For nono it prints `offsend run …` (or the raw `nono run …`); use [`offsend run`](#offsend-run) to launch. Codex's `~/.codex/config.toml` is reported, not written.
 
 ---
 
@@ -128,7 +128,30 @@ Checks include `cursor-version` on macOS (warn below Cursor 3.0 because of CVE-2
 
 When a shell-gate is installed, `git-config-invocation-gate` confirms static execution-sensitive Git invocation checks are active and names the remaining dynamic-command attribution gaps.
 
-With [`sandbox.enabled: true`](configuration.md#sandbox), doctor also reports `sandbox-<editor>` (mechanism + reach), `sandbox-coverage` (basename globs that cannot become sandbox paths), `sandbox-launch` (`nono run …` when needed), and `sandbox-policy` (**fail** on drift or hollow configs: Cursor `insecure_none`, Claude `allowUnsandboxedCommands` / `filesystem.disabled`, Codex `danger-full-access`). Same checks run in `offsend check --policy`.
+With [`sandbox.enabled: true`](configuration.md#sandbox), doctor also reports `sandbox-<editor>` (mechanism + reach), `sandbox-coverage` (basename globs that cannot become sandbox paths), `sandbox-nono-pack-*` (registry pack for Claude/Codex), `sandbox-launch` (`offsend run …` / `nono run …` when needed), and `sandbox-policy` (**fail** on drift or hollow configs: Cursor `insecure_none`, Claude `allowUnsandboxedCommands` / `filesystem.disabled`, Codex `danger-full-access`). Same checks run in `offsend check --policy`.
+
+---
+
+## `offsend run`
+
+Launch an AI editor (`cursor`, `claude`, or `codex`) using the sandbox decided by `.offsend.yml`.
+
+```bash
+offsend run claude
+offsend run claude --sync
+offsend run claude -- -p "hello"
+offsend run cursor
+offsend run codex
+```
+
+| Condition | Launch |
+| --- | --- |
+| `sandbox.enabled` not true | Bare `claude` / `codex`, or `open -a Cursor` |
+| `sandbox.enabled` + nono on PATH (Claude/Codex) | `nono run --profile ./.offsend/nono/offsend-<editor>.json --allow-cwd -- <binary>` (requires `nono pull nolabs-ai/claude` or `…/codex`) |
+| `sandbox.enabled` without nono (Claude) | Bare `claude` (native sandbox from sync) |
+| Cursor | Always `open -a Cursor` (IDE cannot be wrapped by nono) |
+
+`--sync` materializes sandbox config for that editor before launch (nono profile / `.cursor/sandbox.json` / Claude settings). Does **not** run `policy trust` — approve the policy separately with `offsend policy trust`.
 
 ---
 

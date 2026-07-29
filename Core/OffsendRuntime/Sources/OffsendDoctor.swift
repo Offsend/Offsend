@@ -590,7 +590,10 @@ public struct OffsendDoctor: Sendable {
                     targets: sandboxTargets,
                     homeDirectory: home,
                     fileManager: fileManager
-                )
+                ),
+                packResults: sandboxPlan.plans
+                    .filter { $0.mechanism == .nono }
+                    .compactMap { NonoPackProbe(fileManager: fileManager).probe(target: $0.target) }
             ))
         }
 
@@ -1439,7 +1442,8 @@ public struct OffsendDoctor: Sendable {
     /// a config field.
     static func sandboxChecks(
         report: SandboxSyncService.Report,
-        audit: [SandboxPolicyAudit.Finding]
+        audit: [SandboxPolicyAudit.Finding],
+        packResults: [NonoPackProbeResult] = []
     ) -> [DoctorCheck] {
         guard report.enabled else { return [] }
         var checks: [DoctorCheck] = []
@@ -1456,6 +1460,28 @@ public struct OffsendDoctor: Sendable {
                     message: "\(plan.mechanism.rawValue): \(plan.reason). Reaches: \(reached)."
                 )
             )
+        }
+
+        for pack in packResults {
+            if pack.isSatisfied {
+                let source = pack.installedPack
+                    ?? "profile \(pack.requirement.baseProfile)"
+                checks.append(
+                    DoctorCheck(
+                        name: "sandbox-nono-pack-\(pack.requirement.target.rawValue)",
+                        status: .ok,
+                        message: "nono pack ready for \(pack.requirement.target.rawValue) (\(source))."
+                    )
+                )
+            } else {
+                checks.append(
+                    DoctorCheck(
+                        name: "sandbox-nono-pack-\(pack.requirement.target.rawValue)",
+                        status: .fail,
+                        message: pack.missingMessage
+                    )
+                )
+            }
         }
 
         if !report.uncoveredPatterns.isEmpty {

@@ -1,7 +1,7 @@
 import Foundation
 
-enum ExecutableLocator {
-    static func which(
+public enum ExecutableLocator {
+    public static func which(
         _ command: String,
         fileManager: FileManager = .default,
         pathEnvironment: String? = ProcessInfo.processInfo.environment["PATH"]

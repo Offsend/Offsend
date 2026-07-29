@@ -31,26 +31,47 @@ final class SandboxPolicyAuditTests: XCTestCase {
         try Data(json.utf8).write(to: url)
     }
 
+    private func nonoConfigHome(installingPackFor targets: [AIEditorHookTarget], nonoAvailable: Bool) throws -> URL? {
+        guard nonoAvailable else { return nil }
+        let configHome = root.appendingPathComponent(".nono-config-home")
+        for target in targets {
+            guard let req = NonoPackRequirement.forTarget(target) else { continue }
+            let pack = req.preferredPack
+            let parts = pack.split(separator: "/")
+            guard parts.count == 2 else { continue }
+            let dir = configHome
+                .appendingPathComponent("nono/packages")
+                .appendingPathComponent(String(parts[0]))
+                .appendingPathComponent(String(parts[1]))
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        return configHome
+    }
+
     private func findings(
         enabled: Bool?,
         targets: [AIEditorHookTarget],
         nonoAvailable: Bool = false
     ) -> [SandboxPolicyAudit.Finding] {
-        SandboxPolicyAudit.findings(
+        let configHome = try? nonoConfigHome(installingPackFor: targets, nonoAvailable: nonoAvailable)
+        return SandboxPolicyAudit.findings(
             repositoryURL: root,
             config: policy(enabled: enabled),
             targets: targets,
             nonoAvailable: nonoAvailable,
-            homeDirectory: home
+            homeDirectory: home,
+            nonoConfigHome: configHome
         )
     }
 
     private func sync(targets: [AIEditorHookTarget], nonoAvailable: Bool = false) {
+        let configHome = try? nonoConfigHome(installingPackFor: targets, nonoAvailable: nonoAvailable)
         _ = SandboxSyncService().run(
             repositoryURL: root,
             config: policy(enabled: true),
             targets: targets,
-            nonoAvailable: nonoAvailable
+            nonoAvailable: nonoAvailable,
+            nonoConfigHome: configHome
         )
     }
 

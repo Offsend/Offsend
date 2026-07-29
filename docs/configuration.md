@@ -424,12 +424,14 @@ For Claude / Codex, install nono yourself when you want the stronger path:
 ```bash
 brew install nono
 # or: curl -fsSL https://nono.sh/install.sh | sh
+nono pull nolabs-ai/claude   # registry pack → profile claude-code
+# nono pull nolabs-ai/codex  # when using Codex
 offsend sync
 ```
 
 Limits:
 
-- Offsend **writes** a nono profile under `.offsend/nono/` and prints `nono run …`; it cannot wrap an already-running agent.
+- Offsend **writes** a nono profile under `.offsend/nono/` (extends registry base `claude-code` / `codex`) and prints `offsend run …`. Install the pack first (`nono pull nolabs-ai/claude` — see https://nono.sh/registry); `doctor` / `offsend run` fail if it is missing. Offsend cannot wrap an already-running agent.
 - Cursor sandboxes per command; outside-workspace commands may run unsandboxed. With `sandbox.enabled: true`, the shell-gate follows `context.shell.mode` when the editor reports unsandboxed.
 - Basename globs in `ignore.patterns` (`*.pem`) are not sandbox paths — `doctor` lists them; name a directory instead.
 - `check --policy` / `doctor` fail on drift and on configs that keep a sandbox “on” while removing its point: Cursor `insecure_none`, Claude `allowUnsandboxedCommands: true` / `filesystem.disabled: true`, Codex `sandbox_mode = "danger-full-access"`.

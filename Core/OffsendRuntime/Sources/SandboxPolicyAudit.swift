@@ -25,6 +25,7 @@ public enum SandboxPolicyAudit {
         targets: [AIEditorHookTarget]? = nil,
         nonoAvailable: Bool = SandboxMechanismResolver.nonoAvailable(),
         homeDirectory: URL? = nil,
+        nonoConfigHome: URL? = nil,
         fileManager: FileManager = .default
     ) -> [Finding] {
         // No declaration, no claim to verify. Weakened native configs are the
@@ -44,12 +45,14 @@ public enum SandboxPolicyAudit {
         )
         var findings: [Finding] = []
         let plans = SandboxMechanismResolver.plan(targets: targets, nonoAvailable: nonoAvailable)
+        let packProbe = NonoPackProbe(fileManager: fileManager, configHome: nonoConfigHome)
 
         let drift = SandboxSyncService(fileManager: fileManager).run(
             repositoryURL: root,
             config: config,
             targets: targets,
             nonoAvailable: nonoAvailable,
+            nonoConfigHome: nonoConfigHome,
             dryRun: true
         )
         for change in drift.changes where change.kind != .unchanged {
@@ -73,6 +76,13 @@ public enum SandboxPolicyAudit {
                     findings.append(
                         contentsOf: claudeFindings(root: root, ownsFilesystem: false, fileManager: fileManager)
                     )
+                }
+                if let pack = packProbe.probe(target: plan.target),
+                   !pack.isSatisfied {
+                    findings.append(Finding(
+                        message: pack.missingMessage,
+                        isFailure: true
+                    ))
                 }
             case .codexUserScope:
                 findings.append(contentsOf: codexFindings(home: home, fileManager: fileManager))

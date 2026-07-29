@@ -109,10 +109,11 @@ sandbox:
 
 ```bash
 brew install nono    # recommended for Claude Code / Codex; skipped if absent
+nono pull nolabs-ai/claude   # registry profile claude-code — https://nono.sh/registry
 offsend sync && offsend doctor
 ```
 
-Offsend writes editor/nono config and verifies it; for nono you still start the agent with the printed `nono run …` command. Details: [configuration → sandbox](configuration.md#sandbox).
+Offsend writes editor/nono config and verifies it; start the agent with `offsend run claude` (or the printed `nono run …`). Details: [configuration → sandbox](configuration.md#sandbox), [cli → run](cli.md#offsend-run).
 
 After reviewing the committed `.offsend.yml`, explicitly trust it for editor gates:
 

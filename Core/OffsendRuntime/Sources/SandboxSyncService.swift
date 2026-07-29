@@ -6,8 +6,9 @@ import Foundation
 ///
 /// Offsend generates and verifies; it does not enforce. Hooks run inside an
 /// already-started agent, while a sandbox is applied when the process launches,
-/// so for `nono` the most Offsend can do is write the profile and print the
-/// command. `doctor` says this out loud rather than implying coverage.
+/// so for `nono` sync writes the profile and prints the launch hint.
+/// `offsend run` executes that launch; `doctor` still reports it rather than
+/// implying coverage for a process started outside Offsend.
 public struct SandboxSyncService: Sendable {
     public struct FileChange: Equatable, Sendable {
         public enum Kind: String, Equatable, Sendable {
@@ -66,6 +67,7 @@ public struct SandboxSyncService: Sendable {
         config: OffsendProjectConfig?,
         targets: [AIEditorHookTarget],
         nonoAvailable: Bool = SandboxMechanismResolver.nonoAvailable(),
+        nonoConfigHome: URL? = nil,
         dryRun: Bool = false
     ) -> Report {
         guard config?.sandbox?.enabled == true else {
@@ -80,6 +82,7 @@ public struct SandboxSyncService: Sendable {
             .sorted()
         let coverage = SandboxPathCoverage.split(patterns: config?.ignore?.patterns ?? [])
         let plans = SandboxMechanismResolver.plan(targets: targets, nonoAvailable: nonoAvailable)
+        let packProbe = NonoPackProbe(fileManager: fileManager, configHome: nonoConfigHome)
 
         var changes: [FileChange] = []
         var manualSteps: [String] = []
@@ -135,7 +138,11 @@ public struct SandboxSyncService: Sendable {
                             )
                         )
                     }
-                    manualSteps.append(nonoRunHint(root: root, target: plan.target))
+                    if let pack = packProbe.probe(target: plan.target),
+                       !pack.isSatisfied {
+                        manualSteps.append(pack.missingMessage)
+                    }
+                    manualSteps.append(SandboxLaunch.nonoLaunchHint(for: plan.target))
                 case .codexUserScope:
                     manualSteps.append(
                         "Codex sandboxing lives in ~/.codex/config.toml, outside this repository. "
@@ -278,21 +285,7 @@ public struct SandboxSyncService: Sendable {
     }
 
     private func nonoBaseProfile(for target: AIEditorHookTarget) -> String {
-        switch target {
-        case .claude: return "claude-code"
-        case .codex: return "codex"
-        case .cursor, .windsurf: return "default"
-        }
-    }
-
-    /// Offsend cannot apply a process wrapper to an agent that is already
-    /// running, so the command is printed instead of executed.
-    private func nonoRunHint(root: URL, target: AIEditorHookTarget) -> String {
-        let relative = "\(Self.nonoProfileDirectory)/\(nonoProfileName(for: target)).json"
-        let binary = target == .codex ? "codex" : "claude"
-        return "Start \(target.rawValue) through the sandbox yourself: "
-            + "nono run --profile ./\(relative) --allow-cwd -- \(binary). "
-            + "Offsend writes the profile; it cannot wrap a process that is already running."
+        NonoPackRequirement.baseProfile(for: target)
     }
 
     // MARK: - Files

@@ -10,6 +10,7 @@ Start on the [main README](../README.md) (quick start + [MCP seal](../README.md#
 | [CLI → MCP-response-gate](cli.md#mcp-response-gate-on-by-default) | Seal secrets in MCP tool responses (Cursor / Claude) |
 | [Configuration → `context.mcp`](configuration.md#contextmcp) | `responses: seal`, allow/deny lists, modes |
 | [Configuration → `sandbox`](configuration.md#sandbox) | Optional OS sandbox (`sandbox.enabled`); what each editor reaches |
+| [CLI → `offsend run`](cli.md#offsend-run) | Launch cursor/claude/codex; wraps with nono when `sandbox.enabled` |
 | [FAQ](faq.md) | Privacy, defaults, what hooks cover / do not |
 
 ## Reference

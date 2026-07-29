@@ -45,7 +45,7 @@ Not in the direction that matters. Without a trusted snapshot, hooks read the li
 | Materialized AI ignore files + drift detection | Org-wide policy across every repository |
 | Content scan for secrets/credentials (`check`, hooks, CI) | Zero-day discovery, privilege escalation, lateral movement in infra |
 | Prompt / read / shell / MCP **args** / Cursor subagent + Grep gates | Ungated Claude subagents; Cursor Grep without seal; cloud agent sessions |
-| Optional OS sandbox config (`sandbox.enabled`) — generate + verify | Applying `nono` for you (you launch with `nono run …`); Cursor IDE wrap; Windsurf sandbox |
+| Optional OS sandbox config (`sandbox.enabled`) — generate + verify; `offsend run` launches via nono when configured | Cursor IDE process wrap; Windsurf sandbox; silent `policy trust` |
 | User-approved policy snapshot outside the workspace | Containing arbitrary IDE tasks, Git helpers, venv discovery, or host automation outside static shell argv |
 | MCP **response** sealing on Cursor/Claude (`context.mcp.responses: seal`); seal-for-agents read copies | Responses without active sealing (`observe`/`warn`, older hook install); missing keys safely withhold secret-bearing responses but stop that tool result |
 | Local agent-history audit / scrub after a leak | Undoing secrets already sent to a remote/cloud agent |
