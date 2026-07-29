@@ -1,0 +1,21 @@
+{
+  "format": "{{TYPE:v1.<base64url(AES-GCM-combined)>}}",
+  "notes": [
+    "AES-256-GCM",
+    "AAD = UTF-8 bytes of TYPE",
+    "combined = 12-byte nonce || ciphertext || 16-byte tag (CryptoKit SealedBox.combined)",
+    "base64url without padding",
+    "key length = 32 bytes",
+    "default max plaintext = 65536 bytes"
+  ],
+  "vectors": [
+    {
+      "id": "swift-legacy-email",
+      "key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "type": "EMAIL",
+      "plaintext": "a@b.com",
+      "token": "{{EMAIL:v1.ay0pF8pgS30I1UA9cZxHpe-EDanFkPg3ybpjGzk-L3jor00}}",
+      "source": "Core/MaskingCore/Tests/SealEngineTests.swift testLegacyTokenCompatibility"
+    }
+  ]
+}

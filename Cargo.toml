@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+members = ["crates/offsend-seal"]
+
+[workspace.package]
+edition = "2021"
+license = "LicenseRef-Proprietary"
+repository = "https://github.com/Offsend/Offsend"
+
+[workspace.dependencies]
+aes-gcm = "0.10"
+base64 = "0.22"
+rand = "0.8"
+regex = "1"
+thiserror = "2"

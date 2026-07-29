@@ -9,6 +9,11 @@ build/
 *.xcarchive
 *.dmg
 
+# Rust
+/target/
+**/target/
+
+
 # Internal documentation (local only; not published with the repo)
 internal-docs/
 
