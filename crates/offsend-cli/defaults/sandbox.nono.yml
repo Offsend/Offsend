@@ -1,0 +1,46 @@
+# Nono sandbox provider (shipped with the Offsend CLI).
+#
+# Select in `.offsend.yml`:
+#   sandbox:
+#     provider: nono
+#
+# Drop-in override (same filename):
+#   macOS:  ~/Library/Application Support/Offsend/sandbox.nono.yml
+#   Linux:  $XDG_CONFIG_HOME/offsend/sandbox.nono.yml
+#   project: .offsend/sandbox.nono.yml  (doctor warns — exec contract in-repo)
+#
+# Offsend does not execute install_hint. pack_install is argv-only (no shell).
+
+name: nono
+binary: nono
+profile_directory: .offsend/nono
+detect_env: NONO_CAP_FILE
+run_args:
+  - run
+  - --profile
+  - "./{profile}"
+  - --allow-cwd
+  - --
+  - "{agent}"
+install_hint: |
+  brew install nono
+  # or: curl -fsSL https://nono.sh/install.sh | sh
+pack_config_subdir: nono
+ensure: check
+pack_install:
+  args:
+    - pull
+    - "{pack}"
+packs:
+  claude:
+    preferred: nolabs-ai/claude
+    accepted:
+      - nolabs-ai/claude
+      - always-further/claude
+    base_profile: claude-code
+  codex:
+    preferred: nolabs-ai/codex
+    accepted:
+      - nolabs-ai/codex
+      - always-further/codex
+    base_profile: codex

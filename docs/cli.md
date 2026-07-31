@@ -2,7 +2,7 @@
 
 The `offsend` command runs locally on **macOS and Linux** (x86_64 / arm64). Product overview: [README](../README.md).
 
-Project rules live in [`.offsend.yml`](configuration.md) at the repository root — including the team AI-ignore patterns (`ignore.patterns`) that `offsend sync` materializes into every AI ignore file (and installs hooks). CLI flags override config when passed explicitly.
+Project rules live in [`.offsend.yml`](configuration.md) at the repository root — including the team AI-ignore patterns (`ignore.patterns`) that `offsend sync` materializes into every AI ignore file, plus [`hooks.enabled`](configuration.md#hooksenabled) / [`hooks.git`](configuration.md#hooksgit) for git and AI-editor hooks. CLI flags override config when passed explicitly.
 
 ---
 
@@ -22,13 +22,9 @@ brew install offsend/tap/offsend-cli          # Linux
 OFFSEND_INSTALL_DIR=$HOME/.local/bin OFFSEND_PREFIX=$HOME/.local/lib/offsend/cli \
   curl -fsSL https://install.offsend.io/cli | bash
 
-# Docker
-docker build -f CLI/Dockerfile -t offsend/cli .
-docker run --rm -v "$PWD:/work" -w /work offsend/cli check README.md
-
-# From source (Swift 6.0+)
-swift build --product offsend -c release
-.build/release/offsend doctor
+# From source (repo root)
+cargo build -p offsend-cli --release
+./target/release/offsend doctor
 ```
 
 Pin a release with `OFFSEND_VERSION=…`. The install script needs only `curl` plus the standard POSIX tools; it verifies the download against the SHA-256 digest GitHub records for the release asset. It calls the GitHub API twice, so a shared IP can hit the anonymous rate limit — pass a token when that happens:
@@ -48,7 +44,7 @@ The package is `offsend-cli`; the command is `offsend`. The macOS app also ships
 | Command | Purpose |
 | --- | --- |
 | [`offsend init`](#offsend-init) | Create `.offsend.yml` (wizard + ignore-file sync + optional baseline check) |
-| [`offsend sync`](#offsend-sync) | Apply `.offsend.yml`: ignore files + hooks (+ sandbox configs if enabled) |
+| [`offsend sync`](#offsend-sync) | Apply `.offsend.yml`: ignore files + `hooks.git` + AI-editor hooks (+ sandbox if enabled) |
 | [`offsend edit`](#offsend-edit) | Open `.offsend.yml` in `$EDITOR` |
 | [`offsend protect`](#offsend-protect) | Hide exposed sensitive paths from AI (promote to `.offsend.yml` + sync) |
 | [`offsend show`](#offsend-show) | List sensitive paths visible to AI tools (no file contents); `--report` for anonymized JSON |
@@ -77,7 +73,7 @@ The package is `offsend-cli`; the command is `offsend`. The macOS app also ships
 
 ## `offsend sync`
 
-Apply an existing `.offsend.yml`: materialize `ignore.patterns` into every AI ignore file, then install the git pre-commit hook plus AI-editor hooks for detected editors. Idempotent — safe to re-run after clone or config edits. Requires `.offsend.yml` (run `offsend init` first).
+Apply an existing `.offsend.yml`: materialize `ignore.patterns` into every AI ignore file, then install git hooks from [`hooks.git`](configuration.md#hooksgit) (default `[pre-commit]`) plus AI-editor hooks for detected editors. Idempotent — safe to re-run after clone or config edits. Requires `.offsend.yml` (run `offsend init` first).
 
 `sync` deliberately does **not** trust policy changes: an agent can run project commands and must not be able to approve its own weaker policy. After reviewing `.offsend.yml`, run `offsend policy trust` yourself in an interactive terminal.
 
@@ -99,10 +95,12 @@ offsend sync --format json
 Behavior notes:
 
 - If ignore sync reports errors, hooks are skipped and the command exits `2`.
-- A foreign (non-Offsend) git pre-commit hook is skipped with a warning; AI-editor hooks still install. AI-hook failures exit `2`.
+- When [`hooks.enabled`](configuration.md#hooksenabled) is `false`, hook install is skipped (reason `hooks.enabled is false`). Default is `true`.
+- Git hooks installed are those listed in [`hooks.git`](configuration.md#hooksgit) (`pre-commit` → `check --staged`; `post-merge` → `sync` after pull/merge). Default when unset: `[pre-commit]`.
+- A foreign (non-Offsend) git hook file is skipped with a warning; other configured git hooks and AI-editor hooks still install. AI-hook failures exit `2`.
 - When `hooks.publish` is `false` (default), installed editor hook configs are added to the local git exclude so they stay untracked.
 - Ignore materialization writes a managed block (`# >>> offsend managed` … `# <<< offsend managed`) into each AI ignore file; user lines outside the block are preserved. When `ignore.commit` is `false` (default), also updates `.gitignore` so those files stay untracked; when it is `true`, stale offsend entries are removed from `.gitignore`.
-- Prefer `sync` after clone or after editing `.offsend.yml` by hand. For ignore files only (no hooks), use `--no-hooks`. Fine-grained hook control remains on [`hook install`](#hook-install).
+- Prefer `sync` after clone or after editing `.offsend.yml` by hand. For ignore files only (no hooks), use `--no-hooks` or set `hooks.enabled: false`. Fine-grained hook control remains on [`hook install`](#hook-install).
 - With [`sandbox.enabled: true`](configuration.md#sandbox), also writes each editor's sandbox config (`.cursor/sandbox.json`, Claude `sandbox` settings, `.offsend/nono/` profile when nono is on `PATH`) and prints the chosen mechanism. Offsend does not install nono (`brew install nono`). For nono it prints `offsend run …` (or the raw `nono run …`); use [`offsend run`](#offsend-run) to launch. Codex's `~/.codex/config.toml` is reported, not written.
 
 ---
@@ -122,13 +120,13 @@ offsend doctor --no-follow
 | `--format text\|json` | Output format (default: `text`) |
 | `--no-follow` | Skip interactive “run next step?” prompt (default outside TTY) |
 
-Exits `2` when any check has status `fail`. AI hooks and seal key warnings are informational (`warn`).
+Exits `2` when any check has status `fail`. Seal key warnings are informational (`warn`). With [`hooks.enabled`](configuration.md#hooksenabled) (default `true`), missing hooks from [`hooks.git`](configuration.md#hooksgit) or detected AI-editor hooks are **fail** — same as `check --policy`.
 
 Checks include `cursor-version` on macOS (warn below Cursor 3.0 because of CVE-2026-48124), `ignore-sync` / `rules-drift` (shared `.offsend.yml` vs materialized ignore and privacy rule files), `ai-hook-trust-root` (legacy repo-local executable wrappers), `ai-write-gate` / `ai-artifact-audit` / `ai-shell-gate` / `ai-mcp-gate` / `ai-mcp-response-gate` (warn when Cursor/Claude are installed without those gates), `shell-output-audit` (coverage of the post-hoc output audit, plus commands whose printed secrets still need rotating), `trust-surface-map` (editor/Git/shell startup configs and observe-only venv interpreters), `artifact-provenance` (last 30 days of post-write trust-surface metadata), `privileged-daemons` (common Docker/Podman/containerd/BuildKit endpoints and shell-gate coverage), `environment-invocation-gate` (PATH/loader/Git/interpreter environment coverage, and the fact that file reads are not prevented), `hook-coverage-gaps` (residual limits when AI hooks are installed: MCP responses on Cursor, Claude subagents, Cursor open tabs, cloud sessions), `seal-detector-gap` (seal / MCP-seal with credential detectors listed under `check.detectors.disable`, or `url` disabled under seal), `mcp-inventory` (configured MCP servers + policy), and `next-actions` (ranked hints: shared policy → sync / drift repair → protect → gates → history audit/scrub when transcripts exist → git hook). Legacy `ai-wrapper-*` checks remain during migration. By default `show` / doctor **count** transcript files; enable content scan with `context.history.scan_in_show: true` or `offsend show --scan-history` (then doctor can suggest `history scrub` on real findings). Otherwise run `history audit`. In a TTY, doctor may offer to run the first suggested command. JSON includes `suggestedActions`. See also [FAQ → covers / does not cover](faq.md#what-does-offsend-cover-vs-not-cover).
 
 When a shell-gate is installed, `git-config-invocation-gate` confirms static execution-sensitive Git invocation checks are active and names the remaining dynamic-command attribution gaps.
 
-With [`sandbox.enabled: true`](configuration.md#sandbox), doctor also reports `sandbox-<editor>` (mechanism + reach), `sandbox-coverage` (basename globs that cannot become sandbox paths), `sandbox-nono-pack-*` (registry pack for Claude/Codex), `sandbox-launch` (`offsend run …` / `nono run …` when needed), and `sandbox-policy` (**fail** on drift or hollow configs: Cursor `insecure_none`, Claude `allowUnsandboxedCommands` / `filesystem.disabled`, Codex `danger-full-access`). Same checks run in `offsend check --policy`.
+With [`sandbox.enabled: true`](configuration.md#sandbox), doctor also reports `sandbox-<editor>` (mechanism + reach), `sandbox-coverage` (basename globs that cannot become sandbox paths), `sandbox-nono-pack-*` (registry pack for Claude/Codex), `sandbox-launch` (`offsend run …` / `nono run …` when needed), and `sandbox-policy` (**fail** on drift or hollow configs: Cursor `insecure_none`, Claude `allowUnsandboxedCommands` / `filesystem.disabled`, Codex `danger-full-access`). With [`hooks.enabled`](configuration.md#hooksenabled) (default `true`), doctor / `check --policy` **fail** when configured [`hooks.git`](configuration.md#hooksgit) entries or detected AI-editor hooks are missing. Same checks run in `offsend check --policy`.
 
 ---
 
@@ -147,11 +145,11 @@ offsend run codex
 | Condition | Launch |
 | --- | --- |
 | `sandbox.enabled` not true | Bare `claude` / `codex`, or `open -a Cursor` |
-| `sandbox.enabled` + nono on PATH (Claude/Codex) | `nono run --profile ./.offsend/nono/offsend-<editor>.json --allow-cwd -- <binary>` (requires `nono pull nolabs-ai/claude` or `…/codex`) |
-| `sandbox.enabled` without nono (Claude) | Bare `claude` (native sandbox from sync) |
-| Cursor | Always `open -a Cursor` (IDE cannot be wrapped by nono) |
+| `sandbox.enabled` + provider binary on PATH (Claude/Codex) | Wrapper argv from `sandbox.<name>.yml` (default nono: `nono run --profile ./.offsend/nono/offsend-<editor>.json --allow-cwd -- <binary>`) |
+| `sandbox.enabled` without wrapper (Claude) | Bare `claude` (native sandbox from sync) |
+| Cursor | Always `open -a Cursor` (IDE cannot be wrapped) |
 
-`--sync` materializes sandbox config for that editor before launch (nono profile / `.cursor/sandbox.json` / Claude settings). Does **not** run `policy trust` — approve the policy separately with `offsend policy trust`.
+`--sync` materializes sandbox config before launch. `--ensure-packs` / `--no-ensure-packs` control pack install via provider `pack_install` (default `ensure: check`). Select provider with `sandbox.provider: nono` — see [configuration → sandbox](configuration.md#sandbox). Does **not** run `policy trust`.
 
 ---
 
@@ -389,11 +387,11 @@ The snapshot contains the repository path, SHA-256 policy hash, and trust timest
 
 ## `offsend hook`
 
-Manage **git pre-commit** hooks and **AI-editor prompt hooks** (Cursor, Claude Code, Windsurf, Codex).
+Manage **git hooks** (`hooks.git`: `pre-commit`, `post-merge`) and **AI-editor prompt hooks** (Cursor, Claude Code, Windsurf, Codex).
 
 ### `hook install`
 
-**Default (no `--target`): full protection** — git pre-commit hook **plus** AI-editor hooks for detected editors (Cursor and Claude always; Windsurf/Codex when a repo-local or home config directory exists). If the git hook cannot be installed (e.g. a foreign pre-commit hook exists), it is skipped with a warning and the AI hooks still install.
+**Default (no `--target`): full protection** — git hooks from [`hooks.git`](configuration.md#hooksgit) (default `[pre-commit]`) **plus** AI-editor hooks for detected editors (Cursor and Claude always; Windsurf/Codex when a repo-local or home config directory exists). If a git hook cannot be installed (e.g. a foreign hook file exists), it is skipped with a warning and the other hooks still install.
 
 ```bash
 offsend hook install                  # TTY: confirm plan, then git + detected AI editors
@@ -405,19 +403,22 @@ offsend hook install --force          # also overwrite a foreign git hook
 **Git only:**
 
 ```bash
-offsend hook install --target git
+offsend hook install --target git                    # all of hooks.git (default: pre-commit)
+offsend hook install --target git --type post-merge  # one git hook
 offsend hook install --target git --fail-on block --policy
 ```
 
 | Flag | Description |
 | --- | --- |
 | `--yes` | Skip TTY confirmation for the default (no `--target`) install plan |
-| `--target git` | Git hook only |
-| `--type pre-commit` | Hook type (only `pre-commit` today) |
-| `--fail-on block\|warn\|none` | Exit policy for `offsend check --staged` |
-| `--policy` | Include `--policy` in the hook command |
-| `--force` | Overwrite a foreign pre-commit hook |
+| `--target git` | Git hooks only (from `hooks.git`, or `--type`) |
+| `--type pre-commit\|post-merge` | Install a single git hook; default without `--type`: every name in `hooks.git` |
+| `--fail-on block\|warn\|none` | Exit policy for `pre-commit` (`check --staged`); ignored by `post-merge` (`sync`) |
+| `--policy` | Include `--policy` on the `pre-commit` check command |
+| `--force` | Overwrite a foreign git hook file |
 | `--cli-path PATH` | `offsend` binary used by the hook (default: install-time path, then `PATH`) |
+
+`pre-commit` runs `offsend check --staged`. `post-merge` runs `offsend sync` so a pull that updates `.offsend.yml` refreshes ignore files and hooks for the teammate.
 
 **AI-editor hooks only:**
 
@@ -477,7 +478,6 @@ offsend hook uninstall --force    # git: remove even if not Offsend-managed
 | Flag | Description |
 | --- | --- |
 | `--target git\|cursor\|…\|all` | Target (default: every Offsend-managed hook) |
-| `--type pre-commit` | Git hook type |
 | `--force` | Git: remove non-managed hook file |
 
 Without `--target`, missing hooks are skipped; a manually modified git hook is left in place with a warning (use `--target git --force`).
@@ -495,9 +495,8 @@ offsend hook status --target all --format json
 | --- | --- |
 | `--target git\|cursor\|…\|all` | Target (default: git plus all AI targets) |
 | `--format text\|json` | Output format |
-| `--type pre-commit` | Git hook type |
 
-- No `--target`: shows the git hook and all four editors; exits `3` if the git hook is not installed or any AI hook is **broken**.
+- No `--target`: shows each git hook (`git:pre-commit`, `git:post-merge`) and all four editors; exits `3` if a required git hook is not installed or any AI hook is **broken**.
 - Single AI target: exits `3` if not installed or **broken** (for example, a referenced legacy wrapper is missing, tampered, or outdated).
 - `--target all`: shows all four editors; exits `3` only if any target is **broken** (not installed is OK).
 
@@ -513,7 +512,7 @@ Treat editor hooks as **defense-in-depth**, not a hard perimeter. Prefer this st
 2. **AI ignore files** — `offsend protect` / `offsend ignore` (primary hard exclusion from indexing and context)
 3. **Prompt + read/write gates** — friction on known editor paths (`@file`, Read, Edit/Write)
 4. **Shell-gate** — friction when the agent runs shell (`cat` / `grep` / `sed` and similar); on by default for Cursor/Claude
-5. **Git pre-commit + CI** — catch secrets if they leave via git
+5. **Git hooks + CI** — `pre-commit` catches secrets leaving via git; `post-merge` re-runs `sync` after pull; CI catches the rest
 
 ### What hooks cover
 
@@ -616,7 +615,7 @@ Every check shares one lexer and one command extractor, so the wrapped forms of 
 
 The hook sees the text of a command and nothing else. What that command will read is undecidable from its text, so the gate does not attempt it:
 
-- **Reading files by enumeration is not prevented.** `find . -type f -exec cat {} +`, `grep -rn 'sk-' .`, `tar cf - . | base64`, and any interpreter one-liner that walks the tree are **allowed** — none of them names a sensitive path. `Scripts/ci_cli_e2e.sh` asserts that they stay allowed, so re-adding a blocklist of filesystem API names breaks CI on purpose: such a list grows with attacker ingenuity and gives a false sense of a closed door while producing false positives on `json.load(open(…))`.
+- **Reading files by enumeration is not prevented.** `find . -type f -exec cat {} +`, `grep -rn 'sk-' .`, `tar cf - . | base64`, and any interpreter one-liner that walks the tree are **allowed** — none of them names a sensitive path. `scripts/ci/cli-e2e.sh` asserts that they stay allowed, so re-adding a blocklist of filesystem API names breaks CI on purpose: such a list grows with attacker ingenuity and gives a false sense of a closed door while producing false positives on `json.load(open(…))`.
 - **Command output cannot be redacted.** Cursor's `afterShellExecution` and Claude's `PostToolUse` receive terminal output but accept no replacement for it. Secrets a command prints are recorded for rotation by the [shell-output audit](#shell-output-audit-on-by-default); they are not withheld from the agent.
 - **Dynamic construction hides the operation.** `eval`, unresolved `$var`, encoded payloads, MCP tools, custom binaries, and environment-array injection are outside static argv recognition. `offsend doctor` reports this boundary as `git-config-invocation-gate` and `environment-invocation-gate`.
 
@@ -876,7 +875,7 @@ Or install the CLI and run:
 offsend check --staged --policy --fail-on block
 ```
 
-With `--policy`, `fail-on: block` fails on critical secrets, exposed required paths / missing ignore files, **managed ignore drift** (local AI ignore files missing patterns from `.offsend.yml`), and **git-tracked paths covered by `ignore.patterns`** (secrets on the default branch remain fetchable even when local AI gates deny them). Fix drift with `offsend sync`; remove tracked secrets with `git rm --cached <path>` and keep them out of the default branch; change the shared rules in `.offsend.yml`, not only in one editor’s ignore file.
+With `--policy`, `fail-on: block` fails on critical secrets, exposed required paths / missing ignore files, **managed ignore drift** (local AI ignore files missing patterns from `.offsend.yml`), **git-tracked paths covered by `ignore.patterns`** (secrets on the default branch remain fetchable even when local AI gates deny them), and — when [`hooks.enabled`](configuration.md#hooksenabled) is true (default) — **missing configured git / AI-editor hooks**. Fix drift and hooks with `offsend sync`; remove tracked secrets with `git rm --cached <path>` and keep them out of the default branch; change the shared rules in `.offsend.yml`, not only in one editor’s ignore file.
 
 Team walkthrough: [team.md](team.md).
 

@@ -1,0 +1,69 @@
+{
+  "originHash": "286cc7c4ca740ce7a7fef51fb52d302c1803b0af73073ca27562546b20ce49e0",
+  "pins": [
+    {
+      "identity": "keyboardshortcuts",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/sindresorhus/KeyboardShortcuts",
+      "state": {
+        "revision": "1aef85578fdd4f9eaeeb8d53b7b4fc31bf08fe27",
+        "version": "2.4.0"
+      }
+    },
+    {
+      "identity": "onnxruntime-swift-package-manager",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/microsoft/onnxruntime-swift-package-manager",
+      "state": {
+        "revision": "b7fb7f7dea8a2469e6335d95a61b8f36d0dc83b2",
+        "version": "1.24.2"
+      }
+    },
+    {
+      "identity": "sparkle",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/sparkle-project/Sparkle",
+      "state": {
+        "revision": "df074165274afaa39539c05d57b0832620775b11",
+        "version": "2.7.1"
+      }
+    },
+    {
+      "identity": "sqlite.swift",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/stephencelis/SQLite.swift",
+      "state": {
+        "revision": "392dd6058624d9f6c5b4c769d165ddd8c7293394",
+        "version": "0.15.4"
+      }
+    },
+    {
+      "identity": "swift-toolchain-sqlite",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/swiftlang/swift-toolchain-sqlite",
+      "state": {
+        "revision": "b626d3002773b1a1304166643e7f118f724b2132",
+        "version": "1.0.4"
+      }
+    },
+    {
+      "identity": "swiftsdk",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/TelemetryDeck/SwiftSDK",
+      "state": {
+        "revision": "ad4a03ec7ea7416a4081370f21c86e55b02a5b88",
+        "version": "2.14.1"
+      }
+    },
+    {
+      "identity": "yams",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/jpsim/Yams",
+      "state": {
+        "revision": "3d6871d5b4a5cd519adf233fbb576e0a2af71c17",
+        "version": "5.4.0"
+      }
+    }
+  ],
+  "version": 3
+}

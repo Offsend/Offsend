@@ -1,6 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["crates/offsend-seal"]
+members = [
+    "crates/offsend-seal",
+    "crates/offsend-detect",
+    "crates/offsend-policy",
+    "crates/offsend-cli",
+    "crates/offsend-ffi",
+]
 
 [workspace.package]
 edition = "2021"
@@ -12,4 +18,5 @@ aes-gcm = "0.10"
 base64 = "0.22"
 rand = "0.8"
 regex = "1"
+serde = { version = "1", features = ["derive"] }
 thiserror = "2"

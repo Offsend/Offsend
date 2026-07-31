@@ -1,0 +1,8 @@
+Vendor/WorkspacePolicyCore/
+Vendor/OffsendReportCore/
+Vendor/OffsendFFI/liboffsend_ffi.a
+Vendor/OffsendFFI/OffsendFFI.h
+Vendor/OffsendFFI/offsend_ffi.h
+Vendor/OffsendFFI/module.modulemap
+.build/
+.swiftpm/

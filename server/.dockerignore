@@ -1,0 +1,6 @@
+# Local package ignore (context may also be repo root — see /.dockerignore).
+.git
+.build
+.swiftpm
+DerivedData
+**/.DS_Store

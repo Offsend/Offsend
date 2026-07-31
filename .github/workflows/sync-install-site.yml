@@ -5,9 +5,9 @@ on:
     branches:
       - main
     paths:
-      - Scripts/install.sh
-      - Scripts/install-site/**
-      - Scripts/sync_install_repo.sh
+      - scripts/cli/install.sh
+      - scripts/site/**
+      - scripts/site/sync-install-repo.sh
       - .github/workflows/sync-install-site.yml
   workflow_dispatch:
 
@@ -27,4 +27,4 @@ jobs:
           INSTALL_REPO_TOKEN: ${{ secrets.INSTALL_REPO_TOKEN }}
           SOURCE_SHA: ${{ github.sha }}
           SOURCE_REF: ${{ github.ref_name }}
-        run: bash Scripts/sync_install_repo.sh
+        run: bash scripts/site/sync-install-repo.sh

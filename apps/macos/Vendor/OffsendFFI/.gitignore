@@ -1,0 +1,2 @@
+# Built by scripts/ffi/build.sh — do not commit the .a
+*.a

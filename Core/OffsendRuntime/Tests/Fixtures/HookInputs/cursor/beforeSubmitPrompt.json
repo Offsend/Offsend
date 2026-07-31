@@ -1,6 +1,0 @@
-{
-  "prompt": "deploy with AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF",
-  "attachments": [
-    { "type": "file", "file_path": "/repo/.env" }
-  ]
-}

@@ -3,7 +3,7 @@
 Interactive workflow on Mac: Safe Paste, drag-and-drop file preparation, project audits, watched folders, local AI detection, and hook management UI.
 
 <p align="center">
-  <img src="../assets/prepare_file.gif" alt="Drop a file or folder into Prepare for AI" width="100%">
+  <img src="../apps/macos/assets/prepare_file.gif" alt="Drop a file or folder into Prepare for AI" width="100%">
 </p>
 
 ## Install
@@ -16,13 +16,29 @@ Or download the latest `.dmg` from [Releases](https://github.com/Offsend/Offsend
 
 The app also ships a bundled `offsend` helper (`Offsend.app/Contents/Helpers/offsend`). Put it on `PATH` from **Settings → Hooks → CLI** — it will not overwrite an existing Homebrew `offsend`.
 
-**Build from source** — macOS 13+, Xcode 16, Tuist:
+**Build from source** — macOS 13+, Xcode 16, Tuist. Sources live under `apps/macos/` (the repo root is CLI-first: Rust `crates/`):
 
 ```bash
 brew install tuist
-./Scripts/bootstrap.sh
-open Offsend.xcworkspace
+./scripts/app/bootstrap.sh          # → apps/macos (tuist install && generate)
+./scripts/ffi/build.sh          # stages liboffsend_ffi.a for OffsendRustBridge
+cargo build -p offsend-cli --release   # bundled Helpers/offsend (also built on app embed)
+open apps/macos/Offsend.xcworkspace
 ```
+
+### Rust vs Swift ownership
+
+| Layer | Implementation | Notes |
+| --- | --- | --- |
+| Detection (deterministic), custom dictionaries, inline ignore | Rust `offsend-detect` via FFI | Swift `DetectionEngine` only for **local AI** detection |
+| Policy audit / fix / check-report | Rust `offsend-policy` via FFI | Loads `.offsend.yml` + app overrides; Swift keeps `auditDelta` for watch optimization |
+| Seal / placeholder mask / risk score | Rust via FFI (`offsend-seal` + detect helpers) | Swift engines remain as fallback |
+| Document extract / PDF redaction / Word-RTF | **Swift** `DocumentCore` | Apple frameworks (PDFKit, etc.) |
+| Local AI models | **Swift** `AIModelRuntime` | On-device inference |
+| App orchestration (hooks UI, sandbox launch, watchers) | **Swift** `OffsendRuntime` + App | Not part of the portable core library |
+| Scan API HTTP / jobs / HTML | **Swift** server | Core scan uses Rust `offsend_check_report` |
+
+The app embeds the Rust `offsend` CLI into `Contents/Helpers/offsend`.
 
 macOS may ask for Accessibility (to paste into the front app) and folder access (to audit and monitor directories).
 
@@ -31,22 +47,22 @@ macOS may ask for Accessibility (to paste into the front app) and folder access 
 **Prepare a project** — audit ignore files and sensitive paths, one-click fixes, optional watched folders. Paths and ignore rules only — not file contents. Works with `.cursorignore`, `.copilotignore`, `.claudeignore`, `.aiexclude`, and similar.
 
 <p align="center">
-  <img src="../assets/prepare_projects.gif" alt="Prepare a project: audit ignore files and sensitive paths" width="100%">
+  <img src="../apps/macos/assets/prepare_projects.gif" alt="Prepare a project: audit ignore files and sensitive paths" width="100%">
 </p>
 
 **Prepare files** — drop a file, review findings, mask or redact, then copy or save. Plain text plus `.pdf`, `.rtf`, `.doc`, `.docx`.
 
 <p align="center">
-  <img src="../assets/prepare_file.gif" alt="Prepare files: drop a file, review findings, mask for AI" width="100%">
+  <img src="../apps/macos/assets/prepare_file.gif" alt="Prepare files: drop a file, review findings, mask for AI" width="100%">
 </p>
 
 **Safe Paste** — `⌘⇧V` scans and pastes a masked clipboard; `⌘⇧R` restores originals. Mappings are encrypted on disk; the key lives in Keychain.
 
 <p align="center">
-  <img src="../assets/safe_paste.gif" alt="Safe Paste: scan clipboard, mask secrets, paste" width="100%">
+  <img src="../apps/macos/assets/safe_paste.gif" alt="Safe Paste: scan clipboard, mask secrets, paste" width="100%">
 </p>
 
-**Git hooks** — **Settings → Hooks** to install and manage pre-commit checks. From the terminal: [`offsend sync`](cli.md#offsend-sync) (ignore files + hooks) or [`offsend hook install`](cli.md#hook-install) for git / a specific editor.
+**Git hooks** — **Settings → Hooks** to install and manage git checks (`hooks.git`: `pre-commit`, optional `post-merge`). From the terminal: [`offsend sync`](cli.md#offsend-sync) (ignore files + hooks) or [`offsend hook install`](cli.md#hook-install) for git / a specific editor.
 
 **Detection & local AI** — toggle built-in detectors and custom dictionaries in **Settings → Detection** (also via [`.offsend.yml`](configuration.md)). Optional NER/PII models in **Settings → AI** stay on your Mac.
 

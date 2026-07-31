@@ -13,7 +13,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-linux-cli:
+  build-cli-macos:
+    runs-on: macos-15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build macOS CLI
+        env:
+          OFFSEND_CLI_VERSION: ${{ github.event.inputs.marketing_version }}
+        run: bash scripts/cli/build.sh
+
+      - name: Upload macOS CLI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: offsend-cli-macos
+          path: target/release/offsend
+
+  build-cli-linux:
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -29,24 +51,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Swift
-        env:
-          SWIFT_VERSION: "6.0.3"
-        run: bash Scripts/install_swift_linux_ci.sh
-
-      - name: Install git
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends git
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Build Linux CLI
         env:
           OFFSEND_CLI_VERSION: ${{ github.event.inputs.marketing_version }}
-        run: bash Scripts/build_linux_cli.sh
+        run: bash scripts/cli/build.sh
 
       - name: Package Linux CLI
         env:
           VERSION: ${{ github.event.inputs.marketing_version }}
           ARCH: ${{ matrix.arch }}
-        run: bash Scripts/package_linux_cli.sh "$VERSION" "$ARCH"
+        run: bash scripts/cli/package-linux.sh "$VERSION" "$ARCH"
 
       - name: Upload Linux CLI artifact
         uses: actions/upload-artifact@v4
@@ -54,23 +71,32 @@ jobs:
           name: offsend-cli-linux-${{ matrix.arch }}
           path: build/offsend-cli-${{ github.event.inputs.marketing_version }}-linux-${{ matrix.arch }}.tar.gz
 
-  build-notarize:
+  build-macos:
     runs-on: macos-15
+    needs: [build-cli-macos]
     permissions:
       contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Download macOS CLI
+        uses: actions/download-artifact@v4
+        with:
+          name: offsend-cli-macos
+          path: build/cli-macos
+
       - name: Install Tuist
         uses: jdx/mise-action@v2
         with:
           install: true
+          working_directory: apps/macos
 
       - name: Install create-dmg
         run: brew install create-dmg
 
       - name: Install dependencies
+        working-directory: apps/macos
         run: tuist install
 
       - name: Import Developer ID certificate
@@ -95,9 +121,11 @@ jobs:
           rm -f "$RUNNER_TEMP/certificate.p12"
 
       - name: Generate Xcode project
+        working-directory: apps/macos
         run: tuist generate
 
       - name: Archive
+        working-directory: apps/macos
         env:
           DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID || secrets.TEAM_ID }}
           TELEMETRYDECK_APP_ID: ${{ secrets.TELEMETRYDECK_APP_ID }}
@@ -148,6 +176,7 @@ jobs:
           sed -i '' 's/^[[:space:]]*//' "$RUNNER_TEMP/ExportOptions.plist"
 
       - name: Export signed .app (re-signs Sparkle)
+        working-directory: apps/macos
         run: |
           set -euo pipefail
           rm -rf "build/export"
@@ -165,19 +194,20 @@ jobs:
       - name: Embed + sign CLI in exported app
         env:
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID || secrets.TEAM_ID }}
+          OFFSEND_CLI_SRC: build/cli-macos/offsend
         run: |
           set -euo pipefail
           test -n "${TEAM_ID:-}" || { echo "Missing secret: set repository secret APPLE_TEAM_ID (or TEAM_ID) to your Apple Developer Team ID"; exit 1; }
-          bash Scripts/embed_cli_in_app.sh \
-            "build/export/Offsend.app" \
-            "build/DerivedData" \
+          test -x "$OFFSEND_CLI_SRC"
+          bash scripts/app/embed-cli.sh \
+            "apps/macos/build/export/Offsend.app" \
             "$TEAM_ID" \
-            "App/Resources/Offsend.entitlements"
+            "apps/macos/App/Resources/Offsend.entitlements"
 
       - name: Verify embedded CLI in app bundle
         run: |
           set -euo pipefail
-          CLI="build/export/Offsend.app/Contents/Helpers/offsend"
+          CLI="apps/macos/build/export/Offsend.app/Contents/Helpers/offsend"
           test -x "$CLI"
           codesign --verify --strict --verbose=2 "$CLI"
           codesign -d --verbose=4 "$CLI" 2>&1 | grep -q "flags=.*runtime" || { echo "CLI missing hardened runtime"; exit 1; }
@@ -188,23 +218,23 @@ jobs:
           VERSION: ${{ github.event.inputs.marketing_version }}
         run: |
           set -euo pipefail
-          bash Scripts/package_cli.sh \
-            "build/export/Offsend.app" \
-            "build/offsend-cli-${VERSION}.zip"
+          bash scripts/cli/package-macos.sh \
+            "apps/macos/build/export/Offsend.app" \
+            "apps/macos/build/offsend-cli-${VERSION}.zip"
 
       - name: Notarize CLI zip (notarytool)
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID || secrets.TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
-          ARTIFACT_PATH: build/offsend-cli-${{ github.event.inputs.marketing_version }}.zip
-        run: bash Scripts/notarize.sh
+          ARTIFACT_PATH: apps/macos/build/offsend-cli-${{ github.event.inputs.marketing_version }}.zip
+        run: bash scripts/app/notarize.sh
 
       - name: Read app version from exported bundle
         id: app_version
         run: |
           set -euo pipefail
-          PLIST="build/export/Offsend.app/Contents/Info.plist"
+          PLIST="apps/macos/build/export/Offsend.app/Contents/Info.plist"
           test -f "$PLIST"
           VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")"
           BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST")"
@@ -217,17 +247,17 @@ jobs:
 
       - name: Create DMG
         env:
-          APP_PATH: build/export/Offsend.app
-          DMG_PATH: build/Offsend-${{ steps.app_version.outputs.version }}.dmg
-        run: bash Scripts/build_dmg.sh
+          APP_PATH: apps/macos/build/export/Offsend.app
+          DMG_PATH: apps/macos/build/Offsend-${{ steps.app_version.outputs.version }}.dmg
+        run: bash scripts/app/build-dmg.sh
 
       - name: Notarize DMG (notarytool)
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID || secrets.TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
-          DMG_PATH: build/Offsend-${{ steps.app_version.outputs.version }}.dmg
-        run: bash Scripts/notarize.sh
+          DMG_PATH: apps/macos/build/Offsend-${{ steps.app_version.outputs.version }}.dmg
+        run: bash scripts/app/notarize.sh
 
       - name: Install Sparkle CLI (generate_appcast)
         run: |
@@ -259,7 +289,7 @@ jobs:
             echo "Using appcast/appcast.xml from checkout (bootstrap)"
           fi
           DMG_NAME="Offsend-${VERSION}.dmg"
-          cp "build/${DMG_NAME}" "$ARCHIVE_DIR/"
+          cp "apps/macos/build/${DMG_NAME}" "$ARCHIVE_DIR/"
           DOWNLOAD_PREFIX="https://github.com/${REPO}/releases/download/v${VERSION}/"
           printf '%s' "$SPARKLE_EDDSA_PRIVATE_KEY" | "$GENERATE_APPCAST" \
             --ed-key-file - \
@@ -271,14 +301,22 @@ jobs:
           cp "$ARCHIVE_DIR/appcast.xml" appcast/appcast.xml
 
       - name: Upload artifacts
+        env:
+          VERSION: ${{ steps.app_version.outputs.version }}
+        run: |
+          set -euo pipefail
+          STAGE="build/release-assets"
+          mkdir -p "$STAGE"
+          cp "apps/macos/build/Offsend-${VERSION}.dmg" "$STAGE/"
+          cp "apps/macos/build/offsend-cli-${VERSION}.zip" "$STAGE/"
+          cp appcast/appcast.xml "$STAGE/"
+          ditto "apps/macos/build/export/Offsend.app" "$STAGE/Offsend.app"
+
+      - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
           name: Offsend-${{ steps.app_version.outputs.version }}-${{ steps.app_version.outputs.build }}
-          path: |
-            build/Offsend-${{ steps.app_version.outputs.version }}.dmg
-            build/export/Offsend.app
-            build/offsend-cli-${{ steps.app_version.outputs.version }}.zip
-            appcast/appcast.xml
+          path: build/release-assets
 
       - name: Push version tag
         env:
@@ -298,8 +336,8 @@ jobs:
         run: |
           set -euo pipefail
           TAG="v${VERSION}"
-          DMG="build/Offsend-${VERSION}.dmg"
-          CLI_ZIP="build/offsend-cli-${VERSION}.zip"
+          DMG="apps/macos/build/Offsend-${VERSION}.dmg"
+          CLI_ZIP="apps/macos/build/offsend-cli-${VERSION}.zip"
           APPCAST="appcast/appcast.xml"
           test -f "$APPCAST"
           test -f "$CLI_ZIP"
@@ -314,6 +352,22 @@ jobs:
               --latest
           fi
 
+  publish:
+    runs-on: macos-15
+    needs: [build-macos, build-cli-linux]
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download macOS release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: Offsend-*
+          path: build/macos-release
+          merge-multiple: true
+
       - name: Download Linux CLI artifacts
         uses: actions/download-artifact@v4
         with:
@@ -321,10 +375,19 @@ jobs:
           path: build/linux-cli
           merge-multiple: true
 
+      - name: Resolve version
+        id: ver
+        env:
+          VERSION: ${{ github.event.inputs.marketing_version }}
+        run: |
+          set -euo pipefail
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          ls -la build/macos-release build/linux-cli
+
       - name: Upload Linux CLI to GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.app_version.outputs.version }}
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -euo pipefail
           TAG="v${VERSION}"
@@ -337,13 +400,13 @@ jobs:
       - name: Update Homebrew tap
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          VERSION: ${{ steps.app_version.outputs.version }}
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -euo pipefail
-          bash Scripts/update_homebrew_tap.sh \
+          bash scripts/release/update-homebrew-tap.sh \
             "$VERSION" \
-            "build/Offsend-${VERSION}.dmg" \
-            "build/offsend-cli-${VERSION}.zip" \
+            "build/macos-release/Offsend-${VERSION}.dmg" \
+            "build/macos-release/offsend-cli-${VERSION}.zip" \
             "build/linux-cli/offsend-cli-${VERSION}-linux-x86_64.tar.gz" \
             "build/linux-cli/offsend-cli-${VERSION}-linux-aarch64.tar.gz"
 
@@ -351,12 +414,12 @@ jobs:
         env:
           AI_HYGIENE_TOKEN: ${{ secrets.AI_HYGIENE_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          VERSION: ${{ steps.app_version.outputs.version }}
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -euo pipefail
-          bash Scripts/update_ai_hygiene_action.sh \
+          bash scripts/release/update-ai-hygiene.sh \
             "$VERSION" \
-            "build/offsend-cli-${VERSION}.zip" \
+            "build/macos-release/offsend-cli-${VERSION}.zip" \
             "build/linux-cli/offsend-cli-${VERSION}-linux-x86_64.tar.gz" \
             "build/linux-cli/offsend-cli-${VERSION}-linux-aarch64.tar.gz"
 

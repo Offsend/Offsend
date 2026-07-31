@@ -133,8 +133,17 @@ ignore:
 # hooks — git pre-commit + AI-editor hook install defaults (`offsend sync`)
 # -----------------------------------------------------------------------------
 hooks:
-  # Currently only: pre-commit
-  type: pre-commit
+  # true (default): project expects hooks. `offsend sync` installs them;
+  # `doctor` / `check --policy` fail when git or detected AI-editor hooks are missing.
+  # false: skip install on sync; do not fail policy/doctor for missing hooks.
+  enabled: true
+
+  # Which git hooks to install. Supported: pre-commit, post-merge.
+  # Default when unset: [pre-commit]. Empty [] = no git hooks (AI hooks still apply).
+  # pre-commit → check --staged; post-merge → sync (after pull/merge).
+  # Legacy alias: `type: pre-commit` (single value).
+  git: [pre-commit]
+  # git: [pre-commit, post-merge]
 
   # Hook exit policy. If omitted → check.fail_on → block
   fail_on: block
@@ -302,11 +311,20 @@ sandbox:
     # a non-empty list needs offsend policy trust.
     allow: []
 
-  # No mechanism is named here, the same way ignore.patterns never names
-  # .cursorignore: Offsend picks one per editor (nono for CLI agents when
-  # installed, otherwise the editor's own sandbox) and doctor prints the choice,
-  # the reason, and the position reached. Replacing the tool later is not a
-  # migration, because nobody wrote the tool's name down.
+  # Provider catalog name → sandbox.<name>.yml
+  # Lookup: .offsend/sandbox.<name>.yml → global Offsend dir → shipped.
+  # Prefer `provider: nono` (string). Map overlays may only set ensure/packs/
+  # install_hint — binary/run_args/pack_install in .offsend.yml are ignored.
+  # Full schema: crates/offsend-cli/defaults/sandbox.nono.yml
+  provider: nono
+  # Safe overlay example (optional):
+  # provider:
+  #   name: nono
+  #   ensure: pull
+  #   packs:
+  #     claude:
+  #       preferred: nolabs-ai/claude
+  #       ensure: pull
 
 # =============================================================================
 # Notes (not YAML keys)

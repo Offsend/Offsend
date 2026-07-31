@@ -85,7 +85,8 @@ ignore:
   # - "**/.env"
 
 hooks:
-  type: pre-commit
+  enabled: true          # default; sync installs hooks; doctor / check --policy fail if missing
+  git: [pre-commit]      # also: post-merge (= offsend sync after pull); AI hooks are separate
   fail_on: block
   policy: false
   publish: false         # false = AI editor hooks stay local (not for commit)
@@ -134,11 +135,14 @@ hooks:
 # Editor prompts stay soft-block unless: offsend hook install --hook-policy block
 
 # OS sandbox for agent commands — the layer hooks cannot reach.
-# `offsend sync` writes editor/nono config; `doctor` prints what it reaches.
-# Install nono for Claude/Codex when you want it: brew install nono
+# Providers: sandbox.<name>.yml (shipped / global / project).
+# - shipped ids (nono): project drop-in ignored (AI cannot rewrite exec)
+# - custom project provider: requires `offsend policy trust`
+# - enabled: false / network allow: only after trust
 # See docs/configuration.md#sandbox.
 # sandbox:
-#   enabled: true             # true tightens (no policy trust); false needs trust
+#   enabled: true             # true always; false ignored until policy trust
+#   provider: nono            # sandbox.nono.yml
 #   network:
-#     default: deny           # deny | allow (allow needs a trusted policy)
-#     allow: []               # domains still reachable under default: deny
+#     default: deny           # allow / allow-list need trusted policy
+#     allow: []

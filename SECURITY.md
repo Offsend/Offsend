@@ -41,7 +41,7 @@ Related products with different trust boundaries:
 Separate from scanning and sealing, the macOS app may use HTTPS for:
 
 - **License** flows (pricing, activation; see `LicenseCore`)
-- **Updates** via Sparkle (`SUFeedURL` in `App/Resources/Info.plist`)
+- **Updates** via Sparkle (`SUFeedURL` in `apps/macos/App/Resources/Info.plist`)
 - **Optional product analytics** (TelemetryDeck) when the user opts in under Settings → Privacy — event names and coarse metadata only (e.g. risk level, counts); never clipboard text, prompts, file contents, or detected values
 
 Those requests do not carry clipboard text, masked/sealed content, or scanned file payloads.
@@ -76,7 +76,7 @@ Hooks are **defense-in-depth**, not a hard perimeter or agent sandbox. Prefer:
 1. No plaintext secrets in the workspace
 2. Shared AI ignore rules in `.offsend.yml` (`offsend protect` / `sync`)
 3. Prompt / read / semantic write / shell / MCP / subagent gates on supported editors
-4. Git pre-commit + CI
+4. Git hooks (`pre-commit` + optional `post-merge` sync) + CI
 
 Offsend does not execute repo-local `.offsend/hooks/*.sh` files. Local editor configs prefer the install-time CLI path and fall back to `offsend` on `PATH`; published configs use `PATH`. Legacy managed wrappers are migrated and removed by `offsend sync`.
 
@@ -98,7 +98,7 @@ The shell-gate does not read stdout, and it does not try to predict what a comma
 
 A new shell-gate rule is accepted **only if its blocklist is closed by something outside the attacker's control** — a host trust surface that exists whether or not anyone attacks it: `git config` keys, launchd, `hooks.json`, `PATH`/`DYLD`, `offsend policy`. Rules whose blocklist grows with the attacker's ingenuity — names of language filesystem APIs, encodings, forms of invoking an interpreter — are rejected regardless of how many bypasses they would catch, because a list like that can never be finished and its incompleteness is invisible to the user who trusts it.
 
-This makes "should we add a classifier for this new bypass?" a mechanical question instead of a judgement call. `Scripts/ci_cli_e2e.sh` encodes the answer: it asserts that enumeration vectors stay **allowed**, so reintroducing a behavioral blocklist fails CI and forces the boundary to be discussed rather than the table extended.
+This makes "should we add a classifier for this new bypass?" a mechanical question instead of a judgement call. `scripts/ci/cli-e2e.sh` encodes the answer: it asserts that enumeration vectors stay **allowed**, so reintroducing a behavioral blocklist fails CI and forces the boundary to be discussed rather than the table extended.
 
 ### Sandbox
 

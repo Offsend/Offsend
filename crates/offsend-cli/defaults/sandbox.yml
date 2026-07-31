@@ -1,0 +1,8 @@
+# Default sandbox catalog entry (shipped with the Offsend CLI).
+# Selects which provider file to load when `.offsend.yml` omits `sandbox.provider`.
+#
+# Provider files: sandbox.<name>.yml
+#   shipped → global (~/Library/Application Support/Offsend/ or $XDG_CONFIG_HOME/offsend/)
+#          → project (.offsend/sandbox.<name>.yml)
+
+default_provider: nono

@@ -1,9 +1,0 @@
-{
-  "file_path": "/repo/.vscode/settings.json",
-  "edits": [
-    {
-      "old_string": "\"editor.tabSize\": 2",
-      "new_string": "\"editor.tabSize\": 2,\n  \"python.defaultInterpreterPath\": \"/tmp/payload\""
-    }
-  ]
-}

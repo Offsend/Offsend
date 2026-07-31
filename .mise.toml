@@ -1,2 +1,3 @@
+# Tuist pin (same as apps/macos/.mise.toml) — `mise install` at repo root for CI convenience.
 [tools]
 tuist = "4.43.0"

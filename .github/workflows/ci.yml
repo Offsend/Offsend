@@ -5,18 +5,21 @@ on:
     paths-ignore:
       - "**/*.md"
       - "docs/**"
-      - "assets/**"
+      - "apps/macos/assets/**"
   push:
     branches:
       - main
     paths-ignore:
       - "**/*.md"
       - "docs/**"
-      - "assets/**"
+      - "apps/macos/assets/**"
 
 jobs:
-  test:
+  macos:
     runs-on: macos-15
+    defaults:
+      run:
+        working-directory: apps/macos
     steps:
       - uses: actions/checkout@v4
       - uses: Offsend/ai-hygiene@v1
@@ -28,49 +31,34 @@ jobs:
         uses: jdx/mise-action@v2
         with:
           install: true
+          working_directory: apps/macos
       - name: Install dependencies
         run: tuist install
       - name: Run tests
         run: tuist test
-      - name: Build OffsendCLI
-        run: |
-          xcodebuild \
-            -workspace Offsend.xcworkspace \
-            -scheme OffsendCLI \
-            -configuration Debug \
-            -destination "platform=macOS" \
-            -derivedDataPath build/DerivedData \
-            build
-      - name: Run CLI E2E smoke
-        run: bash Scripts/ci_cli_e2e.sh build/DerivedData/Build/Products/Debug/offsend
 
-  linux-cli:
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: ubuntu-22.04
-            arch: x86_64
-          - runner: ubuntu-24.04-arm
-            arch: aarch64
+  cli:
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-      - name: Install Swift
-        env:
-          SWIFT_VERSION: "6.0.3"
-        run: bash Scripts/install_swift_linux_ci.sh
-      - name: Build offsend CLI
-        run: swift build --product offsend -c release
-      - name: Run SPM tests
-        run: swift test
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Test Rust workspace
+        run: cargo test --workspace
+      - name: Build Rust CLI
+        run: cargo build -p offsend-cli --release
       - name: Run CLI E2E smoke
-        run: bash Scripts/ci_cli_e2e.sh .build/release/offsend
+        run: bash scripts/ci/cli-e2e.sh target/release/offsend
 
-      - name: Verify CLI Docker image builds
-        run: docker build -f CLI/Dockerfile -t offsend-cli:ci .
-
-      - name: Docker smoke test
-        run: |
-          docker run --rm offsend-cli:ci --version
-          docker run --rm offsend-cli:ci check --help
+  cli-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Test Rust workspace
+        run: cargo test --workspace
+      - name: Build Rust CLI
+        run: cargo build -p offsend-cli --release
+      - name: Run CLI E2E smoke
+        run: bash scripts/ci/cli-e2e.sh target/release/offsend

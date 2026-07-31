@@ -1,0 +1,298 @@
+[
+  {
+    "type": "email",
+    "source": "regex",
+    "confidence": 0.98,
+    "pattern_b64": "XGJbQS1aMC05Ll8lKy1dK0BbQS1aMC05Li1dK1wuW0EtWl17Mix9XGI=",
+    "pattern_len": 41,
+    "case_insensitive": true
+  },
+  {
+    "type": "phone",
+    "source": "regex",
+    "confidence": 0.82,
+    "pattern_b64": "KD88IVtBLVphLXowLTldKSg/OlwrXGR7MSwzfSg/OlsgXHRcLS5dKlwoP1xkezEsNH1cKT8pezIsNn18OFsgXHRcLV1cKD9cZHszfVwpPyg/OlsgXHRcLV1cZHsyLDR9KXszfXxcKD9cZHsyLDR9XCk/WyBcdFwtLl1cZHsyLDR9KD86WyBcdFwtLl1cZHsyLDR9KXsxLDN9KSg/IVxkKQ==",
+    "pattern_len": 160,
+    "case_insensitive": true
+  },
+  {
+    "type": "money",
+    "source": "regex",
+    "confidence": 0.85,
+    "pattern_b64": "KD86WyTigqzCo+KCvV1bXlxTXHJcbl0/XGR7MSwzfSg/Oig/Oix8W15cU1xyXG5dKVxkezN9KSooPzpcLlxkezJ9KT98XGR7MSwzfSg/Oig/Oix8W15cU1xyXG5dKVxkezN9KSooPzpcLlxkezJ9KT9bXlxTXHJcbl0/KD86VVNEfEVVUnxHQlB8UlVCfNGA0YPQsVwuPykpXGI=",
+    "pattern_len": 147,
+    "case_insensitive": true
+  },
+  {
+    "type": "url",
+    "source": "regex",
+    "confidence": 0.85,
+    "pattern_b64": "XGJodHRwcz86Ly9bXlxzPD4iJ10r",
+    "pattern_len": 21,
+    "case_insensitive": true
+  },
+  {
+    "type": "ipAddress",
+    "source": "regex",
+    "confidence": 0.9,
+    "pattern_b64": "XGIoPzooPzoyNVswLTVdfDJbMC00XVxkfFswMV0/XGRcZD8pXC4pezN9KD86MjVbMC01XXwyWzAtNF1cZHxbMDFdP1xkXGQ/KVxi",
+    "pattern_len": 75,
+    "case_insensitive": true
+  },
+  {
+    "type": "internalDomain",
+    "source": "regex",
+    "confidence": 0.9,
+    "pattern_b64": "XGIoPzpbYS16MC05LV0rXC4pKyg/OmludGVybmFsfGxvY2FsfGNvcnB8bGFufGludHJhbmV0KVxi",
+    "pattern_len": 57,
+    "case_insensitive": true
+  },
+  {
+    "type": "contractId",
+    "source": "regex",
+    "confidence": 0.9,
+    "pattern_b64": "XGIoPzpDTnxDT05UUkFDVHxDVFJ8QUdSKVstX10/XGR7MywxMH1cYg==",
+    "pattern_len": 40,
+    "case_insensitive": true
+  },
+  {
+    "type": "invoiceId",
+    "source": "regex",
+    "confidence": 0.9,
+    "pattern_b64": "XGIoPzpJTlZ8SU5WT0lDRSlbLV9dP1xkezMsMTB9XGI=",
+    "pattern_len": 32,
+    "case_insensitive": true
+  },
+  {
+    "type": "orderId",
+    "source": "regex",
+    "confidence": 0.85,
+    "pattern_b64": "XGIoPzpPUkR8T1JERVIpWy1fXT9cZHszLDEwfVxi",
+    "pattern_len": 30,
+    "case_insensitive": true
+  },
+  {
+    "type": "creditCardLike",
+    "source": "regex",
+    "confidence": 0.75,
+    "pattern_b64": "XGIoPzpcZFsgLV0qPyl7MTMsMTl9XGI=",
+    "pattern_len": 23,
+    "case_insensitive": true
+  },
+  {
+    "type": "iban",
+    "source": "regex",
+    "confidence": 0.85,
+    "pattern_b64": "XGJbQS1aXXsyfVxkezJ9W0EtWjAtOV17MTEsMzB9XGI=",
+    "pattern_len": 32,
+    "case_insensitive": true
+  },
+  {
+    "type": "openAIAPIKey",
+    "source": "secret",
+    "confidence": 0.99,
+    "pattern_b64": "XGJzay1bQS1aYS16MC05Xy1dezMyLH1cYg==",
+    "pattern_len": 25,
+    "case_insensitive": true
+  },
+  {
+    "type": "awsAccessKeyId",
+    "source": "secret",
+    "confidence": 0.99,
+    "pattern_b64": "XGIoPzpBS0lBfEFTSUEpW0EtWjAtOV17MTZ9XGI=",
+    "pattern_len": 29,
+    "case_insensitive": true
+  },
+  {
+    "type": "githubToken",
+    "source": "secret",
+    "confidence": 0.99,
+    "pattern_b64": "XGJnaFtwb3Vzcl1fW0EtWmEtejAtOV9dezMwLDI1NX1cYg==",
+    "pattern_len": 34,
+    "case_insensitive": true
+  },
+  {
+    "type": "slackToken",
+    "source": "secret",
+    "confidence": 0.99,
+    "pattern_b64": "XGJ4b3hbYmFwcnNdLVtBLVphLXowLTktXXsxMCx9XGI=",
+    "pattern_len": 32,
+    "case_insensitive": true
+  },
+  {
+    "type": "stripeKey",
+    "source": "secret",
+    "confidence": 0.98,
+    "pattern_b64": "XGIoPzpza3xwaylfKD86bGl2ZXx0ZXN0KV9bQS1aYS16MC05XXsxNix9XGI=",
+    "pattern_len": 44,
+    "case_insensitive": true
+  },
+  {
+    "type": "jwt",
+    "source": "secret",
+    "confidence": 0.98,
+    "pattern_b64": "XGJleUpbQS1aYS16MC05Xy1dK1wuW0EtWmEtejAtOV8tXStcLltBLVphLXowLTlfLV0rXGI=",
+    "pattern_len": 53,
+    "case_insensitive": true
+  },
+  {
+    "type": "privateKey",
+    "source": "secret",
+    "confidence": 1.0,
+    "pattern_b64": "LS0tLS1CRUdJTiBbQS1aIF0qUFJJVkFURSBLRVktLS0tLVtcc1xTXSo/LS0tLS1FTkQgW0EtWiBdKlBSSVZBVEUgS0VZLS0tLS0=",
+    "pattern_len": 74,
+    "case_insensitive": false
+  },
+  {
+    "type": "sshPrivateKey",
+    "source": "secret",
+    "confidence": 1.0,
+    "pattern_b64": "LS0tLS1CRUdJTiBPUEVOU1NIIFBSSVZBVEUgS0VZLS0tLS1bXHNcU10qPy0tLS0tRU5EIE9QRU5TU0ggUFJJVkFURSBLRVktLS0tLQ==",
+    "pattern_len": 76,
+    "case_insensitive": false
+  },
+  {
+    "type": "databaseURLWithPassword",
+    "source": "secret",
+    "confidence": 0.99,
+    "pattern_b64": "XGIoPzpwb3N0Z3Jlc3xwb3N0Z3Jlc3FsfG15c3FsfG1vbmdvZGJ8cmVkaXMpOi8vW146XHMvQF0rOlteQFxzXStAW15cc10r",
+    "pattern_len": 72,
+    "case_insensitive": true
+  },
+  {
+    "type": "bearerToken",
+    "source": "secret",
+    "confidence": 0.95,
+    "pattern_b64": "XGJCZWFyZXJccytbQS1aYS16MC05Ll9+Ky89LV17MjAsfVxi",
+    "pattern_len": 36,
+    "case_insensitive": true
+  },
+  {
+    "type": "apiKeyGeneric",
+    "source": "secret",
+    "confidence": 0.9,
+    "pattern_b64": "XGIoPzphcGlbXy1dP2tleXxzZWNyZXR8dG9rZW58Y2xpZW50W18tXT9zZWNyZXQpXHMqWzo9XVxzKlsnIl0/W0EtWmEtejAtOS5ffisvPS1dezIwLH1bJyJdPw==",
+    "pattern_len": 91,
+    "case_insensitive": true
+  },
+  {
+    "type": "apiKeyGeneric",
+    "source": "secret",
+    "confidence": 0.99,
+    "pattern_b64": "XGJzay1hbnQtW0EtWmEtejAtOV8tXXsyMCx9XGI=",
+    "pattern_len": 29,
+    "case_insensitive": true
+  },
+  {
+    "type": "apiKeyGeneric",
+    "source": "secret",
+    "confidence": 0.98,
+    "pattern_b64": "XGJnc2tfW0EtWmEtejAtOV17MjAsfVxi",
+    "pattern_len": 24,
+    "case_insensitive": true
+  },
+  {
+    "type": "apiKeyGeneric",
+    "source": "secret",
+    "confidence": 0.98,
+    "pattern_b64": "XGJ4YWktW0EtWmEtejAtOV17MjAsfVxi",
+    "pattern_len": 24,
+    "case_insensitive": true
+  },
+  {
+    "type": "apiKeyGeneric",
+    "source": "secret",
+    "confidence": 0.97,
+    "pattern_b64": "XGJBSXphWzAtOUEtWmEtel8tXXszNX1cYg==",
+    "pattern_len": 25,
+    "case_insensitive": true
+  },
+  {
+    "type": "apiKeyGeneric",
+    "source": "secret",
+    "confidence": 0.98,
+    "pattern_b64": "XGJzYnBfW2EtZjAtOV17NDB9XGI=",
+    "pattern_len": 20,
+    "case_insensitive": true
+  },
+  {
+    "type": "apiKeyGeneric",
+    "source": "secret",
+    "confidence": 0.97,
+    "pattern_b64": "XGJzYl8oPzpzZWNyZXR8cHVibGlzaGFibGUpX1tBLVphLXowLTlfLV17MjAsfVxi",
+    "pattern_len": 48,
+    "case_insensitive": true
+  },
+  {
+    "type": "apiKeyGeneric",
+    "source": "secret",
+    "confidence": 0.95,
+    "pattern_b64": "XGJyZV9bQS1aYS16MC05XXs2LH1fW0EtWmEtejAtOV17MTYsfVxi",
+    "pattern_len": 39,
+    "case_insensitive": true
+  },
+  {
+    "type": "apiKeyGeneric",
+    "source": "secret",
+    "confidence": 0.97,
+    "pattern_b64": "XGJsaW5fKD86YXBpfG9hdXRoKV9bQS1aYS16MC05XXsyMCx9XGI=",
+    "pattern_len": 38,
+    "case_insensitive": true
+  },
+  {
+    "type": "apiKeyGeneric",
+    "source": "secret",
+    "confidence": 0.97,
+    "pattern_b64": "XGJ2ZXJjZWxfYmxvYl9yd19bQS1aYS16MC05XXsxOCx9X1tBLVphLXowLTldezE4LH1cYg==",
+    "pattern_len": 52,
+    "case_insensitive": true
+  },
+  {
+    "type": "apiKeyGeneric",
+    "source": "secret",
+    "confidence": 0.98,
+    "pattern_b64": "XGJnbHBhdC1bQS1aYS16MC05Xy1dezIwLH1cYg==",
+    "pattern_len": 28,
+    "case_insensitive": true
+  },
+  {
+    "type": "apiKeyGeneric",
+    "source": "secret",
+    "confidence": 0.96,
+    "pattern_b64": "XGJoZl9bQS1aYS16MC05XXszMCx9XGI=",
+    "pattern_len": 23,
+    "case_insensitive": true
+  },
+  {
+    "type": "apiKeyGeneric",
+    "source": "secret",
+    "confidence": 0.98,
+    "pattern_b64": "XGJTR1wuW0EtWmEtejAtOV8tXXsyMn1cLltBLVphLXowLTlfLV17NDN9XGI=",
+    "pattern_len": 44,
+    "case_insensitive": true
+  },
+  {
+    "type": "apiKeyGeneric",
+    "source": "secret",
+    "confidence": 0.97,
+    "pattern_b64": "XGJucG1fW0EtWmEtejAtOV17MzZ9XGI=",
+    "pattern_len": 23,
+    "case_insensitive": true
+  },
+  {
+    "type": "apiKeyGeneric",
+    "source": "secret",
+    "confidence": 0.97,
+    "pattern_b64": "XGJkcFwuKD86cHR8c3R8Y3R8c2F8c2NpbXxhdWRpdClcLltBLVphLXowLTldezQwLH1cYg==",
+    "pattern_len": 52,
+    "case_insensitive": true
+  },
+  {
+    "type": "highEntropyString",
+    "source": "secret",
+    "confidence": 0.65,
+    "pattern_b64": "KD88IVtBLVphLXowLTkrLz1fLV0pW0EtWmEtejAtOSsvPV8tXXs0MCx9KD8hW0EtWmEtejAtOSsvPV8tXSk=",
+    "pattern_len": 62,
+    "case_insensitive": true
+  }
+]

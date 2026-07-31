@@ -1,0 +1,19 @@
+# Docker build context is the repository root (see server/Dockerfile).
+.git
+.github
+**/.DS_Store
+**/.build
+**/.swiftpm
+**/DerivedData
+**/target
+apps/
+docs/
+internal-docs/
+Tuist/
+Website/
+Extension/
+.cursor
+*.md
+!crates/**/*.md
+server/.build
+server/.swiftpm

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/image.png" alt="Offsend — one .offsend.yml defines your AI context boundary" width="100%">
+  <img src="apps/macos/assets/image.png" alt="Offsend — one .offsend.yml defines your AI context boundary" width="100%">
 </p>
 
 <p align="center">
@@ -82,7 +82,7 @@ git add .offsend.yml && git commit -m "Add AI context policy"
 offsend sync                   # ignore files + hooks (+ sandbox configs if enabled)
 ```
 
-Rules live in `.offsend.yml` — that file is the source of truth. AI ignore files are generated artifacts and stay out of git by default (`ignore.commit: false`). Teammates do not copy `.cursorignore` by hand; they run `sync`. Full walkthrough: [Add Offsend to a team repo](docs/team.md).
+Rules live in `.offsend.yml` — that file is the source of truth. AI ignore files are generated artifacts and stay out of git by default (`ignore.commit: false`). Teammates do not copy `.cursorignore` by hand; they run `sync`. With `hooks.enabled: true` (default), `doctor` / `check --policy` fail until hooks are installed. Prefer `hooks.git: [pre-commit, post-merge]` so pull/merge re-runs `sync` for the team. Full walkthrough: [Add Offsend to a team repo](docs/team.md).
 
 ### Already leaked into local agent history?
 
@@ -93,6 +93,13 @@ offsend doctor                        # next steps if ignore files or hooks are 
 ```
 
 Other installs: [CLI docs → Install](docs/cli.md#install) · macOS app: `brew install --cask offsend/tap/offsend`
+
+## Developing
+
+- **Rust CLI / core** (repo root): `cargo build -p offsend-cli` · `cargo test --workspace` — portable library lives in `crates/` (`offsend-detect`, `offsend-policy`, `offsend-seal`, `offsend-ffi`)
+- **macOS app**: `./scripts/app/bootstrap.sh` then open `apps/macos/Offsend.xcworkspace` (Document/AI/UI stay Swift; see [docs/macos-app.md](docs/macos-app.md#rust-vs-swift-ownership))
+- **Scripts**: lowercase `scripts/{app,cli,ci,ffi,release,server,site}/` (compat shim: `scripts/install.sh` → `scripts/cli/install.sh`)
+- **Scan API**: `server/`
 
 ## MCP seal
 
@@ -135,11 +142,11 @@ Without a key, secret-bearing responses are **withheld** (not passed through). R
 | Command | Purpose |
 | --- | --- |
 | `offsend show` | Sensitive paths visible to AI (+ MCP inventory, agent-history hint, ignore drift) |
-| `offsend sync` | Apply `.offsend.yml`: ignore files, hooks, and optional sandbox configs (post-clone, idempotent) |
+| `offsend sync` | Apply `.offsend.yml`: ignore files, git hooks (`hooks.git`), AI-editor hooks, optional sandbox |
 | `offsend protect` | Promote exposed paths to `.offsend.yml` and sync AI ignore files |
 | `offsend ignore` | Add ignore patterns to `.offsend.yml` (auto-materializes; use `sync` after hand-edits) |
 | `offsend check` | Scan contents (files, `--staged`, stdin, or editor hook JSON) |
-| `offsend hook install` | Git pre-commit + prompt / read / shell / MCP / subagent gates |
+| `offsend hook install` | Git hooks from `hooks.git` + prompt / read / shell / MCP / subagent gates |
 | `offsend keygen --default` | Personal seal key for MCP / read seal modes |
 | `offsend seal` / `unseal` | Replace secrets with tokens / restore plaintext |
 | `offsend history audit` | Find secrets already written into local Cursor/Claude transcripts |
