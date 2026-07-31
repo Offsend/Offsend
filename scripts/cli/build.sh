@@ -14,4 +14,10 @@ cargo build -p offsend-cli --release
 BIN_PATH="$REPO_ROOT/target/release/offsend"
 test -x "$BIN_PATH"
 
+reported="$("$BIN_PATH" --version)"
+if [[ "$reported" != *"$VERSION"* ]]; then
+  echo "Expected --version to contain ${VERSION}, got: ${reported}" >&2
+  exit 1
+fi
+
 echo "Built CLI $VERSION at $BIN_PATH"

@@ -35,7 +35,7 @@ use std::process::ExitCode;
 #[command(
     name = "offsend",
     about = "Local sensitive data checks for developers.",
-    version
+    version = env!("OFFSEND_CLI_VERSION")
 )]
 struct Cli {
     #[command(subcommand)]
