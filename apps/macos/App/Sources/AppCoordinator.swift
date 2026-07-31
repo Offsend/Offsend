@@ -164,6 +164,10 @@ final class AppCoordinator: ObservableObject {
     var clipboardScanTask: Task<Void, Never>?
     /// Identifies the latest clipboard scan so stale (cancelled) scans never clear `isClipboardScanInProgress` for a newer one.
     var clipboardScanGeneration = 0
+    /// Bumped on cancel/restart so stale download progress and completion cannot touch UI/catalog.
+    var aiModelDownloadGeneration = 0
+    /// Bumped when a newer load/unload supersedes an in-flight `reloadActiveAIModelIfNeeded`.
+    var aiModelLoadGeneration = 0
 
     init() {
         var store: LocalStoring

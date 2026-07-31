@@ -169,6 +169,19 @@ fn seal_token_suppresses_high_entropy_and_phone() {
 }
 
 #[test]
+fn seal_token_suppresses_api_key_generic_on_secret_label() {
+    // Seal placeholders use SECRET:v1.<ciphertext>, which matches apiKeyGeneric's
+    // `secret\s*[:=]\s*…` pattern — must not fire on real sealed copies.
+    let text = "{{SECRET:v1.wUNe0JIRW0_41ZXVPaArASkRmoJXetbI1Or38nABCDEFGH}}";
+    let result = DetectionEngine::scan(&DetectionRequest::new(text));
+    assert!(
+        result.entities.is_empty(),
+        "seal framing must not surface as apiKeyGeneric: {:?}",
+        result.entities
+    );
+}
+
+#[test]
 fn seal_token_keeps_critical_secret_inside_fake_framing() {
     // Framing alone is not trusted — a live key wrapped in {{TYPE:v1.…}} must still fire.
     // Avoid placeholder substrings like "EXAMPLE" (sanitizer drops those).

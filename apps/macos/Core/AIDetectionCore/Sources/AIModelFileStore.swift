@@ -2,13 +2,19 @@ import Foundation
 import DetectionCore
 
 public enum AIModelFileStore {
+    /// Test-only override for `modelsDirectory()`. Not for production use.
+    static var modelsDirectoryOverrideForTesting: URL?
+
     public static func baseDirectory() -> URL {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         return support.appendingPathComponent("Offsend", isDirectory: true)
     }
 
     public static func modelsDirectory() -> URL {
-        baseDirectory().appendingPathComponent("Models", isDirectory: true)
+        if let override = modelsDirectoryOverrideForTesting {
+            return override
+        }
+        return baseDirectory().appendingPathComponent("Models", isDirectory: true)
     }
 
     public static func modelDirectory(for localDirectoryName: String) -> URL {

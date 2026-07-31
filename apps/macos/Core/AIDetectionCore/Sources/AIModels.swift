@@ -8,6 +8,7 @@ public enum AIModelSource: Codable, Equatable, Sendable {
     case remoteURL(baseURL: URL)
     case manifest(manifestURL: URL)
     case ollama(endpoint: URL, modelName: String)
+    case ggufFile(originalPath: String)
 }
 
 public enum AIModelFormat: String, Codable, Sendable, CaseIterable {

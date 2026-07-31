@@ -43,4 +43,19 @@ final class MaskingCoreSmokeTests: XCTestCase {
         XCTAssertEqual(kept.count, 1)
         XCTAssertEqual(kept.first?.type, .awsAccessKeyId)
     }
+
+    func testExcludingTokenSpansDropsApiKeyGenericOnSealFraming() {
+        let text = "{{SECRET:v1.wUNe0JIRW0_41ZXVPaArASkRmoJXetbI1Or38nABCDEFGH}}"
+        let inner = "SECRET:v1.wUNe0JIRW0_41ZXVPaArASkRmoJXetbI1Or38nABCDEFGH"
+        let range = text.range(of: inner)!
+        let generic = SensitiveEntity(
+            type: .apiKeyGeneric,
+            range: range,
+            value: inner,
+            confidence: 0.9,
+            source: .secret
+        )
+        let kept = SealTokenDetector.excludingTokenSpans([generic], in: text)
+        XCTAssertTrue(kept.isEmpty)
+    }
 }

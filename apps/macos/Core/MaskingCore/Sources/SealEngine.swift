@@ -39,10 +39,17 @@ public enum SealTokenDetector: Sendable {
             .compactMap { Range($0.range, in: text) }
     }
 
-    /// Drops non-critical findings fully contained in a seal token.
-    /// Ciphertext payloads commonly false-trigger phone / high-entropy detectors;
-    /// concrete secret detectors still fire so a live key wrapped in a fake
-    /// `{{TYPE:v1.…}}` string is not silently ignored.
+    /// Inner `TYPE:v1.<payload>` shape (without braces). `apiKeyGeneric`'s
+    /// `secret\s*[:=]\s*…` pattern matches `SECRET:v1.…` framing.
+    private static let innerStructurePattern: NSRegularExpression = try! NSRegularExpression(
+        pattern: #"^[A-Z][A-Z0-9_]*:v1\.[A-Za-z0-9_-]+$"#,
+        options: [.caseInsensitive]
+    )
+
+    /// Drops findings fully contained in a seal token, except concrete secret
+    /// detectors whose value is *not* the seal framing itself. Ciphertext
+    /// commonly false-triggers phone / high-entropy / `apiKeyGeneric` on
+    /// `SECRET:v1.…`; a live key wrapped in a fake `{{TYPE:v1.…}}` still fires.
     public static func excludingTokenSpans(
         _ entities: [SensitiveEntity],
         in text: String
@@ -50,10 +57,16 @@ public enum SealTokenDetector: Sendable {
         guard !entities.isEmpty, containsSealTokens(in: text) else { return entities }
         let tokenSpans = tokenRanges(in: text)
         return entities.filter { entity in
-            if entity.type.countsAsCriticalSecret { return true }
-            return !tokenSpans.contains {
+            let inside = tokenSpans.contains {
                 entity.range.lowerBound >= $0.lowerBound && entity.range.upperBound <= $0.upperBound
             }
+            guard inside else { return true }
+            return entity.type.countsAsCriticalSecret && !isSealTokenStructure(entity.value)
         }
+    }
+
+    private static func isSealTokenStructure(_ value: String) -> Bool {
+        let nsRange = NSRange(value.startIndex..<value.endIndex, in: value)
+        return innerStructurePattern.firstMatch(in: value, options: [], range: nsRange) != nil
     }
 }

@@ -48,7 +48,7 @@ public final class GGUFFileImporter: AIModelImporting, @unchecked Sendable {
         let model = InstalledAIModel(
             id: modelID,
             displayName: sourceURL.deletingPathExtension().lastPathComponent,
-            source: .importedFolder(originalPath: sourceURL.path),
+            source: .ggufFile(originalPath: sourceURL.path),
             format: .gguf,
             localDirectoryName: modelID,
             totalByteSize: byteSize

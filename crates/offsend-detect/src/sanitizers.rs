@@ -23,6 +23,11 @@ static COORD_PAIR: Lazy<Regex> =
 static SEAL_TOKEN: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"\{\{([A-Z][A-Z0-9_]*):v1\.([A-Za-z0-9_-]+)\}\}").unwrap()
 });
+/// Inner `TYPE:v1.<payload>` shape of a seal token (without `{{` / `}}`).
+/// `apiKeyGeneric`'s `secret\s*[:=]\s*…` pattern matches `SECRET:v1.…` framing.
+static SEAL_TOKEN_INNER: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)^[A-Z][A-Z0-9_]*:v1\.[A-Za-z0-9_-]+$").unwrap()
+});
 
 pub fn filter_false_positives(entities: Vec<SensitiveEntity>) -> Vec<SensitiveEntity> {
     entities
@@ -41,9 +46,10 @@ pub fn filter_false_positives(entities: Vec<SensitiveEntity>) -> Vec<SensitiveEn
 }
 
 /// Seal payloads are ciphertext, not live secrets/PII. Drop findings fully inside
-/// `{{TYPE:v1.…}}` except concrete secret detectors (so a live key wrapped in a fake
-/// token still fires). High-entropy and phone/email matches on base64url are the
-/// common false positives this removes.
+/// `{{TYPE:v1.…}}` except concrete secret detectors whose value is *not* the seal
+/// framing itself (so a live key wrapped in a fake token still fires). High-entropy,
+/// phone/email on base64url, and `apiKeyGeneric` on `SECRET:v1.…` are the common
+/// false positives this removes.
 pub fn filter_inside_seal_tokens(
     entities: Vec<SensitiveEntity>,
     text: &str,
@@ -61,14 +67,21 @@ pub fn filter_inside_seal_tokens(
     entities
         .into_iter()
         .filter(|e| {
-            if e.entity_type.counts_as_critical_secret() {
+            let inside = ranges
+                .iter()
+                .any(|&(start, end)| e.start >= start && e.end <= end);
+            if !inside {
                 return true;
             }
-            !ranges
-                .iter()
-                .any(|&(start, end)| e.start >= start && e.end <= end)
+            // Keep critical secrets embedded in the payload (e.g. AKIA…), but drop
+            // detectors that matched the TYPE:v1.… seal structure as a key=value pair.
+            e.entity_type.counts_as_critical_secret() && !is_seal_token_structure(&e.value)
         })
         .collect()
+}
+
+fn is_seal_token_structure(value: &str) -> bool {
+    SEAL_TOKEN_INNER.is_match(value).unwrap_or(false)
 }
 
 fn should_reject_money(value: &str) -> bool {

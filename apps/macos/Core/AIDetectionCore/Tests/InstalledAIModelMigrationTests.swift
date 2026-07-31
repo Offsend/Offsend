@@ -35,4 +35,17 @@ final class InstalledAIModelMigrationTests: XCTestCase {
         let decoded = try JSONDecoder().decode(InstalledAIModel.self, from: data)
         XCTAssertEqual(decoded, model)
     }
+
+    func testEncodesGGUFFileSource() throws {
+        let model = InstalledAIModel(
+            id: "gguf-id",
+            displayName: "Local GGUF",
+            source: .ggufFile(originalPath: "/tmp/model.gguf"),
+            format: .gguf,
+            localDirectoryName: "gguf-id"
+        )
+        let data = try JSONEncoder().encode(model)
+        let decoded = try JSONDecoder().decode(InstalledAIModel.self, from: data)
+        XCTAssertEqual(decoded, model)
+    }
 }

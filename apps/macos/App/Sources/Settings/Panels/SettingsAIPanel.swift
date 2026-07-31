@@ -377,6 +377,11 @@ struct SettingsAIPanel: View {
                         .disabled(isDownloading || selectedOllamaModel.isEmpty)
                     }
                 }
+                .onChange(of: coordinator.ollamaDiscoveredModels) { models in
+                    if selectedOllamaModel.isEmpty || !models.contains(selectedOllamaModel) {
+                        selectedOllamaModel = models.first ?? ""
+                    }
+                }
 
                 Text(OffsendStrings.settingsAiGgufHint)
                     .font(.system(size: 11))

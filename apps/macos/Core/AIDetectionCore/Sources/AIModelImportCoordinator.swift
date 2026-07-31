@@ -32,24 +32,31 @@ public final class AIModelImportCoordinator: Sendable {
             try FileManager.default.removeItem(at: directory)
         }
 
-        let result = try await importer.importModel(
-            reference: reference,
-            into: directory,
-            credentials: credentials,
-            progress: progress
-        )
+        do {
+            let result = try await importer.importModel(
+                reference: reference,
+                into: directory,
+                credentials: credentials,
+                progress: progress
+            )
 
-        if result.model.localDirectoryName != directoryName {
-            let finalDirectory = AIModelFileStore.modelDirectory(for: result.model.localDirectoryName)
-            if directory.path != finalDirectory.path {
-                if FileManager.default.fileExists(atPath: finalDirectory.path) {
-                    try FileManager.default.removeItem(at: finalDirectory)
+            if result.model.localDirectoryName != directoryName {
+                let finalDirectory = AIModelFileStore.modelDirectory(for: result.model.localDirectoryName)
+                if directory.path != finalDirectory.path {
+                    if FileManager.default.fileExists(atPath: finalDirectory.path) {
+                        try FileManager.default.removeItem(at: finalDirectory)
+                    }
+                    try FileManager.default.moveItem(at: directory, to: finalDirectory)
                 }
-                try FileManager.default.moveItem(at: directory, to: finalDirectory)
             }
-        }
 
-        return result
+            return result
+        } catch {
+            if FileManager.default.fileExists(atPath: directory.path) {
+                try? FileManager.default.removeItem(at: directory)
+            }
+            throw error
+        }
     }
 
     private func provisionalDirectoryName(for reference: AIModelImportReference) -> String {

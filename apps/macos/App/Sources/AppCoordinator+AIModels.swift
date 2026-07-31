@@ -69,20 +69,24 @@ extension AppCoordinator {
 
     /// Updates the MainActor mirror immediately; the actor unload happens asynchronously.
     private func unloadAIModel() {
+        aiModelLoadGeneration += 1
         loadedAIModelID = nil
         let registry = aiModelRegistry
         Task { await registry.unload() }
     }
 
     func cancelAIModelDownload() {
+        aiModelDownloadGeneration += 1
         aiModelDownloadTask?.cancel()
         aiModelDownloadTask = nil
         aiModelDownloadProgress = nil
     }
 
     func deleteInstalledAIModel(modelID: String) {
-        cancelAIModelDownload()
         guard let model = installedAIModels.first(where: { $0.id == modelID }) else { return }
+        if isDownloading(model) {
+            cancelAIModelDownload()
+        }
         do {
             try AIModelFileStore.deleteModelFiles(localDirectoryName: model.localDirectoryName)
             let models = installedAIModels.filter { $0.id != modelID }
@@ -190,76 +194,48 @@ extension AppCoordinator {
     }
 
     private func importAIModel(reference: AIModelImportReference) {
-        if case let .ollama(endpoint, modelName) = reference,
-           let url = try? OllamaClient.normalizedLocalEndpoint(endpoint),
-           let modelID = try? OllamaModelImporter.modelID(endpoint: url, modelName: modelName) {
-            if installedAIModels.contains(where: { $0.id == modelID }) {
-                reportAIModelImportFailure(.alreadyInstalled(modelName))
-                return
-            }
+        if case let .huggingFace(_, _, _, requiresToken) = reference, requiresToken, !hasHuggingFaceToken {
+            reportAIModelImportFailure(.gatedRequiresToken)
+            return
         }
 
-        if case let .huggingFace(rawReference, _, _, requiresToken) = reference {
-            if requiresToken, !hasHuggingFaceToken {
-                reportAIModelImportFailure(.gatedRequiresToken)
-                return
-            }
-            if let repositoryID = HuggingFaceRepository.parseRepositoryID(rawReference),
-               installedAIModels.contains(where: { $0.id == repositoryID }) {
-                reportAIModelImportFailure(.alreadyInstalled(repositoryID))
-                return
-            }
+        if let alreadyInstalledName = installedModelName(matching: reference) {
+            reportAIModelImportFailure(.alreadyInstalled(alreadyInstalledName))
+            return
         }
 
-        let progressID: String = {
-            switch reference {
-            case .huggingFace(let raw, _, _, _):
-                return HuggingFaceRepository.parseRepositoryID(raw) ?? UUID().uuidString
-            case .folder:
-                return UUID().uuidString
-            case .remoteURL(let url):
-                return url.lastPathComponent
-            case .manifest(let url):
-                return url.deletingPathExtension().lastPathComponent
-            case .ollama(let endpoint, let modelName):
-                if let url = try? OllamaClient.normalizedLocalEndpoint(endpoint),
-                   let modelID = try? OllamaModelImporter.modelID(endpoint: url, modelName: modelName) {
-                    return modelID
-                }
-                return modelName
-            case .ggufFile(let url):
-                return url.deletingPathExtension().lastPathComponent
-            }
-        }()
+        let progressID = downloadProgressID(for: reference)
 
-        cancelAIModelDownload()
+        aiModelDownloadGeneration += 1
+        let generation = aiModelDownloadGeneration
+        aiModelDownloadTask?.cancel()
+        aiModelDownloadTask = nil
         aiModelDownloadProgress = AIModelDownloadProgress(modelID: progressID)
 
         aiModelDownloadTask = Task { [weak self] in
             guard let self else { return }
-            do {
-                if case let .huggingFace(rawReference, _, revision, _) = reference,
-                   let repositoryID = HuggingFaceRepository.parseRepositoryID(rawReference) {
-                    let token = try HuggingFaceTokenStore.shared.loadToken()
-                    let downloader = HuggingFaceModelDownloader(accessToken: token)
-                    let inspection = try await downloader.inspectRemoteRepository(
-                        repositoryID: repositoryID,
-                        revision: revision
-                    )
-                    guard inspection.isRunnable else {
-                        throw AIModelCatalogError.incompatibleModel(
-                            inspection.reason ?? "This Hugging Face repo has no runnable ONNX or Core ML model."
-                        )
-                    }
+            defer {
+                if aiModelDownloadGeneration == generation {
+                    aiModelDownloadTask = nil
                 }
+            }
 
+            do {
                 let token = try HuggingFaceTokenStore.shared.loadToken()
                 let credentials = AIModelCredentials(huggingFaceToken: token)
                 let coordinator = AIModelImportCoordinator()
                 let result = try await coordinator.importModel(reference: reference, credentials: credentials) { progress in
                     Task { @MainActor in
+                        guard self.aiModelDownloadGeneration == generation else { return }
                         self.aiModelDownloadProgress = progress
                     }
+                }
+
+                guard aiModelDownloadGeneration == generation, !Task.isCancelled else {
+                    // Import finished after cancel/restart — drop orphan files so they
+                    // cannot collide with a newer download of the same model id.
+                    try? AIModelFileStore.deleteModelFiles(localDirectoryName: result.model.localDirectoryName)
+                    return
                 }
 
                 var models = installedAIModels.filter { $0.id != result.model.id }
@@ -285,18 +261,20 @@ extension AppCoordinator {
 
                 await reloadActiveAIModelIfNeeded(force: aiModelSessionManager.hasActiveSessions)
             } catch is CancellationError {
-                aiModelDownloadProgress = nil
-                cleanupFailedImport(for: reference)
+                if aiModelDownloadGeneration == generation {
+                    aiModelDownloadProgress = nil
+                }
             } catch let error as AIModelCatalogError {
-                aiModelDownloadProgress = nil
-                cleanupFailedImport(for: reference)
-                reportAIModelImportFailure(AIModelImportAlert.failure(for: error, hasHuggingFaceToken: hasHuggingFaceToken))
+                if aiModelDownloadGeneration == generation {
+                    aiModelDownloadProgress = nil
+                    reportAIModelImportFailure(AIModelImportAlert.failure(for: error, hasHuggingFaceToken: hasHuggingFaceToken))
+                }
             } catch {
-                aiModelDownloadProgress = nil
-                cleanupFailedImport(for: reference)
-                reportAIModelImportFailure(.downloadFailed(CoreErrorLocalization.message(for: error)))
+                if aiModelDownloadGeneration == generation {
+                    aiModelDownloadProgress = nil
+                    reportAIModelImportFailure(.downloadFailed(CoreErrorLocalization.message(for: error)))
+                }
             }
-            aiModelDownloadTask = nil
         }
     }
 
@@ -328,9 +306,17 @@ extension AppCoordinator {
             return
         }
 
+        aiModelLoadGeneration += 1
+        let generation = aiModelLoadGeneration
         aiModelLoadState = .loading(displayName: model.displayName)
         do {
             try await aiModelRegistry.load(model: model, directory: directory)
+            guard generation == aiModelLoadGeneration else { return }
+            guard wantsAIDetection, settings.selectedAIModelID == model.id else {
+                unloadAIModel()
+                aiModelLoadState = .idle
+                return
+            }
             loadedAIModelID = model.id
             aiModelLoadState = .ready(displayName: model.displayName)
             if aiModelSessionManager.hasActiveSessions {
@@ -339,6 +325,7 @@ extension AppCoordinator {
                 aiModelSessionManager.scheduleUnloadIfIdle()
             }
         } catch {
+            guard generation == aiModelLoadGeneration else { return }
             unloadAIModel()
             let message = CoreErrorLocalization.message(for: error)
             aiModelLoadState = .failed(displayName: model.displayName, message: message)
@@ -378,7 +365,7 @@ extension AppCoordinator {
         switch model.source {
         case .huggingFace(let repositoryID, _):
             return repositoryID
-        case .importedFolder(let path):
+        case .importedFolder(let path), .ggufFile(let path):
             return (path as NSString).lastPathComponent
         case .remoteURL(let url):
             return url.host ?? url.absoluteString
@@ -434,14 +421,77 @@ extension AppCoordinator {
         }
     }
 
-    private func cleanupFailedImport(for reference: AIModelImportReference) {
+    private func downloadProgressID(for reference: AIModelImportReference) -> String {
+        switch reference {
+        case .huggingFace(let raw, _, _, _):
+            return HuggingFaceRepository.parseRepositoryID(raw) ?? raw
+        case .folder(let url):
+            return url.path
+        case .remoteURL(let url):
+            return url.absoluteString
+        case .manifest(let url):
+            return url.absoluteString
+        case .ollama(let endpoint, let modelName):
+            if let url = try? OllamaClient.normalizedLocalEndpoint(endpoint),
+               let modelID = try? OllamaModelImporter.modelID(endpoint: url, modelName: modelName) {
+                return modelID
+            }
+            return modelName
+        case .ggufFile(let url):
+            return url.path
+        }
+    }
+
+    private func installedModelName(matching reference: AIModelImportReference) -> String? {
         switch reference {
         case .huggingFace(let rawReference, _, _, _):
-            if let repositoryID = HuggingFaceRepository.parseRepositoryID(rawReference) {
-                try? AIModelFileStore.deleteModelFiles(localDirectoryName: HuggingFaceRepository.directoryName(for: repositoryID))
-            }
-        case .folder, .remoteURL, .manifest, .ollama, .ggufFile:
-            break
+            guard let repositoryID = HuggingFaceRepository.parseRepositoryID(rawReference),
+                  let model = installedAIModels.first(where: { $0.id == repositoryID }) else { return nil }
+            return model.displayName
+        case .folder(let url):
+            return installedAIModels.first(where: {
+                if case .importedFolder(let path) = $0.source { return path == url.path }
+                return false
+            })?.displayName
+        case .remoteURL(let url):
+            return installedAIModels.first(where: {
+                if case .remoteURL(let existing) = $0.source { return existing == url }
+                return false
+            })?.displayName
+        case .manifest(let url):
+            return installedAIModels.first(where: {
+                if case .manifest(let existing) = $0.source { return existing == url }
+                return false
+            })?.displayName
+        case .ollama(let endpoint, let modelName):
+            guard let normalized = try? OllamaClient.normalizedLocalEndpoint(endpoint),
+                  let modelID = try? OllamaModelImporter.modelID(endpoint: normalized, modelName: modelName),
+                  installedAIModels.contains(where: { $0.id == modelID }) else { return nil }
+            return modelName
+        case .ggufFile(let url):
+            return installedAIModels.first(where: {
+                switch $0.source {
+                case .ggufFile(let path), .importedFolder(let path):
+                    return path == url.path
+                default:
+                    return false
+                }
+            })?.displayName
+        }
+    }
+
+    private func isDownloading(_ model: InstalledAIModel) -> Bool {
+        guard let progressID = aiModelDownloadProgress?.modelID else { return false }
+        if progressID == model.id { return true }
+        switch model.source {
+        case .huggingFace(let repositoryID, _):
+            return progressID == repositoryID
+        case .importedFolder(let path), .ggufFile(let path):
+            return progressID == path
+        case .remoteURL(let url), .manifest(let url):
+            return progressID == url.absoluteString
+        case .ollama:
+            return progressID == model.id
         }
     }
 }
