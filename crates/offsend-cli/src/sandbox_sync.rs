@@ -552,6 +552,7 @@ fn write_json(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_workdir(label: &str) -> PathBuf {
@@ -562,6 +563,33 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("offsend-run-{label}-{nanos}"));
         fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    /// Serialize tests that mutate `NONO_CAP_FILE` — parallel `remove_var` otherwise
+    /// makes `wrapper_available` flap and skips writing `.offsend/nono/*.json`.
+    fn nono_cap_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    struct NonoCapGuard {
+        _guard: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl NonoCapGuard {
+        fn set() -> Self {
+            let guard = nono_cap_lock()
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            std::env::set_var("NONO_CAP_FILE", "1");
+            Self { _guard: guard }
+        }
+    }
+
+    impl Drop for NonoCapGuard {
+        fn drop(&mut self) {
+            std::env::remove_var("NONO_CAP_FILE");
+        }
     }
 
     #[test]
@@ -576,7 +604,7 @@ mod tests {
     fn writes_wrapper_profile_when_enabled() {
         let dir = temp_workdir("nono");
         // Shipped nono treats NONO_CAP_FILE as wrapper-available (no PATH dependency).
-        std::env::set_var("NONO_CAP_FILE", "1");
+        let _cap = NonoCapGuard::set();
         let yaml = r#"
 version: 1
 sandbox:
@@ -596,15 +624,14 @@ ignore:
             .any(|c| c.relative_path.contains("offsend-claude.json")));
         assert!(report.uncovered_patterns.contains(&"*.pem".to_string()));
         let path = dir.join(".offsend/nono/offsend-claude.json");
-        assert!(path.is_file());
-        std::env::remove_var("NONO_CAP_FILE");
+        assert!(path.is_file(), "missing wrapper profile; report={report:?}");
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn untrusted_enabled_false_still_syncs() {
         let dir = temp_workdir("force-on");
-        std::env::set_var("NONO_CAP_FILE", "1");
+        let _cap = NonoCapGuard::set();
         let yaml = r#"
 version: 1
 sandbox:
@@ -614,9 +641,11 @@ sandbox:
         let cfg = OffsendProjectConfig::parse_yaml(yaml).unwrap();
         // No trust snapshot in temp dir → false is ignored → sandbox stays on.
         let report = run(&dir, Some(&cfg), EditorTarget::Claude);
-        assert!(report.enabled);
-        assert!(dir.join(".offsend/nono/offsend-claude.json").is_file());
-        std::env::remove_var("NONO_CAP_FILE");
+        assert!(report.enabled, "report={report:?}");
+        assert!(
+            dir.join(".offsend/nono/offsend-claude.json").is_file(),
+            "missing wrapper profile; report={report:?}"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -687,7 +716,7 @@ sandbox:
     #[test]
     fn sync_profile_blocks_network_when_untrusted_allow() {
         let dir = temp_workdir("net");
-        std::env::set_var("NONO_CAP_FILE", "1");
+        let _cap = NonoCapGuard::set();
         let cfg = OffsendProjectConfig::parse_yaml(
             r#"
 version: 1
@@ -700,11 +729,11 @@ sandbox:
         )
         .unwrap();
         let report = run(&dir, Some(&cfg), EditorTarget::Claude);
-        assert!(report.enabled);
-        let text = fs::read_to_string(dir.join(".offsend/nono/offsend-claude.json")).unwrap();
+        assert!(report.enabled, "report={report:?}");
+        let text = fs::read_to_string(dir.join(".offsend/nono/offsend-claude.json"))
+            .unwrap_or_else(|e| panic!("missing wrapper profile ({e}); report={report:?}"));
         let value: serde_json::Value = serde_json::from_str(&text).unwrap();
         assert_eq!(value["network"]["block"], serde_json::json!(true));
-        std::env::remove_var("NONO_CAP_FILE");
         let _ = fs::remove_dir_all(&dir);
     }
 
