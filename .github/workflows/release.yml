@@ -86,6 +86,9 @@ jobs:
           name: offsend-cli-macos
           path: build/cli-macos
 
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Install Tuist
         uses: jdx/mise-action@v2
         with:
@@ -98,6 +101,9 @@ jobs:
       - name: Install dependencies
         working-directory: apps/macos
         run: tuist install
+
+      - name: Build Offsend FFI
+        run: STAGE_SERVER=0 bash scripts/ffi/build.sh
 
       - name: Import Developer ID certificate
         env:

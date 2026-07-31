@@ -158,9 +158,13 @@ let coreTargets: [Target] = [
             .pre(
                 script: """
                 set -euo pipefail
-                "${SRCROOT}/../../scripts/ffi/build.sh"
+                # Only stage the macOS vendor tree from this Xcode phase.
+                STAGE_MACOS=1 STAGE_SERVER=0 "${SRCROOT}/../../scripts/ffi/build.sh"
                 """,
                 name: "Build Offsend FFI",
+                // Xcode treats -force_load …/liboffsend_ffi.a as a linker input; declare it as a
+                // script output so the link phase waits for the Rust build to stage the archive.
+                outputPaths: ["$(SRCROOT)/Vendor/OffsendFFI/liboffsend_ffi.a"],
                 basedOnDependencyAnalysis: false
             )
         ],
