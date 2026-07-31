@@ -207,7 +207,14 @@ jobs:
         run: |
           set -euo pipefail
           test -n "${TEAM_ID:-}" || { echo "Missing secret: set repository secret APPLE_TEAM_ID (or TEAM_ID) to your Apple Developer Team ID"; exit 1; }
-          test -x "$OFFSEND_CLI_SRC"
+          # download-artifact often drops the executable bit; chmod before embedding.
+          test -f "$OFFSEND_CLI_SRC" || {
+            echo "CLI artifact missing at $OFFSEND_CLI_SRC" >&2
+            ls -la build/cli-macos 2>/dev/null || true
+            exit 1
+          }
+          chmod +x "$OFFSEND_CLI_SRC"
+          file "$OFFSEND_CLI_SRC"
           bash scripts/app/embed-cli.sh \
             "apps/macos/build/export/Offsend.app" \
             "$TEAM_ID" \
