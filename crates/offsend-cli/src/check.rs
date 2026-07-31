@@ -388,9 +388,10 @@ pub fn run(args: CheckArgs) -> Result<ExitCode, CheckError> {
                 continue;
             }
             if let Some(ext) = unsupported_document_extension(&rel) {
-                return Err(CheckError::Message(format!(
-                    "Unsupported format (.{ext})"
-                )));
+                if args.verbose {
+                    eprintln!("skip {rel}: unsupported format (.{ext})");
+                }
+                continue;
             }
             let blob = git::staged_blob(&repo, &rel)?;
             if blob.len() > io::MAX_INPUT_BYTES {
@@ -427,6 +428,7 @@ pub fn run(args: CheckArgs) -> Result<ExitCode, CheckError> {
                         args.secrets_only,
                         &detection_options,
                         &dictionaries,
+                        args.verbose,
                         &mut findings,
                     )?;
                 }
@@ -439,6 +441,7 @@ pub fn run(args: CheckArgs) -> Result<ExitCode, CheckError> {
                         args.secrets_only,
                         &detection_options,
                         &dictionaries,
+                        args.verbose,
                         &mut findings,
                     )?;
                 }
@@ -821,13 +824,15 @@ fn scan_file(
     secrets_only: bool,
     options: &DetectionOptions,
     dictionaries: &[OffsendProjectDictionaryEntry],
+    verbose: bool,
     findings: &mut Vec<ContentFinding>,
 ) -> Result<(), CheckError> {
     let label = relative_label(path, cwd);
     if let Some(ext) = unsupported_document_extension(&label) {
-        return Err(CheckError::Message(format!(
-            "Unsupported format (.{ext})"
-        )));
+        if verbose {
+            eprintln!("skip {label}: unsupported format (.{ext})");
+        }
+        return Ok(());
     }
     let data = fs::read(path)
         .map_err(|e| CheckError::Message(format!("Failed to read {}: {e}", path.display())))?;
@@ -841,7 +846,8 @@ fn scan_file(
     Ok(())
 }
 
-/// Document types the Swift CLI scanned via DocumentCore; Rust CLI is text-only for now.
+/// Document types the Swift app scans via DocumentCore/PDFKit.
+/// Rust CLI is text-only for now — skip quietly (warn with --verbose).
 fn unsupported_document_extension(path: &str) -> Option<&'static str> {
     let lower = path.to_ascii_lowercase();
     const EXTS: &[&str] = &["pdf", "docx", "xlsx", "pptx", "odt", "rtf"];
