@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 # Build offsend-ffi static library and stage it for the macOS app and/or server.
+#
+# On Darwin, the macOS app archive links OffsendRustBridge for both arm64 and
+# x86_64, so STAGE_MACOS stages a universal (lipo) liboffsend_ffi.a.
 set -euo pipefail
 
 # shellcheck source=../lib/repo-paths.sh
@@ -15,12 +18,44 @@ if ! command -v cargo >/dev/null 2>&1; then
   echo "or run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh" >&2
   exit 1
 fi
-cargo build -p offsend-ffi --release
 
-LIB_SRC="${REPO_ROOT}/target/release/liboffsend_ffi.a"
 HEADER_SRC="${REPO_ROOT}/crates/offsend-ffi/include/offsend_ffi.h"
-test -f "$LIB_SRC"
 test -f "$HEADER_SRC"
+
+ensure_rust_target() {
+  local triple="$1"
+  if ! command -v rustup >/dev/null 2>&1; then
+    return 0
+  fi
+  if ! rustup target list --installed 2>/dev/null | grep -qx "$triple"; then
+    rustup target add "$triple"
+  fi
+}
+
+if [[ "$(uname -s)" == "Darwin" && "$STAGE_MACOS" == "1" ]]; then
+  ensure_rust_target aarch64-apple-darwin
+  ensure_rust_target x86_64-apple-darwin
+  cargo build -p offsend-ffi --release --target aarch64-apple-darwin
+  cargo build -p offsend-ffi --release --target x86_64-apple-darwin
+
+  LIB_ARM64="${REPO_ROOT}/target/aarch64-apple-darwin/release/liboffsend_ffi.a"
+  LIB_X64="${REPO_ROOT}/target/x86_64-apple-darwin/release/liboffsend_ffi.a"
+  test -f "$LIB_ARM64"
+  test -f "$LIB_X64"
+
+  UNIVERSAL_DIR="${REPO_ROOT}/target/universal-apple-darwin/release"
+  mkdir -p "$UNIVERSAL_DIR"
+  LIB_SRC="${UNIVERSAL_DIR}/liboffsend_ffi.a"
+  # Atomic replace so parallel per-arch Xcode script phases do not corrupt the .a.
+  LIB_TMP="$(mktemp "${UNIVERSAL_DIR}/liboffsend_ffi.XXXXXX.a")"
+  lipo -create "$LIB_ARM64" "$LIB_X64" -output "$LIB_TMP"
+  mv -f "$LIB_TMP" "$LIB_SRC"
+  echo "Built universal Offsend FFI: $(lipo -archs "$LIB_SRC")"
+else
+  cargo build -p offsend-ffi --release
+  LIB_SRC="${REPO_ROOT}/target/release/liboffsend_ffi.a"
+  test -f "$LIB_SRC"
+fi
 
 stage_vendor() {
   local vendor_dir="$1"

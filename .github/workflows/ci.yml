@@ -29,6 +29,9 @@ jobs:
       #   offsend check --staged --policy --fail-on block
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          # OffsendRustBridge force-loads a universal liboffsend_ffi.a (arm64 + x86_64).
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
       - name: Install Tuist
         uses: jdx/mise-action@v2
         with:

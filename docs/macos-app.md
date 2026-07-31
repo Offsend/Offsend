@@ -21,7 +21,7 @@ The app also ships a bundled `offsend` helper (`Offsend.app/Contents/Helpers/off
 ```bash
 brew install tuist
 ./scripts/app/bootstrap.sh          # → apps/macos (tuist install && generate)
-./scripts/ffi/build.sh          # stages liboffsend_ffi.a for OffsendRustBridge
+./scripts/ffi/build.sh          # stages universal liboffsend_ffi.a (arm64 + x86_64) for OffsendRustBridge
 cargo build -p offsend-cli --release   # bundled Helpers/offsend (also built on app embed)
 open apps/macos/Offsend.xcworkspace
 ```

@@ -88,6 +88,9 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          # Archive links OffsendRustBridge for arm64 + x86_64 (universal liboffsend_ffi.a).
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
 
       - name: Install Tuist
         uses: jdx/mise-action@v2
