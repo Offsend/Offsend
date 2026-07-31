@@ -1,0 +1,23 @@
+[package]
+name = "offsend-cli"
+version = "0.1.0"
+edition.workspace = true
+description = "Offsend CLI (Rust) — seal, unseal, keygen, check, sync, hook"
+license.workspace = true
+
+[[bin]]
+name = "offsend"
+path = "src/main.rs"
+
+[dependencies]
+base64 = { workspace = true }
+clap = { version = "4", features = ["derive"] }
+offsend-detect = { path = "../offsend-detect" }
+offsend-policy = { path = "../offsend-policy" }
+offsend-seal = { path = "../offsend-seal" }
+rand = { workspace = true }
+serde = { workspace = true }
+serde_json = "1"
+serde_yaml = "0.9"
+sha2 = "0.10"
+thiserror = { workspace = true }

@@ -1,0 +1,255 @@
+[
+  {
+    "id": "cursor-ignore",
+    "tool_name": "Cursor",
+    "tool": "cursor",
+    "title": ".cursorignore",
+    "relative_path_patterns": [
+      ".cursorignore"
+    ],
+    "severity": "required",
+    "scans_for_sensitive_patterns": true,
+    "remediation": "Add .cursorignore with sensitive file patterns such as .env*, *.pem, *.key, credentials.json, and secrets.json.",
+    "fix_relative_path": ".cursorignore",
+    "fix_strategy": null
+  },
+  {
+    "id": "cursor-indexing-ignore",
+    "tool_name": "Cursor",
+    "tool": "cursor",
+    "title": ".cursorindexingignore",
+    "relative_path_patterns": [
+      ".cursorindexingignore"
+    ],
+    "severity": "recommended",
+    "scans_for_sensitive_patterns": true,
+    "remediation": "Add .cursorindexingignore to exclude sensitive files from Cursor indexing.",
+    "fix_relative_path": ".cursorindexingignore",
+    "fix_strategy": null
+  },
+  {
+    "id": "cursor-project-rules",
+    "tool_name": "Cursor",
+    "tool": "cursor",
+    "title": ".cursor/rules",
+    "relative_path_patterns": [
+      ".cursor/rules/offsend_privacy.mdc",
+      ".cursor/rules/privacy.mdc"
+    ],
+    "severity": "recommended",
+    "scans_for_sensitive_patterns": false,
+    "remediation": "Add a .cursor/rules/offsend_privacy.mdc project rule that describes how AI tools should handle sensitive files.",
+    "fix_relative_path": ".cursor/rules/offsend_privacy.mdc",
+    "fix_strategy": "keepManagedContent"
+  },
+  {
+    "id": "claude-project-rules",
+    "tool_name": "Claude Code",
+    "tool": "claude",
+    "title": ".claude/rules",
+    "relative_path_patterns": [
+      ".claude/rules/offsend_privacy.md"
+    ],
+    "severity": "recommended",
+    "scans_for_sensitive_patterns": false,
+    "remediation": "Add a .claude/rules/offsend_privacy.md project rule that describes how AI tools should handle sensitive files.",
+    "fix_relative_path": ".claude/rules/offsend_privacy.md",
+    "fix_strategy": "keepManagedContent"
+  },
+  {
+    "id": "copilot-exclude",
+    "tool_name": "GitHub Copilot",
+    "tool": "copilot",
+    "title": ".aiexclude",
+    "relative_path_patterns": [
+      ".aiexclude"
+    ],
+    "severity": "recommended",
+    "scans_for_sensitive_patterns": true,
+    "remediation": "Add .aiexclude for GitHub Copilot-style exclusion patterns.",
+    "fix_relative_path": ".aiexclude",
+    "fix_strategy": null
+  },
+  {
+    "id": "continue-ignore",
+    "tool_name": "Continue",
+    "tool": "continue",
+    "title": ".continueignore",
+    "relative_path_patterns": [
+      ".continueignore"
+    ],
+    "severity": "recommended",
+    "scans_for_sensitive_patterns": true,
+    "remediation": "Add .continueignore for Continue workspace exclusions.",
+    "fix_relative_path": ".continueignore",
+    "fix_strategy": null
+  },
+  {
+    "id": "codeium-ignore",
+    "tool_name": "Windsurf / Codeium",
+    "tool": "windsurf",
+    "title": ".codeiumignore",
+    "relative_path_patterns": [
+      ".codeiumignore"
+    ],
+    "severity": "recommended",
+    "scans_for_sensitive_patterns": true,
+    "remediation": "Add .codeiumignore for Windsurf and Codeium workspace exclusions.",
+    "fix_relative_path": ".codeiumignore",
+    "fix_strategy": null
+  },
+  {
+    "id": "claude-ignore",
+    "tool_name": "Claude Code",
+    "tool": "claude",
+    "title": ".claudeignore",
+    "relative_path_patterns": [
+      ".claudeignore"
+    ],
+    "severity": "recommended",
+    "scans_for_sensitive_patterns": true,
+    "remediation": "Add .claudeignore for Claude Code workspace exclusions.",
+    "fix_relative_path": ".claudeignore",
+    "fix_strategy": null
+  },
+  {
+    "id": "gemini-ignore",
+    "tool_name": "Gemini Code Assist",
+    "tool": "gemini",
+    "title": ".geminiignore",
+    "relative_path_patterns": [
+      ".geminiignore"
+    ],
+    "severity": "recommended",
+    "scans_for_sensitive_patterns": true,
+    "remediation": "Add .geminiignore for Gemini Code Assist workspace exclusions.",
+    "fix_relative_path": ".geminiignore",
+    "fix_strategy": null
+  },
+  {
+    "id": "llm-ignore",
+    "tool_name": "LLM tools",
+    "tool": "llm",
+    "title": ".llmignore",
+    "relative_path_patterns": [
+      ".llmignore"
+    ],
+    "severity": "recommended",
+    "scans_for_sensitive_patterns": true,
+    "remediation": "Add .llmignore as a shared, tool-agnostic policy file where supported.",
+    "fix_relative_path": ".llmignore",
+    "fix_strategy": null
+  },
+  {
+    "id": "aider-ignore",
+    "tool_name": "Aider",
+    "tool": "aider",
+    "title": ".aiderignore",
+    "relative_path_patterns": [
+      ".aiderignore"
+    ],
+    "severity": "recommended",
+    "scans_for_sensitive_patterns": true,
+    "remediation": "Add .aiderignore for Aider workspace exclusions.",
+    "fix_relative_path": ".aiderignore",
+    "fix_strategy": null
+  },
+  {
+    "id": "cline-ignore",
+    "tool_name": "Cline",
+    "tool": "cline",
+    "title": ".clineignore",
+    "relative_path_patterns": [
+      ".clineignore"
+    ],
+    "severity": "recommended",
+    "scans_for_sensitive_patterns": true,
+    "remediation": "Add .clineignore for Cline workspace exclusions.",
+    "fix_relative_path": ".clineignore",
+    "fix_strategy": null
+  },
+  {
+    "id": "roo-ignore",
+    "tool_name": "Roo Code",
+    "tool": "roo",
+    "title": ".rooignore",
+    "relative_path_patterns": [
+      ".rooignore"
+    ],
+    "severity": "recommended",
+    "scans_for_sensitive_patterns": true,
+    "remediation": "Add .rooignore for Roo Code workspace exclusions.",
+    "fix_relative_path": ".rooignore",
+    "fix_strategy": null
+  },
+  {
+    "id": "zed-ignore",
+    "tool_name": "Zed",
+    "tool": "zed",
+    "title": ".zedignore",
+    "relative_path_patterns": [
+      ".zedignore"
+    ],
+    "severity": "recommended",
+    "scans_for_sensitive_patterns": true,
+    "remediation": "Add .zedignore for Zed AI assistant exclusions.",
+    "fix_relative_path": ".zedignore",
+    "fix_strategy": null
+  },
+  {
+    "id": "cody-ignore",
+    "tool_name": "Sourcegraph Cody",
+    "tool": "cody",
+    "title": ".codyignore",
+    "relative_path_patterns": [
+      ".codyignore"
+    ],
+    "severity": "recommended",
+    "scans_for_sensitive_patterns": true,
+    "remediation": "Add .codyignore for Sourcegraph Cody workspace exclusions.",
+    "fix_relative_path": ".codyignore",
+    "fix_strategy": null
+  },
+  {
+    "id": "agents-md",
+    "tool_name": "Codex / Agents",
+    "tool": null,
+    "title": "AGENTS.md",
+    "relative_path_patterns": [
+      "AGENTS.md"
+    ],
+    "severity": "informational",
+    "scans_for_sensitive_patterns": false,
+    "remediation": "Add AGENTS.md to describe how agentic tools should handle sensitive files.",
+    "fix_relative_path": null,
+    "fix_strategy": null
+  },
+  {
+    "id": "claude-md",
+    "tool_name": "Claude Code",
+    "tool": "claude",
+    "title": "CLAUDE.md",
+    "relative_path_patterns": [
+      "CLAUDE.md"
+    ],
+    "severity": "informational",
+    "scans_for_sensitive_patterns": false,
+    "remediation": "Add CLAUDE.md to give Claude Code project-specific privacy guidance.",
+    "fix_relative_path": null,
+    "fix_strategy": null
+  },
+  {
+    "id": "git-ignore",
+    "tool_name": "Git",
+    "tool": null,
+    "title": ".gitignore",
+    "relative_path_patterns": [
+      ".gitignore"
+    ],
+    "severity": "informational",
+    "scans_for_sensitive_patterns": false,
+    "remediation": ".gitignore is useful, but it should not be treated as the only AI privacy boundary.",
+    "fix_relative_path": null,
+    "fix_strategy": null
+  }
+]

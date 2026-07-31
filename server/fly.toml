@@ -1,0 +1,39 @@
+# fly.toml app configuration file generated for offsend on 2026-07-03T03:30:06Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'offsend'
+primary_region = 'fra'
+
+[build]
+  dockerfile = 'server/Dockerfile'
+
+[env]
+  CLONE_TIMEOUT_SECONDS = '120'
+  HOST = '0.0.0.0'
+  JOB_WORKERS = '2'
+  MAX_REPO_SIZE_MB = '500'
+  PORT = '8080'
+  PUBLIC_BASE_URL = 'https://check.offsend.io'
+  REPORT_STORAGE_DIR = '/data/reports'
+  REPORT_TTL_SECONDS = '172800'
+  SCAN_TIMEOUT_SECONDS = '180'
+  SCAN_WORK_DIR = '/tmp/offsend-scan'
+
+[[mounts]]
+  source = 'offsend_scan_data'
+  destination = '/data'
+  processes = ['app']
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '512mb'

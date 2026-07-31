@@ -1,13 +1,33 @@
 .DS_Store
 Derived/
+**/Derived/
 Tuist/.build/
 Tuist/Dependencies/
+**/Tuist/.build/
+**/Tuist/Dependencies/
 *.xcodeproj
 *.xcworkspace
 build/
+**/build/
 .build/
+**/.build/
 *.xcarchive
 *.dmg
+
+# Rust CLI (repo root)
+/target/
+**/target/
+
+# Rust FFI staticlib for macOS app (built by scripts/ffi/build.sh)
+apps/macos/Vendor/OffsendFFI/liboffsend_ffi.a
+apps/macos/Vendor/OffsendFFI/offsend_ffi.h
+apps/macos/Vendor/OffsendFFI/module.modulemap
+
+# macOS app tree
+apps/macos/Derived/
+apps/macos/build/
+apps/macos/.build/
+
 
 # Internal documentation (local only; not published with the repo)
 internal-docs/

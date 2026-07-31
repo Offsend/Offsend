@@ -1,0 +1,17 @@
+[package]
+name = "offsend-seal"
+version = "0.1.0"
+edition.workspace = true
+description = "Reversible {{TYPE:v1.…}} seal tokens (AES-256-GCM), Swift SealEngine compatible"
+license.workspace = true
+
+[dependencies]
+aes-gcm = { workspace = true }
+base64 = { workspace = true }
+rand = { workspace = true }
+regex = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+serde_json = "1"
+hex = "0.4"

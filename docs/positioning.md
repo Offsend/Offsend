@@ -1,6 +1,7 @@
 # Positioning
 
 Internal framing for product copy, docs, and posts. Not a feature list.
+Durable product north star: [`../VISION.md`](../VISION.md).
 
 ## Job to be done
 

@@ -24,8 +24,21 @@ Config references (do not commit the full catalog as-is):
 ```bash
 offsend show
 offsend protect    # promote required exposures into .offsend.yml + sync ignores
-offsend sync       # ignore files + git / AI-editor hooks
+offsend sync       # ignore files + git / AI-editor hooks (hooks.enabled defaults true)
 ```
+
+With `hooks.enabled: true` (default), `offsend doctor` and CI `check --policy` **fail** until hooks are installed — so teammates cannot silently skip `sync`.
+
+Recommended git hooks in `.offsend.yml`:
+
+```yaml
+hooks:
+  enabled: true
+  git: [pre-commit, post-merge]   # pre-commit = check --staged; post-merge = sync after pull
+  publish: false
+```
+
+`post-merge` keeps every clone aligned after someone else changes `.offsend.yml`.
 
 ### Optional: MCP response seal + field rules (Cursor / Claude)
 
@@ -93,7 +106,7 @@ offsend sync
 offsend doctor
 ```
 
-`sync` materializes ignore files and installs hooks from the committed policy. No need to copy per-editor ignore rules by hand.
+`sync` materializes ignore files and installs hooks from the committed policy (`hooks.enabled` / `hooks.git` + AI-editor gates). No need to copy per-editor ignore rules by hand. With `post-merge` in `hooks.git`, later pulls that change `.offsend.yml` re-run `sync` automatically.
 
 ### Optional: OS sandbox
 
@@ -109,10 +122,11 @@ sandbox:
 
 ```bash
 brew install nono    # recommended for Claude Code / Codex; skipped if absent
+nono pull nolabs-ai/claude   # registry profile claude-code — https://nono.sh/registry
 offsend sync && offsend doctor
 ```
 
-Offsend writes editor/nono config and verifies it; for nono you still start the agent with the printed `nono run …` command. Details: [configuration → sandbox](configuration.md#sandbox).
+Offsend writes editor/nono config and verifies it; start the agent with `offsend run claude` (or the printed `nono run …`). Details: [configuration → sandbox](configuration.md#sandbox), [cli → run](cli.md#offsend-run).
 
 After reviewing the committed `.offsend.yml`, explicitly trust it for editor gates:
 

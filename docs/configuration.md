@@ -65,7 +65,8 @@ ignore:
   patterns: []
 
 hooks:
-  type: pre-commit
+  enabled: true
+  git: [pre-commit]      # optional: add post-merge
   fail_on: block
   policy: false
   publish: false
@@ -270,9 +271,30 @@ Invalid patterns and unknown kinds are ignored. Entries merge with dictionaries 
 
 Separate from git hooks. See [cli.md — AI editor hooks](cli.md#ai-editor-hooks) (including [what hooks cover / do not cover](cli.md#what-hooks-cover)) and [`offsend hook install --target …`](cli.md#hook-install).
 
-### `hooks.type`
+### `hooks.enabled`
 
-Git hook type to install. Currently supported: `pre-commit`.
+Whether this project expects git + AI-editor hooks. **Default `true`** when unset (including when the `hooks` section is absent).
+
+| Value | `offsend sync` | `doctor` / `check --policy` |
+| --- | --- | --- |
+| `true` (default) | Installs [`hooks.git`](#hooksgit) + detected AI-editor hooks | **Fail** if configured git hooks or detected AI-editor hooks are missing / not Offsend-managed |
+| `false` | Skips hook install (same effect as `--no-hooks` for the hooks half) | Does not fail for missing hooks |
+
+Commit `hooks.enabled: true` (or rely on the default) so every teammate gets the same gate coverage after `offsend sync`. Set `false` only when the repo intentionally does not use hooks.
+
+### `hooks.git`
+
+Which **git** hooks to install (AI-editor hooks are separate and still follow `hooks.enabled`):
+
+| Value | Behavior |
+| --- | --- |
+| unset | Default `[pre-commit]` |
+| `[pre-commit]` | `offsend check --staged` before commit |
+| `[post-merge]` | `offsend sync` after `git pull` / merge (refresh ignore files + hooks from `.offsend.yml`) |
+| `[pre-commit, post-merge]` | Both |
+| `[]` | No git hooks (AI-editor hooks still install when `enabled: true`) |
+
+Legacy: `type: pre-commit` is accepted as a single-value alias for `git: [pre-commit]`.
 
 ### `hooks.fail_on`
 
@@ -393,6 +415,7 @@ Optional OS sandbox for agent commands — the layer hooks cannot reach. Hooks s
 ```yaml
 sandbox:
   enabled: true
+  provider: nono          # → sandbox.nono.yml
   network:
     default: deny         # or allow (requires trusted policy)
     allow: []             # domains reachable despite default: deny
@@ -403,8 +426,26 @@ sandbox:
 | `enabled` | `true` → `offsend sync` materializes sandbox config per detected editor. Unset / `false` → no sandbox |
 | `network.default` | `deny` (default when unset) or `allow` |
 | `network.allow` | Domains still reachable under `default: deny` |
+| `provider` | Catalog name (`nono`) or a **safe** overlay map (`ensure` / `packs` / `install_hint` only) |
 
-No mechanism name in the YAML (same idea as `ignore.patterns` vs `.cursorignore`). Offsend picks one per editor; `doctor` prints the choice and what it actually reaches.
+#### Sandbox provider catalog
+
+Providers are files `sandbox.<name>.yml`. Lookup order:
+
+1. Project: `.offsend/sandbox.<name>.yml` — **custom names only**, and only after `offsend policy trust`. Shipped ids (`nono`) **ignore** project drop-ins.  
+2. Global: macOS `~/Library/Application Support/Offsend/sandbox.<name>.yml`, Linux `$XDG_CONFIG_HOME/offsend/sandbox.<name>.yml`  
+3. Shipped: embedded (`sandbox.nono.yml`; default from `sandbox.yml`)
+
+Share a custom sandbox by dropping the yml in **global** (no trust needed) or in `.offsend/` after review + `offsend policy trust`.
+
+AI / trust hardening:
+
+- `sandbox.enabled: false`, `network.default: allow`, and non-empty `network.allow` apply only when the policy is trusted; otherwise Offsend keeps the sandbox on / egress denied.  
+- `ensure: none` in a project overlay is ignored until trust.  
+- Trust snapshots hash `.offsend.yml` **and** the project provider file when present.  
+- Exec fields (`binary`, `run_args`, `pack_install`) in `.offsend.yml` are ignored.
+
+`pack_install.args` is argv-only (no shell). Default `ensure: check`.
 
 `enabled: true` tightens and applies without a trusted policy. `enabled: false`, `network.default: allow`, and `network.allow` loosen — ignored until `offsend policy trust`. An agent editing `.offsend.yml` cannot switch off its own sandbox or authorize its own egress.
 
@@ -424,12 +465,14 @@ For Claude / Codex, install nono yourself when you want the stronger path:
 ```bash
 brew install nono
 # or: curl -fsSL https://nono.sh/install.sh | sh
+nono pull nolabs-ai/claude   # registry pack → profile claude-code
+# nono pull nolabs-ai/codex  # when using Codex
 offsend sync
 ```
 
 Limits:
 
-- Offsend **writes** a nono profile under `.offsend/nono/` and prints `nono run …`; it cannot wrap an already-running agent.
+- Offsend **writes** a nono profile under `.offsend/nono/` (extends registry base `claude-code` / `codex`) and prints `offsend run …`. Install the pack first (`nono pull nolabs-ai/claude` — see https://nono.sh/registry); `doctor` / `offsend run` fail if it is missing. Offsend cannot wrap an already-running agent.
 - Cursor sandboxes per command; outside-workspace commands may run unsandboxed. With `sandbox.enabled: true`, the shell-gate follows `context.shell.mode` when the editor reports unsandboxed.
 - Basename globs in `ignore.patterns` (`*.pem`) are not sandbox paths — `doctor` lists them; name a directory instead.
 - `check --policy` / `doctor` fail on drift and on configs that keep a sandbox “on” while removing its point: Cursor `insecure_none`, Claude `allowUnsandboxedCommands: true` / `filesystem.disabled: true`, Codex `sandbox_mode = "danger-full-access"`.
@@ -441,6 +484,7 @@ Limits:
 | Surface | Storage |
 | --- | --- |
 | Project rules | `.offsend.yml` in the repo |
+| Sandbox providers | `sandbox.<name>.yml` (+ `sandbox.yml` default) under Application Support / `$XDG_CONFIG_HOME/offsend` |
 | macOS app | Keychain + Application Support |
 | CLI on macOS | Same as the app (Application Support / Keychain) |
 | CLI on Linux | Plain JSON under `$XDG_CONFIG_HOME/offsend` (typically `~/.config/offsend`) |
