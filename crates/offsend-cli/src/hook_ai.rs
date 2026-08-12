@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 pub const AI_MARKER: &str = "offsend-managed-ai-hook";
-pub const AI_VERSION: u32 = 7;
+pub const AI_VERSION: u32 = 8;
 
 const CLAUDE_WRITE_MATCHER: &str = "Edit|MultiEdit|NotebookEdit|Write";
 const CLAUDE_MCP_MATCHER: &str = "mcp__.*";
@@ -61,7 +61,7 @@ impl AiTarget {
     }
 
     fn supports_file_gates(self) -> bool {
-        matches!(self, Self::Cursor | Self::Claude)
+        matches!(self, Self::Cursor | Self::Claude | Self::Windsurf)
     }
 }
 
@@ -147,12 +147,7 @@ pub fn install(
     let prompt_cmd = wrapper_command(
         cli_path,
         target.as_str(),
-        &[
-            "--hook-policy",
-            hook_policy,
-            "--secrets-only",
-            "--no-notify",
-        ],
+        &["--hook-policy", hook_policy, "--no-notify"],
     );
 
     let file_gates = target.supports_file_gates();
@@ -193,7 +188,18 @@ pub fn install(
             enable_mcp,
             enable_mcp_response,
         )?,
-        AiTarget::Windsurf => merge_windsurf(&mut root, &prompt_cmd)?,
+        AiTarget::Windsurf => merge_windsurf(
+            &mut root,
+            &prompt_cmd,
+            cli_path,
+            enable_read,
+            enable_write,
+            enable_artifact,
+            enable_shell,
+            enable_shell_audit,
+            enable_mcp,
+            enable_mcp_response,
+        )?,
         AiTarget::Codex => merge_codex(&mut root, &prompt_cmd)?,
     }
 
@@ -267,7 +273,7 @@ fn merge_cursor(
         wrapper_command(
             cli_path,
             "cursor",
-            &["--grep-gate", "--secrets-only", "--no-notify"],
+            &["--grep-gate", "--no-notify"],
         )
     });
     set_cursor_event(
@@ -293,7 +299,7 @@ fn merge_cursor(
         wrapper_command(
             cli_path,
             "cursor",
-            &["--subagent-gate", "--secrets-only", "--no-notify"],
+            &["--subagent-gate", "--no-notify"],
         )
     });
     set_cursor_event(
@@ -331,7 +337,7 @@ fn merge_cursor(
         wrapper_command(
             cli_path,
             "cursor",
-            &["--shell-audit", "--secrets-only", "--no-notify"],
+            &["--shell-audit", "--no-notify"],
         )
     });
     set_cursor_event(
@@ -346,7 +352,7 @@ fn merge_cursor(
         wrapper_command(
             cli_path,
             "cursor",
-            &["--mcp-gate", "--secrets-only", "--no-notify"],
+            &["--mcp-gate", "--no-notify"],
         )
     });
     set_cursor_event(
@@ -364,7 +370,7 @@ fn merge_cursor(
         wrapper_command(
             cli_path,
             "cursor",
-            &["--mcp-response-gate", "--secrets-only", "--no-notify"],
+            &["--mcp-response-gate", "--no-notify"],
         )
     });
     set_cursor_event(
@@ -428,7 +434,7 @@ fn merge_claude(
         let cmd = wrapper_command(
             cli_path,
             "claude",
-            &["--mcp-gate", "--secrets-only", "--no-notify"],
+            &["--mcp-gate", "--no-notify"],
         );
         tool_groups.push(claude_command_group(&cmd, Some(CLAUDE_MCP_MATCHER)));
     }
@@ -443,7 +449,7 @@ fn merge_claude(
         let cmd = wrapper_command(
             cli_path,
             "claude",
-            &["--mcp-response-gate", "--secrets-only", "--no-notify"],
+            &["--mcp-response-gate", "--no-notify"],
         );
         post_groups.push(claude_command_group(&cmd, Some(CLAUDE_MCP_MATCHER)));
     }
@@ -455,7 +461,7 @@ fn merge_claude(
         let cmd = wrapper_command(
             cli_path,
             "claude",
-            &["--shell-audit", "--secrets-only", "--no-notify"],
+            &["--shell-audit", "--no-notify"],
         );
         post_groups.push(claude_command_group(&cmd, Some("Bash")));
     }
@@ -471,7 +477,18 @@ fn merge_claude(
     Ok(())
 }
 
-fn merge_windsurf(root: &mut Value, prompt_cmd: &str) -> Result<(), AiHookError> {
+fn merge_windsurf(
+    root: &mut Value,
+    prompt_cmd: &str,
+    cli_path: &str,
+    enable_read: bool,
+    enable_write: bool,
+    enable_artifact: bool,
+    enable_shell: bool,
+    enable_shell_audit: bool,
+    enable_mcp: bool,
+    enable_mcp_response: bool,
+) -> Result<(), AiHookError> {
     let hooks = root
         .as_object_mut()
         .ok_or_else(|| AiHookError::Message("invalid hooks.json".into()))?
@@ -481,23 +498,95 @@ fn merge_windsurf(root: &mut Value, prompt_cmd: &str) -> Result<(), AiHookError>
         .as_object_mut()
         .ok_or_else(|| AiHookError::Message("invalid hooks object".into()))?;
 
-    let event = "pre_user_prompt";
-    let mut entries = hooks_obj
+    set_windsurf_event(hooks_obj, "pre_user_prompt", Some(prompt_cmd), true);
+
+    let read = enable_read.then(|| {
+        wrapper_command(cli_path, "windsurf", &["--read-gate", "--no-notify"])
+    });
+    set_windsurf_event(hooks_obj, "pre_read_code", read.as_deref(), false);
+
+    let write = enable_write.then(|| {
+        wrapper_command(cli_path, "windsurf", &["--write-gate", "--no-notify"])
+    });
+    set_windsurf_event(hooks_obj, "pre_write_code", write.as_deref(), false);
+
+    let artifact = enable_artifact.then(|| {
+        wrapper_command(
+            cli_path,
+            "windsurf",
+            &["--artifact-audit", "--no-notify"],
+        )
+    });
+    set_windsurf_event(hooks_obj, "post_write_code", artifact.as_deref(), false);
+
+    let shell = enable_shell.then(|| {
+        wrapper_command(cli_path, "windsurf", &["--shell-gate", "--no-notify"])
+    });
+    set_windsurf_event(hooks_obj, "pre_run_command", shell.as_deref(), false);
+
+    let shell_audit = enable_shell_audit.then(|| {
+        wrapper_command(
+            cli_path,
+            "windsurf",
+            &["--shell-audit", "--no-notify"],
+        )
+    });
+    set_windsurf_event(
+        hooks_obj,
+        "post_run_command",
+        shell_audit.as_deref(),
+        false,
+    );
+
+    let mcp = enable_mcp.then(|| {
+        wrapper_command(cli_path, "windsurf", &["--mcp-gate", "--no-notify"])
+    });
+    set_windsurf_event(hooks_obj, "pre_mcp_tool_use", mcp.as_deref(), false);
+
+    let mcp_resp = enable_mcp_response.then(|| {
+        wrapper_command(
+            cli_path,
+            "windsurf",
+            &["--mcp-response-gate", "--no-notify"],
+        )
+    });
+    set_windsurf_event(
+        hooks_obj,
+        "post_mcp_tool_use",
+        mcp_resp.as_deref(),
+        false,
+    );
+
+    root.as_object_mut()
+        .unwrap()
+        .insert("_offsend".into(), managed_meta("pre_user_prompt"));
+    Ok(())
+}
+
+/// Adds/refreshes a managed Windsurf gate, or removes it when `command` is None.
+fn set_windsurf_event(
+    hooks: &mut Map<String, Value>,
+    event: &str,
+    command: Option<&str>,
+    show_output: bool,
+) {
+    let mut entries = hooks
         .get(event)
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
     entries.retain(|e| !is_managed_entry(e));
-    entries.push(json!({
-        "command": prompt_cmd,
-        "show_output": true
-    }));
-    hooks_obj.insert(event.into(), Value::Array(entries));
-
-    root.as_object_mut()
-        .unwrap()
-        .insert("_offsend".into(), managed_meta(event));
-    Ok(())
+    if let Some(command) = command {
+        entries.push(json!({
+            "command": command,
+            "show_output": show_output
+        }));
+        hooks.insert(event.into(), Value::Array(entries));
+    } else if entries.is_empty() {
+        hooks.remove(event);
+    } else {
+        hooks.insert(event.into(), Value::Array(entries));
+    }
 }
 
 fn merge_codex(root: &mut Value, prompt_cmd: &str) -> Result<(), AiHookError> {
@@ -702,11 +791,18 @@ fn load_json(path: &Path) -> Option<Value> {
     serde_json::from_str(&data).ok()
 }
 
-fn write_json(path: &Path, value: &Value) -> Result<(), AiHookError> {
-    let text =
+/// Writes only when the serialized JSON differs from what is on disk, so a
+/// repeated `offsend sync` is a no-op (no mtime churn, no editor-settings
+/// rewrite). Returns whether the file was written.
+fn write_json(path: &Path, value: &Value) -> Result<bool, AiHookError> {
+    let mut text =
         serde_json::to_string_pretty(value).map_err(|e| AiHookError::Message(e.to_string()))?;
-    fs::write(path, text + "\n").map_err(|e| AiHookError::Message(e.to_string()))?;
-    Ok(())
+    text.push('\n');
+    if fs::read_to_string(path).is_ok_and(|current| current == text) {
+        return Ok(false);
+    }
+    fs::write(path, text).map_err(|e| AiHookError::Message(e.to_string()))?;
+    Ok(true)
 }
 
 fn shell_quote(value: &str) -> String {
@@ -717,5 +813,93 @@ fn shell_quote(value: &str) -> String {
         value.to_string()
     } else {
         format!("'{}'", value.replace('\'', "'\\''"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn tmp_repo() -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("offsend-windsurf-hooks-{nanos}"));
+        fs::create_dir_all(dir.join(".windsurf")).unwrap();
+        dir
+    }
+
+    #[test]
+    fn windsurf_install_writes_file_gates() {
+        let repo = tmp_repo();
+        let path = install(
+            AiTarget::Windsurf,
+            &repo,
+            "/usr/local/bin/offsend",
+            "soft-block",
+            &GateOptions::default(),
+        )
+        .unwrap();
+        let root: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        let hooks = root.get("hooks").and_then(|h| h.as_object()).unwrap();
+        for event in [
+            "pre_user_prompt",
+            "pre_read_code",
+            "pre_write_code",
+            "post_write_code",
+            "pre_run_command",
+            "post_run_command",
+            "pre_mcp_tool_use",
+            "post_mcp_tool_use",
+        ] {
+            assert!(
+                hooks.get(event).and_then(|v| v.as_array()).is_some_and(|a| {
+                    a.iter().any(is_managed_entry)
+                }),
+                "missing managed hook for {event}"
+            );
+        }
+        assert_eq!(
+            root.pointer("/_offsend/version").and_then(|v| v.as_u64()),
+            Some(AI_VERSION as u64)
+        );
+        let _ = fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn install_is_idempotent() {
+        let repo = tmp_repo();
+        let path = install(
+            AiTarget::Windsurf,
+            &repo,
+            "/usr/local/bin/offsend",
+            "soft-block",
+            &GateOptions::default(),
+        )
+        .unwrap();
+        let first = fs::read_to_string(&path).unwrap();
+        let root: Value = serde_json::from_str(&first).unwrap();
+        assert!(
+            !write_json(&path, &root).unwrap(),
+            "identical content must not be rewritten"
+        );
+        install(
+            AiTarget::Windsurf,
+            &repo,
+            "/usr/local/bin/offsend",
+            "soft-block",
+            &GateOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), first);
+        let _ = fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn windsurf_supports_file_gates() {
+        assert!(AiTarget::Windsurf.supports_file_gates());
+        assert!(!AiTarget::Codex.supports_file_gates());
     }
 }

@@ -126,6 +126,34 @@ public extension AIWorkspacePrivacyRule {
             )
         ),
         AIWorkspacePrivacyRule(
+            id: "devin-ignore",
+            toolName: "Windsurf / Codeium",
+            tool: .windsurf,
+            title: ".devinignore",
+            relativePathPatterns: [".devinignore"],
+            severity: .recommended,
+            scansForSensitivePatterns: true,
+            remediation: "Add .devinignore for Windsurf / Devin Desktop indexing exclusions.",
+            fix: AIWorkspacePrivacyFileFix(
+                relativePath: ".devinignore",
+                contents: AIWorkspacePrivacyIgnoreTemplate.contents
+            )
+        ),
+        AIWorkspacePrivacyRule(
+            id: "windsurf-ignore",
+            toolName: "Windsurf / Codeium",
+            tool: .windsurf,
+            title: ".windsurfignore",
+            relativePathPatterns: [".windsurfignore"],
+            severity: .recommended,
+            scansForSensitivePatterns: true,
+            remediation: "Add .windsurfignore for Windsurf agent file-access exclusions.",
+            fix: AIWorkspacePrivacyFileFix(
+                relativePath: ".windsurfignore",
+                contents: AIWorkspacePrivacyIgnoreTemplate.contents
+            )
+        ),
+        AIWorkspacePrivacyRule(
             id: "claude-ignore",
             toolName: "Claude Code",
             tool: .claude,
@@ -234,6 +262,20 @@ public extension AIWorkspacePrivacyRule {
             remediation: "Add .codyignore for Sourcegraph Cody workspace exclusions.",
             fix: AIWorkspacePrivacyFileFix(
                 relativePath: ".codyignore",
+                contents: AIWorkspacePrivacyIgnoreTemplate.contents
+            )
+        ),
+        AIWorkspacePrivacyRule(
+            id: "codex-ignore",
+            toolName: "Codex",
+            tool: .codex,
+            title: ".codexignore",
+            relativePathPatterns: [".codexignore"],
+            severity: .recommended,
+            scansForSensitivePatterns: true,
+            remediation: "Add .codexignore for Codex workspace exclusions.",
+            fix: AIWorkspacePrivacyFileFix(
+                relativePath: ".codexignore",
                 contents: AIWorkspacePrivacyIgnoreTemplate.contents
             )
         ),

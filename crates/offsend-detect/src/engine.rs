@@ -42,7 +42,48 @@ static COMPILED: Lazy<Vec<(RuleMeta, Regex)>> = Lazy::new(|| {
 
 pub struct DetectionEngine;
 
+/// Result of [`DetectionEngine::scan_including_encoded`].
+pub struct EncodedScan {
+    pub entities: Vec<SensitiveEntity>,
+    /// The decode probe hit its safety budget; callers must fail closed
+    /// (deny / withhold) rather than trust a partial scan.
+    pub budget_exceeded: bool,
+}
+
 impl DetectionEngine {
+    /// Scan `text`, and additionally decode opaque base64/hex blobs and scan the
+    /// decoded payloads, so a critical secret hidden by `| base64` still
+    /// surfaces. A secret found inside a blob is reported against the blob's
+    /// byte range in the original text (so redaction/sealing covers the encoded
+    /// run). High-entropy hits inside decoded bytes are ignored to avoid noise.
+    pub fn scan_including_encoded(text: &str) -> EncodedScan {
+        let base = Self::scan(&DetectionRequest::new(text.to_string()));
+        let mut entities = base.entities;
+        let extraction = crate::encoded::extract(text);
+        for blob in &extraction.blobs {
+            let inner = Self::scan(&DetectionRequest::new(blob.decoded.clone()));
+            if let Some(secret) = inner
+                .entities
+                .iter()
+                .find(|e| e.entity_type.counts_as_critical_secret())
+            {
+                entities.push(SensitiveEntity {
+                    id: uuid::Uuid::new_v4(),
+                    entity_type: secret.entity_type,
+                    start: blob.start,
+                    end: blob.end,
+                    value: text.get(blob.start..blob.end).unwrap_or("").to_string(),
+                    confidence: secret.confidence,
+                    source: secret.source,
+                });
+            }
+        }
+        EncodedScan {
+            entities,
+            budget_exceeded: extraction.budget_exceeded,
+        }
+    }
+
     pub fn scan(request: &DetectionRequest) -> DetectionResult {
         let text = &request.text;
         let was_truncated = text.chars().count() > request.options.maximum_length;

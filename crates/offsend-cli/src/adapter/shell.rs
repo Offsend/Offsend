@@ -21,7 +21,10 @@ pub fn run(
     project_root: Option<&std::path::Path>,
     sandbox_required: bool,
 ) -> ExitCode {
-    if !matches!(adapter, Adapter::Cursor | Adapter::Claude) {
+    if !matches!(
+        adapter,
+        Adapter::Cursor | Adapter::Claude | Adapter::Windsurf
+    ) {
         return render::permission_response(adapter, Permission::Allow, None, None);
     }
     let mode = match shell_mode.unwrap_or("deny") {
@@ -53,7 +56,10 @@ pub fn run(
             "Offsend: unrecognized shell-gate hook input denied.",
         );
     };
-    let cwd = root.get("cwd").and_then(|v| v.as_str());
+    let cwd = root
+        .get("cwd")
+        .and_then(|v| v.as_str())
+        .or_else(|| root.pointer("/tool_info/cwd").and_then(|v| v.as_str()));
 
     let mut deny = false;
     let mut ask = false;
@@ -233,6 +239,11 @@ fn extract_command<'a>(root: &'a Value, adapter: Adapter) -> Option<&'a str> {
             .pointer("/tool_input/command")
             .or_else(|| root.get("command"))
             .and_then(|v| v.as_str()),
+        Adapter::Windsurf => root
+            .pointer("/tool_info/command_line")
+            .or_else(|| root.pointer("/tool_info/command"))
+            .or_else(|| root.get("command"))
+            .and_then(|v| v.as_str()),
         _ => None,
     }
 }
@@ -302,8 +313,11 @@ fn git_config_sensitive(command: &str) -> Option<&'static str> {
             return Some("core.editor");
         }
     }
-    // any other `git config` without a read flag is treated as a mutation attempt
-    Some("git-config")
+    // Ordinary settings (`user.email`, `pull.rebase`, …) are allowed per docs;
+    // only execution-sensitive keys above are blocked. Blanket-denying every
+    // `git config` mutation blocked routine agent setup and caused users to
+    // disable the gate.
+    None
 }
 
 fn env_poisoning(command: &str) -> Option<String> {
@@ -325,24 +339,46 @@ fn env_poisoning(command: &str) -> Option<String> {
         "GIT_EDITOR",
         "SSH_ASKPASS",
     ];
-    let upper = command.to_ascii_uppercase();
-    for var in HARD {
-        if upper.contains(&format!("{var}=")) {
-            return Some((*var).to_string());
+    // Match only real `VAR=…` assignment tokens, not substrings of the whole
+    // command. Substring matching flagged benign commands (`mkdir BUILD_DIR`,
+    // `WORLD_SIZE`, `echo "PATH=/x"`) and drove users to disable the gate.
+    for var in assigned_env_vars(command) {
+        let upper = var.to_ascii_uppercase();
+        if HARD.iter().any(|h| upper == *h) {
+            return Some(var);
+        }
+        if upper.starts_with("LD_") || upper.starts_with("DYLD_") || upper.starts_with("GIT_CONFIG_")
+        {
+            return Some("loader/git-config env".into());
+        }
+        // Any PATH= override can redirect which binaries run next.
+        if upper == "PATH" {
+            return Some("PATH".into());
         }
     }
-    if upper.contains("DYLD_") || upper.contains("LD_") || upper.contains("GIT_CONFIG_") {
-        return Some("loader/git-config env".into());
-    }
-    // Any PATH= override can redirect which binaries run next.
-    if shell_tokens(command)
-        .iter()
-        .any(|t| t.starts_with("PATH=") || t.starts_with("path="))
-        || command.contains("PATH=")
-    {
-        return Some("PATH".into());
-    }
     None
+}
+
+/// Variable names from `VAR=value` assignment tokens (covers leading assignments,
+/// `env VAR=…`, and `export VAR=…`). Quoted data like `"PATH=/x"` never matches
+/// because the leading quote is not a valid identifier start.
+fn assigned_env_vars(command: &str) -> Vec<String> {
+    shell_tokens(command)
+        .into_iter()
+        .filter_map(|t| {
+            let name = t.split_once('=')?.0;
+            let mut chars = name.chars();
+            let first = chars.next()?;
+            if !(first.is_ascii_alphabetic() || first == '_') {
+                return None;
+            }
+            if chars.all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                Some(name.to_string())
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 fn privileged_daemon(command: &str) -> Option<String> {
@@ -538,5 +574,37 @@ mod tests {
             &["fixtures/".into()],
             std::path::Path::new("/tmp/proj"),
         ));
+    }
+
+    #[test]
+    fn env_poisoning_matches_only_assignments() {
+        // Benign commands that merely contain LD_/PATH substrings are allowed.
+        assert!(env_poisoning("mkdir BUILD_DIR").is_none());
+        assert!(env_poisoning("echo hello WORLD_SIZE done").is_none());
+        assert!(env_poisoning("rm -rf OLD_BACKUP").is_none());
+        assert!(env_poisoning(r#"echo "PATH=/malicious""#).is_none());
+        // Real environment assignments are still blocked.
+        assert_eq!(
+            env_poisoning("env LD_PRELOAD=/tmp/x.so ls").as_deref(),
+            Some("LD_PRELOAD")
+        );
+        assert_eq!(
+            env_poisoning("LD_LIBRARY_PATH=/tmp ls").as_deref(),
+            Some("loader/git-config env")
+        );
+        assert_eq!(env_poisoning("PATH=/tmp/bin ls").as_deref(), Some("PATH"));
+        assert_eq!(
+            env_poisoning("BASH_ENV=/tmp/rc bash").as_deref(),
+            Some("BASH_ENV")
+        );
+    }
+
+    #[test]
+    fn git_config_allows_ordinary_settings() {
+        assert!(git_config_sensitive("git config user.email dev@corp.com").is_none());
+        assert!(git_config_sensitive("git config pull.rebase true").is_none());
+        // Execution-sensitive keys stay blocked.
+        assert!(git_config_sensitive("git config core.hookspath /tmp/hooks").is_some());
+        assert!(git_config_sensitive("git config credential.helper store").is_some());
     }
 }

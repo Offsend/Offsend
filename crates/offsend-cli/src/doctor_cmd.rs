@@ -106,6 +106,42 @@ pub fn run(args: DoctorArgs) -> Result<ExitCode, String> {
         suggestions.push("Create .offsend.yml then run: offsend sync".into());
     }
 
+    // Config lint: serde silently ignores unknown keys, so a typo like
+    // `fail-on:` disables the setting with no signal — surface it here.
+    if let Some(path) = &config_path {
+        if let Ok(raw) = std::fs::read_to_string(path) {
+            for finding in offsend_policy::lint_unknown_keys(&raw) {
+                checks.push(CheckOut {
+                    name: "config-lint".into(),
+                    status: "warn".into(),
+                    message: finding,
+                });
+            }
+        }
+    }
+    if let Some(cfg) = &config {
+        if let Some(ignore) = &cfg.ignore {
+            for slug in ignore.unknown_tool_slugs() {
+                checks.push(CheckOut {
+                    name: "config-lint".into(),
+                    status: "warn".into(),
+                    message: format!("ignore.tools: unknown tool `{slug}`"),
+                });
+            }
+        }
+        if let Some(hooks) = &cfg.hooks {
+            for name in hooks.unknown_git_hooks() {
+                checks.push(CheckOut {
+                    name: "config-lint".into(),
+                    status: "warn".into(),
+                    message: format!(
+                        "hooks.git: unsupported hook `{name}` (supported: pre-commit, post-merge)"
+                    ),
+                });
+            }
+        }
+    }
+
     // seal key
     let key_path = dirs_home().join(".offsend/seal.key");
     let env_key = std::env::var_os("OFFSEND_SEAL_KEY").is_some();

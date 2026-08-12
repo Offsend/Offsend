@@ -107,7 +107,7 @@ When `false` (default), ignore-file sync keeps AI ignore files (`.cursorignore`,
 
 Optional list of tool slugs narrowing which AI tools get managed ignore and rule files. When absent (default), Offsend creates files for every supported tool — you rarely control which editor a teammate opens the repo with, so the default is defense in depth.
 
-Supported slugs: `cursor`, `claude`, `copilot`, `continue`, `windsurf`, `gemini`, `llm`, `aider`, `cline`, `roo`, `zed`, `cody`. Unknown slugs are reported by `offsend doctor` and ignored; if no valid slug remains, all tools are used.
+Supported slugs: `cursor`, `claude`, `copilot`, `continue`, `windsurf`, `gemini`, `llm`, `aider`, `cline`, `roo`, `zed`, `cody`, `codex`. Unknown slugs are reported by `offsend doctor` and ignored; if no valid slug remains, all tools are used.
 
 ```yaml
 ignore:

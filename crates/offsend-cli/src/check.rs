@@ -48,10 +48,15 @@ pub struct CheckArgs {
     #[arg(long)]
     pub quiet: bool,
 
-    /// Only report critical secret-shaped findings (excludes high-entropy). Default on.
-    #[arg(long = "secrets-only", default_value_t = true)]
-    #[arg(long = "no-secrets-only", action = clap::ArgAction::SetFalse)]
+    /// Only report critical secret-shaped findings (excludes high-entropy).
+    /// Secrets-only filtering is the default; this flag is accepted for
+    /// backward compatibility and conflicts with `--no-secrets-only`.
+    #[arg(long = "secrets-only", default_value_t = false, conflicts_with = "no_secrets_only")]
     pub secrets_only: bool,
+
+    /// Include non-secret detectors (e.g. high-entropy).
+    #[arg(long = "no-secrets-only", default_value_t = false)]
+    pub no_secrets_only: bool,
 
     /// With --stdin: print secret-gate JSON instead of the risk report.
     #[arg(long = "gate-secrets", default_value_t = false)]
@@ -114,6 +119,13 @@ pub struct CheckArgs {
 
     #[arg(long = "grep-gate", default_value_t = false, hide = true)]
     pub grep_gate: bool,
+}
+
+impl CheckArgs {
+    /// Secrets-only filtering is on by default; `--no-secrets-only` disables it.
+    fn secrets_only_enabled(&self) -> bool {
+        !self.no_secrets_only
+    }
 }
 
 #[derive(Debug, Error)]
@@ -245,7 +257,7 @@ pub fn run(args: CheckArgs) -> Result<ExitCode, CheckError> {
         return crate::adapter::run(crate::adapter::AdapterFlags {
             adapter,
             hook_policy,
-            secrets_only: args.secrets_only,
+            secrets_only: args.secrets_only_enabled(),
             seal_copy: args.seal_copy,
             key_file: args.key_file.clone(),
             key_name: args.key_name.clone(),
@@ -343,7 +355,7 @@ pub fn run(args: CheckArgs) -> Result<ExitCode, CheckError> {
         collect_findings(
             "stdin",
             &text,
-            args.secrets_only,
+            args.secrets_only_enabled(),
             &detection_options,
             &dictionaries,
             &mut findings,
@@ -403,7 +415,7 @@ pub fn run(args: CheckArgs) -> Result<ExitCode, CheckError> {
             collect_findings(
                 &rel,
                 &text,
-                args.secrets_only,
+                args.secrets_only_enabled(),
                 &detection_options,
                 &dictionaries,
                 &mut findings,
@@ -425,7 +437,7 @@ pub fn run(args: CheckArgs) -> Result<ExitCode, CheckError> {
                     scan_file(
                         &entry,
                         &cwd,
-                        args.secrets_only,
+                        args.secrets_only_enabled(),
                         &detection_options,
                         &dictionaries,
                         args.verbose,
@@ -438,7 +450,7 @@ pub fn run(args: CheckArgs) -> Result<ExitCode, CheckError> {
                     scan_file(
                         &path,
                         &cwd,
-                        args.secrets_only,
+                        args.secrets_only_enabled(),
                         &detection_options,
                         &dictionaries,
                         args.verbose,
@@ -1025,4 +1037,30 @@ fn preview(value: &str) -> String {
         chars.push('…');
     }
     chars
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[derive(Debug, Parser)]
+    #[command(name = "check")]
+    struct Wrap {
+        #[command(flatten)]
+        args: CheckArgs,
+    }
+
+    #[test]
+    fn secrets_only_flag_parses_both_forms() {
+        let default = Wrap::try_parse_from(["check"]).unwrap();
+        assert!(default.args.secrets_only_enabled());
+
+        let on = Wrap::try_parse_from(["check", "--secrets-only"]).unwrap();
+        assert!(on.args.secrets_only_enabled());
+        assert!(on.args.secrets_only);
+
+        let off = Wrap::try_parse_from(["check", "--no-secrets-only"]).unwrap();
+        assert!(!off.args.secrets_only_enabled());
+    }
 }

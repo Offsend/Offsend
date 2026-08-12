@@ -3,7 +3,7 @@
 use super::render::{self, Permission};
 use super::sensitive::{self, is_suspicious};
 use super::Adapter;
-use offsend_detect::{DetectionEngine, DetectionRequest};
+use offsend_detect::DetectionEngine;
 use serde_json::{json, Value};
 use std::io::{self, Write};
 use std::process::ExitCode;
@@ -23,7 +23,10 @@ pub fn run_call(
     allow_servers: &[String],
     deny_servers: &[String],
 ) -> ExitCode {
-    if !matches!(adapter, Adapter::Cursor | Adapter::Claude) {
+    if !matches!(
+        adapter,
+        Adapter::Cursor | Adapter::Claude | Adapter::Windsurf
+    ) {
         return render::permission_response(adapter, Permission::Allow, None, None);
     }
     let mode = match mode_raw.unwrap_or("ask") {
@@ -60,21 +63,27 @@ pub fn run_call(
         }
     };
 
-    let cwd = root.get("cwd").and_then(|v| v.as_str()).or_else(|| {
-        root.get("workspace_roots")
-            .and_then(|v| v.as_array())
-            .and_then(|a| a.first())
-            .and_then(|v| v.as_str())
-    });
+    let cwd = root
+        .get("cwd")
+        .and_then(|v| v.as_str())
+        .or_else(|| root.pointer("/tool_info/cwd").and_then(|v| v.as_str()))
+        .or_else(|| {
+            root.get("workspace_roots")
+                .and_then(|v| v.as_array())
+                .and_then(|a| a.first())
+                .and_then(|v| v.as_str())
+        });
     let server = root
         .get("server")
         .or_else(|| root.get("server_name"))
         .or_else(|| root.get("serverName"))
+        .or_else(|| root.pointer("/tool_info/mcp_server_name"))
         .and_then(|v| v.as_str())
         .unwrap_or("");
     let tool_input = root
         .get("tool_input")
         .or_else(|| root.get("toolInput"))
+        .or_else(|| root.pointer("/tool_info/mcp_tool_arguments"))
         .cloned()
         .unwrap_or(Value::Null);
     let serialized = tool_input.to_string();
@@ -104,23 +113,30 @@ pub fn run_call(
     }
 
     if finding.is_none() {
-        let result = DetectionEngine::scan(&DetectionRequest::new(serialized));
-        let secrets: Vec<_> = result
-            .entities
-            .into_iter()
-            .filter(|e| {
-                if secrets_only {
-                    e.entity_type.counts_as_critical_secret()
-                } else {
-                    true
-                }
-            })
-            .collect();
-        if !secrets.is_empty() {
-            finding = Some(format!(
-                "Offsend: MCP call arguments contain {} sensitive finding(s).",
-                secrets.len()
-            ));
+        let scan = DetectionEngine::scan_including_encoded(&serialized);
+        if scan.budget_exceeded {
+            finding = Some(
+                "Offsend: MCP call arguments contain encoded content exceeding the safe decode budget."
+                    .into(),
+            );
+        } else {
+            let secrets: Vec<_> = scan
+                .entities
+                .into_iter()
+                .filter(|e| {
+                    if secrets_only {
+                        e.entity_type.counts_as_critical_secret()
+                    } else {
+                        true
+                    }
+                })
+                .collect();
+            if !secrets.is_empty() {
+                finding = Some(format!(
+                    "Offsend: MCP call arguments contain {} sensitive finding(s).",
+                    secrets.len()
+                ));
+            }
         }
     }
 
@@ -148,7 +164,10 @@ pub fn run_response(
     stdin: &str,
     mode_raw: Option<&str>,
 ) -> ExitCode {
-    if !matches!(adapter, Adapter::Cursor | Adapter::Claude) {
+    if !matches!(
+        adapter,
+        Adapter::Cursor | Adapter::Claude | Adapter::Windsurf
+    ) {
         return render::empty_ok();
     }
     let mode = mode_raw.unwrap_or("observe"); // observe | warn | seal
@@ -162,8 +181,16 @@ pub fn run_response(
     };
 
     let (body, can_replace) = extract_response_body(&root, adapter);
-    let result = DetectionEngine::scan(&DetectionRequest::new(body.clone()));
-    let secrets: Vec<_> = result
+    // Decode base64/hex blobs so an MCP server cannot return an encoded secret
+    // that slips past the gate. Exceeding the decode budget withholds output.
+    let scan = DetectionEngine::scan_including_encoded(&body);
+    if scan.budget_exceeded {
+        return withhold(
+            adapter,
+            "MCP response has encoded content exceeding the safe decode budget.",
+        );
+    }
+    let secrets: Vec<_> = scan
         .entities
         .into_iter()
         .filter(|e| {
@@ -194,6 +221,10 @@ pub fn run_response(
                         }
                     }));
                 }
+                // Windsurf cannot inject context into MCP output; surface on stderr.
+                Adapter::Windsurf => {
+                    let _ = writeln!(io::stderr(), "offsend: mcp-response: {msg}");
+                }
                 _ => {}
             }
             ExitCode::SUCCESS
@@ -219,6 +250,10 @@ pub fn run_response(
                                 "additionalContext": msg,
                             }
                         }));
+                    }
+                    // Windsurf has no replace API — fall back to withhold via exit 2.
+                    Adapter::Windsurf => {
+                        return withhold(adapter, &msg);
                     }
                     _ => {}
                 }
@@ -272,6 +307,7 @@ fn withhold(adapter: Adapter, message: &str) -> ExitCode {
                 "updated_mcp_tool_output": {"error": message},
                 "additional_context": message,
             }));
+            ExitCode::SUCCESS
         }
         Adapter::Claude => {
             let withheld = json!({"error": message});
@@ -282,10 +318,15 @@ fn withhold(adapter: Adapter, message: &str) -> ExitCode {
                     "additionalContext": message,
                 }
             }));
+            ExitCode::SUCCESS
         }
-        _ => {}
+        // Post-hooks cannot block; still fail closed on stderr so operators notice.
+        Adapter::Windsurf => {
+            let _ = writeln!(io::stderr(), "offsend: mcp-response withheld: {message}");
+            ExitCode::SUCCESS
+        }
+        _ => ExitCode::SUCCESS,
     }
-    ExitCode::SUCCESS
 }
 
 fn extract_response_body(root: &Value, adapter: Adapter) -> (String, bool) {
@@ -305,6 +346,13 @@ fn extract_response_body(root: &Value, adapter: Adapter) -> (String, bool) {
                 .or_else(|| root.get("toolResponse"))
             {
                 return (value_as_text(v), true);
+            }
+            (String::new(), false)
+        }
+        Adapter::Windsurf => {
+            if let Some(v) = root.pointer("/tool_info/mcp_result") {
+                // Windsurf post-hooks cannot rewrite MCP output.
+                return (value_as_text(v), false);
             }
             (String::new(), false)
         }

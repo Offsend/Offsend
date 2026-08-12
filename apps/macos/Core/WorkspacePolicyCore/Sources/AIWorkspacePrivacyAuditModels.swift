@@ -63,6 +63,7 @@ public enum AIWorkspaceToolID: String, CaseIterable, Equatable, Sendable {
     case roo
     case zed
     case cody
+    case codex
 }
 
 public struct AIWorkspacePrivacyRule: Equatable, Identifiable, Sendable {

@@ -150,6 +150,16 @@ pub fn install(
         fs::create_dir_all(parent).map_err(|e| GitHookError::Message(e.to_string()))?;
     }
     let script = make_script(kind, cli_path, fail_on, include_policy);
+    // Idempotent: a repeated `offsend sync` must not rewrite an identical hook.
+    if path.is_file() {
+        let current = fs::read_to_string(&path).unwrap_or_default();
+        let executable = fs::metadata(&path)
+            .map(|m| m.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false);
+        if current == script && executable {
+            return Ok(path);
+        }
+    }
     fs::write(&path, script).map_err(|e| GitHookError::Message(e.to_string()))?;
     let mut perms = fs::metadata(&path)
         .map_err(|e| GitHookError::Message(e.to_string()))?

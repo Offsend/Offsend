@@ -197,6 +197,68 @@ fn seal_token_keeps_critical_secret_inside_fake_framing() {
     );
 }
 
+fn detects_secret(text: &str) -> bool {
+    DetectionEngine::scan(&DetectionRequest::new(text))
+        .entities
+        .iter()
+        .any(|e| e.entity_type.counts_as_critical_secret())
+}
+
+#[test]
+fn detects_added_provider_tokens() {
+    let cases = [
+        "key AIzaSyD-2gxS3n4pQrStUvWxYz0123456789abc here",
+        "anthropic sk-ant-api03-ABCdef123456ghiJKL used",
+        "gitlab glpat-ABCdef123456ghiJKL789 token",
+        "runner glrt-ABCdef123456ghiJKL789 token",
+        "npm npm_0123456789abcdefghijklmnopqrstuvwxyz set",
+        "hf hf_ABCdefGHIjklMNOpqrSTUvwxYZ0123456789 token",
+        "sg SG.ABCDEFGHIJKLMNOPQRSTUV.0123456789abcdefghijklmnopqrstuvwxyzABCDEFG done",
+        "oauth GOCSPX-ABCdef123456ghiJKL789mnopqrs value",
+        "hook https://hooks.slack.com/services/T00000000/B11111111/abcdefABCDEF0123456789 posted",
+        "db dapi0123456789abcdef0123456789abcdef token",
+    ];
+    for text in cases {
+        assert!(detects_secret(text), "expected secret finding in: {text}");
+    }
+}
+
+#[test]
+fn ignores_benign_lookalikes() {
+    // Must not fire on ordinary prose / identifiers.
+    assert!(!detects_secret("the npm_config option controls install behaviour"));
+    assert!(!detects_secret("visit https://hooks.example.com/services/list for docs"));
+}
+
+#[test]
+fn scan_including_encoded_surfaces_hidden_secret() {
+    // A live AWS key hex-encoded (as `secret | xxd`) must still surface — the
+    // `| base64`/hex exfil bypass. Avoid the "EXAMPLE" placeholder substring.
+    let secret = "AKIAABCDEFGHIJ012345";
+    let hex: String = secret.bytes().map(|b| format!("{b:02x}")).collect();
+    let text = format!("command output: {hex} done");
+
+    let scan = DetectionEngine::scan_including_encoded(&text);
+    assert!(
+        scan.entities
+            .iter()
+            .any(|e| e.entity_type == EntityType::AwsAccessKeyId),
+        "expected AWS key decoded from hex blob: {:?}",
+        scan.entities
+    );
+
+    // The plain scan must NOT decode — that is exactly the gap being closed.
+    let plain = DetectionEngine::scan(&DetectionRequest::new(text));
+    assert!(
+        !plain
+            .entities
+            .iter()
+            .any(|e| e.entity_type == EntityType::AwsAccessKeyId),
+        "plain scan should not decode the blob: {:?}",
+        plain.entities
+    );
+}
+
 fn phone_values(text: &str) -> Vec<String> {
     DetectionEngine::scan(&DetectionRequest::new(text))
         .entities

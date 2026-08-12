@@ -1,0 +1,98 @@
+[
+  {
+    "id": "gcp-api-key",
+    "type": "apiKeyGeneric",
+    "source": "secret",
+    "confidence": 0.95,
+    "pattern_b64": "QUl6YVswLTlBLVphLXpfXC1dezM1fQ==",
+    "case_insensitive": false
+  },
+  {
+    "id": "anthropic-api-key",
+    "type": "apiKeyGeneric",
+    "source": "secret",
+    "confidence": 0.95,
+    "pattern_b64": "c2stYW50LVtBLVphLXowLTlfXC1dezIwLH0=",
+    "case_insensitive": false
+  },
+  {
+    "id": "gitlab-pat",
+    "type": "apiKeyGeneric",
+    "source": "secret",
+    "confidence": 0.95,
+    "pattern_b64": "Z2xwYXQtW0EtWmEtejAtOV9cLV17MjAsfQ==",
+    "case_insensitive": false
+  },
+  {
+    "id": "gitlab-runner-token",
+    "type": "apiKeyGeneric",
+    "source": "secret",
+    "confidence": 0.95,
+    "pattern_b64": "Z2xydC1bQS1aYS16MC05X1wtXXsyMCx9",
+    "case_insensitive": false
+  },
+  {
+    "id": "npm-token",
+    "type": "apiKeyGeneric",
+    "source": "secret",
+    "confidence": 0.95,
+    "pattern_b64": "bnBtX1tBLVphLXowLTldezM2fQ==",
+    "case_insensitive": false
+  },
+  {
+    "id": "pypi-upload-token",
+    "type": "apiKeyGeneric",
+    "source": "secret",
+    "confidence": 0.95,
+    "pattern_b64": "cHlwaS1BZ0VJY0hsd2FTNXZjbWNbQS1aYS16MC05X1wtXXs1MCx9",
+    "case_insensitive": false
+  },
+  {
+    "id": "huggingface-token",
+    "type": "apiKeyGeneric",
+    "source": "secret",
+    "confidence": 0.95,
+    "pattern_b64": "aGZfW0EtWmEtejAtOV17MzQsfQ==",
+    "case_insensitive": false
+  },
+  {
+    "id": "sendgrid-api-key",
+    "type": "apiKeyGeneric",
+    "source": "secret",
+    "confidence": 0.95,
+    "pattern_b64": "U0dcLltBLVphLXowLTlfXC1dezIyfVwuW0EtWmEtejAtOV9cLV17NDN9",
+    "case_insensitive": false
+  },
+  {
+    "id": "google-oauth-secret",
+    "type": "apiKeyGeneric",
+    "source": "secret",
+    "confidence": 0.95,
+    "pattern_b64": "R09DU1BYLVtBLVphLXowLTlfXC1dezI4fQ==",
+    "case_insensitive": false
+  },
+  {
+    "id": "slack-webhook-url",
+    "type": "apiKeyGeneric",
+    "source": "secret",
+    "confidence": 0.95,
+    "pattern_b64": "aHR0cHM6Ly9ob29rc1wuc2xhY2tcLmNvbS9zZXJ2aWNlcy9UW0EtWmEtejAtOV9dKy9CW0EtWmEtejAtOV9dKy9bQS1aYS16MC05XSs=",
+    "case_insensitive": false
+  },
+  {
+    "id": "doppler-token",
+    "type": "apiKeyGeneric",
+    "source": "secret",
+    "confidence": 0.95,
+    "pattern_b64": "ZHBcLnB0XC5bQS1aYS16MC05XXs0MCx9",
+    "case_insensitive": false
+  },
+  {
+    "id": "databricks-pat",
+    "type": "apiKeyGeneric",
+    "source": "secret",
+    "confidence": 0.95,
+    "pattern_b64": "ZGFwaVswLTlhLWZdezMyfQ==",
+    "case_insensitive": false
+  }
+]

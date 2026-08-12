@@ -4,7 +4,7 @@ use super::render::{self, Permission};
 use super::seal_copy;
 use super::sensitive::{self, is_suspicious};
 use super::Adapter;
-use offsend_detect::{DetectionEngine, DetectionRequest, SensitiveEntity};
+use offsend_detect::{DetectionEngine, SensitiveEntity};
 use serde_json::Value;
 use std::path::Path;
 use std::process::ExitCode;
@@ -19,7 +19,10 @@ pub fn run(
     key_file: Option<&str>,
     key_name: Option<&str>,
 ) -> ExitCode {
-    if !matches!(adapter, Adapter::Cursor | Adapter::Claude) {
+    if !matches!(
+        adapter,
+        Adapter::Cursor | Adapter::Claude | Adapter::Windsurf
+    ) {
         return render::permission_response(adapter, Permission::Allow, None, None);
     }
     if stdin.len() > crate::io::MAX_INPUT_BYTES {
@@ -42,7 +45,10 @@ pub fn run(
             )
         }
     };
-    let cwd = root.get("cwd").and_then(|v| v.as_str());
+    let cwd = root
+        .get("cwd")
+        .and_then(|v| v.as_str())
+        .or_else(|| root.pointer("/tool_info/cwd").and_then(|v| v.as_str()));
     let Some(raw_path) = extract_path(&root, adapter) else {
         return deny(
             adapter,
@@ -82,11 +88,19 @@ pub fn run(
         }
     }
 
+    let name = Path::new(&path)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("file");
+
     // Seal mode ignores detectors.disable — always scan the full detector set.
+    // Also decode base64/hex blobs so `| base64` cannot smuggle a secret past
+    // the read gate. Exceeding the decode budget fails closed.
+    let mut encoded_budget_exceeded = false;
     let findings: Vec<SensitiveEntity> = if let Some(ref content) = content {
-        let result = DetectionEngine::scan(&DetectionRequest::new(content.clone()));
-        result
-            .entities
+        let scan = DetectionEngine::scan_including_encoded(content);
+        encoded_budget_exceeded = scan.budget_exceeded;
+        scan.entities
             .into_iter()
             .filter(|e| {
                 if secrets_only && !on_secret_seal {
@@ -102,14 +116,19 @@ pub fn run(
         Vec::new()
     };
 
+    if encoded_budget_exceeded {
+        return deny(
+            adapter,
+            &format!(
+                "Offsend: blocked reading {name} — encoded content exceeds the safe decode budget."
+            ),
+            None,
+        );
+    }
+
     if !path_suspicious && findings.is_empty() {
         return render::permission_response(adapter, Permission::Allow, None, None);
     }
-
-    let name = Path::new(&path)
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("file");
 
     if on_secret_seal {
         if let (Some(content), Some(root)) = (content.as_ref(), project_root) {
@@ -180,9 +199,32 @@ fn deny(adapter: Adapter, reason: &str, agent: Option<&str>) -> ExitCode {
     render::permission_response(adapter, Permission::Deny, Some(reason), agent)
 }
 
+/// A sealed copy is trusted for reading only when it is a real, non-symlink file
+/// physically inside the canonical seal directory. Trusting the name/substring
+/// alone let any `…/offsend-seal/sealed-*.txt` path (or a symlink with that name
+/// pointing at `.env` / `~/.ssh/id_rsa`) bypass the gate.
 fn is_sealed_copy_path(path: &str) -> bool {
-    let lower = path.replace('\\', "/").to_ascii_lowercase();
-    lower.contains("/offsend-seal/") && lower.contains("/sealed-") && lower.ends_with(".txt")
+    let p = Path::new(path);
+    let name_ok = p
+        .file_name()
+        .and_then(|s| s.to_str())
+        .map(|n| n.starts_with("sealed-") && n.ends_with(".txt"))
+        .unwrap_or(false);
+    if !name_ok {
+        return false;
+    }
+    // Never follow a symlink named like a sealed copy.
+    match std::fs::symlink_metadata(p) {
+        Ok(meta) if meta.file_type().is_symlink() => return false,
+        Ok(_) => {}
+        Err(_) => return false,
+    }
+    let Ok(canonical) = p.canonicalize() else {
+        return false;
+    };
+    let seal_dir = seal_copy::temp_dir_path();
+    let seal_dir = seal_dir.canonicalize().unwrap_or(seal_dir);
+    canonical.starts_with(&seal_dir)
 }
 
 fn extract_path<'a>(root: &'a Value, adapter: Adapter) -> Option<&'a str> {
@@ -197,6 +239,10 @@ fn extract_path<'a>(root: &'a Value, adapter: Adapter) -> Option<&'a str> {
             .or_else(|| root.pointer("/tool_input/path"))
             .or_else(|| root.get("file_path"))
             .and_then(|v| v.as_str()),
+        Adapter::Windsurf => root
+            .pointer("/tool_info/file_path")
+            .or_else(|| root.get("file_path"))
+            .and_then(|v| v.as_str()),
         _ => None,
     }
 }
@@ -207,6 +253,9 @@ fn extract_content(root: &Value, adapter: Adapter) -> Option<String> {
         Adapter::Claude => root
             .get("content")
             .or_else(|| root.pointer("/tool_input/content")),
+        Adapter::Windsurf => root
+            .pointer("/tool_info/content")
+            .or_else(|| root.get("content")),
         _ => None,
     };
     v.and_then(|v| v.as_str()).map(str::to_string)

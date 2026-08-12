@@ -8,7 +8,10 @@ use serde_json::Value;
 use std::process::ExitCode;
 
 pub fn run(adapter: Adapter, stdin: &str) -> ExitCode {
-    if !matches!(adapter, Adapter::Cursor | Adapter::Claude) {
+    if !matches!(
+        adapter,
+        Adapter::Cursor | Adapter::Claude | Adapter::Windsurf
+    ) {
         return render::permission_response(adapter, Permission::Allow, None, None);
     }
     if stdin.trim().is_empty() {
@@ -36,7 +39,10 @@ pub fn run(adapter: Adapter, stdin: &str) -> ExitCode {
             )
         }
     };
-    let cwd = root.get("cwd").and_then(|v| v.as_str());
+    let cwd = root
+        .get("cwd")
+        .and_then(|v| v.as_str())
+        .or_else(|| root.pointer("/tool_info/cwd").and_then(|v| v.as_str()));
     let paths = extract_paths(&root);
     let content = extract_content(&root);
     let edit = extract_edit(&root);
@@ -125,10 +131,10 @@ pub fn run(adapter: Adapter, stdin: &str) -> ExitCode {
     }
 }
 
-/// Cursor's preToolUse write hook cannot surface `ask` — map it to deny.
+/// Cursor/Windsurf cannot surface `ask` — map it to deny.
 fn finish(adapter: Adapter, permission: Permission, reason: &str) -> ExitCode {
     let effective = match (adapter, permission) {
-        (Adapter::Cursor, Permission::Ask) => Permission::Deny,
+        (Adapter::Cursor | Adapter::Windsurf, Permission::Ask) => Permission::Deny,
         (_, other) => other,
     };
     match effective {
@@ -139,7 +145,10 @@ fn finish(adapter: Adapter, permission: Permission, reason: &str) -> ExitCode {
 
 fn extract_paths(root: &Value) -> Vec<String> {
     let mut out = Vec::new();
-    let tool = root.get("tool_input").or_else(|| root.get("toolInput"));
+    let tool = root
+        .get("tool_input")
+        .or_else(|| root.get("toolInput"))
+        .or_else(|| root.get("tool_info"));
     let sources = [tool, Some(root)];
     const KEYS: &[&str] = &[
         "file_path",
@@ -171,7 +180,10 @@ fn extract_paths(root: &Value) -> Vec<String> {
 }
 
 fn extract_content(root: &Value) -> Option<String> {
-    let tool = root.get("tool_input").or_else(|| root.get("toolInput"));
+    let tool = root
+        .get("tool_input")
+        .or_else(|| root.get("toolInput"))
+        .or_else(|| root.get("tool_info"));
     for src in [tool, Some(root)].into_iter().flatten() {
         if let Some(c) = src.get("content").and_then(|v| v.as_str()) {
             return Some(c.to_string());
@@ -200,7 +212,10 @@ fn extract_content(root: &Value) -> Option<String> {
 }
 
 fn extract_edit(root: &Value) -> Option<(String, String)> {
-    let tool = root.get("tool_input").or_else(|| root.get("toolInput"));
+    let tool = root
+        .get("tool_input")
+        .or_else(|| root.get("toolInput"))
+        .or_else(|| root.get("tool_info"));
     for src in [tool, Some(root)].into_iter().flatten() {
         let old = src.get("old_string").and_then(|v| v.as_str());
         let new = src.get("new_string").and_then(|v| v.as_str());

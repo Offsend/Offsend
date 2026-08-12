@@ -116,7 +116,7 @@ ignore:
 
   # Optional: only manage ignore/rule files for these tools. Absent = all.
   # Supported: cursor, claude, copilot, continue, windsurf, gemini, llm,
-  #            aider, cline, roo, zed, cody
+  #            aider, cline, roo, zed, cody, codex
   # tools:
   #   - cursor
   #   - claude

@@ -31,8 +31,18 @@ fn default_case_insensitive() -> bool {
 }
 
 pub static BUILTIN_RULES: Lazy<Vec<Rule>> = Lazy::new(|| {
-    let raw = include_str!("../data/swift_rules.b64.json");
-    let rows: Vec<RuleRow> = serde_json::from_str(raw).expect("swift_rules.b64.json");
+    // Base corpus extracted from Swift, plus additional high-precision provider
+    // detectors kept in the same base64 form (out of plaintext source).
+    let base = include_str!("../data/swift_rules.b64.json");
+    let extra = include_str!("../data/extra_rules.b64.json");
+    let mut rules = decode_rows(base, "swift_rules.b64.json");
+    rules.extend(decode_rows(extra, "extra_rules.b64.json"));
+    rules
+});
+
+fn decode_rows(raw: &str, source_name: &str) -> Vec<Rule> {
+    let rows: Vec<RuleRow> =
+        serde_json::from_str(raw).unwrap_or_else(|e| panic!("{source_name}: {e}"));
     rows.into_iter()
         .filter_map(|row| {
             let entity_type = EntityType::from_swift_name(&row.type_name)?;
@@ -52,4 +62,4 @@ pub static BUILTIN_RULES: Lazy<Vec<Rule>> = Lazy::new(|| {
             })
         })
         .collect()
-});
+}
