@@ -1014,22 +1014,56 @@ if ! echo "$prompt_exclude_untrusted" | grep -q '"continue":false\|"continue": f
   exit 1
 fi
 
-# Trusting requires a real terminal, so drive the confirmation through a pty.
-# The leading sleep matters: without it the prompt reads EOF before the answer
-# arrives, and `policy trust` silently declines with exit code 0.
-case "$(uname -s)" in
-  Darwin)
-    { sleep 1; printf 'y\ny\ny\n'; } | HOME="$shell_ask_home" \
-      script -q /dev/null "$CLI_PATH" policy trust --path "$shell_ask_repo" >/dev/null 2>&1
-    ;;
-  *)
-    { sleep 1; printf 'y\ny\ny\n'; } | HOME="$shell_ask_home" \
-      script -qe -c "\"$CLI_PATH\" policy trust --path \"$shell_ask_repo\"" /dev/null >/dev/null 2>&1
-    ;;
-esac
+# Trusting requires a real TTY. macOS `script` sends EOF (^D) to the child when
+# its own stdin is a pipe: isatty is true, then read_line gets "" and trust
+# declines with exit 0. Python's pty is stdlib on Darwin and Linux.
+pty_trust_out="$workdir/policy-trust-pty.out"
+set +e
+HOME="$shell_ask_home" python3 - "$CLI_PATH" "$shell_ask_repo" "$pty_trust_out" <<'PY'
+import os, pty, select, sys, time
+
+cli, repo, out_path = sys.argv[1], sys.argv[2], sys.argv[3]
+pid, fd = pty.fork()
+if pid == 0:
+    os.execv(cli, [cli, "policy", "trust", "--path", repo])
+
+os.write(fd, b"y\n")
+chunks = bytearray()
+deadline = time.monotonic() + 10
+while time.monotonic() < deadline:
+    r, _, _ = select.select([fd], [], [], 0.2)
+    if fd in r:
+        try:
+            data = os.read(fd, 4096)
+        except OSError:
+            data = b""
+        if not data:
+            break
+        chunks.extend(data)
+        continue
+    wpid, status = os.waitpid(pid, os.WNOHANG)
+    if wpid != 0:
+        open(out_path, "wb").write(chunks)
+        sys.exit(0 if os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0 else 1)
+else:
+    os.kill(pid, 9)
+    os.waitpid(pid, 0)
+    open(out_path, "wb").write(chunks)
+    sys.exit(1)
+open(out_path, "wb").write(chunks)
+_, status = os.waitpid(pid, 0)
+sys.exit(0 if os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0 else 1)
+PY
+pty_trust_status="$?"
+set -e
 if ! HOME="$shell_ask_home" "$CLI_PATH" policy status --path "$shell_ask_repo" | grep -q "status: trusted"; then
   echo "Expected pty-driven policy trust to record a snapshot" >&2
+  echo "pty helper exit: $pty_trust_status" >&2
   HOME="$shell_ask_home" "$CLI_PATH" policy status --path "$shell_ask_repo" >&2
+  if [[ -f "$pty_trust_out" ]]; then
+    echo "pty output:" >&2
+    cat "$pty_trust_out" >&2
+  fi
   exit 1
 fi
 
