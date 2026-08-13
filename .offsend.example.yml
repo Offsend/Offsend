@@ -86,7 +86,7 @@ ignore:
   # - "**/.env"
 
 hooks:
-  enabled: true          # default; sync installs hooks; doctor / check --policy fail if missing
+  enabled: true          # default; sync installs hooks; doctor / CI fail if git hooks are missing
   git: [pre-commit]      # also: post-merge (= offsend sync after pull); AI hooks are separate
   fail_on: block
   policy: false

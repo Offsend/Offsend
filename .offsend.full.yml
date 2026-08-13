@@ -2,12 +2,12 @@
 # Offsend — full `.offsend.yml` catalog (reference only)
 # =============================================================================
 # Every recognized key, with comments. Not a recommended production profile:
-# copy keys you need into `.offsend.yml` (or start from `.offsend.yml.example`
+# copy keys you need into `.offsend.yml` (or start from `.offsend.example.yml`
 # / `offsend init`). Unknown keys are reported by `offsend doctor`.
 #
 # Docs: docs/configuration.md
 # Team walkthrough: docs/team.md
-# Starter: .offsend.yml.example
+# Starter: .offsend.example.yml
 # =============================================================================
 
 version: 1   # schema version — only `1` is accepted
@@ -139,8 +139,9 @@ ignore:
 # hooks — git pre-commit + AI-editor hook install defaults (`offsend sync`)
 # -----------------------------------------------------------------------------
 hooks:
-  # true (default): project expects hooks. `offsend sync` installs them;
-  # `doctor` / `check --policy` fail when git or detected AI-editor hooks are missing.
+  # true (default): project expects git hooks. `offsend sync` installs them
+  # (plus detected AI-editor hooks). `check --policy` fails when declared git
+  # hooks are missing — not when project .cursor/hooks.json is absent on CI.
   # false: skip install on sync; do not fail policy/doctor for missing hooks.
   enabled: true
 

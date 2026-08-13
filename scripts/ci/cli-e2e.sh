@@ -39,6 +39,64 @@ git -C "$repo" init
 git -C "$repo" config user.email "ci@example.com"
 git -C "$repo" config user.name "Offsend CI"
 
+# Machine setup: seal key + user-level hooks, no repo YAML.
+setup_home="$workdir/setup-home"
+mkdir -p "$setup_home"
+HOME="$setup_home" "$CLI_PATH" setup >/tmp/offsend-setup-out.$$
+if [[ ! -f "$setup_home/.offsend/seal.key" ]]; then
+  echo "Expected setup to create ~/.offsend/seal.key" >&2
+  cat /tmp/offsend-setup-out.$$ >&2
+  exit 1
+fi
+if ! grep -q "OFFSEND_MANAGED_HOOK=1" "$setup_home/.cursor/hooks.json"; then
+  echo "Expected setup to install user-level Cursor hooks" >&2
+  cat "$setup_home/.cursor/hooks.json" >&2
+  exit 1
+fi
+if ! grep -q -- "--mcp-response-gate" "$setup_home/.cursor/hooks.json"; then
+  echo "Expected user-level Cursor hooks to include mcp-response-gate" >&2
+  cat "$setup_home/.cursor/hooks.json" >&2
+  exit 1
+fi
+if grep -q -- "--subagent-gate" "$setup_home/.cursor/hooks.json"; then
+  echo "User-level hooks must not install subagent-gate" >&2
+  cat "$setup_home/.cursor/hooks.json" >&2
+  exit 1
+fi
+if grep -q -- "--grep-gate" "$setup_home/.cursor/hooks.json"; then
+  echo "User-level hooks must not install Grep gate" >&2
+  cat "$setup_home/.cursor/hooks.json" >&2
+  exit 1
+fi
+HOME="$setup_home" "$CLI_PATH" setup >/tmp/offsend-setup-2.$$
+if ! grep -q "already present" /tmp/offsend-setup-2.$$; then
+  echo "Expected second setup to skip existing seal key" >&2
+  cat /tmp/offsend-setup-2.$$ >&2
+  exit 1
+fi
+empty_ws="$workdir/empty-ws"
+mkdir -p "$empty_ws"
+set +e
+setup_doctor="$(HOME="$setup_home" "$CLI_PATH" doctor --path "$empty_ws" --format json 2>/dev/null)"
+setup_doctor_status="$?"
+set -e
+if [[ "$setup_doctor_status" -ne 0 ]]; then
+  echo "Expected doctor without .offsend.yml to be healthy after setup, got $setup_doctor_status" >&2
+  echo "$setup_doctor" >&2
+  exit 1
+fi
+if ! echo "$setup_doctor" | grep -q '"name": "user-cursor-hook"'; then
+  echo "Expected doctor to report user-cursor-hook" >&2
+  echo "$setup_doctor" >&2
+  exit 1
+fi
+if ! echo "$setup_doctor" | grep -q '"name": "seal"'; then
+  echo "Expected doctor to report seal default" >&2
+  echo "$setup_doctor" >&2
+  exit 1
+fi
+rm -f /tmp/offsend-setup-out.$$ /tmp/offsend-setup-2.$$
+
 # Use a realistic AKIA-shaped key; AWS doc sample `AKIAIOSFODNN7EXAMPLE` is filtered as a placeholder.
 # offsend:ignore-next-line
 printf '%s\n' "AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF" > "$repo/secrets.env"
@@ -138,7 +196,7 @@ fi
 # offsend:ignore-next-line
 hook_payload='{"prompt":"AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF please deploy"}'
 set +e
-adapter_output="$(printf '%s' "$hook_payload" | "$CLI_PATH" check --adapter cursor --hook-policy advise --no-notify 2>/tmp/offsend-adapter-stderr.$$)"
+adapter_output="$(printf '%s' "$hook_payload" | "$CLI_PATH" check --adapter cursor --hook-policy advise --no-notify --working-directory "$repo" 2>/tmp/offsend-adapter-stderr.$$)"
 adapter_status="$?"
 set -e
 adapter_stderr="$(cat /tmp/offsend-adapter-stderr.$$)"
@@ -166,7 +224,7 @@ if echo "$adapter_stderr" | grep -q 'AKIA'; then
 fi
 
 set +e
-soft_block_output="$(printf '%s' "$hook_payload" | "$CLI_PATH" check --adapter cursor --hook-policy soft-block --no-notify 2>/dev/null)"
+soft_block_output="$(printf '%s' "$hook_payload" | "$CLI_PATH" check --adapter cursor --hook-policy soft-block --no-notify --working-directory "$repo" 2>/dev/null)"
 soft_block_status="$?"
 set -e
 if [[ "$soft_block_status" -ne 0 ]]; then
@@ -180,7 +238,7 @@ if ! echo "$soft_block_output" | grep -q '"continue":false\|"continue": false'; 
 fi
 
 set +e
-claude_output="$(printf '%s' "$hook_payload" | "$CLI_PATH" check --adapter claude --hook-policy advise --no-notify 2>/dev/null)"
+claude_output="$(printf '%s' "$hook_payload" | "$CLI_PATH" check --adapter claude --hook-policy advise --no-notify --working-directory "$repo" 2>/dev/null)"
 set -e
 if ! echo "$claude_output" | grep -q 'systemMessage'; then
   echo "Expected claude advise systemMessage" >&2
@@ -190,7 +248,7 @@ fi
 # offsend:ignore-next-line
 windsurf_payload='{"agent_action_name":"pre_user_prompt","tool_info":{"user_prompt":"AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF please deploy"}}'
 set +e
-printf '%s' "$windsurf_payload" | "$CLI_PATH" check --adapter windsurf --hook-policy block --no-notify >/dev/null 2>/tmp/offsend-windsurf-stderr.$$
+printf '%s' "$windsurf_payload" | "$CLI_PATH" check --adapter windsurf --hook-policy block --no-notify --working-directory "$repo" >/dev/null 2>/tmp/offsend-windsurf-stderr.$$
 windsurf_status="$?"
 set -e
 if [[ "$windsurf_status" -ne 2 ]]; then
@@ -203,7 +261,7 @@ rm -f /tmp/offsend-windsurf-stderr.$$
 
 # Fail-open on invalid hook JSON.
 set +e
-fail_open_stderr="$(printf '%s' 'not-json' | "$CLI_PATH" check --adapter cursor --hook-policy soft-block --no-notify 2>&1 >/tmp/offsend-fail-open-out.$$)"
+fail_open_stderr="$(printf '%s' 'not-json' | "$CLI_PATH" check --adapter cursor --hook-policy soft-block --no-notify --working-directory "$repo" 2>&1 >/tmp/offsend-fail-open-out.$$)"
 fail_open_status="$?"
 fail_open_output="$(cat /tmp/offsend-fail-open-out.$$)"
 rm -f /tmp/offsend-fail-open-out.$$
@@ -254,7 +312,7 @@ fi
 no_key_home="$workdir/no-key-home"
 mkdir -p "$no_key_home"
 set +e
-block_no_key_out="$(printf '%s' "$hook_payload" | HOME="$no_key_home" "$CLI_PATH" check --adapter cursor --hook-policy block --no-notify 2>/tmp/offsend-block-stderr.$$)"
+block_no_key_out="$(printf '%s' "$hook_payload" | HOME="$no_key_home" "$CLI_PATH" check --adapter cursor --hook-policy block --no-notify --working-directory "$repo" 2>/tmp/offsend-block-stderr.$$)"
 block_no_key_status="$?"
 set -e
 if [[ "$block_no_key_status" -ne 0 ]]; then
@@ -279,7 +337,7 @@ rm -f /tmp/offsend-block-stderr.$$
 seal_key="$repo/.offsend-seal-test.key"
 "$CLI_PATH" keygen -o "$seal_key"
 set +e
-block_with_key_out="$(printf '%s' "$hook_payload" | "$CLI_PATH" check --adapter cursor --hook-policy block --no-notify --key-file "$seal_key" 2>/dev/null)"
+block_with_key_out="$(printf '%s' "$hook_payload" | "$CLI_PATH" check --adapter cursor --hook-policy block --no-notify --key-file "$seal_key" --working-directory "$repo" 2>/dev/null)"
 set -e
 if ! echo "$block_with_key_out" | grep -qi 'clipboard\|Sealed'; then
   echo "Expected block with key to mention sealed clipboard" >&2
@@ -367,7 +425,7 @@ offsend_home="$(mktemp -d)"
   rm -f /tmp/offsend-keygen-dup.$$
 
   set +e
-  block_default_out="$(printf '%s' "$hook_payload" | "$CLI_PATH" check --adapter cursor --hook-policy block --no-notify 2>/dev/null)"
+  block_default_out="$(printf '%s' "$hook_payload" | "$CLI_PATH" check --adapter cursor --hook-policy block --no-notify --working-directory "$repo" 2>/dev/null)"
   set -e
   if ! echo "$block_default_out" | grep -qi 'clipboard\|Sealed'; then
     echo "Expected block with default seal key to mention sealed clipboard" >&2
@@ -420,10 +478,10 @@ read_env='{"file_path":"/repo/.env"}'
 read_kube='{"file_path":"/home/user/.kube/config"}'
 read_readme='{"file_path":"/repo/README.md"}'
 set +e
-read_deny="$(printf '%s' "$read_env" | "$CLI_PATH" check --adapter cursor --read-gate --no-notify 2>/dev/null)"
-read_kube_deny="$(printf '%s' "$read_kube" | "$CLI_PATH" check --adapter cursor --read-gate --no-notify 2>/dev/null)"
-read_allow="$(printf '%s' "$read_readme" | "$CLI_PATH" check --adapter cursor --read-gate --no-notify 2>/dev/null)"
-read_fail_open="$(printf '%s' 'not-json' | "$CLI_PATH" check --adapter cursor --read-gate --no-notify 2>/dev/null)"
+read_deny="$(printf '%s' "$read_env" | "$CLI_PATH" check --adapter cursor --read-gate --no-notify --working-directory "$repo" 2>/dev/null)"
+read_kube_deny="$(printf '%s' "$read_kube" | "$CLI_PATH" check --adapter cursor --read-gate --no-notify --working-directory "$repo" 2>/dev/null)"
+read_allow="$(printf '%s' "$read_readme" | "$CLI_PATH" check --adapter cursor --read-gate --no-notify --working-directory "$repo" 2>/dev/null)"
+read_fail_open="$(printf '%s' 'not-json' | "$CLI_PATH" check --adapter cursor --read-gate --no-notify --working-directory "$repo" 2>/dev/null)"
 set -e
 if ! echo "$read_deny" | grep -q 'deny'; then
   echo "Expected read-gate deny for .env" >&2
@@ -553,7 +611,7 @@ fi
 # Hook input over the 2 MiB stdin limit fails closed: the payload (which
 # carries the file body for Cursor) cannot be scanned, so the read is denied.
 set +e
-read_oversized="$(head -c 3000000 /dev/zero | tr '\0' 'a' | "$CLI_PATH" check --adapter cursor --read-gate --no-notify 2>/dev/null)"
+read_oversized="$(head -c 3000000 /dev/zero | tr '\0' 'a' | "$CLI_PATH" check --adapter cursor --read-gate --no-notify --working-directory "$repo" 2>/dev/null)"
 set -e
 if ! echo "$read_oversized" | grep -q '"deny"'; then
   echo "Expected read-gate deny for oversized stdin" >&2
@@ -612,6 +670,32 @@ set -e
 if ! echo "$sealed_copy_allow" | grep -q '"allow"'; then
   echo "Expected read-gate to allow the sealed copy path" >&2
   echo "$sealed_copy_allow" >&2
+  exit 1
+fi
+# User-level hooks run with process cwd outside the repo. Policy must come
+# from payload cwd, not --working-directory / ~/.cursor.
+hook_cwd_decoy="$workdir/hook-cwd-decoy"
+mkdir -p "$hook_cwd_decoy"
+printf '%s\n' "version: 1" > "$hook_cwd_decoy/.offsend.yml"
+# offsend:ignore-next-line
+mismatch_payload="$(printf '{"cwd":"%s","file_path":"%s/creds.env","content":"AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF"}' "$seal_read_repo" "$seal_read_repo")"
+set +e
+read_mismatch="$(printf '%s' "$mismatch_payload" | HOME="$seal_read_home" "$CLI_PATH" check --adapter cursor --read-gate --no-notify --working-directory "$hook_cwd_decoy" 2>/dev/null)"
+read_mismatch_claude="$(printf '%s' "$mismatch_payload" | HOME="$seal_read_home" "$CLI_PATH" check --adapter claude --read-gate --no-notify --working-directory "$hook_cwd_decoy" 2>/dev/null)"
+set -e
+if ! echo "$read_mismatch" | grep -q '"deny"'; then
+  echo "Expected cwd-mismatch read-gate to deny" >&2
+  echo "$read_mismatch" >&2
+  exit 1
+fi
+if ! echo "$read_mismatch" | grep -q 'agent_message'; then
+  echo "Expected cwd-mismatch Cursor read-gate to load project seal policy, not decoy cwd" >&2
+  echo "$read_mismatch" >&2
+  exit 1
+fi
+if ! echo "$read_mismatch_claude" | grep -q 'agent_message\|sealed'; then
+  echo "Expected cwd-mismatch Claude read-gate to load project seal policy" >&2
+  echo "$read_mismatch_claude" >&2
   exit 1
 fi
 # Directory membership is not trusted: plaintext planted beside a sealed copy
@@ -679,7 +763,7 @@ fi
 
 # Shell gate stops the agent before it runs offsend unseal.
 set +e
-unseal_deny="$(printf '%s' '{"command":"offsend unseal sealed.txt"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
+unseal_deny="$(printf '%s' '{"command":"offsend unseal sealed.txt"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify --working-directory "$repo" 2>/dev/null)"
 set -e
 if ! echo "$unseal_deny" | grep -q '"deny"'; then
   echo "Expected shell-gate deny for offsend unseal" >&2
@@ -831,20 +915,20 @@ if ! grep -q -- "--write-gate" "$repo/.cursor/hooks.json"; then
 fi
 
 # Shell gate is on by default: deny on sensitive paths, allow otherwise.
-shell_secret_deny="$(printf '%s' '{"command":"cat .env"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
+shell_secret_deny="$(printf '%s' '{"command":"cat .env"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify --working-directory "$repo" 2>/dev/null)"
 if ! echo "$shell_secret_deny" | grep -q '"deny"'; then
   echo "Expected shell-gate deny for 'cat .env'" >&2
   echo "$shell_secret_deny" >&2
   exit 1
 fi
 # F1: adjacent string concat inside python -c must still deny sensitive paths.
-shell_concat_deny="$(printf '%s' '{"command":"python3 -c '"'"'from pathlib import Path; Path(\"c\"+\"ert\"+\".p\"+\"em\").read_text()'"'"'"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
+shell_concat_deny="$(printf '%s' '{"command":"python3 -c '"'"'from pathlib import Path; Path(\"c\"+\"ert\"+\".p\"+\"em\").read_text()'"'"'"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify --working-directory "$repo" 2>/dev/null)"
 if ! echo "$shell_concat_deny" | grep -q '"deny"'; then
   echo "Expected shell-gate deny for python string-concat path to cert.pem" >&2
   echo "$shell_concat_deny" >&2
   exit 1
 fi
-shell_python_print_allow="$(printf '%s' '{"command":"python3 -c '"'"'print(1+1)'"'"'"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
+shell_python_print_allow="$(printf '%s' '{"command":"python3 -c '"'"'print(1+1)'"'"'"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify --working-directory "$repo" 2>/dev/null)"
 if echo "$shell_python_print_allow" | grep -Eq '"permission"[[:space:]]*:[[:space:]]*"(deny|ask)"'; then
   echo "Expected shell-gate allow for benign python3 -c print" >&2
   echo "$shell_python_print_allow" >&2
@@ -863,7 +947,7 @@ if ! echo "$shell_ignore_concat_deny" | grep -q '"deny"'; then
   echo "$shell_ignore_concat_deny" >&2
   exit 1
 fi
-shell_allow="$(printf '%s' '{"command":"ls -la src"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
+shell_allow="$(printf '%s' '{"command":"ls -la src"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify --working-directory "$repo" 2>/dev/null)"
 if ! echo "$shell_allow" | grep -q '"allow"'; then
   echo "Expected shell-gate allow for 'ls -la src'" >&2
   echo "$shell_allow" >&2
@@ -875,31 +959,31 @@ if ! echo "$shell_exec_deny" | grep -q '"deny"'; then
   echo "$shell_exec_deny" >&2
   exit 1
 fi
-shell_git_config_deny="$(printf '%s' '{"command":"git config core.hooksPath .agent-hooks"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
+shell_git_config_deny="$(printf '%s' '{"command":"git config core.hooksPath .agent-hooks"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify --working-directory "$repo" 2>/dev/null)"
 if ! echo "$shell_git_config_deny" | grep -q '"deny"'; then
   echo "Expected shell-gate hard deny for execution-sensitive git config" >&2
   echo "$shell_git_config_deny" >&2
   exit 1
 fi
-shell_git_config_read="$(printf '%s' '{"command":"git config --get core.hooksPath"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
+shell_git_config_read="$(printf '%s' '{"command":"git config --get core.hooksPath"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify --working-directory "$repo" 2>/dev/null)"
 if ! echo "$shell_git_config_read" | grep -q '"allow"'; then
   echo "Expected shell-gate allow for read-only git config" >&2
   echo "$shell_git_config_read" >&2
   exit 1
 fi
-shell_docker_deny="$(printf '%s' '{"command":"docker run --rm alpine id"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
+shell_docker_deny="$(printf '%s' '{"command":"docker run --rm alpine id"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify --working-directory "$repo" 2>/dev/null)"
 if ! echo "$shell_docker_deny" | grep -q '"deny"'; then
   echo "Expected shell-gate hard deny for host-side container execution" >&2
   echo "$shell_docker_deny" >&2
   exit 1
 fi
-shell_docker_build="$(printf '%s' '{"command":"docker build ."}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
+shell_docker_build="$(printf '%s' '{"command":"docker build ."}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify --working-directory "$repo" 2>/dev/null)"
 if ! echo "$shell_docker_build" | grep -q '"deny"'; then
   echo "Expected shell-gate deny for lower-risk daemon mutation in default deny mode" >&2
   echo "$shell_docker_build" >&2
   exit 1
 fi
-shell_docker_read="$(printf '%s' '{"command":"docker ps"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
+shell_docker_read="$(printf '%s' '{"command":"docker ps"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify --working-directory "$repo" 2>/dev/null)"
 if ! echo "$shell_docker_read" | grep -q '"allow"'; then
   echo "Expected shell-gate allow for Docker diagnostics" >&2
   echo "$shell_docker_read" >&2
@@ -917,7 +1001,7 @@ if ! echo "$shell_env_system" | grep -q '"deny"'; then
   echo "$shell_env_system" >&2
   exit 1
 fi
-shell_git_metadata="$(printf '%s' '{"command":"GIT_AUTHOR_NAME=Bot git status"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify 2>/dev/null)"
+shell_git_metadata="$(printf '%s' '{"command":"GIT_AUTHOR_NAME=Bot git status"}' | "$CLI_PATH" check --adapter cursor --shell-gate --no-notify --working-directory "$repo" 2>/dev/null)"
 if ! echo "$shell_git_metadata" | grep -q '"allow"'; then
   echo "Expected shell-gate allow for safe Git metadata environment" >&2
   echo "$shell_git_metadata" >&2
@@ -1185,19 +1269,19 @@ if ! grep -q -- "--shell-gate" "$repo/.cursor/hooks.json"; then
 fi
 
 # MCP gate: sensitive path → ask; clean args → allow; fail-open; policy deny; install toggles.
-mcp_ask="$(printf '%s' '{"server":"github","tool_name":"read_file","tool_input":{"path":".env"}}' | "$CLI_PATH" check --adapter cursor --mcp-gate --no-notify 2>/dev/null)"
+mcp_ask="$(printf '%s' '{"server":"github","tool_name":"read_file","tool_input":{"path":".env"}}' | "$CLI_PATH" check --adapter cursor --mcp-gate --no-notify --working-directory "$repo" 2>/dev/null)"
 if ! echo "$mcp_ask" | grep -q '"ask"'; then
   echo "Expected mcp-gate ask for .env in tool args" >&2
   echo "$mcp_ask" >&2
   exit 1
 fi
-mcp_allow="$(printf '%s' '{"server":"github","tool_name":"search","tool_input":{"q":"README"}}' | "$CLI_PATH" check --adapter cursor --mcp-gate --no-notify 2>/dev/null)"
+mcp_allow="$(printf '%s' '{"server":"github","tool_name":"search","tool_input":{"q":"README"}}' | "$CLI_PATH" check --adapter cursor --mcp-gate --no-notify --working-directory "$repo" 2>/dev/null)"
 if ! echo "$mcp_allow" | grep -q '"allow"'; then
   echo "Expected mcp-gate allow for clean tool args" >&2
   echo "$mcp_allow" >&2
   exit 1
 fi
-mcp_fail_open="$(printf '%s' 'not-json' | "$CLI_PATH" check --adapter cursor --mcp-gate --no-notify 2>/dev/null)"
+mcp_fail_open="$(printf '%s' 'not-json' | "$CLI_PATH" check --adapter cursor --mcp-gate --no-notify --working-directory "$repo" 2>/dev/null)"
 if ! echo "$mcp_fail_open" | grep -q 'permission'; then
   echo "Expected mcp-gate fail-open permission:allow" >&2
   echo "$mcp_fail_open" >&2
@@ -1238,7 +1322,7 @@ if ! echo "$mcp_oversized_deny" | grep -q '"deny"'; then
 fi
 # Without an explicit deny mode, oversized mcp-gate input keeps failing open.
 set +e
-mcp_oversized_open="$(head -c 3000000 /dev/zero | tr '\0' 'a' | "$CLI_PATH" check --adapter cursor --mcp-gate --no-notify 2>/dev/null)"
+mcp_oversized_open="$(head -c 3000000 /dev/zero | tr '\0' 'a' | "$CLI_PATH" check --adapter cursor --mcp-gate --no-notify --working-directory "$repo" 2>/dev/null)"
 set -e
 if ! echo "$mcp_oversized_open" | grep -q '"allow"'; then
   echo "Expected mcp-gate fail-open allow for oversized stdin without mode deny" >&2
@@ -1265,7 +1349,7 @@ if ! grep -q -- "--mcp-gate" "$repo/.cursor/hooks.json"; then
   exit 1
 fi
 
-# MCP response gate: Cursor/Claude observe, warn, seal, fail-safe, install toggles.
+# MCP response gate: default is seal (withhold without a key).
 if ! grep -q -- "--mcp-response-gate" "$repo/.cursor/hooks.json" || ! grep -q "postToolUse" "$repo/.cursor/hooks.json"; then
   echo "Expected mcp-response-gate on by default (postToolUse + direct CLI command)" >&2
   cat "$repo/.cursor/hooks.json" >&2
@@ -1278,23 +1362,22 @@ if grep -q "afterMCPExecution" "$repo/.cursor/hooks.json"; then
 fi
 # offsend:ignore-next-line
 mcpresp_cursor_payload='{"tool_name":"MCP:postgres/query","tool_output":"{\"value\":\"AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF\"}"}'
+mcpresp_default_home="$workdir/mcpresp-default-home"
+mkdir -p "$mcpresp_default_home"
 set +e
-mcpresp_cursor_out="$(printf '%s' "$mcpresp_cursor_payload" | "$CLI_PATH" check --adapter cursor --mcp-response-gate --no-notify 2>/tmp/offsend-mcpresp-stderr.$$)"
+mcpresp_cursor_out="$(printf '%s' "$mcpresp_cursor_payload" | HOME="$mcpresp_default_home" OFFSEND_SEAL_KEY= "$CLI_PATH" check --adapter cursor --mcp-response-gate --no-notify --working-directory "$repo" 2>/tmp/offsend-mcpresp-stderr.$$)"
 set -e
 mcpresp_cursor_stderr="$(cat /tmp/offsend-mcpresp-stderr.$$)"
 rm -f /tmp/offsend-mcpresp-stderr.$$
-if [[ "$mcpresp_cursor_out" != "{}" ]]; then
-  echo "Expected cursor mcp-response-gate default observe stdout {}" >&2
+if ! echo "$mcpresp_cursor_out" | grep -q 'updated_mcp_tool_output'; then
+  echo "Expected cursor mcp-response-gate default seal to withhold without a key" >&2
   echo "$mcpresp_cursor_out" >&2
-  exit 1
-fi
-if ! echo "$mcpresp_cursor_stderr" | grep -qi 'secrets'; then
-  echo "Expected cursor mcp-response-gate stderr warning" >&2
   echo "$mcpresp_cursor_stderr" >&2
   exit 1
 fi
-if echo "$mcpresp_cursor_stderr" | grep -q 'AKIA'; then
-  echo "mcp-response-gate stderr must not contain secret material" >&2
+if echo "$mcpresp_cursor_out" | grep -q 'AKIA'; then
+  echo "Default mcp-response-gate must not pass through plaintext" >&2
+  echo "$mcpresp_cursor_out" >&2
   exit 1
 fi
 
@@ -1390,7 +1473,7 @@ mcpresp_oversized_out="$(
     printf '%s' '{"tool_name":"MCP:test/large","tool_output":"'
     dd if=/dev/zero bs=2097153 count=1 2>/dev/null | tr '\0' 'a'
     printf '%s' '"}'
-  } | "$CLI_PATH" check --adapter cursor --mcp-response-gate --no-notify 2>/dev/null
+  } | "$CLI_PATH" check --adapter cursor --mcp-response-gate --no-notify --working-directory "$repo" 2>/dev/null
 )"
 set -e
 if ! echo "$mcpresp_oversized_out" | grep -q 'updated_mcp_tool_output'; then
@@ -1400,7 +1483,7 @@ if ! echo "$mcpresp_oversized_out" | grep -q 'updated_mcp_tool_output'; then
 fi
 
 set +e
-mcpresp_fail_open="$(printf '%s' 'not-json' | "$CLI_PATH" check --adapter claude --mcp-response-gate --no-notify 2>/dev/null)"
+mcpresp_fail_open="$(printf '%s' 'not-json' | "$CLI_PATH" check --adapter claude --mcp-response-gate --no-notify --working-directory "$repo" 2>/dev/null)"
 set -e
 if [[ "$mcpresp_fail_open" != "{}" ]]; then
   echo "Expected mcp-response-gate fail-open {}" >&2
@@ -1418,7 +1501,7 @@ printf '%s' 'AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF' > "$mcpresp_key_repo/secret
 "$CLI_PATH" seal secret.txt --working-directory "$mcpresp_key_repo" --key-file custom.key -o sealed.txt --quiet
 mcpresp_sealed_body="$(tr -d '\n' < "$mcpresp_key_repo/sealed.txt")"
 set +e
-mcpresp_sealed_out="$(printf '{"tool_name":"mcp__github__get","tool_response":"%s"}' "$mcpresp_sealed_body" | "$CLI_PATH" check --adapter claude --mcp-response-gate --no-notify --key-file "$mcpresp_key_repo/custom.key" 2>/tmp/offsend-mcpresp-key-stderr.$$)"
+mcpresp_sealed_out="$(printf '{"tool_name":"mcp__github__get","tool_response":"%s"}' "$mcpresp_sealed_body" | "$CLI_PATH" check --adapter claude --mcp-response-gate --no-notify --key-file "$mcpresp_key_repo/custom.key" --working-directory "$repo" 2>/tmp/offsend-mcpresp-key-stderr.$$)"
 set -e
 if [[ "$mcpresp_sealed_out" != "{}" ]]; then
   echo "Expected sealed tokens (custom key) in an MCP response to produce no findings" >&2
@@ -1451,25 +1534,25 @@ fi
 
 # Subagent gate (Cursor): secret in task → deny; clean task → allow; fail-open; install toggles.
 # offsend:ignore-next-line
-subagent_deny="$(printf '%s' '{"task":"use AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF","subagent_type":"explore"}' | "$CLI_PATH" check --adapter cursor --subagent-gate --no-notify 2>/dev/null)"
+subagent_deny="$(printf '%s' '{"task":"use AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF","subagent_type":"explore"}' | "$CLI_PATH" check --adapter cursor --subagent-gate --no-notify --working-directory "$repo" 2>/dev/null)"
 if ! echo "$subagent_deny" | grep -q '"deny"'; then
   echo "Expected subagent-gate deny for secret-shaped task" >&2
   echo "$subagent_deny" >&2
   exit 1
 fi
-subagent_allow="$(printf '%s' '{"task":"Explore the auth module","subagent_type":"explore"}' | "$CLI_PATH" check --adapter cursor --subagent-gate --no-notify 2>/dev/null)"
+subagent_allow="$(printf '%s' '{"task":"Explore the auth module","subagent_type":"explore"}' | "$CLI_PATH" check --adapter cursor --subagent-gate --no-notify --working-directory "$repo" 2>/dev/null)"
 if ! echo "$subagent_allow" | grep -q '"allow"'; then
   echo "Expected subagent-gate allow for clean task" >&2
   echo "$subagent_allow" >&2
   exit 1
 fi
-subagent_nested="$(printf '%s' '{"tool_name":"Task","tool_input":{"prompt":"use AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF","subagent_type":"explore"}}' | "$CLI_PATH" check --adapter cursor --subagent-gate --no-notify 2>/dev/null)"
+subagent_nested="$(printf '%s' '{"tool_name":"Task","tool_input":{"prompt":"use AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF","subagent_type":"explore"}}' | "$CLI_PATH" check --adapter cursor --subagent-gate --no-notify --working-directory "$repo" 2>/dev/null)"
 if ! echo "$subagent_nested" | grep -q '"deny"'; then
   echo "Expected subagent-gate deny for nested tool_input secrets" >&2
   echo "$subagent_nested" >&2
   exit 1
 fi
-subagent_fail_closed="$(printf '%s' 'not-json' | "$CLI_PATH" check --adapter cursor --subagent-gate --no-notify 2>/dev/null)"
+subagent_fail_closed="$(printf '%s' 'not-json' | "$CLI_PATH" check --adapter cursor --subagent-gate --no-notify --working-directory "$repo" 2>/dev/null)"
 if ! echo "$subagent_fail_closed" | grep -q '"deny"'; then
   echo "Expected subagent-gate fail-closed deny for invalid JSON" >&2
   echo "$subagent_fail_closed" >&2
@@ -1818,6 +1901,64 @@ if grep -q '"kind"[[:space:]]*:[[:space:]]*"hooks"' /tmp/offsend-hooks-required-
   exit 1
 fi
 rm -f /tmp/offsend-hooks-required-policy.$$ /tmp/offsend-hooks-required-ok.$$
+
+# CI check --policy: git hook installed, no project .cursor/hooks.json → pass.
+ci_policy_repo="$workdir/ci-policy-git-only"
+mkdir -p "$ci_policy_repo"
+git -C "$ci_policy_repo" init >/dev/null
+git -C "$ci_policy_repo" config user.email "ci@example.com"
+git -C "$ci_policy_repo" config user.name "Offsend CI"
+printf '%s\n' \
+  "version: 1" \
+  "ignore:" \
+  "  patterns: []" \
+  "hooks:" \
+  "  enabled: true" \
+  "  git: [pre-commit]" \
+  "  publish: false" > "$ci_policy_repo/.offsend.yml"
+HOME="$sync_home" "$CLI_PATH" hook install --path "$ci_policy_repo" --target git --cli-path "$CLI_PATH" >/dev/null
+if [[ -f "$ci_policy_repo/.cursor/hooks.json" ]]; then
+  echo "Expected git-only hook install not to write project .cursor/hooks.json" >&2
+  exit 1
+fi
+ci_home="$workdir/ci-empty-home"
+mkdir -p "$ci_home"
+set +e
+HOME="$ci_home" "$CLI_PATH" check --policy "$ci_policy_repo" --format json \
+  >/tmp/offsend-ci-policy-git-only.$$ 2>/dev/null
+ci_policy_status="$?"
+set -e
+if grep -q '"kind"[[:space:]]*:[[:space:]]*"hooks"' /tmp/offsend-ci-policy-git-only.$$; then
+  echo "Expected check --policy not to fail on missing project AI-editor hooks" >&2
+  cat /tmp/offsend-ci-policy-git-only.$$ >&2
+  exit 1
+fi
+if [[ "$ci_policy_status" -ne 0 ]]; then
+  echo "Expected check --policy to pass with git hook and no project AI hooks, got $ci_policy_status" >&2
+  cat /tmp/offsend-ci-policy-git-only.$$ >&2
+  exit 1
+fi
+rm -f /tmp/offsend-ci-policy-git-only.$$
+
+# init writes seal into the committed YAML (no comment sheet).
+init_repo="$workdir/init-seal"
+mkdir -p "$init_repo"
+HOME="$sync_home" "$CLI_PATH" init --path "$init_repo" --no-sync --no-check >/dev/null
+if ! grep -q 'on_secret: seal' "$init_repo/.offsend.yml"; then
+  echo "Expected init YAML to set context.read.on_secret: seal" >&2
+  cat "$init_repo/.offsend.yml" >&2
+  exit 1
+fi
+if ! grep -q 'responses: seal' "$init_repo/.offsend.yml"; then
+  echo "Expected init YAML to set context.mcp.responses: seal" >&2
+  cat "$init_repo/.offsend.yml" >&2
+  exit 1
+fi
+if grep -q 'All detector IDs' "$init_repo/.offsend.yml"; then
+  echo "Expected init YAML not to include the detector-id comment sheet" >&2
+  cat "$init_repo/.offsend.yml" >&2
+  exit 1
+fi
 
 # Foreign git hook: warn + skip git, still install AI hooks, exit 0.
 foreign_repo="$workdir/sync-foreign"

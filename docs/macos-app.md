@@ -76,7 +76,7 @@ macOS may ask for Accessibility (to paste into the front app) and folder access 
 | Documents | Plain text (+ PDF/RTF/Word on macOS CLI) | Plain text, PDF, RTF, Word |
 | Project checks | `show`, `protect`, `check --policy` | UI checks, watched folders |
 | Git hooks | `offsend hook …` | Settings → Hooks |
-| AI prompt hooks | `sync` or `hook install --target …` ([docs](cli.md#ai-editor-hooks)) | — |
+| AI editor hooks | `setup` (user-level Cursor/Claude) or `sync` / `hook install` ([docs](cli.md#ai-editor-hooks)) | — |
 | AI models | Not used by the CLI | Download / import / manage |
 | Automation | Scriptable text / JSON | Background watcher + notifications |
 

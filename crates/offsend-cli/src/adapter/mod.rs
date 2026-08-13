@@ -92,17 +92,9 @@ pub struct AdapterFlags {
     pub sandbox_required: bool,
 }
 
-pub fn run(flags: AdapterFlags) -> Result<ExitCode, String> {
-    // Policy trust is enforced before consuming stdin (Swift parity).
-    let trusted = match crate::policy_trust::status(&flags.project_root) {
-        crate::policy_trust::TrustStatus::Drift(reason)
-        | crate::policy_trust::TrustStatus::Invalid(reason) => {
-            return Ok(fail_closed_policy(flags.adapter, gate_kind(&flags), &reason));
-        }
-        crate::policy_trust::TrustStatus::Trusted => true,
-        crate::policy_trust::TrustStatus::Missing => false,
-    };
-
+/// Read hook JSON from stdin. Oversized input is truncated and tagged with a
+/// trailing NUL so gates fail closed instead of scanning a partial payload.
+pub fn read_hook_stdin() -> Result<String, String> {
     let mut buf = Vec::new();
     io::stdin()
         .take((crate::io::MAX_INPUT_BYTES as u64) + 1)
@@ -114,12 +106,56 @@ pub fn run(flags: AdapterFlags) -> Result<ExitCode, String> {
     } else {
         String::from_utf8(buf).map_err(|_| "stdin_not_utf8".to_string())?
     };
-    let stdin_for_gate = if oversized {
+    if oversized {
         let mut s = stdin;
         s.push('\0');
-        s
+        Ok(s)
     } else {
-        stdin
+        Ok(stdin)
+    }
+}
+
+/// Workspace the hook is acting on. User-level Cursor hooks run with process
+/// cwd `~/.cursor/`; the project lives in the payload (`cwd` / `workspace_roots`).
+pub fn workspace_from_hook_payload(stdin: &str, process_cwd: &Path) -> Option<PathBuf> {
+    let root: Value = serde_json::from_str(stdin).ok()?;
+    let raw = root
+        .get("cwd")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            root.pointer("/tool_info/cwd")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+        })
+        .or_else(|| {
+            root.get("workspace_roots")
+                .and_then(|v| v.as_array())
+                .and_then(|a| a.first())
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+        })
+        .or_else(|| {
+            root.get("workspace_root")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+        })?;
+    let path = Path::new(raw);
+    Some(if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        process_cwd.join(path)
+    })
+}
+
+pub fn run(flags: AdapterFlags, stdin_for_gate: &str) -> Result<ExitCode, String> {
+    let trusted = match crate::policy_trust::status(&flags.project_root) {
+        crate::policy_trust::TrustStatus::Drift(reason)
+        | crate::policy_trust::TrustStatus::Invalid(reason) => {
+            return Ok(fail_closed_policy(flags.adapter, gate_kind(&flags), &reason));
+        }
+        crate::policy_trust::TrustStatus::Trusted => true,
+        crate::policy_trust::TrustStatus::Missing => false,
     };
 
     // Until trusted, ignore fields that can loosen gates (check.exclude, ask modes, …).
@@ -142,7 +178,11 @@ pub fn run(flags: AdapterFlags) -> Result<ExitCode, String> {
     };
     let mcp_allow = context_str_list(&flags.context, &["mcp", "allow"]);
     let mcp_deny = context_str_list(&flags.context, &["mcp", "deny"]);
-    let mcp_responses = context_str(&flags.context, &["mcp", "responses"]);
+    // No `.offsend.yml` (or no `context.mcp.responses`): seal. Explicit observe/warn
+    // in the project file still win.
+    let mcp_responses = Some(
+        context_str(&flags.context, &["mcp", "responses"]).unwrap_or_else(|| "seal".to_string()),
+    );
     let subagents_mode = match context_str(&flags.context, &["subagents", "mode"]).as_deref() {
         Some("deny") => Some("deny".to_string()),
         Some(other) if trusted => Some(other.to_string()),
@@ -153,8 +193,10 @@ pub fn run(flags: AdapterFlags) -> Result<ExitCode, String> {
     } else {
         true
     };
+    // Machine default is seal so a clone without YAML still replaces plaintext.
+    // `context.read.on_secret: block` opts out.
     let on_secret_seal =
-        context_str(&flags.context, &["read", "on_secret"]).as_deref() == Some("seal");
+        context_str(&flags.context, &["read", "on_secret"]).as_deref() != Some("block");
 
     let code = if flags.read_gate {
         read::run(
@@ -300,4 +342,72 @@ fn context_bool(context: &Option<Value>, path: &[&str]) -> Option<bool> {
         cur = cur.get(*key)?;
     }
     cur.as_bool()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::workspace_from_hook_payload;
+    use std::path::Path;
+
+    fn process_cwd() -> &'static Path {
+        Path::new("/tmp/editor-home/.cursor")
+    }
+
+    #[test]
+    fn workspace_prefers_cwd() {
+        let json = r#"{"cwd":"/tmp/proj","workspace_roots":["/tmp/other"]}"#;
+        assert_eq!(
+            workspace_from_hook_payload(json, process_cwd()).as_deref(),
+            Some(Path::new("/tmp/proj"))
+        );
+    }
+
+    #[test]
+    fn workspace_from_cursor_workspace_roots() {
+        let json = r#"{"workspace_roots":["/tmp/proj"]}"#;
+        assert_eq!(
+            workspace_from_hook_payload(json, process_cwd()).as_deref(),
+            Some(Path::new("/tmp/proj"))
+        );
+    }
+
+    #[test]
+    fn workspace_from_claude_cwd() {
+        let json = r#"{"cwd":"/Users/me/app","hook_event_name":"PreToolUse"}"#;
+        assert_eq!(
+            workspace_from_hook_payload(json, process_cwd()).as_deref(),
+            Some(Path::new("/Users/me/app"))
+        );
+    }
+
+    #[test]
+    fn workspace_from_windsurf_tool_info_cwd() {
+        let json = r#"{"tool_info":{"cwd":"/tmp/windsurf-app"}}"#;
+        assert_eq!(
+            workspace_from_hook_payload(json, process_cwd()).as_deref(),
+            Some(Path::new("/tmp/windsurf-app"))
+        );
+    }
+
+    #[test]
+    fn workspace_resolves_relative_cwd() {
+        let json = r#"{"cwd":"proj"}"#;
+        assert_eq!(
+            workspace_from_hook_payload(json, process_cwd()).as_deref(),
+            Some(Path::new("/tmp/editor-home/.cursor/proj"))
+        );
+    }
+
+    #[test]
+    fn workspace_none_on_invalid_or_empty() {
+        assert_eq!(
+            workspace_from_hook_payload("not-json", process_cwd()),
+            None
+        );
+        assert_eq!(workspace_from_hook_payload("{}", process_cwd()), None);
+        assert_eq!(
+            workspace_from_hook_payload(r#"{"cwd":""}"#, process_cwd()),
+            None
+        );
+    }
 }

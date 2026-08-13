@@ -44,6 +44,10 @@ pub struct InstallArgs {
     #[arg(long = "cli-path")]
     pub cli_path: Option<String>,
 
+    /// Install Cursor/Claude hooks in the home directory (every repo on this machine).
+    #[arg(long, default_value_t = false)]
+    pub user: bool,
+
     /// Skip confirmation (accepted; install is non-interactive).
     #[arg(long, default_value_t = false)]
     pub yes: bool,
@@ -198,6 +202,9 @@ fn git_kinds_from_args(
 }
 
 fn gate_options_from_args(args: &InstallArgs) -> GateOptions {
+    if args.user {
+        return hook_ai::machine_gate_options();
+    }
     GateOptions {
         read_gate: !args.no_read_gate,
         write_gate: !args.no_write_gate,
@@ -206,6 +213,7 @@ fn gate_options_from_args(args: &InstallArgs) -> GateOptions {
         mcp_gate: !args.no_mcp_gate,
         subagent_gate: !args.no_subagent_gate,
         mcp_response_gate: !args.no_mcp_response_gate,
+        grep_gate: !args.no_read_gate,
     }
 }
 
@@ -221,6 +229,9 @@ fn any_no_gate(args: &InstallArgs) -> bool {
 
 fn install(args: InstallArgs) -> Result<ExitCode, String> {
     let _ = args.yes; // accepted; install is non-interactive
+    if args.user {
+        return install_user(&args);
+    }
     let root = path_arg(args.path.as_deref());
     if !root.is_dir() {
         return Err(format!(
@@ -510,12 +521,55 @@ fn status_exit_code(target: &str, targets: &[(String, String, String)]) -> u8 {
     }
 }
 
+fn install_user(args: &InstallArgs) -> Result<ExitCode, String> {
+    let target = args.target.as_deref().unwrap_or("default");
+    if matches!(target, "git" | "windsurf" | "codex") {
+        return Err(
+            "--user supports cursor, claude, or the default (both). Git hooks stay per-repo."
+                .into(),
+        );
+    }
+    let cli = args
+        .cli_path
+        .clone()
+        .unwrap_or_else(|| current_exe().unwrap_or_else(|_| "offsend".into()));
+    let home = dirs_home();
+    let gates = gate_options_from_args(args);
+    let targets: Vec<AiTarget> = match target {
+        "cursor" | "claude" => vec![AiTarget::parse(target).expect("validated above")],
+        "all" | "default" => hook_ai::user_targets().to_vec(),
+        other => {
+            return Err(format!(
+                "Unknown --target {other}. For --user expected cursor, claude, or all."
+            ))
+        }
+    };
+    for t in targets {
+        let path = hook_ai::install(t, &home, &cli, &args.hook_policy, &gates)
+            .map_err(|e| e.to_string())?;
+        println!("installed {} user hook ({})", t.as_str(), path.display());
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+pub fn install_user_hooks(cli_path: &str, hook_policy: &str) -> Result<Vec<(String, PathBuf)>, String> {
+    let home = dirs_home();
+    let gates = hook_ai::machine_gate_options();
+    let mut installed = Vec::new();
+    for t in hook_ai::user_targets() {
+        let path = hook_ai::install(t, &home, cli_path, hook_policy, &gates)
+            .map_err(|e| e.to_string())?;
+        installed.push((t.as_str().to_string(), path));
+    }
+    Ok(installed)
+}
+
 fn path_arg(path: Option<&str>) -> PathBuf {
     path.map(PathBuf::from)
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
 }
 
-fn current_exe() -> Result<String, String> {
+pub(crate) fn current_exe() -> Result<String, String> {
     std::env::current_exe()
         .map(|p| p.display().to_string())
         .map_err(|e| e.to_string())

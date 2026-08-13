@@ -15,8 +15,8 @@ Config references (do not commit the full catalog as-is):
 
 | File | Role |
 | --- | --- |
-| [`.offsend.yml.example`](../.offsend.yml.example) | Annotated starter — copy or use `offsend init` |
-| [`.offsend.yml.full`](../.offsend.yml.full) | Every recognized key + comments — pick what you need |
+| [`.offsend.example.yml`](../.offsend.example.yml) | Annotated starter — copy or use `offsend init` |
+| [`.offsend.full.yml`](../.offsend.full.yml) | Every recognized key + comments — pick what you need |
 | [configuration.md](configuration.md) | Settings reference |
 
 ## 2. Close obvious gaps
@@ -27,7 +27,7 @@ offsend protect    # promote required exposures into .offsend.yml + sync ignores
 offsend sync       # ignore files + git / AI-editor hooks (hooks.enabled defaults true)
 ```
 
-With `hooks.enabled: true` (default), `offsend doctor` and CI `check --policy` **fail** until hooks are installed — so teammates cannot silently skip `sync`.
+With `hooks.enabled: true` (default), `offsend doctor` **fails** until declared git hooks are installed; project AI-editor files are a warning. CI `check --policy` fails on missing git hooks, not on missing `.cursor/hooks.json`.
 
 Recommended git hooks in `.offsend.yml`:
 
@@ -45,7 +45,8 @@ hooks:
 If the team uses MCP tools, seal secrets in tool **responses** before the model sees them. Each engineer needs a local key; the mode lives in the shared policy:
 
 ```bash
-offsend keygen --default   # once per machine → ~/.offsend/seal.key (do not commit)
+offsend setup              # once per machine: seal key + user-level Cursor/Claude hooks
+# or: offsend keygen --default   # key only → ~/.offsend/seal.key (do not commit)
 ```
 
 ```yaml
@@ -71,7 +72,7 @@ context:
 offsend sync && offsend doctor
 ```
 
-`fields` (`seal` / `drop` / `pass`) apply to JSON object/array MCP output when the effective `responses` mode is `seal`. Rename `server` / `tool` to match your MCP config. Full key catalog: [`.offsend.yml.full`](../.offsend.yml.full). Recipe: [configuration.md → MCP rules](configuration.md#mcp-rules-recipe). Short overview: [README → MCP seal](../README.md#mcp-seal).
+`fields` (`seal` / `drop` / `pass`) apply to JSON object/array MCP output when the effective `responses` mode is `seal`. Cursor and Claude can rewrite MCP output; Windsurf cannot (deny via exit code). Codex has no MCP gates. Rename `server` / `tool` to match your MCP config. Full key catalog: [`.offsend.full.yml`](../.offsend.full.yml). Recipe: [configuration.md → MCP rules](configuration.md#mcp-rules-recipe). Short overview: [README → Seal](../README.md#seal).
 
 ## 3. Commit the source of truth
 
@@ -102,6 +103,7 @@ offsend check --staged --policy --fail-on block
 ## 5. Every clone
 
 ```bash
+offsend setup    # if this machine has not run install/setup yet
 offsend sync
 offsend doctor
 ```
@@ -165,7 +167,7 @@ Then rotate any credentials that appeared in transcripts. Hooks and ignore files
 
 - [CLI reference](cli.md)
 - [Configuration](configuration.md)
-- [`.offsend.yml.example`](../.offsend.yml.example) — starter
-- [`.offsend.yml.full`](../.offsend.yml.full) — full parameter catalog
+- [`.offsend.example.yml`](../.offsend.example.yml) — starter
+- [`.offsend.full.yml`](../.offsend.full.yml) — full parameter catalog
 - [FAQ](faq.md)
 - [Positioning](positioning.md)

@@ -24,6 +24,7 @@ mod sandbox_policy;
 mod sandbox_provider;
 mod sandbox_sync;
 mod seal_cmd;
+mod setup_cmd;
 mod show_cmd;
 mod sync_cmd;
 mod yaml_ignore;
@@ -34,7 +35,7 @@ use std::process::ExitCode;
 #[derive(Parser)]
 #[command(
     name = "offsend",
-    about = "Local sensitive data checks for developers.",
+    about = "Keep secrets out of AI context. Agents keep working.",
     version = env!("OFFSEND_CLI_VERSION")
 )]
 struct Cli {
@@ -66,7 +67,9 @@ enum Commands {
     /// Trust / inspect policy snapshots used by adapter gates.
     #[command(subcommand)]
     Policy(policy_cmd::PolicyCmd),
-    /// Verify local Offsend CLI setup and dependencies.
+    /// One-time machine setup: seal key + user-level Cursor/Claude hooks.
+    Setup(setup_cmd::SetupArgs),
+    /// Verify CLI, seal key, and user-level hooks (plus repo policy when present).
     Doctor(doctor_cmd::DoctorArgs),
     /// Launch an AI editor under the sandbox from `.offsend.yml`.
     Run(run_cmd::RunArgs),
@@ -91,6 +94,7 @@ fn main() -> ExitCode {
         Commands::Ignore(args) => ignore_cmd::run(args),
         Commands::Hook(cmd) => hook_cmd::run(cmd),
         Commands::Policy(cmd) => policy_cmd::run(cmd),
+        Commands::Setup(args) => setup_cmd::run(args),
         Commands::Doctor(args) => doctor_cmd::run(args),
         Commands::Run(args) => run_cmd::run(args),
         Commands::Edit(args) => edit_cmd::run(args),

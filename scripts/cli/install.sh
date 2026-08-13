@@ -377,6 +377,13 @@ main() {
       exit 1
       ;;
   esac
+
+  if [[ -x "${INSTALL_DIR}/offsend" ]]; then
+    echo "Configuring machine defaults (seal key + user-level editor hooks)..."
+    "${INSTALL_DIR}/offsend" setup || {
+      echo "warning: offsend setup failed; run: offsend setup" >&2
+    }
+  fi
 }
 
 main "$@"

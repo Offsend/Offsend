@@ -74,6 +74,7 @@ pub struct GateOptions {
     pub mcp_gate: bool,
     pub subagent_gate: bool,
     pub mcp_response_gate: bool,
+    pub grep_gate: bool,
 }
 
 impl Default for GateOptions {
@@ -86,8 +87,27 @@ impl Default for GateOptions {
             mcp_gate: true,
             subagent_gate: true,
             mcp_response_gate: true,
+            grep_gate: true,
         }
     }
+}
+
+/// Narrow machine-wide set: prompt + read + shell + MCP response. No extra gates.
+pub fn machine_gate_options() -> GateOptions {
+    GateOptions {
+        read_gate: true,
+        write_gate: false,
+        shell_gate: true,
+        shell_audit: false,
+        mcp_gate: false,
+        subagent_gate: false,
+        mcp_response_gate: true,
+        grep_gate: false,
+    }
+}
+
+pub fn user_targets() -> [AiTarget; 2] {
+    [AiTarget::Cursor, AiTarget::Claude]
 }
 
 #[derive(Debug, Error)]
@@ -158,7 +178,7 @@ pub fn install(
     let enable_mcp = file_gates && gates.mcp_gate;
     let enable_mcp_response = file_gates && gates.mcp_response_gate;
     let enable_artifact = file_gates;
-    let enable_grep = enable_read && matches!(target, AiTarget::Cursor);
+    let enable_grep = enable_read && gates.grep_gate && matches!(target, AiTarget::Cursor);
     let enable_subagent = gates.subagent_gate && matches!(target, AiTarget::Cursor);
 
     match target {
@@ -895,6 +915,26 @@ mod tests {
         .unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), first);
         let _ = fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn machine_gates_skip_grep_and_subagent() {
+        let home = tmp_repo();
+        let path = install(
+            AiTarget::Cursor,
+            &home,
+            "/usr/local/bin/offsend",
+            "soft-block",
+            &machine_gate_options(),
+        )
+        .unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(text.contains("--mcp-response-gate"), "{text}");
+        assert!(text.contains("--read-gate"), "{text}");
+        assert!(text.contains("--shell-gate"), "{text}");
+        assert!(!text.contains("--subagent-gate"), "{text}");
+        assert!(!text.contains("--grep-gate"), "{text}");
+        let _ = fs::remove_dir_all(&home);
     }
 
     #[test]

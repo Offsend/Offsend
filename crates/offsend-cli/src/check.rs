@@ -221,12 +221,15 @@ pub fn run(args: CheckArgs) -> Result<ExitCode, CheckError> {
                 crate::adapter::GateKind::Prompt,
             ));
         };
-        let loaded = OffsendProjectConfig::find_and_load(&cwd).ok().flatten();
+        let stdin_for_gate = crate::adapter::read_hook_stdin().map_err(CheckError::Message)?;
+        let search = crate::adapter::workspace_from_hook_payload(&stdin_for_gate, &cwd)
+            .unwrap_or_else(|| cwd.clone());
+        let loaded = OffsendProjectConfig::find_and_load(&search).ok().flatten();
         let project_root = loaded
             .as_ref()
             .and_then(|(p, _)| p.parent().map(|d| d.to_path_buf()))
             .unwrap_or_else(|| {
-                crate::hook_git::resolve_repo_root(&cwd).unwrap_or_else(|_| cwd.clone())
+                crate::hook_git::resolve_repo_root(&search).unwrap_or_else(|_| search.clone())
             });
         let ignore_exclude = loaded
             .as_ref()
@@ -260,28 +263,31 @@ pub fn run(args: CheckArgs) -> Result<ExitCode, CheckError> {
                 )
             })
             .unwrap_or(false);
-        return crate::adapter::run(crate::adapter::AdapterFlags {
-            adapter,
-            hook_policy,
-            secrets_only: args.secrets_only_enabled(),
-            seal_copy: args.seal_copy,
-            key_file: args.key_file.clone(),
-            key_name: args.key_name.clone(),
-            read_gate: args.read_gate,
-            write_gate: args.write_gate,
-            shell_gate: args.shell_gate,
-            shell_audit: args.shell_audit,
-            mcp_gate: args.mcp_gate,
-            mcp_response_gate: args.mcp_response_gate,
-            subagent_gate: args.subagent_gate,
-            artifact_audit: args.artifact_audit,
-            grep_gate: args.grep_gate,
-            context,
-            exclude_patterns,
-            ignore_patterns,
-            project_root,
-            sandbox_required,
-        })
+        return crate::adapter::run(
+            crate::adapter::AdapterFlags {
+                adapter,
+                hook_policy,
+                secrets_only: args.secrets_only_enabled(),
+                seal_copy: args.seal_copy,
+                key_file: args.key_file.clone(),
+                key_name: args.key_name.clone(),
+                read_gate: args.read_gate,
+                write_gate: args.write_gate,
+                shell_gate: args.shell_gate,
+                shell_audit: args.shell_audit,
+                mcp_gate: args.mcp_gate,
+                mcp_response_gate: args.mcp_response_gate,
+                subagent_gate: args.subagent_gate,
+                artifact_audit: args.artifact_audit,
+                grep_gate: args.grep_gate,
+                context,
+                exclude_patterns,
+                ignore_patterns,
+                project_root,
+                sandbox_required,
+            },
+            &stdin_for_gate,
+        )
         .map_err(CheckError::Message);
     }
 
@@ -623,7 +629,7 @@ pub fn run(args: CheckArgs) -> Result<ExitCode, CheckError> {
         }
 
         if crate::hook_policy::hooks_required(project_config.as_ref()) {
-            for finding in crate::hook_policy::findings(&root, project_config.as_ref()) {
+            for finding in crate::hook_policy::git_findings(&root, project_config.as_ref()) {
                 policy_findings.push(PolicyFindingOut {
                     kind: "hooks".into(),
                     id: finding.id,
