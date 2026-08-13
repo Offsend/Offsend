@@ -182,6 +182,7 @@ mod tests {
 
     #[test]
     fn decodes_base64_payload() {
+        // offsend:ignore-next-line
         let secret = "sk_live_0123456789abcdefghijklmn";
         let encoded = STANDARD.encode(secret.as_bytes());
         let text = format!("here is data: {encoded} end");

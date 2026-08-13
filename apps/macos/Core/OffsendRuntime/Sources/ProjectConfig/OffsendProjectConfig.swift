@@ -32,6 +32,9 @@ public struct OffsendProjectCheckConfig: Codable, Equatable, Sendable {
     public var exclude: [String]?
     public var detectors: OffsendProjectDetectorsConfig?
     public var dictionaries: [OffsendProjectDictionaryEntry]?
+    /// When true, `offsend check` honors `offsend:ignore` / `offsend:ignore-next-line`.
+    /// Editor hooks and the clipboard guard ignore this key.
+    public var honorInlineIgnore: Bool?
 
     enum CodingKeys: String, CodingKey {
         case failOn = "fail_on"
@@ -39,6 +42,7 @@ public struct OffsendProjectCheckConfig: Codable, Equatable, Sendable {
         case exclude
         case detectors
         case dictionaries
+        case honorInlineIgnore = "honor_inline_ignore"
     }
 
     public init(
@@ -46,13 +50,15 @@ public struct OffsendProjectCheckConfig: Codable, Equatable, Sendable {
         policy: Bool? = nil,
         exclude: [String]? = nil,
         detectors: OffsendProjectDetectorsConfig? = nil,
-        dictionaries: [OffsendProjectDictionaryEntry]? = nil
+        dictionaries: [OffsendProjectDictionaryEntry]? = nil,
+        honorInlineIgnore: Bool? = nil
     ) {
         self.failOn = failOn
         self.policy = policy
         self.exclude = exclude
         self.detectors = detectors
         self.dictionaries = dictionaries
+        self.honorInlineIgnore = honorInlineIgnore
     }
 }
 

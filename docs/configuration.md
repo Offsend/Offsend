@@ -181,6 +181,17 @@ Locally, prefer reviewing with `doctor` / `show` and advise-only `init` checks. 
 
 When `true`, `offsend check` also runs workspace policy checks for ignore files, exposed sensitive paths, managed ignore drift, and **git-tracked paths covered by `ignore.patterns`** (committed secrets bypass local AI gates via clone / raw URLs). When `false`, it scans file contents only.
 
+### `check.honor_inline_ignore`
+
+When `true`, `offsend check` (CLI and the GitHub Action, which runs `offsend check`) honors inline `offsend:ignore` / `offsend:ignore-next-line` comments in scanned files. Default `false`. Override for one run with `--honor-inline-ignore`.
+
+This does **not** apply to the macOS clipboard guard or editor hooks (prompt, read, shell, MCP). Those stay closed so a pasted or agent-written directive cannot disable masking. See [`offsend check`](cli.md#offsend-check).
+
+```yaml
+check:
+  honor_inline_ignore: true
+```
+
 ### Strict credentials mode
 
 For repos where credentials must not become agent fuel, use:

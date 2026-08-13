@@ -3,6 +3,7 @@ version: 1
 check:
   fail_on: block
   policy: false
+  # honor_inline_ignore: true   # honor offsend:ignore in `offsend check` / CI
   # Prefer: offsend init --template node
   #          offsend init --list-templates
   #          offsend init --template python --merge-exclude

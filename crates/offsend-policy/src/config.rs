@@ -45,6 +45,10 @@ pub struct OffsendProjectCheckConfig {
     pub detectors: Option<OffsendProjectDetectorsConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dictionaries: Option<Vec<OffsendProjectDictionaryEntry>>,
+    /// When true, `offsend check` honors `offsend:ignore` / `offsend:ignore-next-line`.
+    /// Editor hooks and the clipboard guard ignore this key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub honor_inline_ignore: Option<bool>,
 }
 
 impl OffsendProjectCheckConfig {
@@ -296,7 +300,14 @@ impl OffsendProjectConfig {
 }
 
 const TOP_LEVEL_KEYS: &[&str] = &["version", "check", "ignore", "hooks", "context", "sandbox"];
-const CHECK_KEYS: &[&str] = &["fail_on", "policy", "exclude", "detectors", "dictionaries"];
+const CHECK_KEYS: &[&str] = &[
+    "fail_on",
+    "policy",
+    "exclude",
+    "detectors",
+    "dictionaries",
+    "honor_inline_ignore",
+];
 const DETECTORS_KEYS: &[&str] = &["disable"];
 const IGNORE_KEYS: &[&str] = &["commit", "tools", "patterns"];
 const HOOKS_KEYS: &[&str] = &[
@@ -403,6 +414,14 @@ check:
         let check = cfg.check.unwrap();
         assert_eq!(check.fail_on_or_default(), "warn");
         assert!(check.policy_or_default());
+        assert_eq!(check.honor_inline_ignore, None);
+    }
+
+    #[test]
+    fn parses_honor_inline_ignore() {
+        let yaml = "version: 1\ncheck:\n  honor_inline_ignore: true\n";
+        let cfg = OffsendProjectConfig::parse_yaml(yaml).unwrap();
+        assert_eq!(cfg.check.unwrap().honor_inline_ignore, Some(true));
     }
 
     #[test]

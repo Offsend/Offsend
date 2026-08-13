@@ -26,6 +26,12 @@ check:
   # paths, managed ignore drift). false = content scan only.
   policy: false
 
+  # When true, `offsend check` (including the GitHub Action) honors inline
+  # `offsend:ignore` / `offsend:ignore-next-line` in scanned files. Default false.
+  # Editor hooks and the macOS clipboard guard never honor these directives —
+  # a pasted comment must not disable masking.
+  honor_inline_ignore: false
+
   # Repository-relative globs skipped by file scanning. Prefer seeding via
   # `offsend init --template <stack>` (common is always included).
   # Templates: common, node (js/ts), python, go, rust, ruby, java, android,

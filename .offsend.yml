@@ -6,6 +6,9 @@ context:
 check:
   fail_on: block
   policy: false
+  # Honor `offsend:ignore` / `offsend:ignore-next-line` in `offsend check` (CI/action).
+  # Clipboard guard and editor hooks never honor these directives.
+  honor_inline_ignore: true
   exclude:
     - "crates/offsend-detect/tests/**"
     - "internal-docs/**"

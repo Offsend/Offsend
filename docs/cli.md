@@ -263,6 +263,7 @@ offsend check --format json --verbose
 | `--staged` | Scan staged files only (exports git blobs to a temp dir) |
 | `--policy` | Also run workspace policy checks (ignore files, exposed paths, managed ignore drift, git-tracked `ignore.patterns`) |
 | `--fail-on block\|warn\|none` | Exit policy (default from `.offsend.yml` or `block`) |
+| `--honor-inline-ignore` | Honor `offsend:ignore` / `offsend:ignore-next-line` in scanned files (default from `.offsend.yml` `check.honor_inline_ignore`, else off). Does not affect editor hooks or the clipboard guard |
 | `--format text\|json` | Report format |
 | `--quiet` | Findings and errors only |
 | `--verbose` | List every finding and skipped file |
@@ -322,7 +323,7 @@ Installed editor hooks invoke the CLI directly: `offsend check --adapter … --h
 
 That covers errors Offsend can see. A hook process that crashes or times out never reports anything, so Cursor's own `failClosed` flag decides. Gates that carry hard denials set it — write, shell, MCP, subagent — and a crashed hook blocks the operation. The read-gate and the prompt gate leave it off: they are friction against reading secrets rather than a perimeter, and blocking every file read on a broken hook costs more than it protects.
 
-Prompt scanning does **not** honor inline `offsend:ignore` bypasses.
+Prompt scanning does **not** honor inline `offsend:ignore` bypasses. File `offsend check` honors them only with `--honor-inline-ignore` or `check.honor_inline_ignore: true`.
 
 ---
 
@@ -870,6 +871,8 @@ Fail PRs when secrets appear or the AI ignore boundary drifts from the committed
   with:
     fail-on: block
 ```
+
+To honor `offsend:ignore` / `offsend:ignore-next-line` in that scan, set `check.honor_inline_ignore: true` in `.offsend.yml` (or pass `--honor-inline-ignore` if you invoke the CLI directly). Editor hooks and the clipboard guard never honor those comments.
 
 Or install the CLI and run:
 

@@ -37,6 +37,12 @@ pub struct CheckArgs {
     #[arg(long)]
     pub fail_on: Option<String>,
 
+    /// Honor `offsend:ignore` / `offsend:ignore-next-line` in scanned files.
+    /// Defaults to `check.honor_inline_ignore` from `.offsend.yml`, else off.
+    /// Editor hooks and the clipboard guard never honor these directives.
+    #[arg(long = "honor-inline-ignore", default_value_t = false)]
+    pub honor_inline_ignore: bool,
+
     /// Output format (text, json).
     #[arg(long, default_value = "text")]
     pub format: String,
@@ -339,7 +345,10 @@ pub fn run(args: CheckArgs) -> Result<ExitCode, CheckError> {
         .and_then(|c| c.check.as_ref())
         .and_then(|c| c.exclude.clone())
         .unwrap_or_default();
-    let detection_options = detection_options_from_config(project_config.as_ref());
+    let detection_options = detection_options_from_config(
+        project_config.as_ref(),
+        honor_inline_ignore(args.honor_inline_ignore, project_config.as_ref()),
+    );
     let dictionaries: Vec<OffsendProjectDictionaryEntry> = project_config
         .as_ref()
         .and_then(|c| c.check.as_ref())
@@ -878,8 +887,19 @@ fn relative_label(path: &Path, cwd: &Path) -> String {
         .replace('\\', "/")
 }
 
-fn detection_options_from_config(config: Option<&OffsendProjectConfig>) -> DetectionOptions {
+fn honor_inline_ignore(flag: bool, config: Option<&OffsendProjectConfig>) -> bool {
+    flag || config
+        .and_then(|c| c.check.as_ref())
+        .and_then(|c| c.honor_inline_ignore)
+        .unwrap_or(false)
+}
+
+fn detection_options_from_config(
+    config: Option<&OffsendProjectConfig>,
+    honor_inline_ignore: bool,
+) -> DetectionOptions {
     let mut options = DetectionOptions::default();
+    options.honor_inline_ignore = honor_inline_ignore;
     let Some(disable) = config
         .and_then(|c| c.check.as_ref())
         .and_then(|c| c.detectors.as_ref())
@@ -1062,5 +1082,23 @@ mod tests {
 
         let off = Wrap::try_parse_from(["check", "--no-secrets-only"]).unwrap();
         assert!(!off.args.secrets_only_enabled());
+    }
+
+    #[test]
+    fn honor_inline_ignore_flag_and_config() {
+        let default = Wrap::try_parse_from(["check"]).unwrap();
+        assert!(!default.args.honor_inline_ignore);
+
+        let flagged = Wrap::try_parse_from(["check", "--honor-inline-ignore"]).unwrap();
+        assert!(flagged.args.honor_inline_ignore);
+
+        assert!(!honor_inline_ignore(false, None));
+        assert!(honor_inline_ignore(true, None));
+
+        let yaml = "version: 1\ncheck:\n  honor_inline_ignore: true\n";
+        let cfg = OffsendProjectConfig::parse_yaml(yaml).unwrap();
+        assert!(honor_inline_ignore(false, Some(&cfg)));
+        let options = detection_options_from_config(Some(&cfg), true);
+        assert!(options.honor_inline_ignore);
     }
 }
