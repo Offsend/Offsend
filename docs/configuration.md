@@ -13,9 +13,9 @@ offsend init --template node --strict-credentials
 offsend init --list-templates
 offsend init --template node --no-check --no-sync
 # or copy the example:
-cp .offsend.yml.example .offsend.yml
+cp .offsend.example.yml .offsend.yml
 # full key catalog (reference — do not use as a drop-in profile):
-#   .offsend.yml.full
+#   .offsend.full.yml
 ```
 
 `offsend init` expands exclude presets into a concrete `check.exclude` list (no `preset` field in the YAML). The `common` preset is always included. Template names are case-insensitive; aliases: `js`/`ts` → `node`, `ios` → `swift`. Without `--template`, a TTY prompts for the stack; non-TTY requires `--template` explicitly.
@@ -89,7 +89,7 @@ hooks:
 #           account_id: pass
 ```
 
-Annotated starter: [`.offsend.yml.example`](../.offsend.yml.example). Every recognized key with comments: [`.offsend.yml.full`](../.offsend.yml.full).
+Annotated starter: [`.offsend.example.yml`](../.offsend.example.yml). Every recognized key with comments: [`.offsend.full.yml`](../.offsend.full.yml).
 
 ---
 
@@ -219,7 +219,7 @@ context:
     audit: true
 ```
 
-`--strict-credentials` does **not** set `context.mcp.responses: seal`. Add that (plus `offsend keygen --default` per machine) when MCP tools are in use — [README → MCP seal](../README.md#mcp-seal).
+`--strict-credentials` also includes `context.read.on_secret: seal` and `context.mcp.responses: seal` (same as a normal `init`). Generate a seal key per machine (`offsend setup` or `offsend keygen --default`).
 
 This does **not** change the default AI-editor prompt policy (`soft-block`). To hard-block secret prompts in the editor:
 
@@ -261,7 +261,7 @@ Detector IDs to turn off for this project. Unknown IDs are ignored.
 
 This is how teams **tune** a shared baseline without abandoning `.offsend.yml`: keep credential detectors on, disable noisy non-secret detectors (for example `phone`, `email`) that do not match your threat model. Prefer editing this list over maintaining separate per-engineer ignore rules.
 
-When `context.read.on_secret: seal` or `context.mcp.responses: seal` is active, agent-facing seal scans intentionally ignore this disable list: concrete detector and custom-dictionary findings are sealed rather than left plaintext (`highEntropyString` stays excluded because it is fuzzy/noisy). `offsend doctor` reports `seal-detector-gap` when seal mode and a disable list coexist. Ordinary `offsend check` still honors `disable` as written.
+When `context.read.on_secret: seal` or `context.mcp.responses: seal` is active, agent-facing seal scans intentionally ignore this disable list: concrete detector and custom-dictionary findings are sealed rather than left plaintext (`highEntropyString` stays excluded because it is fuzzy/noisy). Ordinary `offsend check` still honors `disable` as written.
 
 Supported IDs:
 
@@ -284,14 +284,14 @@ Separate from git hooks. See [cli.md — AI editor hooks](cli.md#ai-editor-hooks
 
 ### `hooks.enabled`
 
-Whether this project expects git + AI-editor hooks. **Default `true`** when unset (including when the `hooks` section is absent).
+Whether this project expects git hooks (`sync` also installs detected AI-editor hooks). **Default `true`** when unset (including when the `hooks` section is absent).
 
-| Value | `offsend sync` | `doctor` / `check --policy` |
-| --- | --- | --- |
-| `true` (default) | Installs [`hooks.git`](#hooksgit) + detected AI-editor hooks | **Fail** if configured git hooks or detected AI-editor hooks are missing / not Offsend-managed |
-| `false` | Skips hook install (same effect as `--no-hooks` for the hooks half) | Does not fail for missing hooks |
+| Value | `offsend sync` | `doctor` | `check --policy` (CI) |
+| --- | --- | --- | --- |
+| `true` (default) | Installs [`hooks.git`](#hooksgit) + detected AI-editor hooks | **Fail** if configured git hooks are missing / not Offsend-managed. Project AI-editor files are **warn** (user-level hooks from `offsend setup` cover the machine) | **Fail** if configured git hooks are missing. Does **not** require `.cursor/hooks.json` / editor files on the runner |
+| `false` | Skips hook install (same effect as `--no-hooks` for the hooks half) | Does not fail for missing hooks | Does not fail for missing hooks |
 
-Commit `hooks.enabled: true` (or rely on the default) so every teammate gets the same gate coverage after `offsend sync`. Set `false` only when the repo intentionally does not use hooks.
+Commit `hooks.enabled: true` (or rely on the default) so every teammate gets git hooks after `offsend sync`. Editor gates on a machine come from `offsend setup` (user-level). Set `false` only when the repo intentionally does not use hooks.
 
 ### `hooks.git`
 
@@ -331,7 +331,7 @@ Optional read-gate behavior when a file read is denied because of detected secre
 
 | Field | Description |
 | --- | --- |
-| `on_secret` | `block` (default) — plain deny. `seal` — deny, but write a sealed copy (secrets replaced with `{{TYPE:v1.…}}` tokens) and hand the agent its path so work continues without plaintext in context. Requires a seal key (`offsend keygen --default`); without one, falls back to plain deny |
+| `on_secret` | `seal` (default, including with no YAML) — deny the original read, write a sealed copy (secrets replaced with `{{TYPE:v1.…}}` tokens), and hand the agent its path. `block` — plain deny. Requires a seal key (`offsend setup` or `offsend keygen --default`); without one, falls back to plain deny |
 
 Read at runtime by the read-gate — changing it does not require reinstalling hooks. Sealed copies are exclusively created without following symlinks in a private temp directory, use `0600` permissions, and are cleaned up after ~1 hour. Tokens use fresh random AES-GCM nonces while remaining compatible with existing `v1` tokens. The user can restore agent outputs containing tokens with `offsend unseal`. Note the honest boundary: seal mode keeps plaintext out of transcripts and model context, but a local agent with access to your seal key is not sandboxed by this.
 
@@ -357,26 +357,26 @@ context:
 
 ### `context.mcp`
 
-Optional MCP policy used by `offsend show`, `offsend doctor`, and the MCP-gate (`offsend sync` / `offsend hook install` / `check --mcp-gate`):
+Optional MCP policy used by the MCP-gate (`offsend sync` / `offsend hook install` / `check --mcp-gate`):
 
 | Field | Description |
 | --- | --- |
 | `mode` | `observe` (stderr only), `ask` (confirm), or `deny` (block). Default when unset: `ask` for findings. With explicit `deny`, unrecognized hook input is also denied (fail-closed) |
 | `allow` | Server name patterns permitted. A non-empty list switches to allowlist mode: servers not matching are flagged |
 | `deny` | Server name patterns to block. `"*"` also enables allowlist mode |
-| `high_risk` | Patterns flagged in `show` / `doctor` (defaults include `filesystem`, `postgres`, …) |
-| `responses` | MCP **response** scanning (`check --mcp-response-gate`): `observe` (default; log/stderr only), `warn` (also warn the agent), or `seal` (Cursor/Claude: replace MCP output with a sealed version before the model sees it; needs a seal key). Cursor keeps the JSON object shape; Claude receives the sealed output as text (`updatedToolOutput` is a string). Responses above the 2 MiB safety limit, responses whose secrets fail to seal, and secret-bearing responses encountered without a seal key are withheld. Caveat: `warn` relies on hook-injected context (`additional_context` / `additionalContext`), which Cursor builds before 3.9.8 did not deliver to the model — for enforcement use `seal` with a seal key |
+| `high_risk` | Server name patterns treated as high-risk by the MCP-gate (defaults include `filesystem`, `postgres`, …) |
+| `responses` | MCP **response** scanning (`check --mcp-response-gate`): `seal` (default when unset — Cursor/Claude replace MCP output with tokens before the model sees it; needs a seal key), `warn` (warn the agent), or `observe` (log/stderr only). Explicit `observe`/`warn` in YAML still win. Cursor keeps the JSON object shape; Claude receives the sealed output as text (`updatedToolOutput` is a string). Responses above the 2 MiB safety limit, responses whose secrets fail to seal, and secret-bearing responses encountered without a seal key are withheld |
 | `rules` | Optional per-tool overrides. Each entry has `match.server` and/or `match.tool` (glob with `*`), plus `mode` and/or `responses`, and optional `fields`. Most specific match wins for `mode` / `responses`; unset values inherit the globals above. `fields` from **all** matching rules are merged (more specific path wins; on equal specificity the earlier list entry wins) — a narrow override without `fields` keeps fields from a broader match. `fields` maps JSON path patterns to `seal` \| `drop` \| `pass` (applied in `responses: seal` for object/array tool output, including JSON encoded as a string). Bare key names match at any depth; dotted paths support `*` and `**`. `pass` skips field sealing for that path but does **not** bypass secret detectors. `drop` keeps the key and sets JSON `null`. |
 
 #### MCP rules recipe
 
-Use this when third-party MCP tools over-return data, or when `offsend show` / `doctor` flags high-risk servers / recent MCP findings without rules.
+Use this when third-party MCP tools over-return data, or when you want per-tool `mode` / `responses` / `fields` instead of the globals.
 
 ```yaml
 context:
   mcp:
     mode: ask
-    responses: seal          # needs: offsend keygen --default
+    responses: seal          # needs: offsend setup (or keygen --default)
     rules:
       # Soften a trusted, low-risk tool
       - match: { server: github, tool: list_issues }
@@ -397,12 +397,11 @@ context:
 
 Workflow:
 
-1. `offsend show` — inventory, configured rules, recent MCP findings (from local activity log)
-2. Add `rules` for high-risk servers or tools that keep sealing secrets
-3. `offsend doctor` — warns when high-risk servers lack rules, or `fields` are set without `responses: seal`
-4. Re-run the agent; check `show` again for recent findings
+1. Add `rules` for high-risk servers or tools that keep sealing secrets
+2. `offsend sync` so editor gates pick up the policy
+3. Re-run the agent
 
-`offsend show` / hooks record only `server`, `tool`, and outcome codes locally (`mcp-activity.log`) — never tool payloads.
+Hooks record only `server`, `tool`, and outcome codes locally (`mcp-activity.log`) — never tool payloads. `offsend show` lists exposed paths (and optional transcript counts); it does not print an MCP inventory.
 
 ### `context.subagents`
 
@@ -508,5 +507,5 @@ Limits:
 - [CLI reference](cli.md) — all commands and AI-editor hooks
 - [FAQ](faq.md)
 - [README](../README.md) — quick start and workflows
-- [`.offsend.yml.example`](../.offsend.yml.example) — copy-paste starter
-- [`.offsend.yml.full`](../.offsend.yml.full) — full parameter catalog
+- [`.offsend.example.yml`](../.offsend.example.yml) — copy-paste starter
+- [`.offsend.full.yml`](../.offsend.full.yml) — full parameter catalog

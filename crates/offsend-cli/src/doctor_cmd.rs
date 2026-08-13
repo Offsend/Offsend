@@ -100,10 +100,10 @@ pub fn run(args: DoctorArgs) -> Result<ExitCode, String> {
     } else if config.is_none() && checks.iter().all(|c| c.name != "config") {
         checks.push(CheckOut {
             name: "config".into(),
-            status: "warn".into(),
-            message: "no .offsend.yml found — run `offsend sync` after creating one".into(),
+            status: "ok".into(),
+            message: "no .offsend.yml — machine defaults; run `offsend init` to share with the team"
+                .into(),
         });
-        suggestions.push("Create .offsend.yml then run: offsend sync".into());
     }
 
     // Config lint: serde silently ignores unknown keys, so a typo like
@@ -159,10 +159,50 @@ pub fn run(args: DoctorArgs) -> Result<ExitCode, String> {
         checks.push(CheckOut {
             name: "seal_key".into(),
             status: "warn".into(),
-            message: "no seal key — run `offsend keygen` for seal/unseal".into(),
+            message: "no seal key — run `offsend setup`".into(),
         });
-        suggestions.push("offsend keygen".into());
+        suggestions.push("offsend setup".into());
     }
+
+    // User-level editor hooks (machine setup). Independent of `.offsend.yml`.
+    let user_home = dirs_home();
+    for t in crate::hook_ai::user_targets() {
+        let id = format!("user-{}-hook", t.as_str());
+        if crate::hook_ai::is_installed(t, &user_home) {
+            checks.push(CheckOut {
+                name: id,
+                status: "ok".into(),
+                message: t.config_path(&user_home).display().to_string(),
+            });
+        } else {
+            checks.push(CheckOut {
+                name: id,
+                status: "warn".into(),
+                message: format!(
+                    "no user-level {} hooks — run `offsend setup`",
+                    t.as_str()
+                ),
+            });
+            suggestions.push("offsend setup".into());
+        }
+    }
+
+    let on_secret_block = config
+        .as_ref()
+        .and_then(|c| c.context.as_ref())
+        .and_then(|ctx| ctx.get("read"))
+        .and_then(|r| r.get("on_secret"))
+        .and_then(|v| v.as_str())
+        == Some("block");
+    checks.push(CheckOut {
+        name: "seal".into(),
+        status: "ok".into(),
+        message: if on_secret_block {
+            "context.read.on_secret: block (YAML opt-out)".into()
+        } else {
+            "reads and MCP responses seal secrets (machine default)".into()
+        },
+    });
 
     // git hooks
     let hooks_on = crate::hook_policy::hooks_required(config.as_ref());
@@ -176,8 +216,8 @@ pub fn run(args: DoctorArgs) -> Result<ExitCode, String> {
             });
             if finding.id.starts_with("git-") || finding.id == "git-hook" {
                 suggestions.push("offsend sync".into());
-            } else if let Some(target) = finding.id.strip_suffix("-hook") {
-                suggestions.push(format!("offsend hook install --target {target}"));
+            } else if finding.id.ends_with("-hook") {
+                suggestions.push("offsend setup".into());
             }
         }
     } else if config
@@ -202,12 +242,12 @@ pub fn run(args: DoctorArgs) -> Result<ExitCode, String> {
             message: "workspace .offsend.yml matches trusted snapshot".into(),
         }),
         crate::policy_trust::TrustStatus::Missing => {
-            checks.push(CheckOut {
-                name: "policy-trust".into(),
-                status: "warn".into(),
-                message: "no trusted policy snapshot — run `offsend policy trust`".into(),
-            });
             if config_path.is_some() {
+                checks.push(CheckOut {
+                    name: "policy-trust".into(),
+                    status: "warn".into(),
+                    message: "no trusted policy snapshot — run `offsend policy trust`".into(),
+                });
                 suggestions.push("offsend policy trust".into());
             }
         }

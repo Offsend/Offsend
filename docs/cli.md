@@ -9,7 +9,7 @@ Project rules live in [`.offsend.yml`](configuration.md) at the repository root 
 ## Install
 
 ```bash
-curl -fsSL https://install.offsend.io/cli | bash
+curl -fsSL https://install.offsend.io/cli | bash   # installs the binary and runs `offsend setup`
 offsend doctor
 ```
 
@@ -43,8 +43,10 @@ The package is `offsend-cli`; the command is `offsend`. The macOS app also ships
 
 | Command | Purpose |
 | --- | --- |
-| [`offsend init`](#offsend-init) | Create `.offsend.yml` (wizard + ignore-file sync + optional baseline check) |
-| [`offsend sync`](#offsend-sync) | Apply `.offsend.yml`: ignore files + `hooks.git` + AI-editor hooks (+ sandbox if enabled) |
+| [`offsend setup`](#offsend-setup) | Once per machine: seal key + user-level Cursor/Claude hooks |
+| [`offsend doctor`](#offsend-doctor) | CLI, key, user hooks; with a repo YAML also git hooks, ignore drift, config-lint |
+| [`offsend init`](#offsend-init) | Create `.offsend.yml` (seal + ignore + pre-commit) |
+| [`offsend sync`](#offsend-sync) | Apply `.offsend.yml`: ignore files + `hooks.git` + AI-editor hooks |
 | [`offsend edit`](#offsend-edit) | Open `.offsend.yml` in `$EDITOR` |
 | [`offsend protect`](#offsend-protect) | Hide exposed sensitive paths from AI (promote to `.offsend.yml` + sync) |
 | [`offsend show`](#offsend-show) | List sensitive paths visible to AI tools (no file contents); `--report` for anonymized JSON |
@@ -56,7 +58,6 @@ The package is `offsend-cli`; the command is `offsend`. The macOS app also ships
 | [`offsend seal`](#offsend-seal) | Replace secrets with reversible seal tokens |
 | [`offsend unseal`](#offsend-unseal) | Restore plaintext from seal tokens |
 | [`offsend keygen`](#offsend-keygen) | Generate a 32-byte seal key |
-| [`offsend doctor`](#offsend-doctor) | Verify CLI, git, settings, hooks, seal key, sandbox |
 
 ---
 
@@ -105,9 +106,24 @@ Behavior notes:
 
 ---
 
+## `offsend setup`
+
+Once per machine: create `~/.offsend/seal.key` if missing and install **user-level** Cursor/Claude hooks (`~/.cursor/hooks.json`, `~/.claude/settings.json`). Idempotent. The install script already runs this.
+
+After setup, agents in any folder use machine seal defaults — no `.offsend.yml` required. User hooks resolve the project root from the hook JSON (`cwd` / `workspace_roots`), not from the process working directory.
+
+```bash
+offsend setup
+offsend setup --dry-run
+```
+
+Narrow gates: prompt, read (seal), MCP response (seal), shell on sensitive paths. Not write / subagent / Grep / audit.
+
+---
+
 ## `offsend doctor`
 
-Verify local setup: settings, CLI path, git, project config, Cursor security version, optional AI hooks, seal key.
+Machine checks: CLI, seal key, user-level Cursor/Claude hooks. With a repo `.offsend.yml`, also git hooks, ignore-file drift, `config-lint`, policy-trust, and optional sandbox provider/policy.
 
 ```bash
 offsend doctor
@@ -118,17 +134,11 @@ offsend doctor --no-follow
 | Flag | Description |
 | --- | --- |
 | `--format text\|json` | Output format (default: `text`) |
-| `--no-follow` | Skip interactive “run next step?” prompt (default outside TTY) |
+| `--no-follow` | Accepted for flag compatibility. The Rust CLI has no interactive follow-up |
 
-Exits `2` when any check has status `fail`. Seal key warnings are informational (`warn`). With [`hooks.enabled`](configuration.md#hooksenabled) (default `true`), missing hooks from [`hooks.git`](configuration.md#hooksgit) or detected AI-editor hooks are **fail** — same as `check --policy`.
+Exits `2` when any check has status `fail`. Seal key and missing user hooks are `warn`. With [`hooks.enabled`](configuration.md#hooksenabled) (default `true`), missing hooks from [`hooks.git`](configuration.md#hooksgit) are **fail**. Missing project AI-editor files are **warn** — user-level hooks from `offsend setup` cover Cursor/Claude on the machine. `check --policy` (CI) fails only on declared git hooks, not on `.cursor/hooks.json`.
 
-Checks include `cursor-version` on macOS (warn below Cursor 3.0 because of CVE-2026-48124), `ignore-sync` / `rules-drift` (shared `.offsend.yml` vs materialized ignore and privacy rule files), `ai-hook-trust-root` (legacy repo-local executable wrappers), `ai-write-gate` / `ai-artifact-audit` / `ai-shell-gate` / `ai-mcp-gate` / `ai-mcp-response-gate` (warn when Cursor/Claude/Windsurf are installed without those gates), `shell-output-audit` (coverage of the post-hoc output audit, plus commands whose printed secrets still need rotating), `trust-surface-map` (editor/Git/shell startup configs and observe-only venv interpreters), `artifact-provenance` (last 30 days of post-write trust-surface metadata), `privileged-daemons` (common Docker/Podman/containerd/BuildKit endpoints and shell-gate coverage), `environment-invocation-gate` (PATH/loader/Git/interpreter environment coverage, and the fact that file reads are not prevented), `hook-coverage-gaps` (residual limits when AI hooks are installed: MCP responses on Cursor, Claude subagents, Cursor open tabs, cloud sessions), `seal-detector-gap` (seal / MCP-seal with credential detectors listed under `check.detectors.disable`, or `url` disabled under seal), `mcp-inventory` (configured MCP servers + policy), and `next-actions` (ranked hints: shared policy → sync / drift repair → protect → gates → history audit/scrub when transcripts exist → git hook). Legacy `ai-wrapper-*` checks remain during migration. By default `show` / doctor **count** transcript files; enable content scan with `context.history.scan_in_show: true` or `offsend show --scan-history` (then doctor can suggest `history scrub` on real findings). Otherwise run `history audit`. In a TTY, doctor may offer to run the first suggested command. JSON includes `suggestedActions`. See also [FAQ → covers / does not cover](faq.md#what-does-offsend-cover-vs-not-cover).
-
-When a shell-gate is installed, `git-config-invocation-gate` confirms static execution-sensitive Git invocation checks are active and names the remaining dynamic-command attribution gaps.
-
-`config-lint` warns about unknown (likely misspelled) keys in `.offsend.yml` — YAML parsing silently ignores unknown fields, so a typo like `fail-on:` instead of `fail_on:` would otherwise disable the setting with no signal. It also flags unknown `ignore.tools` slugs and unsupported `hooks.git` entries. `context`/`sandbox` subtrees are not linted.
-
-With [`sandbox.enabled: true`](configuration.md#sandbox), doctor also reports `sandbox-<editor>` (mechanism + reach), `sandbox-coverage` (basename globs that cannot become sandbox paths), `sandbox-nono-pack-*` (registry pack for Claude/Codex), `sandbox-launch` (`offsend run …` / `nono run …` when needed), and `sandbox-policy` (**fail** on drift or hollow configs: Cursor `insecure_none`, Claude `allowUnsandboxedCommands` / `filesystem.disabled`, Codex `danger-full-access`). With [`hooks.enabled`](configuration.md#hooksenabled) (default `true`), doctor / `check --policy` **fail** when configured [`hooks.git`](configuration.md#hooksgit) entries or detected AI-editor hooks are missing. Same checks run in `offsend check --policy`.
+JSON includes `suggestedActions` (typically `offsend setup` or `offsend sync`). `config-lint` warns about unknown keys in `.offsend.yml`. Doctor does **not** emit the older Swift-era check ids (`hook-coverage-gaps`, `trust-surface-map`, `seal-detector-gap`, …). Residual hook limits are documented in [what hooks cover](#what-hooks-cover). See [FAQ → covers / does not cover](faq.md#what-does-offsend-cover-vs-not-cover).
 
 ---
 
@@ -443,12 +453,12 @@ offsend hook install --target cursor --no-mcp-gate
 | --- | --- |
 | `--target cursor\|claude\|windsurf\|codex\|all` | AI editor target |
 | `--hook-policy advise\|soft-block\|block` | Override default policy (`soft-block`) |
-| `--read-gate` / `--no-read-gate` | File-read path gates (**Cursor + Claude only**). **On by default**; `--no-read-gate` disables |
-| `--write-gate` / `--no-write-gate` | Semantic pre-write gate for executable workspace configuration (**Cursor + Claude only**). **On by default**; deny is fail-closed |
-| `--shell-gate` / `--no-shell-gate` | Shell-command gate (**Cursor + Claude only**). **On by default**; sensitive-path / ask-class findings follow `context.shell.mode` (default **deny**); control-plane findings always deny. Cursor `beforeShellExecution` with `failClosed: true`. `--no-shell-gate` disables |
-| `--shell-audit` / `--no-shell-audit` | Shell-**output** audit (**Cursor + Claude only**). **On by default**; Cursor `afterShellExecution`, Claude `PostToolUse` matcher `Bash`. Never fail-closed: it reports on a command that already ran and cannot block. `--no-shell-audit` disables |
-| `--mcp-gate` / `--no-mcp-gate` | MCP tool-call gate (**Cursor + Claude only**). **On by default**; Cursor `beforeMCPExecution` with `failClosed: true`. `--no-mcp-gate` disables |
-| `--mcp-response-gate` / `--no-mcp-response-gate` | MCP tool-**response** gate (**Cursor + Claude only**). **On by default**; Cursor `postToolUse` matcher `MCP:.*`, Claude `PostToolUse` matcher `mcp__.*`; both can rewrite output in `seal` mode. `--no-mcp-response-gate` disables |
+| `--read-gate` / `--no-read-gate` | File-read path gates (**Cursor, Claude, Windsurf**). **On by default**; `--no-read-gate` disables. Codex has no file gates |
+| `--write-gate` / `--no-write-gate` | Semantic pre-write gate for executable workspace configuration (**Cursor, Claude, Windsurf**). **On by default**; deny is fail-closed |
+| `--shell-gate` / `--no-shell-gate` | Shell-command gate (**Cursor, Claude, Windsurf**). **On by default**; sensitive-path / ask-class findings follow `context.shell.mode` (default **deny**); control-plane findings always deny. Cursor `beforeShellExecution` with `failClosed: true`. `--no-shell-gate` disables |
+| `--shell-audit` / `--no-shell-audit` | Shell-**output** audit (**Cursor, Claude, Windsurf**). **On by default**; reports only — editors cannot replace terminal output. `--no-shell-audit` disables |
+| `--mcp-gate` / `--no-mcp-gate` | MCP tool-call gate (**Cursor, Claude, Windsurf**). **On by default**. Codex has no MCP gates. `--no-mcp-gate` disables |
+| `--mcp-response-gate` / `--no-mcp-response-gate` | MCP tool-**response** gate. **On by default** for Cursor/Claude (can rewrite output in `seal` mode). Windsurf can only withhold via exit 2. `--no-mcp-response-gate` disables |
 | `--subagent-gate` / `--no-subagent-gate` | Subagent spawn gate (**Cursor only**). **On by default**; `subagentStart` with `failClosed: true`. `--no-subagent-gate` disables |
 | `--cli-path PATH` | CLI executable referenced by local editor-hook commands |
 | `--force` | Overwrite a foreign git hook; managed editor entries refresh automatically |
@@ -514,7 +524,7 @@ Treat editor hooks as **defense-in-depth**, not a hard perimeter. Prefer this st
 1. **No plaintext secrets in the workspace** — env vars, a secret manager, or `offsend seal`
 2. **AI ignore files** — `offsend protect` / `offsend ignore` (primary hard exclusion from indexing and context)
 3. **Prompt + read/write gates** — friction on known editor paths (`@file`, Read, Edit/Write)
-4. **Shell-gate** — friction when the agent runs shell (`cat` / `grep` / `sed` and similar); on by default for Cursor/Claude
+4. **Shell-gate** — friction when the agent runs shell (`cat` / `grep` / `sed` and similar); on by default for Cursor/Claude/Windsurf
 5. **Git hooks + CI** — `pre-commit` catches secrets leaving via git; `post-merge` re-runs `sync` after pull; CI catches the rest
 
 ### What hooks cover
@@ -523,12 +533,12 @@ Treat editor hooks as **defense-in-depth**, not a hard perimeter. Prefer this st
 | --- | --- | --- |
 | Prompt text / pasted secrets | Prompt gate | Default on install |
 | `@file` / file-like mentions in the prompt | Prompt gate | Bounded disk read of the mentioned path |
-| Editor Read tools | Read-gate | Cursor `beforeReadFile`; Claude `PreToolUse` (`Read`) |
-| Editor Edit / Write tools targeting executable configuration | Write-gate | Cursor `preToolUse` (`Write\|Edit`); Claude `PreToolUse` (`Edit\|Write`) |
-| Agent shell (`Bash` / `beforeShellExecution`) | Shell-gate | On by default for Cursor/Claude; sensitive paths, safe PATH/HOME overrides, and lower-risk daemon mutations follow `context.shell.mode` (default **deny**); control-plane, environment injection, container execution, and direct privileged-socket operations hard-deny. Invalid / oversized hook input fails closed |
-| Agent shell **output** (`afterShellExecution` / `PostToolUse Bash`) | Shell-output audit | On by default for Cursor/Claude. Reports only: neither editor accepts a replacement for terminal output, so secrets a command printed are logged and notified for rotation, not withheld |
-| MCP tool calls | MCP-gate | On by default for Cursor/Claude; Cursor `beforeMCPExecution` (`failClosed: true`); Claude `PreToolUse` (`mcp__.*`). Policy + path/secret scan on **args**; see `context.mcp` in `.offsend.yml` |
-| MCP tool responses | MCP-response-gate | On by default for Cursor/Claude; `PostToolUse` can **replace** the output — `context.mcp.responses: seal` swaps secrets for `{{…}}` tokens before model consumption |
+| Editor Read tools | Read-gate | Cursor `beforeReadFile`; Claude `PreToolUse` (`Read`); Windsurf file gates. Codex: not supported |
+| Editor Edit / Write tools targeting executable configuration | Write-gate | Cursor `preToolUse` (`Write\|Edit`); Claude `PreToolUse` (`Edit\|Write`); Windsurf. Codex: not supported |
+| Agent shell (`Bash` / `beforeShellExecution`) | Shell-gate | On by default for Cursor/Claude/Windsurf; sensitive paths, safe PATH/HOME overrides, and lower-risk daemon mutations follow `context.shell.mode` (default **deny**); control-plane, environment injection, container execution, and direct privileged-socket operations hard-deny. Invalid / oversized hook input fails closed |
+| Agent shell **output** (`afterShellExecution` / `PostToolUse Bash`) | Shell-output audit | On by default for Cursor/Claude/Windsurf. Reports only: editors cannot replace terminal output, so secrets a command printed are logged and notified for rotation, not withheld |
+| MCP tool calls | MCP-gate | On by default for Cursor/Claude/Windsurf. Policy + path/secret scan on **args**; see `context.mcp` in `.offsend.yml`. Codex: not supported |
+| MCP tool responses | MCP-response-gate | Cursor/Claude `PostToolUse` can **replace** output (`context.mcp.responses: seal`). Windsurf withholds via exit 2 (no replace API) |
 | Subagent spawn (Cursor Task) | Subagent-gate | On by default for Cursor `subagentStart` + `preToolUse` (`Task`); secret-scan of the task prompt (`deny` on findings; no `ask`). Claude subagents are not gated — rely on AI ignore |
 | Editor Grep (Cursor) | Grep-gate | On by default with read-gate; seal mode denies Grep (no rewrite API); otherwise single-file content deny |
 
@@ -553,7 +563,7 @@ These walk past a path-based file hook by design. Close them with ignore rules a
 | **Open editor tabs (Cursor)** | Cursor may not always enforce `beforeReadFile` deny | `offsend protect` / `.cursorignore` for hard blocks |
 | **Cloud agent sessions** | Remote/cloud agents do not run local editor hooks | Keep secrets out of the repo; CI `check --policy`; rotate if leaked |
 
-`offsend doctor` surfaces residual gaps as `hook-coverage-gaps` when any AI-editor hook is installed (not a sandbox claim). An installed MCP response hook counts as protecting only when it uses a replacement-capable event, its CLI runtime is healthy, `context.mcp.responses: seal` is configured, and the default seal key exists. Status is **warn** when MCP/Claude/Cursor-specific gaps apply; **ok** (informational) when only the universal cloud-sessions residual remains.
+These residuals are documented here — `offsend doctor` does not emit a `hook-coverage-gaps` check. MCP response sealing is active only when the editor can replace output (Cursor/Claude), `context.mcp.responses: seal` is set, and a seal key exists. Without a key, secret-bearing responses are withheld. Cloud sessions never run local hooks.
 
 ### Hook policies
 
@@ -567,7 +577,7 @@ These walk past a path-based file hook by design. Close them with ignore rules a
 
 ### Read-gate (on by default)
 
-The read gate protects Cursor `beforeReadFile` and Claude `PreToolUse` (`Read`); it is installed by default for these targets (disable with `--no-read-gate`). It:
+The read gate protects Cursor `beforeReadFile`, Claude `PreToolUse` (`Read`), and Windsurf file-read hooks; it is installed by default for those targets (disable with `--no-read-gate`). Codex has no read-gate. It:
 
 1. **Denies sensitive paths** — `.env`, `*.pem`, credentials-like names, and files under `.ssh`, `.aws`, `.kube`, `.docker`, `.gnupg`, `.azure`, `.fly`, …
 2. **Scans complete file content for secrets** — uses the same secret detectors as the prompt gate (`--secrets-only` by default). Cursor supplies `content` in the hook JSON; Claude’s PreToolUse has no body, so Offsend reads the file from disk up to the 2 MiB safety limit. Larger files — and hook payloads over the 2 MiB stdin limit — are denied rather than partially scanned (fail-closed). Known limitation, accepted by design: binary (NUL-containing) and non-UTF-8 files under 2 MiB skip the content step — path rules still apply, but no secret scan runs on them.
@@ -583,7 +593,7 @@ Rules match on path shape rather than fixed repository-relative strings, so a co
 
 Because this runs on every gated tool call, the Git directory behind a worktree or submodule is resolved by reading `.git` and its `commondir` instead of spawning `git rev-parse` — one subprocess costs more than the rest of the gate combined. A custom `core.hooksPath` is honored when the repository config sets it; a value that exists only in global or system config is not visible on this path, though `.git` itself stays denied either way.
 
-`.vscode/settings.json` and `*.code-workspace` mix ordinary preferences with execution: they are denied only when the write introduces or changes an execution-sensitive key (interpreter/tool paths, terminal profiles, task commands), and asked for confirmation when the content cannot be inspected. An edit that swaps a value in place carries neither the key nor the surrounding file, so the gate reads the settings file to see which setting the replaced text belongs to; when that file cannot be read, only the payload is judged. `python*` / `activate*` under a `bin/` directory and `pyvenv.cfg` are observe-only and not blocked. `offsend doctor` reports missing coverage as `ai-write-gate` and summarizes discovered locations as `trust-surface-map`.
+`.vscode/settings.json` and `*.code-workspace` mix ordinary preferences with execution: they are denied only when the write introduces or changes an execution-sensitive key (interpreter/tool paths, terminal profiles, task commands), and asked for confirmation when the content cannot be inspected. An edit that swaps a value in place carries neither the key nor the surrounding file, so the gate reads the settings file to see which setting the replaced text belongs to; when that file cannot be read, only the payload is judged. `python*` / `activate*` under a `bin/` directory and `pyvenv.cfg` are observe-only and not blocked.
 
 Matchers follow each editor's documented semantics. Claude treats a matcher of plain names as an **exact** list, so `Edit|Write` would not fire for `MultiEdit` or `NotebookEdit`; the installed matcher is `Edit|MultiEdit|NotebookEdit|Write`. Cursor's tool set is `Shell`, `Read`, `Write`, `Grep`, `Delete`, `Task`; Offsend installs separate `preToolUse` matchers for `Write|Edit|Delete` (write-gate), `Task` (subagent-gate), and `Grep` (grep-gate). Deleting a hook config or Git file disables protection as effectively as rewriting it.
 
@@ -597,7 +607,7 @@ On a secret hit the editor receives deny with a short remediation message (detec
 
 Cursor may not always enforce `beforeReadFile` deny (known IDE limitation; open tabs can bypass the hook). Prefer `offsend protect` / `.cursorignore` for hard blocks; treat read-gate as defense-in-depth.
 
-**Seal mode (`context.read.on_secret: seal`)** — instead of a dead-end deny, the gate writes a **sealed copy** (findings replaced with `{{TYPE:v1.…}}` tokens, temp file with `0600` permissions) and tells the agent its path (`agent_message` for Cursor; part of `permissionDecisionReason` for Claude). The agent keeps working on the sealed copy; plaintext never enters model context; the user restores outputs with `offsend unseal`. Requires a seal key (`offsend keygen --default`) — without one, the gate falls back to a plain deny. Each token uses a fresh random AES-GCM nonce; existing `v1` tokens remain readable. Sealed copies are created without following symlinks and are content-scanned like every other file; directory membership alone is never trusted. The shell-gate blocks (default) or asks (`context.shell.mode: ask`) before the agent itself runs `offsend unseal`. Agent-facing seal/MCP-seal scans ignore `check.detectors.disable`, so concrete detector and custom-dictionary findings cannot remain plaintext; fuzzy `highEntropyString` stays excluded. `offsend doctor` reports the difference as `seal-detector-gap`; ordinary `offsend check` still honors the disable list. Honest boundary: this keeps plaintext out of transcripts/context but is not a sandbox against a local agent with key access. Unrecognized read-gate hook JSON is denied (fail-closed). Renamed copies without detectable content, open editor tabs, and cloud agent sessions remain residual gaps — keep secrets off disk as the primary control.
+**Seal mode (`context.read.on_secret: seal`)** — instead of a dead-end deny, the gate writes a **sealed copy** (findings replaced with `{{TYPE:v1.…}}` tokens, temp file with `0600` permissions) and tells the agent its path (`agent_message` for Cursor; part of `permissionDecisionReason` for Claude). The agent keeps working on the sealed copy; plaintext never enters model context; the user restores outputs with `offsend unseal`. Requires a seal key (`offsend setup` or `offsend keygen --default`) — without one, the gate falls back to a plain deny. Each token uses a fresh random AES-GCM nonce; existing `v1` tokens remain readable. Sealed copies are created without following symlinks and are content-scanned like every other file; directory membership alone is never trusted. The shell-gate blocks (default) or asks (`context.shell.mode: ask`) before the agent itself runs `offsend unseal`. Agent-facing seal/MCP-seal scans ignore `check.detectors.disable`, so concrete detector and custom-dictionary findings cannot remain plaintext; fuzzy `highEntropyString` stays excluded. `offsend doctor` reports the difference as `seal-detector-gap`; ordinary `offsend check` still honors the disable list. Honest boundary: this keeps plaintext out of transcripts/context but is not a sandbox against a local agent with key access. Unrecognized read-gate hook JSON is denied (fail-closed). Renamed copies without detectable content, open editor tabs, and cloud agent sessions remain residual gaps — keep secrets off disk as the primary control.
 
 ### Shell-gate (on by default)
 
@@ -661,11 +671,11 @@ Installed by default for Cursor and Claude (disable with `--no-mcp-response-gate
 
 | Mode | Claude | Cursor |
 | --- | --- | --- |
-| `observe` (default) | stderr + debug log | stderr + debug log |
+| `observe` | stderr + debug log | stderr + debug log |
 | `warn` | Also warns the agent via `additionalContext` (“do not echo/store/reuse these values”) | Warns via `additional_context` |
-| `seal` | Replaces `updatedToolOutput` with the sealed output as a **string** (the documented field type; only detected values become tokens) | Replaces `updated_mcp_tool_output` with a sealed version, preserving the JSON object shape |
+| `seal` (default when unset) | Replaces `updatedToolOutput` with the sealed output as a **string** (the documented field type; only detected values become tokens) | Replaces `updated_mcp_tool_output` with a sealed version, preserving the JSON object shape |
 
-Responses are scanned in full up to the 2 MiB hook-input limit. Larger responses are replaced with a safe withholding message instead of being partially scanned or passed through. In `seal` mode a response whose secrets **fail to seal** (for example a single value over the plaintext size cap), or cannot be sealed because no key is available, is withheld the same way — never downgraded to a warning. Generate the key with `offsend keygen --default`.
+Responses are scanned in full up to the 2 MiB hook-input limit. Larger responses are replaced with a safe withholding message instead of being partially scanned or passed through. In `seal` mode a response whose secrets **fail to seal** (for example a single value over the plaintext size cap), or cannot be sealed because no key is available, is withheld the same way — never downgraded to a warning. Generate the key with `offsend setup` (or `offsend keygen --default`).
 
 Cursor caveat: `warn` relies on `additional_context`, which Cursor builds before 3.9.8 did not deliver to the model — on those builds `warn` is effectively `observe`. For real protection on Cursor use `responses: seal` with a seal key; `offsend doctor` warns about this combination.
 
@@ -894,5 +904,5 @@ Team walkthrough: [team.md](team.md).
 - [macOS app](macos-app.md)
 - [FAQ](faq.md)
 - [README](../README.md) — product overview and quick start
-- [`.offsend.yml.example`](../.offsend.yml.example) — annotated starter
-- [`.offsend.yml.full`](../.offsend.yml.full) — full parameter catalog
+- [`.offsend.example.yml`](../.offsend.example.yml) — annotated starter
+- [`.offsend.full.yml`](../.offsend.full.yml) — full parameter catalog

@@ -486,17 +486,6 @@ pub fn render_yaml(
         .map(|p| format!("    - \"{p}\""))
         .collect::<Vec<_>>()
         .join("\n");
-    let optional_comment_lines = {
-        let mut lines = vec![
-            "    # Optional — uncomment only if these dirs never hold secrets:".to_string(),
-        ];
-        lines.extend(
-            COMMENTED_OPTIONAL_EXCLUDE_PATTERNS
-                .iter()
-                .map(|p| format!("    # - \"{p}\"")),
-        );
-        lines.join("\n")
-    };
     let ignore_section = render_ignore_section(ignore_commit, DEFAULT_IGNORE_PATTERNS);
     let hooks_publish_line = format!(
         "  publish: {}",
@@ -505,13 +494,33 @@ pub fn render_yaml(
     let policy_value = if strict_credentials { "true" } else { "false" };
     let disable_lines = DEFAULT_DISABLED_DETECTOR_IDS
         .iter()
-        .map(|id| format!("              - {id}"))
+        .map(|id| format!("      - {id}"))
         .collect::<Vec<_>>()
         .join("\n");
     let context_section = if strict_credentials {
-        "\n# Strict credentials: tighten MCP/subagent/history. Editor prompt hooks stay\n# soft-block unless you reinstall: offsend hook install --hook-policy block\ncontext:\n  mcp:\n    mode: ask\n  subagents:\n    mode: deny\n    scan_task: true\n  history:\n    audit: true\n"
+        r#"
+# Strict credentials: tighter MCP/subagent/history. Prompt hooks stay
+# soft-block unless: offsend hook install --hook-policy block
+context:
+  read:
+    on_secret: seal
+  mcp:
+    responses: seal
+    mode: ask
+  subagents:
+    mode: deny
+    scan_task: true
+  history:
+    audit: true
+"#
     } else {
-        ""
+        r#"
+context:
+  read:
+    on_secret: seal
+  mcp:
+    responses: seal
+"#
     };
 
     format!(
@@ -524,23 +533,9 @@ check:
   # templates: {labels}
   exclude:
 {exclude_lines}
-{optional_comment_lines}
   detectors:
-    # All detector IDs you can list under `disable:`:
-    #   email, phone, money, url, ipAddress, internalDomain, contractId,
-    #   invoiceId, orderId, apiKeyGeneric, openAIAPIKey, awsAccessKeyId,
-    #   githubToken, slackToken, stripeKey, jwt, privateKey, sshPrivateKey,
-    #   databaseURLWithPassword, bearerToken, highEntropyString, creditCardLike,
-    #   iban, customClient, customCompany, customProject, customSensitiveTerm,
-    #   customInternalDomain, personName, streetAddress, governmentId
-    # Default keeps only secret/credential detectors active.
     disable:
 {disable_lines}
-  # Custom dictionaries are matched in addition to the built-in detectors.
-  # kind: client | company | project | sensitiveTerm | internalDomain | regex
-  # For every kind except `regex`, `value` is matched literally (with word boundaries).
-  # For `regex`, `value` is used as a regular expression pattern verbatim.
-  dictionaries: []
 
 {ignore_section}
 
@@ -593,6 +588,7 @@ pub fn list_templates_text() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::OffsendProjectConfig;
 
     #[test]
     fn resolve_aliases_and_case_insensitive() {
@@ -675,9 +671,13 @@ mod tests {
         assert!(yaml.contains("enabled: true"));
         assert!(yaml.contains("git: [pre-commit]"));
         assert!(yaml.contains("policy: false"));
-        assert!(!yaml.contains("context:"));
+        assert!(yaml.contains("on_secret: seal"));
+        assert!(yaml.contains("responses: seal"));
+        assert!(!yaml.contains("All detector IDs"));
+        assert!(!yaml.contains("dictionaries:"));
         assert!(yaml.contains(".env*"));
         assert!(yaml.contains("*.pem"));
+        OffsendProjectConfig::parse_yaml(&yaml).expect("init YAML must parse");
     }
 
     #[test]
@@ -685,10 +685,13 @@ mod tests {
         let yaml = render_yaml(&[TemplateId::Node], false, false, true);
         assert!(yaml.contains("--strict-credentials"));
         assert!(yaml.contains("policy: true"));
+        assert!(yaml.contains("on_secret: seal"));
+        assert!(yaml.contains("responses: seal"));
         assert!(yaml.contains("mode: ask"));
         assert!(yaml.contains("mode: deny"));
         assert!(yaml.contains("scan_task: true"));
         assert!(yaml.contains("audit: true"));
+        OffsendProjectConfig::parse_yaml(&yaml).expect("strict init YAML must parse");
     }
 
     #[test]

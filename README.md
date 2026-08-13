@@ -3,14 +3,13 @@
 </p>
 
 <p align="center">
-  See and fix what AI tools can read.<br>
-  One <code>.offsend.yml</code> in the repo — shared by the team and CI — before Claude Code, Codex, Cursor, or Windsurf see your context.
+  Agent keeps working. Secrets become tokens, not plaintext in the model.
 </p>
 
 <p align="center">
   <a href="https://offsend.io">Website</a> ·
   <a href="#quick-start">Quick Start</a> ·
-  <a href="#mcp-seal">MCP seal</a> ·
+  <a href="#seal">Seal</a> ·
   <a href="docs/README.md">Docs</a> ·
   <a href="https://check.offsend.io">Check</a> ·
   <a href="https://offsend.io/extension">Extension</a>
@@ -28,68 +27,52 @@
 
 ---
 
-`.gitignore` protects Git. It does not define what AI tools should read.
+After install, **user-level** Cursor and Claude hooks on this machine seal secret-bearing reads and MCP responses (`{{TYPE:v1.…}}` tokens). No git remote and no `.offsend.yml` required. That is defense-in-depth, not a guarantee — cloud sessions and editors without those hooks are outside it. Windsurf and Codex are covered from a repo policy (`offsend sync`), not from `setup`.
 
-Offsend is that missing layer: put the AI context boundary in **one `.offsend.yml`**, commit it with the code, and let the whole team inherit the same rules. Offsend materializes `.cursorignore`, `.claudeignore`, `.aiexclude`, and the rest, runs local checks, and can fail CI when secrets or ignore drift show up. Everything runs **locally** — no cloud account, no upload of file contents for analysis. The CLI is free and open source.
+Own the repo → `offsend init` writes that policy to git. GitHub → CI fails a PR that would expose secrets. Everything runs **locally**.
 
 No install yet? [Scan a public GitHub repo with Check](https://check.offsend.io).
 
 ## What Offsend does
 
-| Layer | Job | Commands |
+| Layer | When | Job |
 | --- | --- | --- |
-| **Boundary** | Shared path rules in `.offsend.yml`; sync to AI ignore files; catch drift | `show`, `protect`, `ignore`, `sync`, `doctor` |
-| **Content** | Scan files, staged diffs, or stdin for secrets and custom terms | `check` |
-| **Team / CI** | Same boundary on every PR; fail when secrets or ignore drift appear | [GitHub Action](https://offsend.io/github-action), `check --policy` |
-| **Runtime** | Gate prompts, reads, shell, MCP; **seal** secrets in MCP responses / denied reads; audit agent history | `sync`, `hook install`, `keygen`, `seal` / `unseal`, `history` |
-| **Sandbox** | Optional OS sandbox from `.offsend.yml` — Offsend writes editor/nono config and verifies it; the kernel enforces | `sync`, `doctor`, `check --policy` |
-
-Defense-in-depth: ignore files first, then hooks, then an OS sandbox when you need egress (or reads) actually denied. Hooks are not a sandbox — see [what hooks cover](docs/cli.md#what-hooks-cover) and [`sandbox`](docs/configuration.md#sandbox).
+| **Machine** | Once per laptop (`install` / `setup`) | Seal key + user-level Cursor/Claude hooks. Agent works; plaintext stays out of context |
+| **Repo** | When you own it (`init`) | Team policy in `.offsend.yml` — ignore rules, seal, git pre-commit |
+| **CI** | When there is GitHub | `check --policy` fails on secrets / ignore drift — not on missing editor files on the runner |
 
 ## Quick Start
 
 ```bash
-curl -fsSL https://install.offsend.io/cli | bash
-offsend doctor
-offsend show
+curl -fsSL https://install.offsend.io/cli | bash   # also runs `offsend setup`
+offsend doctor                                     # cli, key, user hooks — no YAML needed
 ```
 
-When sensitive paths are exposed:
+Then open Cursor or Claude in any folder. Files with secrets are handed to the agent as a sealed copy; MCP tool output with secrets is rewritten to tokens. Restore with `offsend unseal`.
 
-```text
-Scanned: /path/to/project
-3 files exposed to AI tools — usable in further read/shell/MCP steps (2 required, 1 recommended):
-
-✗ Environment files [required]
-    Ignore .env and .env.* files.
-  - .env
-
-✗ PEM keys [required]
-    Ignore PEM key files.
-  - server.pem
-```
-
-### Team path (recommended)
+### Your repo (team policy)
 
 ```bash
-# once per repo — commit .offsend.yml so everyone shares the boundary
-offsend init --template node   # .offsend.yml + ignore files + baseline check (advise-only)
-offsend protect                # promote exposed paths to .offsend.yml, sync AI ignore files
+offsend init --template node       # short .offsend.yml with seal + pre-commit
 git add .offsend.yml && git commit -m "Add AI context policy"
-# add the GitHub Action so PRs fail on secrets / ignore drift (see below)
-
-# every clone
-offsend sync                   # ignore files + hooks (+ sandbox configs if enabled)
 ```
 
-Rules live in `.offsend.yml` — that file is the source of truth. AI ignore files are generated artifacts and stay out of git by default (`ignore.commit: false`). Teammates do not copy `.cursorignore` by hand; they run `sync`. With `hooks.enabled: true` (default), `doctor` / `check --policy` fail until hooks are installed. Prefer `hooks.git: [pre-commit, post-merge]` so pull/merge re-runs `sync` for the team. Full walkthrough: [Add Offsend to a team repo](docs/team.md).
+### GitHub (third layer)
+
+```yaml
+# fail the PR when secrets or managed ignore drift appear
+- uses: Offsend/ai-hygiene@v1
+  with:
+    fail-on: block
+```
+
+Teammates run `offsend sync` after clone to materialize ignore files and git hooks. Full walkthrough: [Add Offsend to a team repo](docs/team.md).
 
 ### Already leaked into local agent history?
 
 ```bash
-offsend history audit                 # find secrets in Cursor/Claude transcripts
-offsend history scrub --apply         # redact findings (close agent sessions first)
-offsend doctor                        # next steps if ignore files or hooks are missing
+offsend history audit
+offsend history scrub --apply      # close agent sessions first
 ```
 
 Other installs: [CLI docs → Install](docs/cli.md#install) · macOS app: `brew install --cask offsend/tap/offsend`
@@ -101,31 +84,18 @@ Other installs: [CLI docs → Install](docs/cli.md#install) · macOS app: `brew 
 - **Scripts**: lowercase `scripts/{app,cli,ci,ffi,release,server,site}/` (compat shim: `scripts/install.sh` → `scripts/cli/install.sh`)
 - **Scan API**: `server/`
 
-## MCP seal
+## Seal
 
-MCP tools can return secrets into model context. With **seal**, Offsend swaps those values for reversible `{{TYPE:v1.…}}` tokens in the tool **response** before Cursor or Claude sees them — the agent keeps working; plaintext stays out of context. Restore later with `offsend unseal`.
+MCP tools and file reads can put secrets into model context. **Seal** swaps those values for reversible `{{TYPE:v1.…}}` tokens — the agent keeps working; plaintext stays out. Restore with `offsend unseal`.
 
-Default response mode is `observe` (log only). Sealing is opt-in:
-
-```bash
-# 1. Once per machine — personal key (not committed)
-offsend keygen --default          # → ~/.offsend/seal.key
-```
-
-```yaml
-# 2. In the repo .offsend.yml
-context:
-  mcp:
-    responses: seal               # observe | warn | seal
-```
+This is the machine default after `setup` (no YAML). `offsend init` writes the same into `.offsend.yml` for the team. Without a key, secret-bearing MCP output is **withheld**, not passed through.
 
 ```bash
-# 3. Install / refresh gates (MCP response gate is on by default for Cursor + Claude)
-offsend sync
-offsend doctor                    # warn if key or responses: seal is missing
+offsend setup                 # key + user hooks (install already does this)
+offsend unseal                # restore tokens from agent output (stdin or file)
 ```
 
-Without a key, secret-bearing responses are **withheld** (not passed through). Related: `context.read.on_secret: seal` hands the agent a sealed copy when a file read is denied. Depth: [MCP-response-gate](docs/cli.md#mcp-response-gate-on-by-default) · [configuration](docs/configuration.md#contextmcp).
+Depth: [MCP-response-gate](docs/cli.md#mcp-response-gate-on-by-default) · [configuration](docs/configuration.md#contextmcp).
 
 ## Pick your tool
 
@@ -141,23 +111,15 @@ Without a key, secret-bearing responses are **withheld** (not passed through). R
 
 | Command | Purpose |
 | --- | --- |
-| `offsend show` | Sensitive paths visible to AI (+ MCP inventory, agent-history hint, ignore drift) |
-| `offsend sync` | Apply `.offsend.yml`: ignore files, git hooks (`hooks.git`), AI-editor hooks, optional sandbox |
-| `offsend protect` | Promote exposed paths to `.offsend.yml` and sync AI ignore files |
-| `offsend ignore` | Add ignore patterns to `.offsend.yml` (auto-materializes; use `sync` after hand-edits) |
+| `offsend setup` | Once per machine: seal key + user-level Cursor/Claude hooks |
+| `offsend doctor` | CLI, key, user hooks; with a repo YAML also git hooks, ignore drift, config-lint |
+| `offsend init` | Write team `.offsend.yml` (seal + ignore + pre-commit) |
+| `offsend show` | Sensitive paths visible to AI |
+| `offsend sync` | Apply `.offsend.yml`: ignore files, git hooks, optional project editor hooks |
+| `offsend protect` | Promote exposed paths to `.offsend.yml` and sync ignore files |
 | `offsend check` | Scan contents (files, `--staged`, stdin, or editor hook JSON) |
-| `offsend hook install` | Git hooks from `hooks.git` + prompt / read / shell / MCP / subagent gates |
-| `offsend keygen --default` | Personal seal key for MCP / read seal modes |
 | `offsend seal` / `unseal` | Replace secrets with tokens / restore plaintext |
-| `offsend history audit` | Find secrets already written into local Cursor/Claude transcripts |
-| `offsend doctor` | Verify install, hooks, ignore drift, MCP policy, seal key, sandbox, next steps |
-
-```bash
-# CI — fail the PR when secrets or managed ignore drift appear
-- uses: Offsend/ai-hygiene@v1
-  with:
-    fail-on: block
-```
+| `offsend history audit` | Find secrets already in local Cursor/Claude transcripts |
 
 ## Privacy
 
@@ -177,7 +139,8 @@ Essentials above; reference depth in `docs/`:
 | [docs/configuration.md](docs/configuration.md) | `.offsend.yml` reference (`check`, `ignore`, `hooks`, `context`, `sandbox`) |
 | [docs/faq.md](docs/faq.md) | FAQ, coverage limits, privacy |
 | [docs/macos-app.md](docs/macos-app.md) | Desktop app, Free vs Pro, App vs CLI |
-| [.offsend.yml.example](.offsend.yml.example) | Annotated config starter |
+| [.offsend.example.yml](.offsend.example.yml) | Annotated config starter |
+| [.offsend.full.yml](.offsend.full.yml) | Full `.offsend.yml` key catalog |
 | [docs/positioning.md](docs/positioning.md) | ICP and messaging (internal) |
 | [SECURITY.md](SECURITY.md) | Vulnerability reporting |
 

@@ -123,8 +123,9 @@ pub struct OffsendProjectDictionaryEntry {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct OffsendProjectHooksConfig {
-    /// When true (default), the project expects git + AI-editor hooks.
-    /// `offsend sync` installs them; `doctor` / `check --policy` fail if missing.
+    /// When true (default), the project expects git hooks (and `sync` may
+    /// install AI-editor hooks). `doctor` / `check --policy` fail if declared
+    /// git hooks are missing. Project AI-editor files are not required in CI.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
     /// Git hook names to install, e.g. `[pre-commit, post-merge]`.
