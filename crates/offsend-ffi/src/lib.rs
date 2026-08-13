@@ -18,6 +18,19 @@ use std::path::Path;
 use std::ptr;
 use std::slice;
 
+/// Run an FFI body, converting any panic into an error return instead of letting
+/// it unwind across the C ABI boundary (which aborts the whole host process).
+macro_rules! ffi_guard {
+    ($err:expr, $body:block) => {
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe { $body })) {
+            Ok(ret) => ret,
+            Err(_) => unsafe {
+                fail($err, "offsend: internal error (panic caught at FFI boundary)")
+            },
+        }
+    };
+}
+
 /// Scan `text` for sensitive entities. Returns heap-allocated UTF-8 JSON, or NULL on error.
 ///
 /// `options_json_or_null` is optional JSON (camelCase) with `enabledTypes`, `maximumLength`,
@@ -31,6 +44,7 @@ pub unsafe extern "C" fn offsend_detect_scan(
     options_json_or_null: *const c_char,
     err_out: *mut *mut c_char,
 ) -> *mut c_char {
+    ffi_guard!(err_out, {
     clear_err(err_out);
     let Some(text) = read_cstr(text) else {
         return fail(err_out, "text must be a non-null UTF-8 C string");
@@ -72,6 +86,7 @@ pub unsafe extern "C" fn offsend_detect_scan(
     });
 
     to_cstring_json(&payload, err_out)
+    })
 }
 
 /// Run a full privacy audit on `directory_path`. Returns heap-allocated UTF-8 JSON, or NULL.
@@ -84,6 +99,7 @@ pub unsafe extern "C" fn offsend_privacy_audit(
     options_json_or_null: *const c_char,
     err_out: *mut *mut c_char,
 ) -> *mut c_char {
+    ffi_guard!(err_out, {
     clear_err(err_out);
     let Some(path) = read_cstr(directory_path) else {
         return fail(err_out, "directory_path must be a non-null UTF-8 C string");
@@ -96,6 +112,7 @@ pub unsafe extern "C" fn offsend_privacy_audit(
     let configuration = resolve_audit_configuration(Path::new(&path), &overrides);
     let result = PrivacyAuditor::audit_with(Path::new(&path), &configuration);
     to_cstring_json(&audit_to_json(&result), err_out)
+    })
 }
 
 /// Audit then apply privacy fixes. `selection_json_or_null` is optional JSON
@@ -109,6 +126,7 @@ pub unsafe extern "C" fn offsend_privacy_fix(
     options_json_or_null: *const c_char,
     err_out: *mut *mut c_char,
 ) -> *mut c_char {
+    ffi_guard!(err_out, {
     clear_err(err_out);
     let Some(path) = read_cstr(directory_path) else {
         return fail(err_out, "directory_path must be a non-null UTF-8 C string");
@@ -147,6 +165,7 @@ pub unsafe extern "C" fn offsend_privacy_fix(
     });
 
     to_cstring_json(&payload, err_out)
+    })
 }
 
 /// Build a Check / Scan API anonymized report (schema v1 + optional fixFiles).
@@ -158,6 +177,7 @@ pub unsafe extern "C" fn offsend_check_report(
     tool_version_or_null: *const c_char,
     err_out: *mut *mut c_char,
 ) -> *mut c_char {
+    ffi_guard!(err_out, {
     clear_err(err_out);
     let Some(path) = read_cstr(directory_path) else {
         return fail(err_out, "directory_path must be a non-null UTF-8 C string");
@@ -179,6 +199,7 @@ pub unsafe extern "C" fn offsend_check_report(
         },
         Err(e) => fail(err_out, &e),
     }
+    })
 }
 
 /// Seal entity spans in `text`. `key` must be 32 bytes. `spans_json` is
@@ -192,6 +213,7 @@ pub unsafe extern "C" fn offsend_seal_spans(
     max_plaintext_bytes: usize,
     err_out: *mut *mut c_char,
 ) -> *mut c_char {
+    ffi_guard!(err_out, {
     clear_err(err_out);
     let Some(key_bytes) = read_key(key, key_len) else {
         return fail(err_out, "key must be a non-null 32-byte buffer");
@@ -225,6 +247,7 @@ pub unsafe extern "C" fn offsend_seal_spans(
         ),
         Err(e) => fail(err_out, &e.to_string()),
     }
+    })
 }
 
 /// Unseal all seal tokens in `text`.
@@ -235,6 +258,7 @@ pub unsafe extern "C" fn offsend_unseal_text(
     text: *const c_char,
     err_out: *mut *mut c_char,
 ) -> *mut c_char {
+    ffi_guard!(err_out, {
     clear_err(err_out);
     let Some(key_bytes) = read_key(key, key_len) else {
         return fail(err_out, "key must be a non-null 32-byte buffer");
@@ -253,6 +277,7 @@ pub unsafe extern "C" fn offsend_unseal_text(
         },
         Err(e) => fail(err_out, &e.to_string()),
     }
+    })
 }
 
 /// Placeholder-mask entity spans. Returns `{maskedText, mapping}`.
@@ -262,6 +287,7 @@ pub unsafe extern "C" fn offsend_mask_text(
     entities_json: *const c_char,
     err_out: *mut *mut c_char,
 ) -> *mut c_char {
+    ffi_guard!(err_out, {
     clear_err(err_out);
     let Some(text) = read_cstr(text) else {
         return fail(err_out, "text must be a non-null UTF-8 C string");
@@ -286,6 +312,7 @@ pub unsafe extern "C" fn offsend_mask_text(
         }),
         err_out,
     )
+    })
 }
 
 /// Restore placeholders using `mapping_json` object `{placeholder: original}`.
@@ -295,6 +322,7 @@ pub unsafe extern "C" fn offsend_restore_text(
     mapping_json: *const c_char,
     err_out: *mut *mut c_char,
 ) -> *mut c_char {
+    ffi_guard!(err_out, {
     clear_err(err_out);
     let Some(text) = read_cstr(text) else {
         return fail(err_out, "text must be a non-null UTF-8 C string");
@@ -311,6 +339,7 @@ pub unsafe extern "C" fn offsend_restore_text(
         Ok(c) => c.into_raw(),
         Err(_) => fail(err_out, "restored text contained interior NUL"),
     }
+    })
 }
 
 /// Assess risk for entity type names. `context_or_null` is `neutral` / `secretsConfig` / `docsOrTests`.
@@ -320,6 +349,7 @@ pub unsafe extern "C" fn offsend_risk_assess(
     context_or_null: *const c_char,
     err_out: *mut *mut c_char,
 ) -> *mut c_char {
+    ffi_guard!(err_out, {
     clear_err(err_out);
     let Some(raw) = read_cstr(entity_types_json) else {
         return fail(err_out, "entity_types_json must be a non-null UTF-8 C string");
@@ -356,6 +386,7 @@ pub unsafe extern "C" fn offsend_risk_assess(
         }),
         err_out,
     )
+    })
 }
 
 /// Free a string previously returned by this crate (including error messages).

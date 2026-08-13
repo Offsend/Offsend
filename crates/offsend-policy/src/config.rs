@@ -45,6 +45,10 @@ pub struct OffsendProjectCheckConfig {
     pub detectors: Option<OffsendProjectDetectorsConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dictionaries: Option<Vec<OffsendProjectDictionaryEntry>>,
+    /// When true, `offsend check` honors `offsend:ignore` / `offsend:ignore-next-line`.
+    /// Editor hooks and the clipboard guard ignore this key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub honor_inline_ignore: Option<bool>,
 }
 
 impl OffsendProjectCheckConfig {
@@ -197,6 +201,7 @@ pub enum ToolId {
     Roo,
     Zed,
     Cody,
+    Codex,
 }
 
 impl ToolId {
@@ -214,6 +219,7 @@ impl ToolId {
             "roo" => Some(Self::Roo),
             "zed" => Some(Self::Zed),
             "cody" => Some(Self::Cody),
+            "codex" => Some(Self::Codex),
             _ => None,
         }
     }
@@ -293,6 +299,94 @@ impl OffsendProjectConfig {
     }
 }
 
+const TOP_LEVEL_KEYS: &[&str] = &["version", "check", "ignore", "hooks", "context", "sandbox"];
+const CHECK_KEYS: &[&str] = &[
+    "fail_on",
+    "policy",
+    "exclude",
+    "detectors",
+    "dictionaries",
+    "honor_inline_ignore",
+];
+const DETECTORS_KEYS: &[&str] = &["disable"];
+const IGNORE_KEYS: &[&str] = &["commit", "tools", "patterns"];
+const HOOKS_KEYS: &[&str] = &[
+    "enabled",
+    "git",
+    "type",
+    "fail_on",
+    "policy",
+    "publish",
+    "ignore_exclude",
+];
+
+/// Lints `.offsend.yml` for unknown (likely misspelled) keys. serde silently
+/// ignores unknown fields, so a typo like `fail-on:` disables the setting with
+/// no signal at all; `doctor` surfaces these findings as warnings.
+/// `context` / `sandbox` subtrees are consumed loosely and are not linted.
+pub fn lint_unknown_keys(contents: &str) -> Vec<String> {
+    let Ok(root) = serde_yaml::from_str::<serde_yaml::Value>(contents) else {
+        return vec![];
+    };
+    let mut findings = Vec::new();
+    lint_mapping(&root, "", TOP_LEVEL_KEYS, &mut findings);
+    if let Some(check) = root.get("check") {
+        lint_mapping(check, "check.", CHECK_KEYS, &mut findings);
+        if let Some(detectors) = check.get("detectors") {
+            lint_mapping(detectors, "check.detectors.", DETECTORS_KEYS, &mut findings);
+        }
+    }
+    if let Some(ignore) = root.get("ignore") {
+        lint_mapping(ignore, "ignore.", IGNORE_KEYS, &mut findings);
+    }
+    if let Some(hooks) = root.get("hooks") {
+        lint_mapping(hooks, "hooks.", HOOKS_KEYS, &mut findings);
+    }
+    findings
+}
+
+fn lint_mapping(
+    value: &serde_yaml::Value,
+    prefix: &str,
+    known: &[&str],
+    findings: &mut Vec<String>,
+) {
+    let Some(map) = value.as_mapping() else {
+        return;
+    };
+    for key in map.keys() {
+        let Some(name) = key.as_str() else { continue };
+        if known.contains(&name) {
+            continue;
+        }
+        let hint = known
+            .iter()
+            .min_by_key(|k| levenshtein(name, k))
+            .filter(|k| levenshtein(name, k) <= 2);
+        match hint {
+            Some(k) => findings.push(format!(
+                "{prefix}{name}: unknown key — did you mean `{k}`?"
+            )),
+            None => findings.push(format!("{prefix}{name}: unknown key (ignored)")),
+        }
+    }
+}
+
+fn levenshtein(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.iter().enumerate() {
+        let mut cur = vec![i + 1];
+        for (j, cb) in b.iter().enumerate() {
+            let cost = usize::from(ca != cb);
+            cur.push((prev[j] + cost).min(prev[j + 1] + 1).min(cur[j] + 1));
+        }
+        prev = cur;
+    }
+    prev[b.len()]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -320,6 +414,14 @@ check:
         let check = cfg.check.unwrap();
         assert_eq!(check.fail_on_or_default(), "warn");
         assert!(check.policy_or_default());
+        assert_eq!(check.honor_inline_ignore, None);
+    }
+
+    #[test]
+    fn parses_honor_inline_ignore() {
+        let yaml = "version: 1\ncheck:\n  honor_inline_ignore: true\n";
+        let cfg = OffsendProjectConfig::parse_yaml(yaml).unwrap();
+        assert_eq!(cfg.check.unwrap().honor_inline_ignore, Some(true));
     }
 
     #[test]
@@ -383,6 +485,35 @@ context:
         let section_without_key =
             OffsendProjectConfig::parse_yaml("version: 1\nhooks:\n  publish: false\n").unwrap();
         assert!(section_without_key.hooks_enabled());
+    }
+
+    #[test]
+    fn lint_flags_typos_with_suggestions() {
+        let yaml = "version: 1\ncheck:\n  fail-on: block\nignore:\n  paterns:\n    - .env\nhooks:\n  enable: true\n";
+        let findings = lint_unknown_keys(yaml);
+        assert!(findings
+            .iter()
+            .any(|f| f.contains("check.fail-on") && f.contains("`fail_on`")));
+        assert!(findings
+            .iter()
+            .any(|f| f.contains("ignore.paterns") && f.contains("`patterns`")));
+        assert!(findings
+            .iter()
+            .any(|f| f.contains("hooks.enable") && f.contains("`enabled`")));
+    }
+
+    #[test]
+    fn lint_is_silent_on_valid_config_and_skips_context() {
+        let yaml = "version: 1\ncheck:\n  fail_on: block\n  detectors:\n    disable: [email]\nignore:\n  patterns: [.env]\ncontext:\n  read:\n    on_secret: seal\nhooks:\n  enabled: true\n";
+        assert!(lint_unknown_keys(yaml).is_empty());
+    }
+
+    #[test]
+    fn lint_flags_unknown_top_level_key() {
+        let findings = lint_unknown_keys("version: 1\nchekc: {}\n");
+        assert_eq!(findings.len(), 1);
+        assert!(findings[0].contains("chekc"));
+        assert!(findings[0].contains("`check`"));
     }
 
     #[test]

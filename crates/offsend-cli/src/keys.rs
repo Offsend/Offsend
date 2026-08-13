@@ -176,12 +176,8 @@ pub fn write_key(key: &[u8], path: &Path, raw: bool, force: bool) -> Result<(), 
         format!("{}\n", STANDARD.encode(key)).into_bytes()
     };
     let tmp = path.with_extension(format!("tmp-{}", std::process::id()));
-    fs::write(&tmp, &payload).map_err(|e| KeyError::Invalid(e.to_string()))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600));
-    }
+    let _ = fs::remove_file(&tmp); // clear any stale temp from a crashed run
+    write_key_bytes(&tmp, &payload)?;
     fs::rename(&tmp, path).map_err(|e| {
         let _ = fs::remove_file(&tmp);
         KeyError::Invalid(e.to_string())
@@ -192,6 +188,28 @@ pub fn write_key(key: &[u8], path: &Path, raw: bool, force: bool) -> Result<(), 
         let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o600));
     }
     Ok(())
+}
+
+/// Write key material to a fresh file created with 0600 from the start, so the
+/// bytes never exist on disk with default (umask, often 0644) permissions.
+fn write_key_bytes(path: &Path, payload: &[u8]) -> Result<(), KeyError> {
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut f = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(path)
+            .map_err(|e| KeyError::Invalid(e.to_string()))?;
+        f.write_all(payload)
+            .map_err(|e| KeyError::Invalid(e.to_string()))
+    }
+    #[cfg(not(unix))]
+    {
+        fs::write(path, payload).map_err(|e| KeyError::Invalid(e.to_string()))
+    }
 }
 
 fn ensure_dir(path: &Path) -> Result<(), KeyError> {
@@ -215,4 +233,24 @@ fn ensure_dir(path: &Path) -> Result<(), KeyError> {
 fn is_managed(path: &Path) -> bool {
     let root = offsend_home();
     path.starts_with(&root)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn key_file_is_created_private() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("offsend-keys-test-{}", std::process::id()));
+        let _ = fs::create_dir_all(&dir);
+        let path = dir.join("k.bin");
+        let _ = fs::remove_file(&path);
+        write_key_bytes(&path, b"0123456789abcdef0123456789abcdef").unwrap();
+        let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "key must never touch disk with loose permissions");
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_dir(&dir);
+    }
 }

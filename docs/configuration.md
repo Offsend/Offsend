@@ -107,7 +107,7 @@ When `false` (default), ignore-file sync keeps AI ignore files (`.cursorignore`,
 
 Optional list of tool slugs narrowing which AI tools get managed ignore and rule files. When absent (default), Offsend creates files for every supported tool — you rarely control which editor a teammate opens the repo with, so the default is defense in depth.
 
-Supported slugs: `cursor`, `claude`, `copilot`, `continue`, `windsurf`, `gemini`, `llm`, `aider`, `cline`, `roo`, `zed`, `cody`. Unknown slugs are reported by `offsend doctor` and ignored; if no valid slug remains, all tools are used.
+Supported slugs: `cursor`, `claude`, `copilot`, `continue`, `windsurf`, `gemini`, `llm`, `aider`, `cline`, `roo`, `zed`, `cody`, `codex`. Unknown slugs are reported by `offsend doctor` and ignored; if no valid slug remains, all tools are used.
 
 ```yaml
 ignore:
@@ -180,6 +180,17 @@ Locally, prefer reviewing with `doctor` / `show` and advise-only `init` checks. 
 ### `check.policy`
 
 When `true`, `offsend check` also runs workspace policy checks for ignore files, exposed sensitive paths, managed ignore drift, and **git-tracked paths covered by `ignore.patterns`** (committed secrets bypass local AI gates via clone / raw URLs). When `false`, it scans file contents only.
+
+### `check.honor_inline_ignore`
+
+When `true`, `offsend check` (CLI and the GitHub Action, which runs `offsend check`) honors inline `offsend:ignore` / `offsend:ignore-next-line` comments in scanned files. Default `false`. Override for one run with `--honor-inline-ignore`.
+
+This does **not** apply to the macOS clipboard guard or editor hooks (prompt, read, shell, MCP). Those stay closed so a pasted or agent-written directive cannot disable masking. See [`offsend check`](cli.md#offsend-check).
+
+```yaml
+check:
+  honor_inline_ignore: true
+```
 
 ### Strict credentials mode
 

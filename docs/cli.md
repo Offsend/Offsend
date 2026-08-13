@@ -122,9 +122,11 @@ offsend doctor --no-follow
 
 Exits `2` when any check has status `fail`. Seal key warnings are informational (`warn`). With [`hooks.enabled`](configuration.md#hooksenabled) (default `true`), missing hooks from [`hooks.git`](configuration.md#hooksgit) or detected AI-editor hooks are **fail** — same as `check --policy`.
 
-Checks include `cursor-version` on macOS (warn below Cursor 3.0 because of CVE-2026-48124), `ignore-sync` / `rules-drift` (shared `.offsend.yml` vs materialized ignore and privacy rule files), `ai-hook-trust-root` (legacy repo-local executable wrappers), `ai-write-gate` / `ai-artifact-audit` / `ai-shell-gate` / `ai-mcp-gate` / `ai-mcp-response-gate` (warn when Cursor/Claude are installed without those gates), `shell-output-audit` (coverage of the post-hoc output audit, plus commands whose printed secrets still need rotating), `trust-surface-map` (editor/Git/shell startup configs and observe-only venv interpreters), `artifact-provenance` (last 30 days of post-write trust-surface metadata), `privileged-daemons` (common Docker/Podman/containerd/BuildKit endpoints and shell-gate coverage), `environment-invocation-gate` (PATH/loader/Git/interpreter environment coverage, and the fact that file reads are not prevented), `hook-coverage-gaps` (residual limits when AI hooks are installed: MCP responses on Cursor, Claude subagents, Cursor open tabs, cloud sessions), `seal-detector-gap` (seal / MCP-seal with credential detectors listed under `check.detectors.disable`, or `url` disabled under seal), `mcp-inventory` (configured MCP servers + policy), and `next-actions` (ranked hints: shared policy → sync / drift repair → protect → gates → history audit/scrub when transcripts exist → git hook). Legacy `ai-wrapper-*` checks remain during migration. By default `show` / doctor **count** transcript files; enable content scan with `context.history.scan_in_show: true` or `offsend show --scan-history` (then doctor can suggest `history scrub` on real findings). Otherwise run `history audit`. In a TTY, doctor may offer to run the first suggested command. JSON includes `suggestedActions`. See also [FAQ → covers / does not cover](faq.md#what-does-offsend-cover-vs-not-cover).
+Checks include `cursor-version` on macOS (warn below Cursor 3.0 because of CVE-2026-48124), `ignore-sync` / `rules-drift` (shared `.offsend.yml` vs materialized ignore and privacy rule files), `ai-hook-trust-root` (legacy repo-local executable wrappers), `ai-write-gate` / `ai-artifact-audit` / `ai-shell-gate` / `ai-mcp-gate` / `ai-mcp-response-gate` (warn when Cursor/Claude/Windsurf are installed without those gates), `shell-output-audit` (coverage of the post-hoc output audit, plus commands whose printed secrets still need rotating), `trust-surface-map` (editor/Git/shell startup configs and observe-only venv interpreters), `artifact-provenance` (last 30 days of post-write trust-surface metadata), `privileged-daemons` (common Docker/Podman/containerd/BuildKit endpoints and shell-gate coverage), `environment-invocation-gate` (PATH/loader/Git/interpreter environment coverage, and the fact that file reads are not prevented), `hook-coverage-gaps` (residual limits when AI hooks are installed: MCP responses on Cursor, Claude subagents, Cursor open tabs, cloud sessions), `seal-detector-gap` (seal / MCP-seal with credential detectors listed under `check.detectors.disable`, or `url` disabled under seal), `mcp-inventory` (configured MCP servers + policy), and `next-actions` (ranked hints: shared policy → sync / drift repair → protect → gates → history audit/scrub when transcripts exist → git hook). Legacy `ai-wrapper-*` checks remain during migration. By default `show` / doctor **count** transcript files; enable content scan with `context.history.scan_in_show: true` or `offsend show --scan-history` (then doctor can suggest `history scrub` on real findings). Otherwise run `history audit`. In a TTY, doctor may offer to run the first suggested command. JSON includes `suggestedActions`. See also [FAQ → covers / does not cover](faq.md#what-does-offsend-cover-vs-not-cover).
 
 When a shell-gate is installed, `git-config-invocation-gate` confirms static execution-sensitive Git invocation checks are active and names the remaining dynamic-command attribution gaps.
+
+`config-lint` warns about unknown (likely misspelled) keys in `.offsend.yml` — YAML parsing silently ignores unknown fields, so a typo like `fail-on:` instead of `fail_on:` would otherwise disable the setting with no signal. It also flags unknown `ignore.tools` slugs and unsupported `hooks.git` entries. `context`/`sandbox` subtrees are not linted.
 
 With [`sandbox.enabled: true`](configuration.md#sandbox), doctor also reports `sandbox-<editor>` (mechanism + reach), `sandbox-coverage` (basename globs that cannot become sandbox paths), `sandbox-nono-pack-*` (registry pack for Claude/Codex), `sandbox-launch` (`offsend run …` / `nono run …` when needed), and `sandbox-policy` (**fail** on drift or hollow configs: Cursor `insecure_none`, Claude `allowUnsandboxedCommands` / `filesystem.disabled`, Codex `danger-full-access`). With [`hooks.enabled`](configuration.md#hooksenabled) (default `true`), doctor / `check --policy` **fail** when configured [`hooks.git`](configuration.md#hooksgit) entries or detected AI-editor hooks are missing. Same checks run in `offsend check --policy`.
 
@@ -261,6 +263,7 @@ offsend check --format json --verbose
 | `--staged` | Scan staged files only (exports git blobs to a temp dir) |
 | `--policy` | Also run workspace policy checks (ignore files, exposed paths, managed ignore drift, git-tracked `ignore.patterns`) |
 | `--fail-on block\|warn\|none` | Exit policy (default from `.offsend.yml` or `block`) |
+| `--honor-inline-ignore` | Honor `offsend:ignore` / `offsend:ignore-next-line` in scanned files (default from `.offsend.yml` `check.honor_inline_ignore`, else off). Does not affect editor hooks or the clipboard guard |
 | `--format text\|json` | Report format |
 | `--quiet` | Findings and errors only |
 | `--verbose` | List every finding and skipped file |
@@ -314,13 +317,13 @@ offsend check --adapter claude --write-gate --no-notify  # executable-config wri
 | `--key-file PATH` | — | Seal key file for `--seal-copy` / `--hook-policy block` |
 | `--key-name NAME` | — | Named key in `~/.offsend/keys/NAME.key` |
 
-Installed editor hooks invoke the CLI directly: `offsend check --adapter … --hook-policy … --secrets-only --no-notify`.
+Installed editor hooks invoke the CLI directly: `offsend check --adapter … --hook-policy … --no-notify` (secrets-only filtering is the CLI default).
 
 **Fail-open:** infrastructure errors (bad JSON, settings load, invalid `--hook-policy`) normally allow the prompt through so a broken hook does not block chat. Safety exceptions fail closed: trusted-policy drift blocks all editor gates; oversized read-gate input is denied; oversized MCP responses are withheld; and unrecognized MCP input is denied when `context.mcp.mode` is explicitly `deny`; unrecognized subagent input is denied by default (only `context.subagents.mode: observe` fail-opens). stderr shows short codes (`invalid_json`, `policy_drift`, `stdin_too_large`, …); details go to `--debug-hook` only.
 
 That covers errors Offsend can see. A hook process that crashes or times out never reports anything, so Cursor's own `failClosed` flag decides. Gates that carry hard denials set it — write, shell, MCP, subagent — and a crashed hook blocks the operation. The read-gate and the prompt gate leave it off: they are friction against reading secrets rather than a perimeter, and blocking every file read on a broken hook costs more than it protects.
 
-Prompt scanning does **not** honor inline `offsend:ignore` bypasses.
+Prompt scanning does **not** honor inline `offsend:ignore` bypasses. File `offsend check` honors them only with `--honor-inline-ignore` or `check.honor_inline_ignore: true`.
 
 ---
 
@@ -462,7 +465,7 @@ With `hooks.publish: true`, commit the editor config to share it with the team. 
 | --- | --- | --- | --- |
 | `cursor` | `.cursor/hooks.json` | `soft-block` | on by default |
 | `claude` | `.claude/settings.json` | `soft-block` | on by default |
-| `windsurf` | `.windsurf/hooks.json` | `soft-block` | not supported |
+| `windsurf` | `.windsurf/hooks.json` | `soft-block` | on by default (block via exit code 2; MCP response seal not supported) |
 | `codex` | `.codex/hooks.json` | `soft-block` | not supported |
 
 ### `hook uninstall`
@@ -868,6 +871,8 @@ Fail PRs when secrets appear or the AI ignore boundary drifts from the committed
   with:
     fail-on: block
 ```
+
+To honor `offsend:ignore` / `offsend:ignore-next-line` in that scan, set `check.honor_inline_ignore: true` in `.offsend.yml` (or pass `--honor-inline-ignore` if you invoke the CLI directly). Editor hooks and the clipboard guard never honor those comments.
 
 Or install the CLI and run:
 

@@ -99,6 +99,34 @@
     "fix_strategy": null
   },
   {
+    "id": "devin-ignore",
+    "tool_name": "Windsurf / Codeium",
+    "tool": "windsurf",
+    "title": ".devinignore",
+    "relative_path_patterns": [
+      ".devinignore"
+    ],
+    "severity": "recommended",
+    "scans_for_sensitive_patterns": true,
+    "remediation": "Add .devinignore for Windsurf / Devin Desktop indexing exclusions.",
+    "fix_relative_path": ".devinignore",
+    "fix_strategy": null
+  },
+  {
+    "id": "windsurf-ignore",
+    "tool_name": "Windsurf / Codeium",
+    "tool": "windsurf",
+    "title": ".windsurfignore",
+    "relative_path_patterns": [
+      ".windsurfignore"
+    ],
+    "severity": "recommended",
+    "scans_for_sensitive_patterns": true,
+    "remediation": "Add .windsurfignore for Windsurf agent file-access exclusions.",
+    "fix_relative_path": ".windsurfignore",
+    "fix_strategy": null
+  },
+  {
     "id": "claude-ignore",
     "tool_name": "Claude Code",
     "tool": "claude",
@@ -208,6 +236,20 @@
     "scans_for_sensitive_patterns": true,
     "remediation": "Add .codyignore for Sourcegraph Cody workspace exclusions.",
     "fix_relative_path": ".codyignore",
+    "fix_strategy": null
+  },
+  {
+    "id": "codex-ignore",
+    "tool_name": "Codex",
+    "tool": "codex",
+    "title": ".codexignore",
+    "relative_path_patterns": [
+      ".codexignore"
+    ],
+    "severity": "recommended",
+    "scans_for_sensitive_patterns": true,
+    "remediation": "Add .codexignore for Codex workspace exclusions.",
+    "fix_relative_path": ".codexignore",
     "fix_strategy": null
   },
   {

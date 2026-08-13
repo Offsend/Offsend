@@ -97,7 +97,7 @@ pub fn run(flags: AdapterFlags) -> Result<ExitCode, String> {
     let trusted = match crate::policy_trust::status(&flags.project_root) {
         crate::policy_trust::TrustStatus::Drift(reason)
         | crate::policy_trust::TrustStatus::Invalid(reason) => {
-            return Ok(fail_closed_policy(flags.adapter, &reason));
+            return Ok(fail_closed_policy(flags.adapter, gate_kind(&flags), &reason));
         }
         crate::policy_trust::TrustStatus::Trusted => true,
         crate::policy_trust::TrustStatus::Missing => false,
@@ -229,7 +229,27 @@ pub fn run(flags: AdapterFlags) -> Result<ExitCode, String> {
     Ok(code)
 }
 
-fn fail_closed_policy(adapter: Adapter, reason: &str) -> ExitCode {
+/// Which response shape the active gate expects. Drift/invalid-policy denies must
+/// be rendered in this shape, otherwise editors ignore the deny and fail open
+/// (e.g. a `PreToolUse` permission shape emitted on a prompt event is dropped).
+fn gate_kind(flags: &AdapterFlags) -> GateKind {
+    if flags.read_gate
+        || flags.grep_gate
+        || flags.write_gate
+        || flags.shell_gate
+        || flags.mcp_gate
+        || flags.mcp_response_gate
+        || flags.subagent_gate
+    {
+        GateKind::Permission
+    } else if flags.shell_audit || flags.artifact_audit {
+        GateKind::Observe
+    } else {
+        GateKind::Prompt
+    }
+}
+
+fn fail_closed_policy(adapter: Adapter, kind: GateKind, reason: &str) -> ExitCode {
     let message = format!(
         "Offsend blocked this operation: {reason}. Review .offsend.yml, then run `offsend policy trust` yourself in a terminal."
     );
@@ -238,12 +258,18 @@ fn fail_closed_policy(adapter: Adapter, reason: &str) -> ExitCode {
         "offsend: fail-closed ({}): policy_drift",
         adapter.as_str()
     );
-    render::permission_response(
-        adapter,
-        render::Permission::Deny,
-        Some(&message),
-        Some(&message),
-    )
+    match kind {
+        GateKind::Prompt => render::prompt_deny(adapter, &message),
+        GateKind::Permission => render::permission_response(
+            adapter,
+            render::Permission::Deny,
+            Some(&message),
+            Some(&message),
+        ),
+        // Observational gates (shell-audit, artifact-audit) run post-hoc and
+        // cannot block; emit the neutral shape rather than a bogus deny.
+        GateKind::Observe => render::empty_ok(),
+    }
 }
 
 fn context_str(context: &Option<Value>, path: &[&str]) -> Option<String> {

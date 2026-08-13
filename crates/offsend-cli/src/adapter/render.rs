@@ -116,7 +116,18 @@ pub fn permission_response(
                 }));
             }
         },
-        Adapter::Windsurf | Adapter::Codex => {}
+        // Windsurf pre-hooks block only via exit code 2 (no ask UI).
+        Adapter::Windsurf => match permission {
+            Permission::Allow => {}
+            Permission::Ask | Permission::Deny => {
+                let reason = agent_message
+                    .or(user_message)
+                    .unwrap_or("Offsend blocked this operation.");
+                let _ = writeln!(io::stderr(), "{reason}");
+                return ExitCode::from(2);
+            }
+        },
+        Adapter::Codex => {}
     }
     ExitCode::SUCCESS
 }

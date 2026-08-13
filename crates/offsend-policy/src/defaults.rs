@@ -107,12 +107,107 @@ pub fn default_audit_configuration() -> AuditConfiguration {
 mod tests {
     use super::*;
 
+    // Source of truth: Swift `AIWorkspacePrivacyDefaults` (rules, in order).
+    // Keep in sync 1:1 — any add/remove/rename/reorder here or in Swift is drift.
+    const EXPECTED_RULE_IDS: &[&str] = &[
+        "cursor-ignore",
+        "cursor-indexing-ignore",
+        "cursor-project-rules",
+        "claude-project-rules",
+        "copilot-exclude",
+        "continue-ignore",
+        "codeium-ignore",
+        "devin-ignore",
+        "windsurf-ignore",
+        "claude-ignore",
+        "gemini-ignore",
+        "llm-ignore",
+        "aider-ignore",
+        "cline-ignore",
+        "roo-ignore",
+        "zed-ignore",
+        "cody-ignore",
+        "codex-ignore",
+        "agents-md",
+        "claude-md",
+        "git-ignore",
+    ];
+
+    // Source of truth: Swift `AIWorkspacePrivacyDefaults` (sensitive patterns).
+    const EXPECTED_PATTERN_IDS: &[&str] = &[
+        "env-files",
+        "pem-files",
+        "key-files",
+        "ssh-files",
+        "aws-files",
+        "credentials-json",
+        "secrets-json",
+        "gcp-credentials",
+        "azure-credentials",
+        "kube-config",
+        "terraform-state",
+        "terraform-vars",
+        "pkcs12-p12",
+        "pkcs12-pfx",
+        "pgp-keys",
+        "netrc-files",
+        "npmrc-files",
+        "pypirc-files",
+        "htpasswd-files",
+        "docker-config",
+        "firebase-keys",
+        "firebase-client-config",
+        "android-local-properties",
+        "xcode-secrets-xcconfig",
+        "spring-local-config",
+        "cargo-credentials",
+        "auth-json",
+        "aws-root-key-csv",
+        "vpn-rdp-configs",
+        "keepass-databases",
+        "fly-cli-config",
+        "git-credentials",
+        "rails-master-key",
+        "secrets-yaml",
+        "gnupg-home",
+        "pgpass-files",
+        "mysql-client-config",
+        "yarn-config",
+        "terraform-rc",
+        "apple-p8-keys",
+        "android-keystore",
+        "apple-provisioning",
+        "local-databases",
+        "log-files",
+        "data-exports",
+        "backup-files",
+        "shell-history",
+        "agent-transcripts",
+        "db-dumps",
+    ];
+
     #[test]
-    fn loads_expected_counts() {
-        assert_eq!(DEFAULT_SENSITIVE_PATTERNS.len(), 49);
-        assert_eq!(DEFAULT_RULES.len(), 18);
-        assert!(DEFAULT_RULES.iter().any(|r| r.id == "cursor-ignore"));
-        assert!(DEFAULT_SENSITIVE_PATTERNS.iter().any(|p| p.id == "env-files"));
+    fn rule_ids_match_swift_source_exactly() {
+        let actual: Vec<&str> = DEFAULT_RULES.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(
+            actual, EXPECTED_RULE_IDS,
+            "default rule ids drifted from the Swift source of truth"
+        );
+    }
+
+    #[test]
+    fn sensitive_pattern_ids_match_swift_source() {
+        let mut actual: Vec<&str> = DEFAULT_SENSITIVE_PATTERNS
+            .iter()
+            .map(|p| p.id.as_str())
+            .collect();
+        let mut expected = EXPECTED_PATTERN_IDS.to_vec();
+        actual.sort_unstable();
+        expected.sort_unstable();
+        assert_eq!(
+            actual, expected,
+            "sensitive pattern ids drifted from the Swift source of truth"
+        );
     }
 
     #[test]

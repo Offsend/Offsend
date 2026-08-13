@@ -14,7 +14,10 @@ const MAX_OUTPUT: usize = 256 * 1024;
 const MAX_LOG_BYTES: u64 = 256 * 1024;
 
 pub fn run(adapter: Adapter, secrets_only: bool, stdin: &str) -> ExitCode {
-    if !matches!(adapter, Adapter::Cursor | Adapter::Claude) {
+    if !matches!(
+        adapter,
+        Adapter::Cursor | Adapter::Claude | Adapter::Windsurf
+    ) {
         return render::empty_ok();
     }
     let root: Value = match serde_json::from_str(stdin) {
@@ -24,6 +27,7 @@ pub fn run(adapter: Adapter, secrets_only: bool, stdin: &str) -> ExitCode {
     let command = root
         .get("command")
         .and_then(|v| v.as_str())
+        .or_else(|| root.pointer("/tool_info/command_line").and_then(|v| v.as_str()))
         .unwrap_or("")
         .to_string();
     let sandbox = root
@@ -33,13 +37,27 @@ pub fn run(adapter: Adapter, secrets_only: bool, stdin: &str) -> ExitCode {
     let output = extract_output(&root, adapter);
     let truncated = output.len() > MAX_OUTPUT;
     let clipped = if truncated {
-        &output[..MAX_OUTPUT]
+        // Clip on a UTF-8 char boundary; MAX_OUTPUT may land mid-codepoint
+        // (multi-byte output is common) and a raw byte slice would panic.
+        let mut cut = MAX_OUTPUT;
+        while cut > 0 && !output.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        &output[..cut]
     } else {
         output.as_str()
     };
 
-    let result = DetectionEngine::scan(&DetectionRequest::new(clipped.to_string()));
-    let findings: Vec<&SensitiveEntity> = result
+    // Decode base64/hex blobs too: `secret | base64` in command output must not
+    // slip past the audit just because it is encoded.
+    let scan = DetectionEngine::scan_including_encoded(clipped);
+    if scan.budget_exceeded {
+        let _ = writeln!(
+            io::stderr(),
+            "offsend: shell-audit: encoded content exceeded decode budget; not fully scanned"
+        );
+    }
+    let findings: Vec<&SensitiveEntity> = scan
         .entities
         .iter()
         .filter(|e| {

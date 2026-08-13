@@ -34,7 +34,10 @@ pub fn run(adapter: Adapter, stdin: &str) -> ExitCode {
 
 fn extract_paths(root: &Value) -> Vec<String> {
     let mut out = Vec::new();
-    let tool = root.get("tool_input").or_else(|| root.get("toolInput"));
+    let tool = root
+        .get("tool_input")
+        .or_else(|| root.get("toolInput"))
+        .or_else(|| root.get("tool_info"));
     for src in [tool, Some(root)].into_iter().flatten() {
         for key in ["file_path", "filePath", "path", "target_file"] {
             if let Some(p) = src.get(key).and_then(|v| v.as_str()) {
