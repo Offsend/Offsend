@@ -2,7 +2,7 @@ version: 1
 
 check:
   fail_on: block
-  policy: false
+  policy: true
   # honor_inline_ignore: true   # honor offsend:ignore in `offsend check` / CI
   # Prefer: offsend init --template node
   #          offsend init --list-templates
@@ -86,17 +86,17 @@ ignore:
   # - "**/.env"
 
 hooks:
-  enabled: true          # default; sync installs hooks; doctor / CI fail if git hooks are missing
-  git: [pre-commit]      # also: post-merge (= offsend sync after pull); AI hooks are separate
+  enabled: true          # default; sync installs hooks; doctor fails if git hooks are missing (CI --policy does not)
+  git: [pre-commit, post-merge]  # pre-commit = check --staged; post-merge = sync after pull
   fail_on: block
-  policy: false
+  policy: true
   publish: false         # false = AI editor hooks stay local (not for commit)
   # ignore_exclude: true # true = read-gate checks every path, ignoring check.exclude (default: false)
 
 # Optional AI-context controls used by `show`, `doctor`, and the editor gates
 # (`offsend sync` / `offsend hook install`). See docs/configuration.md#contextmcp.
 # Strict credentials recipe (also: offsend init --strict-credentials):
-#   set check.policy / hooks.policy to true, then:
+#   set tighter context (policy is already true from init), then:
 # context:
 #   read:
 #     on_secret: block        # block | seal — seal: deny hands the agent a sealed copy

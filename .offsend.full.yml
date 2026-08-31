@@ -23,7 +23,8 @@ check:
   fail_on: block
 
   # When true, also run workspace policy checks (ignore files, exposed sensitive
-  # paths, managed ignore drift). false = content scan only.
+  # paths, managed ignore drift, git-tracked ignore.patterns). false = content
+  # scan only. Unset default: false. `offsend init` writes true.
   policy: false
 
   # When true, `offsend check` (including the GitHub Action) honors inline
@@ -140,13 +141,14 @@ ignore:
 # -----------------------------------------------------------------------------
 hooks:
   # true (default): project expects git hooks. `offsend sync` installs them
-  # (plus detected AI-editor hooks). `check --policy` fails when declared git
-  # hooks are missing — not when project .cursor/hooks.json is absent on CI.
-  # false: skip install on sync; do not fail policy/doctor for missing hooks.
+  # (plus detected AI-editor hooks). `doctor` fails when declared git hooks
+  # are missing. `check --policy` does not require git or editor hooks on CI.
+  # false: skip install on sync; do not fail doctor for missing hooks.
   enabled: true
 
   # Which git hooks to install. Supported: pre-commit, post-merge.
   # Default when unset: [pre-commit]. Empty [] = no git hooks (AI hooks still apply).
+  # `offsend init` writes [pre-commit, post-merge].
   # pre-commit → check --staged; post-merge → sync (after pull/merge).
   # Legacy alias: `type: pre-commit` (single value).
   git: [pre-commit]
@@ -155,7 +157,8 @@ hooks:
   # Hook exit policy. If omitted → check.fail_on → block
   fail_on: block
 
-  # Include workspace policy checks in git hooks. If omitted → check.policy → false
+  # Include workspace policy checks in git hooks. If omitted → check.policy → false.
+  # `offsend init` writes true.
   policy: false
 
   # false (default): AI editor hook files stay local (.git/info/exclude).

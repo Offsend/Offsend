@@ -12,10 +12,10 @@ pub struct Finding {
     pub is_failure: bool,
 }
 
-/// Whether `doctor` / `check --policy` should require **git** hooks.
+/// Whether `doctor` should require **git** hooks.
 /// No `.offsend.yml` → do not enforce (nothing declared).
-/// Project AI-editor hooks are not required in CI (`check --policy`); doctor
-/// reports them separately from user-level hooks.
+/// `check --policy` (CI) does not require git or project AI-editor hooks;
+/// doctor reports git hooks as fail and project AI-editor files as warn.
 pub fn hooks_required(config: Option<&OffsendProjectConfig>) -> bool {
     config.map(OffsendProjectConfig::hooks_enabled).unwrap_or(false)
 }
@@ -26,7 +26,7 @@ pub fn should_install(config: Option<&OffsendProjectConfig>) -> bool {
     config.map(OffsendProjectConfig::hooks_enabled).unwrap_or(true)
 }
 
-/// Git-hook findings for `check --policy` (CI) and doctor.
+/// Git-hook findings for doctor (not `check --policy`).
 /// Missing project AI-editor files are not included — user-level hooks cover the machine.
 pub fn git_findings(root: &Path, config: Option<&OffsendProjectConfig>) -> Vec<Finding> {
     if !hooks_required(config) {
@@ -203,7 +203,7 @@ mod tests {
         );
         assert!(
             git.iter().all(|f| !f.id.ends_with("-hook") || f.id == "git-hook"),
-            "CI must not require project AI-editor hooks: {git:?}"
+            "git_findings is doctor-only and must not include project AI-editor hooks: {git:?}"
         );
         let _ = fs::remove_dir_all(&repo);
     }

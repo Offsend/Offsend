@@ -1,6 +1,6 @@
 # Configuration
 
-Offsend looks for a project config file named `.offsend.yml` at the repository root. Commit it so the same rules apply locally, in git hooks, and in CI — including the AI-context boundary: `ignore.patterns` is the source of truth that `offsend sync` materializes into `.cursorignore`, `.claudeignore`, and other AI ignore files. Teams tune that shared baseline (templates, `detectors.disable`); they do not each maintain a private copy of the ignore rules. Walkthrough: [team.md](team.md).
+Offsend looks for a project config file named `.offsend.yml` at the repository root. Commit it so the same rules apply locally, in git hooks, and in CI — including the AI-context boundary: `ignore.patterns` is the source of truth that `offsend sync` materializes into `.cursorignore`, `.claudeignore`, and other AI ignore files, and into Claude Code `permissions.deny` in `.claude/settings.json`. Teams tune that shared baseline (templates, `detectors.disable`); they do not each maintain a private copy of the ignore rules. Walkthrough: [team.md](team.md).
 
 Create a starter file:
 
@@ -35,7 +35,7 @@ version: 1
 
 check:
   fail_on: block
-  policy: false
+  policy: true
   exclude:
     - "*.lock"
     - ".DS_Store"
@@ -66,9 +66,9 @@ ignore:
 
 hooks:
   enabled: true
-  git: [pre-commit]      # optional: add post-merge
+  git: [pre-commit, post-merge]
   fail_on: block
-  policy: false
+  policy: true
   publish: false
 
 # Optional AI-context controls (MCP policy, response seal, shell gate, …)
@@ -118,13 +118,15 @@ Files already created for other tools are not deleted — remove them manually i
 
 ### `ignore.patterns`
 
-Mandatory AI-ignore patterns for the repository. Source of truth for the managed block in editor ignore files (`.cursorignore`, `.claudeignore`, …).
+Mandatory AI-ignore patterns for the repository. Source of truth for the managed block in editor ignore files (`.cursorignore`, `.claudeignore`, …) and for Claude Code `permissions.deny` (`Read` / `Edit` / `Write` per pattern in `.claude/settings.json`). `.claudeignore` is still written for other tools; Claude Code does not enforce it.
 
 - `offsend init` seeds this list with the default AI privacy patterns (`.env*`, `*.pem`, credentials files, …)
-- `offsend ignore <pattern>` appends here, then materializes ignore files
-- `offsend ignore --local <pattern>` writes only to local ignore files (not shared)
-- After editing this list by hand, run `offsend sync` (or `sync --no-hooks` for ignore files only)
-- User-authored lines outside the managed markers are preserved
+- `offsend ignore <pattern>` appends here, then materializes ignore files (and Claude deny)
+- `offsend ignore --local <pattern>` writes only to local ignore files (not shared; does not update Claude `permissions.deny`)
+- After editing this list by hand, run `offsend sync` (or `sync --no-hooks` for ignore files + Claude deny only)
+- User-authored lines outside the managed markers are preserved; foreign `permissions.deny` entries (for example `Bash(rm)`) are preserved
+- `ignore.tools` that omit `claude` skips `.claude/settings.json`; empty `patterns` does not create that file
+- Missing `.claude/settings.json` is not a `check --policy` failure when `hooks.publish` is `false` (the default)
 
 ### Upgrading Offsend CLI (existing `.offsend.yml`)
 
@@ -179,7 +181,7 @@ Locally, prefer reviewing with `doctor` / `show` and advise-only `init` checks. 
 
 ### `check.policy`
 
-When `true`, `offsend check` also runs workspace policy checks for ignore files, exposed sensitive paths, managed ignore drift, and **git-tracked paths covered by `ignore.patterns`** (committed secrets bypass local AI gates via clone / raw URLs). When `false`, it scans file contents only.
+When `true`, `offsend check` also runs workspace policy checks for ignore files, exposed sensitive paths, managed ignore drift, and **git-tracked paths covered by `ignore.patterns`** (committed secrets bypass local AI gates via clone / raw URLs). When `false`, it scans file contents only. Unset default is `false`; `offsend init` writes `true`. The Offsend product repo keeps `false` because it contains detector fixtures.
 
 ### `check.honor_inline_ignore`
 
@@ -200,15 +202,9 @@ For repos where credentials must not become agent fuel, use:
 offsend init --template <stack> --strict-credentials
 ```
 
-Or set the same shape by hand:
+`offsend init` already sets `check.policy` / `hooks.policy` to `true`. `--strict-credentials` adds a tighter `context` block:
 
 ```yaml
-check:
-  fail_on: block
-  policy: true          # also fail on exposed required paths / ignore drift
-hooks:
-  fail_on: block
-  policy: true
 context:
   mcp:
     mode: ask           # or deny
@@ -288,8 +284,8 @@ Whether this project expects git hooks (`sync` also installs detected AI-editor 
 
 | Value | `offsend sync` | `doctor` | `check --policy` (CI) |
 | --- | --- | --- | --- |
-| `true` (default) | Installs [`hooks.git`](#hooksgit) + detected AI-editor hooks | **Fail** if configured git hooks are missing / not Offsend-managed. Project AI-editor files are **warn** (user-level hooks from `offsend setup` cover the machine) | **Fail** if configured git hooks are missing. Does **not** require `.cursor/hooks.json` / editor files on the runner |
-| `false` | Skips hook install (same effect as `--no-hooks` for the hooks half) | Does not fail for missing hooks | Does not fail for missing hooks |
+| `true` (default) | Installs [`hooks.git`](#hooksgit) + detected AI-editor hooks | **Fail** if configured git hooks are missing / not Offsend-managed. Project AI-editor files are **warn** (user-level hooks from `offsend setup` cover the machine) | Does **not** require git hooks or `.cursor/hooks.json` on the runner. Fails on secrets, tracked `ignore.patterns` paths, and ignore drift when those files are in git |
+| `false` | Skips hook install (same effect as `--no-hooks` for the hooks half) | Does not fail for missing hooks | Same as `true` for hooks (neither requires them) |
 
 Commit `hooks.enabled: true` (or rely on the default) so every teammate gets git hooks after `offsend sync`. Editor gates on a machine come from `offsend setup` (user-level). Set `false` only when the repo intentionally does not use hooks.
 
@@ -302,7 +298,7 @@ Which **git** hooks to install (AI-editor hooks are separate and still follow `h
 | unset | Default `[pre-commit]` |
 | `[pre-commit]` | `offsend check --staged` before commit |
 | `[post-merge]` | `offsend sync` after `git pull` / merge (refresh ignore files + hooks from `.offsend.yml`) |
-| `[pre-commit, post-merge]` | Both |
+| `[pre-commit, post-merge]` | Both — what `offsend init` writes |
 | `[]` | No git hooks (AI-editor hooks still install when `enabled: true`) |
 
 Legacy: `type: pre-commit` is accepted as a single-value alias for `git: [pre-commit]`.
@@ -313,7 +309,7 @@ Exit policy used by installed hooks. If omitted, falls back to `check.fail_on`, 
 
 ### `hooks.policy`
 
-Whether installed hooks include workspace policy checks. If omitted, falls back to `check.policy`, then `false`. For faster commits that check only staged files, keep this `false`.
+Whether installed hooks include workspace policy checks. If omitted, falls back to `check.policy`, then `false`. `offsend init` writes `true`. For faster commits that check only staged files, set this to `false`.
 
 ### `hooks.publish`
 
@@ -333,7 +329,7 @@ Optional read-gate behavior when a file read is denied because of detected secre
 | --- | --- |
 | `on_secret` | `seal` (default, including with no YAML) — deny the original read, write a sealed copy (secrets replaced with `{{TYPE:v1.…}}` tokens), and hand the agent its path. `block` — plain deny. Requires a seal key (`offsend setup` or `offsend keygen --default`); without one, falls back to plain deny |
 
-Read at runtime by the read-gate — changing it does not require reinstalling hooks. Sealed copies are exclusively created without following symlinks in a private temp directory, use `0600` permissions, and are cleaned up after ~1 hour. Tokens use fresh random AES-GCM nonces while remaining compatible with existing `v1` tokens. The user can restore agent outputs containing tokens with `offsend unseal`. Note the honest boundary: seal mode keeps plaintext out of transcripts and model context, but a local agent with access to your seal key is not sandboxed by this.
+Read at runtime by the read-gate — changing it does not require reinstalling hooks. Sealed copies are exclusively created without following symlinks in a private temp directory, use `0600` permissions, and are cleaned up after ~1 hour. Tokens use fresh random AES-GCM nonces while remaining compatible with existing `v1` tokens. The user can restore agent outputs containing tokens with `offsend unseal` (copy the tokens and run it in a terminal to read the clipboard, or pass a file / pipe). Note the honest boundary: seal mode keeps plaintext out of transcripts and model context, but a local agent with access to your seal key is not sandboxed by this.
 
 Unrecognized / invalid read-gate hook JSON is **denied** (fail-closed), matching oversized stdin handling.
 

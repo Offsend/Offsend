@@ -276,26 +276,20 @@ fn merge_cursor(
         .as_object_mut()
         .ok_or_else(|| AiHookError::Message("invalid hooks object".into()))?;
 
-    set_cursor_event(hooks_obj, "beforeSubmitPrompt", Some(prompt_cmd), false, None);
-
-    let read = enable_read.then(|| {
-        wrapper_command(cli_path, "cursor", &["--read-gate", "--no-notify"])
-    });
     set_cursor_event(
         hooks_obj,
-        "beforeReadFile",
-        read.as_deref(),
+        "beforeSubmitPrompt",
+        Some(prompt_cmd),
         false,
         None,
     );
 
-    let grep = enable_grep.then(|| {
-        wrapper_command(
-            cli_path,
-            "cursor",
-            &["--grep-gate", "--no-notify"],
-        )
-    });
+    let read =
+        enable_read.then(|| wrapper_command(cli_path, "cursor", &["--read-gate", "--no-notify"]));
+    set_cursor_event(hooks_obj, "beforeReadFile", read.as_deref(), false, None);
+
+    let grep =
+        enable_grep.then(|| wrapper_command(cli_path, "cursor", &["--grep-gate", "--no-notify"]));
     set_cursor_event(
         hooks_obj,
         "preToolUse",
@@ -304,9 +298,8 @@ fn merge_cursor(
         Some(CURSOR_GREP_MATCHER),
     );
 
-    let write = enable_write.then(|| {
-        wrapper_command(cli_path, "cursor", &["--write-gate", "--no-notify"])
-    });
+    let write =
+        enable_write.then(|| wrapper_command(cli_path, "cursor", &["--write-gate", "--no-notify"]));
     set_cursor_event(
         hooks_obj,
         "preToolUse",
@@ -315,13 +308,8 @@ fn merge_cursor(
         Some(CURSOR_WRITE_MATCHER),
     );
 
-    let task = enable_subagent.then(|| {
-        wrapper_command(
-            cli_path,
-            "cursor",
-            &["--subagent-gate", "--no-notify"],
-        )
-    });
+    let task = enable_subagent
+        .then(|| wrapper_command(cli_path, "cursor", &["--subagent-gate", "--no-notify"]));
     set_cursor_event(
         hooks_obj,
         "preToolUse",
@@ -331,20 +319,12 @@ fn merge_cursor(
     );
     set_cursor_event(hooks_obj, "subagentStart", task.as_deref(), true, None);
 
-    let artifact = enable_artifact.then(|| {
-        wrapper_command(cli_path, "cursor", &["--artifact-audit", "--no-notify"])
-    });
-    set_cursor_event(
-        hooks_obj,
-        "afterFileEdit",
-        artifact.as_deref(),
-        false,
-        None,
-    );
+    let artifact = enable_artifact
+        .then(|| wrapper_command(cli_path, "cursor", &["--artifact-audit", "--no-notify"]));
+    set_cursor_event(hooks_obj, "afterFileEdit", artifact.as_deref(), false, None);
 
-    let shell = enable_shell.then(|| {
-        wrapper_command(cli_path, "cursor", &["--shell-gate", "--no-notify"])
-    });
+    let shell =
+        enable_shell.then(|| wrapper_command(cli_path, "cursor", &["--shell-gate", "--no-notify"]));
     set_cursor_event(
         hooks_obj,
         "beforeShellExecution",
@@ -353,13 +333,8 @@ fn merge_cursor(
         None,
     );
 
-    let shell_audit = enable_shell_audit.then(|| {
-        wrapper_command(
-            cli_path,
-            "cursor",
-            &["--shell-audit", "--no-notify"],
-        )
-    });
+    let shell_audit = enable_shell_audit
+        .then(|| wrapper_command(cli_path, "cursor", &["--shell-audit", "--no-notify"]));
     set_cursor_event(
         hooks_obj,
         "afterShellExecution",
@@ -368,31 +343,15 @@ fn merge_cursor(
         None,
     );
 
-    let mcp = enable_mcp.then(|| {
-        wrapper_command(
-            cli_path,
-            "cursor",
-            &["--mcp-gate", "--no-notify"],
-        )
-    });
-    set_cursor_event(
-        hooks_obj,
-        "beforeMCPExecution",
-        mcp.as_deref(),
-        true,
-        None,
-    );
+    let mcp =
+        enable_mcp.then(|| wrapper_command(cli_path, "cursor", &["--mcp-gate", "--no-notify"]));
+    set_cursor_event(hooks_obj, "beforeMCPExecution", mcp.as_deref(), true, None);
 
     // Remove legacy observe-only MCP response hook.
     set_cursor_event(hooks_obj, "afterMCPExecution", None, false, None);
 
-    let mcp_resp = enable_mcp_response.then(|| {
-        wrapper_command(
-            cli_path,
-            "cursor",
-            &["--mcp-response-gate", "--no-notify"],
-        )
-    });
+    let mcp_resp = enable_mcp_response
+        .then(|| wrapper_command(cli_path, "cursor", &["--mcp-response-gate", "--no-notify"]));
     set_cursor_event(
         hooks_obj,
         "postToolUse",
@@ -451,11 +410,7 @@ fn merge_claude(
         tool_groups.push(claude_command_group(&cmd, Some("Bash")));
     }
     if enable_mcp {
-        let cmd = wrapper_command(
-            cli_path,
-            "claude",
-            &["--mcp-gate", "--no-notify"],
-        );
+        let cmd = wrapper_command(cli_path, "claude", &["--mcp-gate", "--no-notify"]);
         tool_groups.push(claude_command_group(&cmd, Some(CLAUDE_MCP_MATCHER)));
     }
     if tool_groups.is_empty() {
@@ -466,11 +421,7 @@ fn merge_claude(
 
     let mut post_groups = remove_managed_from_groups(hooks_obj.get("PostToolUse"));
     if enable_mcp_response {
-        let cmd = wrapper_command(
-            cli_path,
-            "claude",
-            &["--mcp-response-gate", "--no-notify"],
-        );
+        let cmd = wrapper_command(cli_path, "claude", &["--mcp-response-gate", "--no-notify"]);
         post_groups.push(claude_command_group(&cmd, Some(CLAUDE_MCP_MATCHER)));
     }
     if enable_artifact {
@@ -478,11 +429,7 @@ fn merge_claude(
         post_groups.push(claude_command_group(&cmd, Some(CLAUDE_WRITE_MATCHER)));
     }
     if enable_shell_audit {
-        let cmd = wrapper_command(
-            cli_path,
-            "claude",
-            &["--shell-audit", "--no-notify"],
-        );
+        let cmd = wrapper_command(cli_path, "claude", &["--shell-audit", "--no-notify"]);
         post_groups.push(claude_command_group(&cmd, Some("Bash")));
     }
     if post_groups.is_empty() {
@@ -491,6 +438,8 @@ fn merge_claude(
         hooks_obj.insert("PostToolUse".into(), Value::Array(post_groups));
     }
 
+    // Replace only `_offsend` (hook metadata). Do not rebuild the root object:
+    // `permissions.deny` and `_offsendClaudeDeny` are owned by ignore-sync.
     root.as_object_mut()
         .unwrap()
         .insert("_offsend".into(), managed_meta("UserPromptSubmit"));
@@ -520,47 +469,28 @@ fn merge_windsurf(
 
     set_windsurf_event(hooks_obj, "pre_user_prompt", Some(prompt_cmd), true);
 
-    let read = enable_read.then(|| {
-        wrapper_command(cli_path, "windsurf", &["--read-gate", "--no-notify"])
-    });
+    let read =
+        enable_read.then(|| wrapper_command(cli_path, "windsurf", &["--read-gate", "--no-notify"]));
     set_windsurf_event(hooks_obj, "pre_read_code", read.as_deref(), false);
 
-    let write = enable_write.then(|| {
-        wrapper_command(cli_path, "windsurf", &["--write-gate", "--no-notify"])
-    });
+    let write = enable_write
+        .then(|| wrapper_command(cli_path, "windsurf", &["--write-gate", "--no-notify"]));
     set_windsurf_event(hooks_obj, "pre_write_code", write.as_deref(), false);
 
-    let artifact = enable_artifact.then(|| {
-        wrapper_command(
-            cli_path,
-            "windsurf",
-            &["--artifact-audit", "--no-notify"],
-        )
-    });
+    let artifact = enable_artifact
+        .then(|| wrapper_command(cli_path, "windsurf", &["--artifact-audit", "--no-notify"]));
     set_windsurf_event(hooks_obj, "post_write_code", artifact.as_deref(), false);
 
-    let shell = enable_shell.then(|| {
-        wrapper_command(cli_path, "windsurf", &["--shell-gate", "--no-notify"])
-    });
+    let shell = enable_shell
+        .then(|| wrapper_command(cli_path, "windsurf", &["--shell-gate", "--no-notify"]));
     set_windsurf_event(hooks_obj, "pre_run_command", shell.as_deref(), false);
 
-    let shell_audit = enable_shell_audit.then(|| {
-        wrapper_command(
-            cli_path,
-            "windsurf",
-            &["--shell-audit", "--no-notify"],
-        )
-    });
-    set_windsurf_event(
-        hooks_obj,
-        "post_run_command",
-        shell_audit.as_deref(),
-        false,
-    );
+    let shell_audit = enable_shell_audit
+        .then(|| wrapper_command(cli_path, "windsurf", &["--shell-audit", "--no-notify"]));
+    set_windsurf_event(hooks_obj, "post_run_command", shell_audit.as_deref(), false);
 
-    let mcp = enable_mcp.then(|| {
-        wrapper_command(cli_path, "windsurf", &["--mcp-gate", "--no-notify"])
-    });
+    let mcp =
+        enable_mcp.then(|| wrapper_command(cli_path, "windsurf", &["--mcp-gate", "--no-notify"]));
     set_windsurf_event(hooks_obj, "pre_mcp_tool_use", mcp.as_deref(), false);
 
     let mcp_resp = enable_mcp_response.then(|| {
@@ -570,12 +500,7 @@ fn merge_windsurf(
             &["--mcp-response-gate", "--no-notify"],
         )
     });
-    set_windsurf_event(
-        hooks_obj,
-        "post_mcp_tool_use",
-        mcp_resp.as_deref(),
-        false,
-    );
+    set_windsurf_event(hooks_obj, "post_mcp_tool_use", mcp_resp.as_deref(), false);
 
     root.as_object_mut()
         .unwrap()
@@ -875,9 +800,10 @@ mod tests {
             "post_mcp_tool_use",
         ] {
             assert!(
-                hooks.get(event).and_then(|v| v.as_array()).is_some_and(|a| {
-                    a.iter().any(is_managed_entry)
-                }),
+                hooks
+                    .get(event)
+                    .and_then(|v| v.as_array())
+                    .is_some_and(|a| { a.iter().any(is_managed_entry) }),
                 "missing managed hook for {event}"
             );
         }
@@ -885,6 +811,53 @@ mod tests {
             root.pointer("/_offsend/version").and_then(|v| v.as_u64()),
             Some(AI_VERSION as u64)
         );
+        let _ = fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn claude_install_preserves_permissions_deny() {
+        let repo = tmp_repo();
+        fs::create_dir_all(repo.join(".claude")).unwrap();
+        fs::write(
+            repo.join(".claude/settings.json"),
+            r#"{
+  "permissions": {
+    "deny": ["Bash(rm)", "Read(**/.env*)", "Edit(**/.env*)", "Write(**/.env*)"]
+  },
+  "_offsendClaudeDeny": ["Read(**/.env*)", "Edit(**/.env*)", "Write(**/.env*)"]
+}
+"#,
+        )
+        .unwrap();
+        install(
+            AiTarget::Claude,
+            &repo,
+            "/usr/local/bin/offsend",
+            "soft-block",
+            &GateOptions::default(),
+        )
+        .unwrap();
+        let root: Value =
+            serde_json::from_str(&fs::read_to_string(repo.join(".claude/settings.json")).unwrap())
+                .unwrap();
+        let deny: Vec<&str> = root
+            .pointer("/permissions/deny")
+            .and_then(|a| a.as_array())
+            .unwrap()
+            .iter()
+            .filter_map(|x| x.as_str())
+            .collect();
+        assert!(deny.contains(&"Bash(rm)"));
+        assert!(deny.contains(&"Read(**/.env*)"));
+        let snapshot: Vec<&str> = root
+            .get("_offsendClaudeDeny")
+            .and_then(|a| a.as_array())
+            .unwrap()
+            .iter()
+            .filter_map(|x| x.as_str())
+            .collect();
+        assert!(snapshot.contains(&"Read(**/.env*)"));
+        assert!(root.pointer("/hooks/UserPromptSubmit").is_some());
         let _ = fs::remove_dir_all(&repo);
     }
 

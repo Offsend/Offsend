@@ -25,6 +25,9 @@ jobs:
       - uses: Offsend/ai-hygiene@v1
         with:
           fail-on: block
+          policy: false
+      # Consumer repos from `offsend init` set check.policy: true (and can pass
+      # policy: true here). This repo keeps policy off because of detector fixtures.
       # Also recommended locally / in custom CI:
       #   offsend check --staged --policy --fail-on block
       - name: Install Rust

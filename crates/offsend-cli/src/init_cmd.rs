@@ -2,8 +2,8 @@
 
 use clap::Args;
 use offsend_policy::{
-    exclude_patterns, list_templates_text, merging_exclude, render_yaml, resolve, IgnoreSyncService,
-    CONFIG_FILENAME,
+    exclude_patterns, list_templates_text, merging_exclude, render_yaml, resolve,
+    IgnoreSyncService, CONFIG_FILENAME,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -101,12 +101,7 @@ pub fn run(args: InitArgs) -> Result<ExitCode, String> {
                 config_path.display()
             ));
         }
-        let yaml = render_yaml(
-            &ids,
-            ignore_commit,
-            hooks_publish,
-            args.strict_credentials,
-        );
+        let yaml = render_yaml(&ids, ignore_commit, hooks_publish, args.strict_credentials);
         fs::write(&config_path, yaml).map_err(|e| e.to_string())?;
         println!("created {}", config_path.display());
     }
@@ -130,6 +125,12 @@ pub fn run(args: InitArgs) -> Result<ExitCode, String> {
     if !args.no_check {
         println!("baseline: run offsend check .");
     }
-    println!("next: offsend protect && offsend sync");
+    println!("next: git add .offsend.yml && git commit -m \"Add AI context policy\"");
+    println!("      offsend protect && offsend sync");
+    println!("CI:");
+    println!("- uses: Offsend/ai-hygiene@v1");
+    println!("  with:");
+    println!("    fail-on: block");
+    println!("    policy: true");
     Ok(ExitCode::SUCCESS)
 }

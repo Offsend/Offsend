@@ -5,6 +5,7 @@ mod audit;
 mod audit_config;
 mod audit_model;
 mod check_report;
+mod claude_deny;
 mod config;
 mod config_templates;
 mod defaults;
@@ -23,6 +24,11 @@ pub use allowlist::{is_allowlisted, is_allowlisted_default, DEFAULT_ALLOWLIST_PA
 pub use audit::PrivacyAuditor;
 pub use audit_config::{resolve_audit_configuration, AuditConfigOverrides};
 pub use audit_model::*;
+pub use claude_deny::{
+    applies_to as claude_deny_applies_to, claude_path_glob, deny_rules_from_patterns,
+    missing_managed_rules as claude_deny_missing, upsert as upsert_claude_deny, ClaudeDenyUpsert,
+    SETTINGS_RELATIVE as CLAUDE_SETTINGS_RELATIVE,
+};
 pub use check_report::{
     build_check_report, check_report_to_json, render_check_report, CheckExposedPattern,
     CheckFixFile, CheckPatternMeta, CheckReport, CheckRuleMeta, CheckTotals,
