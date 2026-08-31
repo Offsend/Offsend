@@ -382,6 +382,39 @@ if [[ -L "$seal_work/output-link.txt" || "$(cat "$seal_work/target.txt")" != 'ta
   exit 1
 fi
 
+# unseal with no path on a TTY reads the clipboard (macOS pbpaste).
+if [[ "$(uname -s)" == Darwin ]]; then
+  /usr/bin/pbcopy < "$seal_work/sealed.txt"
+  python3 - "$CLI_PATH" "$seal_work" <<'PY'
+import os, pty, select, sys, time
+cli, work = sys.argv[1], sys.argv[2]
+pid, fd = pty.fork()
+if pid == 0:
+    os.chdir(work)
+    os.execv(cli, [cli, "unseal", "--key-file", "keys/work.key"])
+chunks = []
+deadline = time.time() + 8
+while time.time() < deadline:
+    r, _, _ = select.select([fd], [], [], max(0, deadline - time.time()))
+    if not r:
+        break
+    try:
+        data = os.read(fd, 4096)
+    except OSError:
+        break
+    if not data:
+        break
+    chunks.append(data)
+os.waitpid(pid, 0)
+text = b"".join(chunks).decode("utf-8", "replace")
+# PTY may wrap with CR; compare on content.
+if "contact=user@example.com" not in text.replace("\r", ""):
+    sys.stderr.write("Expected TTY unseal to restore clipboard plaintext\n")
+    sys.stderr.write(text + "\n")
+    sys.exit(1)
+PY
+fi
+
 dd if=/dev/zero bs=1048576 count=2 2>/dev/null | tr '\0' a > "$seal_work/exact-limit.txt"
 "$CLI_PATH" seal exact-limit.txt --working-directory "$seal_work" --key-file keys/work.key -o exact-limit.out --quiet
 printf 'x' >> "$seal_work/exact-limit.txt"
@@ -1830,7 +1863,81 @@ if ! grep -q '"skipped"[[:space:]]*:[[:space:]]*false' /tmp/offsend-sync-full.$$
 fi
 # Idempotent second run should succeed.
 HOME="$sync_home" "$CLI_PATH" sync --path "$sync_repo" --format json >/tmp/offsend-sync-idem.$$
+if ! grep -q 'Read(\*\*/secrets/\*\*)' "$sync_repo/.claude/settings.json"; then
+  echo "Expected sync to write Claude permissions.deny for secrets/" >&2
+  cat "$sync_repo/.claude/settings.json" >&2
+  exit 1
+fi
+if ! grep -q 'OFFSEND_MANAGED_HOOK=1' "$sync_repo/.claude/settings.json"; then
+  echo "Expected full sync to keep Claude hooks alongside permissions.deny" >&2
+  cat "$sync_repo/.claude/settings.json" >&2
+  exit 1
+fi
 rm -f /tmp/offsend-sync-full.$$ /tmp/offsend-sync-full-err.$$ /tmp/offsend-sync-idem.$$
+
+# Claude permissions.deny: preserve foreign Bash(rm); .env* → Read/Edit/Write.
+claude_deny_repo="$workdir/claude-deny"
+mkdir -p "$claude_deny_repo/.claude"
+git -C "$claude_deny_repo" init >/dev/null
+git -C "$claude_deny_repo" config user.email "ci@example.com"
+git -C "$claude_deny_repo" config user.name "Offsend CI"
+printf '%s\n' \
+  '{' \
+  '  "permissions": {' \
+  '    "deny": ["Bash(rm)"]' \
+  '  }' \
+  '}' > "$claude_deny_repo/.claude/settings.json"
+printf '%s\n' \
+  "version: 1" \
+  "ignore:" \
+  "  commit: true" \
+  "  patterns:" \
+  "    - \".env*\"" \
+  "hooks:" \
+  "  enabled: false" > "$claude_deny_repo/.offsend.yml"
+HOME="$sync_home" "$CLI_PATH" sync --path "$claude_deny_repo" --no-hooks >/dev/null
+if ! grep -q 'Bash(rm)' "$claude_deny_repo/.claude/settings.json"; then
+  echo "Expected sync to keep foreign Claude deny Bash(rm)" >&2
+  cat "$claude_deny_repo/.claude/settings.json" >&2
+  exit 1
+fi
+if ! grep -q 'Read(\*\*/.env\*)' "$claude_deny_repo/.claude/settings.json" \
+  || ! grep -q 'Edit(\*\*/.env\*)' "$claude_deny_repo/.claude/settings.json" \
+  || ! grep -q 'Write(\*\*/.env\*)' "$claude_deny_repo/.claude/settings.json"; then
+  echo "Expected sync to add Read/Edit/Write deny for .env*" >&2
+  cat "$claude_deny_repo/.claude/settings.json" >&2
+  exit 1
+fi
+
+# CI: patterns present, no .claude/settings.json, ignore.commit false → check --policy passes.
+claude_policy_repo="$workdir/claude-deny-ci"
+mkdir -p "$claude_policy_repo"
+git -C "$claude_policy_repo" init >/dev/null
+git -C "$claude_policy_repo" config user.email "ci@example.com"
+git -C "$claude_policy_repo" config user.name "Offsend CI"
+printf '%s\n' \
+  "version: 1" \
+  "ignore:" \
+  "  commit: false" \
+  "  patterns:" \
+  "    - \".env*\"" \
+  "hooks:" \
+  "  publish: false" > "$claude_policy_repo/.offsend.yml"
+if [[ -e "$claude_policy_repo/.claude/settings.json" ]]; then
+  echo "Expected CI fixture not to have .claude/settings.json before check" >&2
+  exit 1
+fi
+set +e
+HOME="$sync_home" "$CLI_PATH" check --policy "$claude_policy_repo" --format json \
+  >/tmp/offsend-claude-deny-policy.$$ 2>/dev/null
+claude_policy_status="$?"
+set -e
+if [[ "$claude_policy_status" -ne 0 ]]; then
+  echo "Expected check --policy to pass without .claude/settings.json, got $claude_policy_status" >&2
+  cat /tmp/offsend-claude-deny-policy.$$ >&2
+  exit 1
+fi
+rm -f /tmp/offsend-claude-deny-policy.$$
 
 # hooks.enabled: false skips install; check --policy does not fail for missing hooks.
 disabled_repo="$workdir/hooks-disabled"
@@ -1864,7 +1971,8 @@ if grep -q '"kind"[[:space:]]*:[[:space:]]*"hooks"' /tmp/offsend-hooks-disabled-
 fi
 rm -f /tmp/offsend-hooks-disabled.$$ /tmp/offsend-hooks-disabled-policy.$$
 
-# hooks.enabled default true: check --policy fails until sync installs hooks.
+# hooks.enabled default true: check --policy does not require git hooks (CI);
+# doctor fails until sync installs them (laptop).
 required_repo="$workdir/hooks-required"
 mkdir -p "$required_repo"
 git -C "$required_repo" init >/dev/null
@@ -1873,7 +1981,7 @@ git -C "$required_repo" config user.name "Offsend CI"
 printf '%s\n' \
   "version: 1" \
   "ignore:" \
-  "  commit: true" \
+  "  commit: false" \
   "  patterns: []" \
   "hooks:" \
   "  publish: false" > "$required_repo/.offsend.yml"
@@ -1881,26 +1989,45 @@ set +e
 HOME="$sync_home" "$CLI_PATH" check --policy "$required_repo" --format json \
   >/tmp/offsend-hooks-required-policy.$$ 2>/dev/null
 required_policy_status="$?"
+HOME="$sync_home" "$CLI_PATH" doctor --path "$required_repo" --format json \
+  >/tmp/offsend-hooks-required-doctor.$$ 2>/dev/null
+required_doctor_status="$?"
 set -e
-if [[ "$required_policy_status" -eq 0 ]]; then
-  echo "Expected check --policy to fail when hooks.enabled (default) and hooks missing" >&2
+if [[ "$required_policy_status" -ne 0 ]]; then
+  echo "Expected check --policy to pass when git hooks are missing (CI), got $required_policy_status" >&2
   cat /tmp/offsend-hooks-required-policy.$$ >&2
   exit 1
 fi
-if ! grep -q '"id"[[:space:]]*:[[:space:]]*"git-pre-commit"' /tmp/offsend-hooks-required-policy.$$; then
-  echo "Expected check --policy JSON to include git-pre-commit finding" >&2
+if grep -q '"id"[[:space:]]*:[[:space:]]*"git-pre-commit"' /tmp/offsend-hooks-required-policy.$$; then
+  echo "Expected check --policy JSON not to include git-pre-commit" >&2
   cat /tmp/offsend-hooks-required-policy.$$ >&2
+  exit 1
+fi
+if [[ "$required_doctor_status" -eq 0 ]]; then
+  echo "Expected doctor to fail when hooks.enabled (default) and git hooks missing" >&2
+  cat /tmp/offsend-hooks-required-doctor.$$ >&2
+  exit 1
+fi
+if ! grep -q '"name"[[:space:]]*:[[:space:]]*"git-pre-commit"' /tmp/offsend-hooks-required-doctor.$$; then
+  echo "Expected doctor JSON to include git-pre-commit check" >&2
+  cat /tmp/offsend-hooks-required-doctor.$$ >&2
+  exit 1
+fi
+if ! grep -q 'offsend sync' /tmp/offsend-hooks-required-doctor.$$; then
+  echo "Expected doctor suggested_actions to include offsend sync" >&2
+  cat /tmp/offsend-hooks-required-doctor.$$ >&2
   exit 1
 fi
 HOME="$sync_home" "$CLI_PATH" sync --path "$required_repo" >/dev/null
 HOME="$sync_home" "$CLI_PATH" check --policy "$required_repo" --format json \
   >/tmp/offsend-hooks-required-ok.$$
 if grep -q '"kind"[[:space:]]*:[[:space:]]*"hooks"' /tmp/offsend-hooks-required-ok.$$; then
-  echo "Expected no hooks policy findings after sync installed hooks" >&2
+  echo "Expected no hooks policy findings after sync" >&2
   cat /tmp/offsend-hooks-required-ok.$$ >&2
   exit 1
 fi
-rm -f /tmp/offsend-hooks-required-policy.$$ /tmp/offsend-hooks-required-ok.$$
+rm -f /tmp/offsend-hooks-required-policy.$$ /tmp/offsend-hooks-required-doctor.$$ \
+  /tmp/offsend-hooks-required-ok.$$
 
 # CI check --policy: git hook installed, no project .cursor/hooks.json → pass.
 ci_policy_repo="$workdir/ci-policy-git-only"
@@ -1940,10 +2067,11 @@ if [[ "$ci_policy_status" -ne 0 ]]; then
 fi
 rm -f /tmp/offsend-ci-policy-git-only.$$
 
-# init writes seal into the committed YAML (no comment sheet).
+# init writes seal + policy + post-merge; stdout = commit YAML + Action.
 init_repo="$workdir/init-seal"
 mkdir -p "$init_repo"
-HOME="$sync_home" "$CLI_PATH" init --path "$init_repo" --no-sync --no-check >/dev/null
+HOME="$sync_home" "$CLI_PATH" init --path "$init_repo" --no-sync --no-check \
+  >/tmp/offsend-init-out.$$
 if ! grep -q 'on_secret: seal' "$init_repo/.offsend.yml"; then
   echo "Expected init YAML to set context.read.on_secret: seal" >&2
   cat "$init_repo/.offsend.yml" >&2
@@ -1954,11 +2082,42 @@ if ! grep -q 'responses: seal' "$init_repo/.offsend.yml"; then
   cat "$init_repo/.offsend.yml" >&2
   exit 1
 fi
+if ! grep -q 'policy: true' "$init_repo/.offsend.yml"; then
+  echo "Expected init YAML to set check/hooks policy: true" >&2
+  cat "$init_repo/.offsend.yml" >&2
+  exit 1
+fi
+if grep -q 'policy: false' "$init_repo/.offsend.yml"; then
+  echo "Expected init YAML not to set policy: false" >&2
+  cat "$init_repo/.offsend.yml" >&2
+  exit 1
+fi
+if ! grep -q 'git: \[pre-commit, post-merge\]' "$init_repo/.offsend.yml"; then
+  echo "Expected init YAML hooks.git to include post-merge" >&2
+  cat "$init_repo/.offsend.yml" >&2
+  exit 1
+fi
 if grep -q 'All detector IDs' "$init_repo/.offsend.yml"; then
   echo "Expected init YAML not to include the detector-id comment sheet" >&2
   cat "$init_repo/.offsend.yml" >&2
   exit 1
 fi
+if ! grep -q 'git add .offsend.yml' /tmp/offsend-init-out.$$; then
+  echo "Expected init stdout to print git add .offsend.yml" >&2
+  cat /tmp/offsend-init-out.$$ >&2
+  exit 1
+fi
+if ! grep -q 'Offsend/ai-hygiene@v1' /tmp/offsend-init-out.$$; then
+  echo "Expected init stdout to print Offsend/ai-hygiene Action" >&2
+  cat /tmp/offsend-init-out.$$ >&2
+  exit 1
+fi
+if ! grep -q 'policy: true' /tmp/offsend-init-out.$$; then
+  echo "Expected init stdout Action snippet to pass policy: true" >&2
+  cat /tmp/offsend-init-out.$$ >&2
+  exit 1
+fi
+rm -f /tmp/offsend-init-out.$$
 
 # Foreign git hook: warn + skip git, still install AI hooks, exit 0.
 foreign_repo="$workdir/sync-foreign"

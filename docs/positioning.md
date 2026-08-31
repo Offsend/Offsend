@@ -32,6 +32,14 @@ If you remove “multiple AI tools” from a sentence and the value disappears, 
 
 Lead with: shared `.offsend.yml` in git → ignore files + hooks + CI. Multi-tool support is how that policy is enforced across editors — a side effect, not the product story.
 
+## Vs GitGuardian ggshield
+
+Eight-second line (no sandbox): **local seal, agent keeps working, fail-closed without a key** — not cloud block + fail-open.
+
+ggshield’s AI hooks occupy the same Cursor/Claude hook files, scan in GitGuardian’s cloud, and fail open without an API key. Offsend does not uninstall them: hook install **merges**. Do not compete on detector count or promise Copilot/Windows to “match the table.” Do not claim containment.
+
+Public copy: [README → Offsend and GitGuardian](../README.md#offsend-and-gitguardian).
+
 ## Non-goals
 
 - Not a full agent permission system or escape containment
@@ -39,6 +47,7 @@ Lead with: shared `.offsend.yml` in git → ignore files + hooks + CI. Multi-too
 - Not general protection against workspace files executed by IDEs or privileged host helpers
 - Not org-wide policy across every repository (repo-level baseline first)
 - Not “block everything by default” locally — prefer advise/warn for adoption; **block** for credentials/secrets and CI
+- Not a GitGuardian detector-count race or a ggshield uninstaller
 
 ## Related
 

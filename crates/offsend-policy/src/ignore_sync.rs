@@ -1,11 +1,13 @@
 //! Ignore-file materialization — port of Swift `OffsendIgnoreSyncService`.
 
 use crate::audit_model::{AuditConfiguration, FixStrategy};
-use crate::config::{CONFIG_FILENAME, OffsendProjectConfig, ToolId};
+use crate::claude_deny::{self, ClaudeDenyUpsert};
+use crate::config::{OffsendProjectConfig, ToolId, CONFIG_FILENAME};
 use crate::defaults::default_audit_configuration;
 use crate::managed_block::{ManagedIgnoreBlock, UpsertResult};
 use crate::template::{
-    DEFAULT_IGNORE_PATTERNS, IGNORE_TEMPLATE_HEADER, ignore_template_contents, managed_seed_contents,
+    ignore_template_contents, managed_seed_contents, DEFAULT_IGNORE_PATTERNS,
+    IGNORE_TEMPLATE_HEADER,
 };
 use std::collections::HashSet;
 use std::fs;
@@ -217,6 +219,43 @@ impl IgnoreSyncService {
                 updated.push(relative_path.clone());
             } else {
                 created.push(relative_path.clone());
+            }
+        }
+
+        // Claude Code does not honor `.claudeignore`. Path lock is
+        // `permissions.deny` in `.claude/settings.json` (also applies to subagents).
+        if claude_deny::applies_to(tools) {
+            let relative = claude_deny::SETTINGS_RELATIVE;
+            let path = root.join(relative);
+            let file_exists = path.is_file();
+            let existing = if file_exists {
+                fs::read_to_string(&path).ok()
+            } else {
+                None
+            };
+            match claude_deny::upsert(existing.as_deref(), &patterns) {
+                Ok(ClaudeDenyUpsert::Unchanged) => {
+                    if file_exists {
+                        unchanged.push(relative.to_string());
+                    }
+                }
+                Ok(ClaudeDenyUpsert::Written(contents)) => {
+                    if dry_run {
+                        if file_exists {
+                            updated.push(relative.to_string());
+                        } else {
+                            created.push(relative.to_string());
+                        }
+                    } else if let Err(e) = write_file(&contents, &path) {
+                        let verb = if file_exists { "update" } else { "create" };
+                        errors.push(format!("Failed to {verb} {relative}: {e}"));
+                    } else if file_exists {
+                        updated.push(relative.to_string());
+                    } else {
+                        created.push(relative.to_string());
+                    }
+                }
+                Err(e) => errors.push(e),
             }
         }
 
@@ -517,7 +556,9 @@ ignore:
 
         let report = IgnoreSyncService::run(&dir, false);
         assert!(!report.has_errors(), "{:?}", report.errors);
-        assert!(report.created_relative_paths.contains(&".cursorignore".into()));
+        assert!(report
+            .created_relative_paths
+            .contains(&".cursorignore".into()));
         assert!(report
             .created_relative_paths
             .contains(&".cursorindexingignore".into()));
@@ -568,6 +609,91 @@ ignore:
         assert!(report.gitignore_updated);
         let gi = fs::read_to_string(dir.join(".gitignore")).unwrap();
         assert!(!gi.contains("offsend managed: ignore-files"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn writes_claude_permissions_deny_and_preserves_foreign_rules() {
+        let dir = tmp_dir();
+        fs::create_dir_all(dir.join(".git")).unwrap();
+        fs::create_dir_all(dir.join(".claude")).unwrap();
+        fs::write(
+            dir.join(".claude/settings.json"),
+            "{\n  \"permissions\": {\n    \"deny\": [\"Bash(rm)\"]\n  }\n}\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.join(".offsend.yml"),
+            "version: 1\nignore:\n  commit: true\n  patterns:\n    - \".env*\"\n",
+        )
+        .unwrap();
+
+        let report = IgnoreSyncService::run(&dir, false);
+        assert!(!report.has_errors(), "{:?}", report.errors);
+        assert!(report
+            .updated_relative_paths
+            .iter()
+            .any(|p| p == ".claude/settings.json"));
+
+        let settings = fs::read_to_string(dir.join(".claude/settings.json")).unwrap();
+        assert!(settings.contains("Bash(rm)"));
+        assert!(settings.contains("Read(**/.env*)"));
+        assert!(settings.contains("Edit(**/.env*)"));
+        assert!(settings.contains("Write(**/.env*)"));
+
+        let again = IgnoreSyncService::run(&dir, false);
+        assert!(!again.has_errors(), "{:?}", again.errors);
+        assert!(again
+            .unchanged_relative_paths
+            .iter()
+            .any(|p| p == ".claude/settings.json"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn creates_claude_settings_from_patterns_when_file_absent() {
+        let dir = tmp_dir();
+        fs::create_dir_all(dir.join(".git")).unwrap();
+        fs::write(
+            dir.join(".offsend.yml"),
+            "version: 1\nignore:\n  commit: true\n  patterns:\n    - \".env*\"\n",
+        )
+        .unwrap();
+
+        let report = IgnoreSyncService::run(&dir, false);
+        assert!(!report.has_errors(), "{:?}", report.errors);
+        assert!(report
+            .created_relative_paths
+            .iter()
+            .any(|p| p == ".claude/settings.json"));
+        let settings = fs::read_to_string(dir.join(".claude/settings.json")).unwrap();
+        assert!(settings.contains("Read(**/.env*)"));
+        assert!(settings.contains("Edit(**/.env*)"));
+        assert!(settings.contains("Write(**/.env*)"));
+        assert!(settings.contains("_offsendClaudeDeny"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn empty_patterns_does_not_create_claude_settings() {
+        let dir = tmp_dir();
+        fs::create_dir_all(dir.join(".git")).unwrap();
+        fs::write(
+            dir.join(".offsend.yml"),
+            "version: 1\nignore:\n  commit: true\n  patterns: []\n",
+        )
+        .unwrap();
+
+        let report = IgnoreSyncService::run(&dir, false);
+        assert!(!report.has_errors(), "{:?}", report.errors);
+        assert!(!dir.join(".claude/settings.json").is_file());
+        assert!(!report
+            .created_relative_paths
+            .iter()
+            .any(|p| p == ".claude/settings.json"));
 
         let _ = fs::remove_dir_all(&dir);
     }

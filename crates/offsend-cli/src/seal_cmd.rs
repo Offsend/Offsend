@@ -184,7 +184,7 @@ pub fn run_unseal(args: UnsealArgs) -> Result<ExitCode, CmdError> {
     }
     let cwd = io::working_dir(args.working_directory.as_deref());
     let key = keys::resolve(args.key_file.as_deref(), args.key_name.as_deref(), &cwd)?;
-    let text = io::read_input(args.path.as_deref(), &cwd)?;
+    let text = io::read_unseal_input(args.path.as_deref(), &cwd)?;
     let engine = SealEngine::new(&key)?;
     let restored = engine.unseal(&text)?;
     io::write_output(&restored, args.output.as_deref(), &cwd, args.force)?;

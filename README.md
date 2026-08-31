@@ -10,6 +10,7 @@
   <a href="https://offsend.io">Website</a> ·
   <a href="#quick-start">Quick Start</a> ·
   <a href="#seal">Seal</a> ·
+  <a href="#offsend-and-gitguardian">vs GitGuardian</a> ·
   <a href="docs/README.md">Docs</a> ·
   <a href="https://check.offsend.io">Check</a> ·
   <a href="https://offsend.io/extension">Extension</a>
@@ -38,8 +39,8 @@ No install yet? [Scan a public GitHub repo with Check](https://check.offsend.io)
 | Layer | When | Job |
 | --- | --- | --- |
 | **Machine** | Once per laptop (`install` / `setup`) | Seal key + user-level Cursor/Claude hooks. Agent works; plaintext stays out of context |
-| **Repo** | When you own it (`init`) | Team policy in `.offsend.yml` — ignore rules, seal, git pre-commit |
-| **CI** | When there is GitHub | `check --policy` fails on secrets / ignore drift — not on missing editor files on the runner |
+| **Repo** | When you own it (`init`) | Team policy in `.offsend.yml` — ignore rules, seal, policy checks, git pre-commit + post-merge |
+| **CI** | When there is GitHub | `check --policy` fails on secrets / ignore drift — not on missing git or editor hooks on the runner |
 
 ## Quick Start
 
@@ -48,12 +49,12 @@ curl -fsSL https://install.offsend.io/cli | bash   # also runs `offsend setup`
 offsend doctor                                     # cli, key, user hooks — no YAML needed
 ```
 
-Then open Cursor or Claude in any folder. Files with secrets are handed to the agent as a sealed copy; MCP tool output with secrets is rewritten to tokens. Restore with `offsend unseal`.
+Then open Cursor or Claude in any folder. Files with secrets are handed to the agent as a sealed copy; MCP tool output with secrets is rewritten to tokens. Copy the agent's reply and run `offsend unseal` (clipboard in a terminal; or a file / pipe).
 
 ### Your repo (team policy)
 
 ```bash
-offsend init --template node       # short .offsend.yml with seal + pre-commit
+offsend init --template node       # short .offsend.yml: seal + policy + pre-commit/post-merge
 git add .offsend.yml && git commit -m "Add AI context policy"
 ```
 
@@ -64,6 +65,7 @@ git add .offsend.yml && git commit -m "Add AI context policy"
 - uses: Offsend/ai-hygiene@v1
   with:
     fail-on: block
+    policy: true
 ```
 
 Teammates run `offsend sync` after clone to materialize ignore files and git hooks. Full walkthrough: [Add Offsend to a team repo](docs/team.md).
@@ -92,10 +94,27 @@ This is the machine default after `setup` (no YAML). `offsend init` writes the s
 
 ```bash
 offsend setup                 # key + user hooks (install already does this)
-offsend unseal                # restore tokens from agent output (stdin or file)
+offsend unseal                # copy the agent's {{TYPE:v1.…}} tokens, then run this
 ```
 
 Depth: [MCP-response-gate](docs/cli.md#mcp-response-gate-on-by-default) · [configuration](docs/configuration.md#contextmcp).
+
+## Offsend and GitGuardian
+
+Offsend seals secrets **on your machine** so the agent can keep working. [GitGuardian ggshield](https://docs.gitguardian.com/) AI hooks **block** and scan in their cloud — without their API key they **fail open**.
+
+| | Offsend | ggshield AI hooks |
+| --- | --- | --- |
+| Where the scan runs | Local. No GitGuardian account | GitGuardian cloud. Needs their API key |
+| Missing key / scan down | Secret-bearing MCP output is **withheld**; seal without a key does not pass plaintext | **Fail-open** if you are not logged in |
+| Hit on a secret | **Seal** — `{{TYPE:v1.…}}` tokens; the agent keeps working; you restore with `offsend unseal` | **Block** |
+| Team boundary in git | `.offsend.yml` (ignore + hooks + CI) | Their ignore / dashboard, not an Offsend policy file |
+| Hook files | **Merges** into existing Cursor/Claude configs; does not remove ggshield | `ggshield install -t cursor` (same files for Claude Code, Codex, Copilot) |
+| Copilot / Windows | No Copilot runtime; CLI is macOS and Linux | Copilot and Windows |
+
+Offsend is not trying to match detector count. The job is local seal, a committed AI-context boundary, and fail-closed when a secret would otherwise reach the model.
+
+**Both installed?** Keep both. `offsend setup` / `hook install` add Offsend’s managed entries and leave foreign hooks (including ggshield) in place. Offsend is not an uninstaller.
 
 ## Pick your tool
 
@@ -113,7 +132,7 @@ Depth: [MCP-response-gate](docs/cli.md#mcp-response-gate-on-by-default) · [conf
 | --- | --- |
 | `offsend setup` | Once per machine: seal key + user-level Cursor/Claude hooks |
 | `offsend doctor` | CLI, key, user hooks; with a repo YAML also git hooks, ignore drift, config-lint |
-| `offsend init` | Write team `.offsend.yml` (seal + ignore + pre-commit) |
+| `offsend init` | Write team `.offsend.yml` (seal + policy + pre-commit / post-merge) |
 | `offsend show` | Sensitive paths visible to AI |
 | `offsend sync` | Apply `.offsend.yml`: ignore files, git hooks, optional project editor hooks |
 | `offsend protect` | Promote exposed paths to `.offsend.yml` and sync ignore files |
@@ -137,7 +156,7 @@ Essentials above; reference depth in `docs/`:
 | [docs/team.md](docs/team.md) | Add Offsend to a team repository |
 | [docs/cli.md](docs/cli.md) | Commands, flags, exit codes, AI-editor hooks (incl. MCP seal) |
 | [docs/configuration.md](docs/configuration.md) | `.offsend.yml` reference (`check`, `ignore`, `hooks`, `context`, `sandbox`) |
-| [docs/faq.md](docs/faq.md) | FAQ, coverage limits, privacy |
+| [docs/faq.md](docs/faq.md) | FAQ, coverage limits, privacy, vs GitGuardian |
 | [docs/macos-app.md](docs/macos-app.md) | Desktop app, Free vs Pro, App vs CLI |
 | [.offsend.example.yml](.offsend.example.yml) | Annotated config starter |
 | [.offsend.full.yml](.offsend.full.yml) | Full `.offsend.yml` key catalog |

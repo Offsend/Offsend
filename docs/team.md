@@ -6,10 +6,10 @@ Goal: one shared AI context boundary in git. Teammates inherit it on clone; CI f
 
 ```bash
 offsend init --template <stack>   # e.g. node, python, swift
-# optional: --strict-credentials  # policy checks + tighter context (MCP/subagents/history)
+# optional: --strict-credentials  # tighter MCP / subagent / history (policy is already on)
 ```
 
-This writes `.offsend.yml`, materializes AI ignore files, and runs a **baseline `check` in advise-only mode** (does not fail `init`). Review `ignore.patterns` and `check.detectors` — teams tune what to disable; credentials stay on by default. See [Strict credentials](configuration.md#strict-credentials-mode).
+This writes `.offsend.yml` (`check.policy: true`, `hooks.git: [pre-commit, post-merge]`), materializes AI ignore files, and runs a **baseline `check` in advise-only mode** (does not fail `init`). Stdout prints `git add` / `git commit` and a GitHub Action snippet. Review `ignore.patterns` and `check.detectors` — teams tune what to disable; credentials stay on by default. See [Strict credentials](configuration.md#strict-credentials-mode).
 
 Config references (do not commit the full catalog as-is):
 
@@ -27,9 +27,9 @@ offsend protect    # promote required exposures into .offsend.yml + sync ignores
 offsend sync       # ignore files + git / AI-editor hooks (hooks.enabled defaults true)
 ```
 
-With `hooks.enabled: true` (default), `offsend doctor` **fails** until declared git hooks are installed; project AI-editor files are a warning. CI `check --policy` fails on missing git hooks, not on missing `.cursor/hooks.json`.
+With `hooks.enabled: true` (default), `offsend doctor` **fails** until declared git hooks are installed; project AI-editor files are a warning. CI `check --policy` does not require git hooks or `.cursor/hooks.json` on the runner — it fails on secrets, tracked paths covered by `ignore.patterns`, and ignore drift (when ignore files are committed).
 
-Recommended git hooks in `.offsend.yml`:
+Recommended git hooks in `.offsend.yml` (`offsend init` already writes this):
 
 ```yaml
 hooks:
@@ -90,9 +90,10 @@ Keep AI ignore files out of git unless you set `ignore.commit: true` (default is
 - uses: Offsend/ai-hygiene@v1
   with:
     fail-on: block
+    policy: true
 ```
 
-With policy checks enabled, CI fails on critical secrets, exposed required paths, and **managed ignore drift** (local ignore files missing patterns from `.offsend.yml`). Fix drift with `offsend sync` and commit `.offsend.yml` changes — not one-off editor ignore edits.
+`policy: true` runs `offsend check --policy`. With policy checks enabled, CI fails on critical secrets, exposed required paths, and **managed ignore drift** (local ignore files missing patterns from `.offsend.yml`). Fix drift with `offsend sync` and commit `.offsend.yml` changes — not one-off editor ignore edits.
 
 Or run the CLI:
 

@@ -3,6 +3,7 @@
 use std::fs;
 use std::io::{self, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use thiserror::Error;
 
 pub const MAX_INPUT_BYTES: usize = 2 * 1024 * 1024;
@@ -17,6 +18,12 @@ pub enum IoError {
     OutputExists { path: String },
     #[error("Provide a file path or pipe text on stdin.")]
     StdinTty,
+    #[error(
+        "Clipboard is empty. Copy the agent's sealed text, then run `offsend unseal` again — or pass a file / pipe stdin."
+    )]
+    ClipboardEmpty,
+    #[error("{0}")]
+    ClipboardUnavailable(String),
     #[error("{0}")]
     Message(String),
 }
@@ -49,6 +56,97 @@ pub fn read_input(path: Option<&str>, working_directory: &Path) -> Result<String
             path: "stdin".into(),
         })
     }
+}
+
+/// `unseal` input: file, piped stdin, or (TTY, no path) the system clipboard.
+///
+/// Clipboard is `pbpaste` on macOS and `wl-paste` / `xclip` / `xsel` on Linux.
+/// No AppKit. Piped stdin still wins over the clipboard.
+pub fn read_unseal_input(path: Option<&str>, working_directory: &Path) -> Result<String, IoError> {
+    if path.is_some() {
+        return read_input(path, working_directory);
+    }
+    if !io::stdin().is_terminal() {
+        return read_input(None, working_directory);
+    }
+    let text = read_clipboard()?;
+    if text.trim().is_empty() {
+        return Err(IoError::ClipboardEmpty);
+    }
+    Ok(text)
+}
+
+pub fn read_clipboard() -> Result<String, IoError> {
+    let (program, args) = clipboard_paste_command().ok_or_else(|| {
+        IoError::ClipboardUnavailable(
+            "Clipboard unavailable (need pbpaste, wl-paste, xclip, or xsel). Pass a file or pipe stdin."
+                .into(),
+        )
+    })?;
+    let mut child = Command::new(program)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| {
+            IoError::ClipboardUnavailable(format!("Could not read clipboard ({program}): {e}"))
+        })?;
+    let mut buf = Vec::new();
+    if let Some(stdout) = child.stdout.as_mut() {
+        stdout
+            .take((MAX_INPUT_BYTES as u64) + 1)
+            .read_to_end(&mut buf)
+            .map_err(|e| IoError::Message(e.to_string()))?;
+    }
+    let status = child.wait().map_err(|e| IoError::Message(e.to_string()))?;
+    if !status.success() {
+        return Err(IoError::ClipboardUnavailable(format!(
+            "Clipboard command {program} exited {}",
+            status
+        )));
+    }
+    if buf.len() > MAX_INPUT_BYTES {
+        return Err(IoError::InputTooLarge {
+            path: "clipboard".into(),
+            max: MAX_INPUT_BYTES,
+        });
+    }
+    String::from_utf8(buf).map_err(|_| IoError::InvalidUtf8 {
+        path: "clipboard".into(),
+    })
+}
+
+fn clipboard_paste_command() -> Option<(&'static str, &'static [&'static str])> {
+    #[cfg(target_os = "macos")]
+    {
+        Some(("/usr/bin/pbpaste", &[]))
+    }
+    #[cfg(target_os = "linux")]
+    {
+        const CANDIDATES: &[(&str, &[&str])] = &[
+            ("wl-paste", &[]),
+            ("xclip", &["-selection", "clipboard", "-o"]),
+            ("xsel", &["--clipboard", "--output"]),
+        ];
+        CANDIDATES
+            .iter()
+            .copied()
+            .find(|(program, _)| program_on_path(program))
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        None
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn program_on_path(program: &str) -> bool {
+    Command::new("/bin/sh")
+        .arg("-c")
+        .arg(format!("command -v {program} >/dev/null 2>&1"))
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
 }
 
 pub fn write_output(
@@ -134,4 +232,38 @@ fn write_file_atomically(data: &[u8], path: &Path, force: bool) -> Result<(), Io
         ))
     })?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn clipboard_roundtrip() {
+        let marker = format!("offsend-unseal-test-{}", std::process::id());
+        let mut child = Command::new("/usr/bin/pbcopy")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("pbcopy");
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(marker.as_bytes())
+            .unwrap();
+        assert!(child.wait().unwrap().success());
+        assert_eq!(read_clipboard().unwrap(), marker);
+    }
+
+    #[test]
+    fn clipboard_empty_message_mentions_unseal() {
+        let msg = IoError::ClipboardEmpty.to_string();
+        assert!(msg.contains("offsend unseal"));
+        assert!(msg.contains("Copy the agent's sealed text"));
+    }
 }

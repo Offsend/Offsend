@@ -628,25 +628,10 @@ pub fn run(args: CheckArgs) -> Result<ExitCode, CheckError> {
             }
         }
 
-        if crate::hook_policy::hooks_required(project_config.as_ref()) {
-            for finding in crate::hook_policy::git_findings(&root, project_config.as_ref()) {
-                policy_findings.push(PolicyFindingOut {
-                    kind: "hooks".into(),
-                    id: finding.id,
-                    severity: if finding.is_failure {
-                        "required".into()
-                    } else {
-                        "recommended".into()
-                    },
-                    status: if finding.is_failure {
-                        "fail".into()
-                    } else {
-                        "warning".into()
-                    },
-                    detail: finding.message,
-                });
-            }
-        }
+        // Git hooks live in `.git/hooks` and are a machine concern (`doctor`).
+        // `--policy` is a repository check for CI: secrets, ignore drift,
+        // tracked paths covered by ignore.patterns — not whether the runner
+        // has pre-commit installed.
 
         if crate::sandbox_sync::effective_sandbox_enabled(
             project_config.as_ref(),

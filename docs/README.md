@@ -8,6 +8,8 @@ Start on the [main README](../README.md) (quick start + [seal](../README.md#seal
 | --- | --- |
 | [VISION](../VISION.md) | Product north star (humans + AI editors) |
 | [Team setup](team.md) | Shared repo: init → commit → CI → clone `sync` |
+| [README → Seal](../README.md#seal) | Tokens so the agent keeps working |
+| [README → Offsend and GitGuardian](../README.md#offsend-and-gitguardian) | Local seal vs ggshield cloud block; hook merge |
 | [CLI → MCP-response-gate](cli.md#mcp-response-gate-on-by-default) | Seal secrets in MCP tool responses (Cursor / Claude) |
 | [Configuration → `context.mcp`](configuration.md#contextmcp) | `responses: seal`, allow/deny lists, modes |
 | [Configuration → `sandbox`](configuration.md#sandbox) | Optional OS sandbox (`sandbox.enabled`); what each editor reaches |
