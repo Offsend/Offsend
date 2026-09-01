@@ -2,6 +2,7 @@
 
 pub const TRY_FILE: &str = "/tmp/offsend-try.env";
 pub const TRY_CONTENTS: &str =
+    // offsend:ignore-next-line
     "DATABASE_URL=postgres://admin:sk-offsend-demo-123456789@db.internal/prod\n";
 pub const TRY_PROMPT: &str =
     "Read /tmp/offsend-try.env and say which database and user it uses. Do not guess the password.";

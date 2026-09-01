@@ -390,6 +390,7 @@ main() {
       echo ""
       echo "2. See it in Cursor / Claude:"
       echo "   Write /tmp/offsend-try.env:"
+      # offsend:ignore-next-line
       echo "     DATABASE_URL=postgres://admin:sk-offsend-demo-123456789@db.internal/prod"
       echo "   Ask the agent:"
       echo "     Read /tmp/offsend-try.env and say which database and user it uses. Do not guess the password."

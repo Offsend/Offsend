@@ -90,6 +90,7 @@ mod tests {
 
     #[test]
     fn password_range_postgres() {
+        // offsend:ignore-next-line
         let url = "postgres://admin:correct-horse@db.internal/prod";
         assert_eq!(
             password_range_in_url(url),
@@ -106,6 +107,7 @@ mod tests {
 
     #[test]
     fn bearer_skips_scheme_word() {
+        // offsend:ignore-next-line
         let value = "Bearer abcdefghijklmnopqrstuvwxyz012345";
         assert_eq!(
             token_range_in_bearer(value),

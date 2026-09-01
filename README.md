@@ -52,6 +52,7 @@ offsend doctor                                     # Machine / Repository / CI �
 See it in Cursor or Claude. Write `/tmp/offsend-try.env`:
 
 ```text
+# offsend:ignore-next-line
 DATABASE_URL=postgres://admin:sk-offsend-demo-123456789@db.internal/prod
 ```
 
@@ -97,6 +98,7 @@ Other installs: [CLI docs → Install](docs/cli.md#install) · macOS app: `brew 
 MCP tools and file reads can put secrets into model context. **Seal** swaps those values for reversible `{{TYPE:v1.…}}` tokens — the agent keeps working; plaintext stays out. Restore with `offsend unseal`.
 
 ```text
+# offsend:ignore-next-line
 DATABASE_URL=postgres://admin:secret@db.internal/prod
 DATABASE_URL=postgres://admin:{{PASSWORD:v1…}}@db.internal/prod
 ```
