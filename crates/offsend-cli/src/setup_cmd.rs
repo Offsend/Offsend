@@ -43,5 +43,6 @@ pub fn run(args: SetupArgs) -> Result<ExitCode, String> {
         println!("installed {name} user hook ({})", path.display());
     }
     println!("setup complete — agents in any folder use machine seal defaults");
+    crate::try_hint::print_post_install();
     Ok(ExitCode::SUCCESS)
 }

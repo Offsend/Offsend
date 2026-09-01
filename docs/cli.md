@@ -129,12 +129,16 @@ Machine checks: CLI, seal key, user-level Cursor/Claude hooks. With a repo `.off
 ```bash
 offsend doctor
 offsend doctor --format json
+offsend doctor --verbose
 offsend doctor --no-follow
 ```
+
+Text output is three blocks — Machine / Repository / CI — plus one `Next` command. Missing `.offsend.yml` or a GitHub Action is optional, not a failure. `--verbose` prints every check.
 
 | Flag | Description |
 | --- | --- |
 | `--format text\|json` | Output format (default: `text`) |
+| `--verbose` | Full check list instead of the compact Machine / Repository / CI view |
 | `--no-follow` | Accepted for flag compatibility. The Rust CLI has no interactive follow-up |
 
 Exits `2` when any check has status `fail`. Seal key and missing user hooks are `warn`. With [`hooks.enabled`](configuration.md#hooksenabled) (default `true`), missing hooks from [`hooks.git`](configuration.md#hooksgit) are **fail**. Missing project AI-editor files are **warn** — user-level hooks from `offsend setup` cover Cursor/Claude on the machine. `check --policy` (CI) does not require git hooks or `.cursor/hooks.json` on the runner.

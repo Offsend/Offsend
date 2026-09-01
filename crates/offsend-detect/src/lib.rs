@@ -9,6 +9,7 @@ mod overlap;
 mod risk;
 mod rules;
 mod sanitizers;
+mod span_refine;
 mod types;
 
 pub use engine::{DetectionEngine, EncodedScan};

@@ -1,7 +1,11 @@
 public enum AIWorkspacePrivacyDefaultFixes {
     /// Canonical privacy rule text. Rendered per editor below so every editor's
     /// rule file carries the same guidance and cannot drift between editors.
-    static let privacyRuleText = "Keep secrets, credentials, private keys, and environment files out of AI context. Respect .cursorignore and other AI ignore files before reading or summarizing project contents."
+    static let privacyRuleText = """
+    Keep secrets, credentials, private keys, and environment files out of AI context. Respect .cursorignore and other AI ignore files before reading or summarizing project contents.
+
+    Values matching {{TYPE:v1.…}} are sealed by Offsend. Treat each token as an opaque value of TYPE. Preserve the token exactly when editing or generating related content. Do not infer, expand, replace, or fabricate its plaintext value. You may continue reasoning from the surrounding non-sensitive structure.
+    """
 
     static let managedHeader = "<!-- Managed by Offsend. Do not edit: changes are overwritten on sync. Add your own rules in a separate file. -->"
 

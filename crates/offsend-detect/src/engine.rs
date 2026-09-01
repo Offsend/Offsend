@@ -105,6 +105,7 @@ impl DetectionEngine {
             &request.options.custom_dictionaries,
         ));
         entities = overlap::resolve(entities);
+        entities = crate::span_refine::refine_secret_spans(entities, text);
         for e in &mut entities {
             if e.end <= text.len() && e.start <= e.end && text.is_char_boundary(e.start) && text.is_char_boundary(e.end) {
                 e.value = text[e.start..e.end].to_string();

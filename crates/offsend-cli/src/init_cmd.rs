@@ -125,9 +125,14 @@ pub fn run(args: InitArgs) -> Result<ExitCode, String> {
     if !args.no_check {
         println!("baseline: run offsend check .");
     }
-    println!("next: git add .offsend.yml && git commit -m \"Add AI context policy\"");
-    println!("      offsend protect && offsend sync");
-    println!("CI:");
+    println!();
+    println!("AI context boundary created.");
+    println!();
+    println!("Shared:     .offsend.yml");
+    println!("Next:       git add .offsend.yml && git commit -m \"Add AI context policy\"");
+    println!("Then:       offsend protect && offsend policy trust");
+    println!();
+    println!("CI (optional):");
     println!("- uses: Offsend/ai-hygiene@v1");
     println!("  with:");
     println!("    fail-on: block");

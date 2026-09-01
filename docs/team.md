@@ -2,6 +2,17 @@
 
 Goal: one shared AI context boundary in git. Teammates inherit it on clone; CI fails when secrets or ignore drift appear.
 
+Already using Offsend on this machine? Start here:
+
+```bash
+offsend init --template <stack>    # e.g. node, python, swift
+git add .offsend.yml && git commit -m "Add AI context policy"
+offsend protect
+offsend policy trust
+```
+
+Then add the GitHub Action below and have each clone run `offsend sync`. MCP field rules and optional sandbox stay further down — they are not required for the first commit.
+
 ## 1. Initialize policy
 
 ```bash
