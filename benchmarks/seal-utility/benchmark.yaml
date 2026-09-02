@@ -1,0 +1,16 @@
+benchmark_version: v0.1
+prompt_template: v1
+conversation_mode: stateless
+runs_per_case: 1
+temperature: 0
+max_tokens: 1024
+runner_seed: "67890"
+fixture_seed: "12345"
+seal_token_version: v1
+models:
+  - id: claude-sonnet-4-5
+    provider: anthropic
+    family: frontier
+  - id: gpt-4o-mini
+    provider: openai
+    family: commercial

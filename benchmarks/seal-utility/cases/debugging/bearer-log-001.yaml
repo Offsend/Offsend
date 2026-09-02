@@ -1,0 +1,23 @@
+id: bearer-log-001
+category: debugging
+task: |
+  Inspect the HTTP log line.
+  Return JSON with method, path, status (number), has_authorization (boolean).
+  JSON only. No markdown.
+input: |
+  2026-04-11T09:14:02Z GET /v1/invoices 401 Authorization: Bearer {{fixture:bearer_001}}
+sensitive:
+  - type: bearer
+    fixture: bearer_001
+expected_structure:
+  - "GET /v1/invoices 401"
+  - "Authorization: Bearer "
+grader:
+  kind: json_fields
+  expected:
+    method: GET
+    path: /v1/invoices
+    status: 401
+    has_authorization: true
+placeholder:
+  eligible: false

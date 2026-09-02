@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="400" viewBox="0 0 880 400" role="img" aria-label="Offsend seal-utility v0.1: SUR 100% at PLR 0% on 29 clean-pass cases">
+  <style>
+    .title { font: 600 20px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #030303; }
+    .sub { font: 400 13px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #5c5c5c; }
+    .label { font: 500 13px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #030303; }
+    .value { font: 600 13px ui-monospace, ui-sans-serif, SFMono-Regular, Menlo, monospace; fill: #030303; }
+    .badge { font: 600 11px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #166534; }
+    .badge-muted { font: 600 11px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #3f3f46; }
+    .foot { font: 400 11px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #71717a; }
+    .kpi { font: 600 16px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #030303; }
+    .kpi-l { font: 400 11px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #71717a; }
+  </style>
+  <rect width="880" height="400" rx="16" fill="#fafafa" stroke="#e4e4e7"/>
+  <text class="title" x="32" y="42">Task utility after seal</text>
+  <text class="sub" x="32" y="64">seal-utility v0.1 - SUR on clean-pass population - prompt_template v1</text>
+
+  <rect x="620" y="24" width="72" height="22" rx="11" fill="#dcfce7"/>
+  <text class="badge" x="656" y="39" text-anchor="middle">PLR 0%</text>
+  <rect x="700" y="24" width="56" height="22" rx="11" fill="#f4f4f5"/>
+  <text class="badge-muted" x="728" y="39" text-anchor="middle">n=29</text>
+  <rect x="764" y="24" width="84" height="22" rx="11" fill="#dcfce7"/>
+  <text class="badge" x="806" y="39" text-anchor="middle">H1 / H2 pass</text>
+
+  <text class="label" x="32" y="118">Clean</text>
+  <rect x="240" y="102" width="520" height="22" rx="4" fill="#e4e4e7"/>
+  <rect x="240" y="102" width="520" height="22" rx="4" fill="#a1a1aa"/>
+  <text class="value" x="772" y="118">100%</text>
+
+  <text class="label" x="32" y="158">Offsend</text>
+  <rect x="240" y="142" width="520" height="22" rx="4" fill="#e4e4e7"/>
+  <rect x="240" y="142" width="520" height="22" rx="4" fill="#030303"/>
+  <text class="value" x="772" y="158">100%</text>
+
+  <text class="label" x="32" y="198">[REDACTED]</text>
+  <rect x="240" y="182" width="520" height="22" rx="4" fill="#e4e4e7"/>
+  <rect x="240" y="182" width="502" height="22" rx="4" fill="#52525b"/>
+  <text class="value" x="772" y="198">96.6%</text>
+
+  <text class="label" x="32" y="238">Delete</text>
+  <rect x="240" y="222" width="520" height="22" rx="4" fill="#e4e4e7"/>
+  <rect x="240" y="222" width="376" height="22" rx="4" fill="#a1a1aa"/>
+  <text class="value" x="772" y="238">72.4%</text>
+
+  <line x1="32" y1="268" x2="848" y2="268" stroke="#e4e4e7"/>
+
+  <text class="kpi" x="120" y="304" text-anchor="middle">100%</text>
+  <text class="kpi-l" x="120" y="322" text-anchor="middle">Claude SUR</text>
+  <text class="kpi" x="320" y="304" text-anchor="middle">100%</text>
+  <text class="kpi-l" x="320" y="322" text-anchor="middle">GPT-4o-mini SUR</text>
+  <text class="kpi" x="520" y="304" text-anchor="middle">x1.73</text>
+  <text class="kpi-l" x="520" y="322" text-anchor="middle">prompt tokens vs redacted</text>
+  <text class="kpi" x="740" y="304" text-anchor="middle">0%</text>
+  <text class="kpi-l" x="740" y="322" text-anchor="middle">output leakage</text>
+
+  <text class="foot" x="32" y="368">Rescore of run 20260902T112952Z - 30 cases - 2 models - runs_per_case=1. Not detector recall. Not a read-gate / agent benchmark.</text>
+  <text class="foot" x="32" y="384">Claim: Offsend retained 100% of 29 clean-pass cases at PLR=0. Do not write "Offsend is 11% better."</text>
+</svg>

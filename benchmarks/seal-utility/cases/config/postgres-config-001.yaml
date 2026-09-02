@@ -1,0 +1,25 @@
+id: postgres-config-001
+category: config
+task: |
+  Inspect the configuration.
+  Return a JSON object with keys protocol, username, host, database
+  and has_authentication (boolean).
+  JSON only. No markdown.
+input: |
+  DATABASE_URL=postgres://admin:{{fixture:password_001}}@db.internal/prod
+sensitive:
+  - type: password
+    fixture: password_001
+expected_structure:
+  - "postgres://admin:"
+  - "@db.internal/prod"
+grader:
+  kind: json_fields
+  expected:
+    protocol: postgres
+    username: admin
+    host: db.internal
+    database: prod
+    has_authentication: true
+placeholder:
+  eligible: false

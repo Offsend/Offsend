@@ -1,0 +1,26 @@
+id: split-multi-001
+category: transformation
+task: |
+  Extract both hosts.
+  Return JSON with postgres_host, redis_host.
+  JSON only. No markdown.
+input: |
+  primary=postgres://writer:{{fixture:password_001}}@primary.example.com/app
+  cache=redis://cache:{{fixture:password_002}}@cache-west.example.com:6379/2
+sensitive:
+  - type: password
+    fixture: password_001
+  - type: password
+    fixture: password_002
+expected_structure:
+  - "postgres://writer:"
+  - "@primary.example.com/app"
+  - "redis://cache:"
+  - "@cache-west.example.com:6379/2"
+grader:
+  kind: json_fields
+  expected:
+    postgres_host: primary.example.com
+    redis_host: cache-west.example.com
+placeholder:
+  eligible: false

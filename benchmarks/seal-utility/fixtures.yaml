@@ -1,0 +1,28 @@
+# Generators only. Runtime values are derived from fixture_seed + id.
+# GitHub / AWS / OpenAI-like prefixes are never stored as literals here.
+
+password_001: {kind: url_password}
+password_002: {kind: url_password}
+password_003: {kind: url_password}
+password_004: {kind: url_password}
+password_005: {kind: url_password}
+password_006: {kind: url_password}
+password_007: {kind: url_password}
+
+email_001: {kind: email}
+
+aws_key_001: {kind: aws_access_key}
+aws_key_002: {kind: aws_access_key}
+
+github_token_001: {kind: github_pat}
+github_token_002: {kind: github_pat}
+
+openai_key_001: {kind: openai_api_key}
+openai_key_002: {kind: openai_api_key}
+
+stripe_key_001: {kind: stripe_secret}
+slack_token_001: {kind: slack_bot}
+jwt_001: {kind: jwt}
+
+bearer_001: {kind: bearer}
+bearer_002: {kind: bearer}

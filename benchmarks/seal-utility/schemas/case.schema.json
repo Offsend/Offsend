@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://offsend.local/schemas/seal-utility-case.json",
+  "title": "Seal utility case",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "category", "task", "input", "sensitive", "expected_structure", "grader", "placeholder"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)+$" },
+    "category": {
+      "type": "string",
+      "enum": ["config", "debugging", "mcp", "transformation", "code", "editing"]
+    },
+    "task": { "type": "string", "minLength": 1 },
+    "input": { "type": "string", "minLength": 1 },
+    "sensitive": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type"],
+        "properties": {
+          "type": { "type": "string", "minLength": 1 },
+          "fixture": { "type": "string", "minLength": 1 },
+          "value": { "type": "string", "minLength": 1 }
+        },
+        "oneOf": [
+          { "required": ["fixture"] },
+          { "required": ["value"] }
+        ]
+      }
+    },
+    "expected_structure": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "grader": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["json_fields", "exact", "contains_all"] },
+        "expected": {},
+        "required": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "tolerance": {
+          "type": "object",
+          "additionalProperties": { "type": "number" }
+        }
+      }
+    },
+    "placeholder": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["eligible"],
+      "properties": {
+        "eligible": { "type": "boolean" }
+      }
+    }
+  }
+}

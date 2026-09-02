@@ -1,0 +1,23 @@
+id: connect-fn-001
+category: code
+task: |
+  Rewrite the snippet so the DSN is read from the DATABASE_URL environment
+  variable. Do not hardcode a password. Return the full Python function only.
+input: |
+  def connect():
+      dsn = "postgres://app:{{fixture:password_001}}@db.example.com/app"
+      return psycopg.connect(dsn)
+sensitive:
+  - type: password
+    fixture: password_001
+expected_structure:
+  - "postgres://app:"
+  - "@db.example.com/app"
+  - "def connect():"
+grader:
+  kind: contains_all
+  required:
+    - "def connect("
+    - "DATABASE_URL"
+placeholder:
+  eligible: false

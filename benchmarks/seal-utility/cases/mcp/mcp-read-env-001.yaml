@@ -1,0 +1,25 @@
+id: mcp-read-env-001
+category: mcp
+task: |
+  This is an MCP tool result (data genre, not a live hook).
+  Return JSON with tool, first_key, second_key, has_openai_key (boolean).
+  JSON only. No markdown.
+input: |
+  {"jsonrpc":"2.0","id":4,"result":{"tool":"Read","path":".env","text":"APP_ENV=production\nopenai_api_key: {{fixture:openai_key_002}}\n"}}
+sensitive:
+  - type: openai_api_key
+    fixture: openai_key_002
+expected_structure:
+  - '"tool":"Read"'
+  - '"path":".env"'
+  - "APP_ENV=production"
+  - "openai_api_key:"
+grader:
+  kind: json_fields
+  expected:
+    tool: Read
+    first_key: APP_ENV
+    second_key: openai_api_key
+    has_openai_key: true
+placeholder:
+  eligible: true

@@ -1,0 +1,24 @@
+id: mongo-config-001
+category: config
+task: |
+  Inspect the MongoDB URL.
+  Return JSON with protocol, username, host, port (number), database.
+  JSON only. No markdown.
+input: |
+  MONGO_URL=mongodb://writer:{{fixture:password_004}}@mongo.example.com:27017/events
+sensitive:
+  - type: password
+    fixture: password_004
+expected_structure:
+  - "mongodb://writer:"
+  - "@mongo.example.com:27017/events"
+grader:
+  kind: json_fields
+  expected:
+    protocol: mongodb
+    username: writer
+    host: mongo.example.com
+    port: 27017
+    database: events
+placeholder:
+  eligible: false
