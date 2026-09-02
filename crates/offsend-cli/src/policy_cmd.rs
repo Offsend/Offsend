@@ -50,18 +50,18 @@ pub fn run(cmd: PolicyCmd) -> Result<ExitCode, String> {
             let root = root(args.path.as_deref());
             match crate::policy_trust::status(&root) {
                 crate::policy_trust::TrustStatus::Missing => {
-                    println!("status: missing");
-                    println!("hint: offsend policy trust");
+                    emit_line("status: missing");
+                    emit_line("hint: offsend policy trust");
                 }
-                crate::policy_trust::TrustStatus::Trusted => println!("status: trusted"),
+                crate::policy_trust::TrustStatus::Trusted => emit_line("status: trusted"),
                 crate::policy_trust::TrustStatus::Drift(r) => {
-                    println!("status: drift");
-                    println!("reason: {r}");
-                    println!("hint: offsend policy trust");
+                    emit_line("status: drift");
+                    emit_line(&format!("reason: {r}"));
+                    emit_line("hint: offsend policy trust");
                 }
                 crate::policy_trust::TrustStatus::Invalid(r) => {
-                    println!("status: invalid");
-                    println!("reason: {r}");
+                    emit_line("status: invalid");
+                    emit_line(&format!("reason: {r}"));
                 }
             }
             Ok(ExitCode::SUCCESS)
@@ -81,6 +81,11 @@ pub fn run(cmd: PolicyCmd) -> Result<ExitCode, String> {
             Ok(ExitCode::SUCCESS)
         }
     }
+}
+
+/// `println!` panics on a closed pipe (`offsend policy status | grep -q`).
+fn emit_line(line: &str) {
+    let _ = writeln!(io::stdout(), "{line}");
 }
 
 fn root(path: Option<&str>) -> PathBuf {
