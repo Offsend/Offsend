@@ -17,6 +17,10 @@ pub struct DoctorArgs {
     /// Skip interactive follow-up prompts (accepted for flag compatibility; no-op in Rust CLI).
     #[arg(long = "no-follow", default_value_t = false)]
     pub no_follow: bool,
+
+    /// Print every check instead of the compact Machine / Repository / CI view.
+    #[arg(long, default_value_t = false)]
+    pub verbose: bool,
 }
 
 #[derive(Serialize)]
@@ -100,7 +104,7 @@ pub fn run(args: DoctorArgs) -> Result<ExitCode, String> {
     } else if config.is_none() && checks.iter().all(|c| c.name != "config") {
         checks.push(CheckOut {
             name: "config".into(),
-            status: "ok".into(),
+            status: "optional".into(),
             message: "no .offsend.yml — machine defaults; run `offsend init` to share with the team"
                 .into(),
         });
@@ -421,6 +425,26 @@ pub fn run(args: DoctorArgs) -> Result<ExitCode, String> {
         }
     }
 
+    match github_action_status(&root) {
+        Some(true) => checks.push(CheckOut {
+            name: "github-action".into(),
+            status: "ok".into(),
+            message: "Offsend/ai-hygiene GitHub Action detected".into(),
+        }),
+        Some(false) if config_path.is_some() => {
+            checks.push(CheckOut {
+                name: "github-action".into(),
+                status: "optional".into(),
+                message: "GitHub Action not detected — optional for teams".into(),
+            });
+        }
+        Some(false) | None => checks.push(CheckOut {
+            name: "github-action".into(),
+            status: "optional".into(),
+            message: "GitHub Action not detected — optional for teams".into(),
+        }),
+    }
+
     // Deduplicate suggestions while preserving order.
     let mut seen = std::collections::HashSet::new();
     suggestions.retain(|s| seen.insert(s.clone()));
@@ -440,23 +464,11 @@ pub fn run(args: DoctorArgs) -> Result<ExitCode, String> {
             );
         }
         "text" => {
-            for c in &report.checks {
-                println!("[{}] {}: {}", c.status, c.name, c.message);
+            if args.verbose {
+                print_verbose(&report);
+            } else {
+                print_compact(&report);
             }
-            if !report.suggested_actions.is_empty() {
-                println!("suggestions:");
-                for s in &report.suggested_actions {
-                    println!("  - {s}");
-                }
-            }
-            println!(
-                "{}",
-                if report.healthy {
-                    "healthy"
-                } else {
-                    "unhealthy"
-                }
-            );
         }
         other => return Err(format!("Invalid --format value: {other}")),
     }
@@ -472,4 +484,164 @@ fn dirs_home() -> PathBuf {
     std::env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("/"))
+}
+
+fn github_action_status(root: &std::path::Path) -> Option<bool> {
+    let dir = root.join(".github/workflows");
+    if !dir.is_dir() {
+        return Some(false);
+    }
+    let entries = std::fs::read_dir(&dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if ext != "yml" && ext != "yaml" {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        if text.contains("Offsend/ai-hygiene") {
+            return Some(true);
+        }
+    }
+    Some(false)
+}
+
+fn print_verbose(report: &ReportOut) {
+    for c in &report.checks {
+        println!("[{}] {}: {}", c.status, c.name, c.message);
+    }
+    if !report.suggested_actions.is_empty() {
+        println!("suggestions:");
+        for s in &report.suggested_actions {
+            println!("  - {s}");
+        }
+    }
+    println!("{}", if report.healthy { "healthy" } else { "unhealthy" });
+}
+
+fn print_compact(report: &ReportOut) {
+    println!("Machine");
+    print_bucket(report, Bucket::Machine);
+    println!();
+    println!("Repository");
+    print_bucket(report, Bucket::Repository);
+    println!();
+    println!("CI");
+    print_bucket(report, Bucket::Ci);
+
+    let next = report
+        .suggested_actions
+        .first()
+        .cloned()
+        .unwrap_or_else(|| next_command(report));
+    println!();
+    println!("Next: {next}");
+    if report.healthy && !has_repo_policy(report) {
+        crate::try_hint::print_try_hint();
+    }
+    println!();
+    println!("{}", if report.healthy { "healthy" } else { "unhealthy" });
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Bucket {
+    Machine,
+    Repository,
+    Ci,
+}
+
+fn bucket(name: &str) -> Bucket {
+    if name == "github-action" {
+        return Bucket::Ci;
+    }
+    if name == "cli"
+        || name == "git"
+        || name == "seal_key"
+        || name == "seal"
+        || name.starts_with("user-")
+    {
+        return Bucket::Machine;
+    }
+    Bucket::Repository
+}
+
+fn skip_in_compact(check: &CheckOut) -> bool {
+    (check.name == "cli" || check.name == "git") && check.status == "ok"
+}
+
+fn print_bucket(report: &ReportOut, want: Bucket) {
+    for c in &report.checks {
+        if bucket(&c.name) != want || skip_in_compact(c) {
+            continue;
+        }
+        println!("  {} {}", mark(&c.status), compact_label(c));
+    }
+}
+
+fn mark(status: &str) -> &'static str {
+    match status {
+        "ok" => "✓",
+        "warn" => "!",
+        "fail" => "✗",
+        _ => "—",
+    }
+}
+
+fn compact_label(check: &CheckOut) -> String {
+    match check.name.as_str() {
+        "seal_key" => {
+            if check.status == "ok" {
+                "Seal key available".into()
+            } else {
+                check.message.clone()
+            }
+        }
+        "seal" => {
+            if check.status == "ok" {
+                "Seal enabled".into()
+            } else {
+                check.message.clone()
+            }
+        }
+        "user-cursor-hook" => hook_label("Cursor", check),
+        "user-claude-hook" => hook_label("Claude Code", check),
+        "config" if check.status == "optional" => "No .offsend.yml".into(),
+        "config" => ".offsend.yml".into(),
+        "github-action" if check.status == "ok" => "GitHub Action".into(),
+        "github-action" => "GitHub Action not detected".into(),
+        "policy-trust" => format!("Policy trust — {}", check.message),
+        "ignore-sync" => format!("Ignore sync — {}", check.message),
+        other => format!("{} — {}", other, check.message),
+    }
+}
+
+fn hook_label(tool: &str, check: &CheckOut) -> String {
+    if check.status == "ok" {
+        format!("{tool} hooks")
+    } else {
+        format!("{tool} hooks missing")
+    }
+}
+
+fn has_repo_policy(report: &ReportOut) -> bool {
+    report
+        .checks
+        .iter()
+        .any(|c| c.name == "config" && c.status == "ok")
+}
+
+fn next_command(report: &ReportOut) -> String {
+    if report
+        .checks
+        .iter()
+        .any(|c| c.status == "fail" || c.status == "warn")
+    {
+        return "offsend setup".into();
+    }
+    if !has_repo_policy(report) {
+        return "offsend init".into();
+    }
+    "offsend show".into()
 }

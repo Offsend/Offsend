@@ -382,6 +382,20 @@ main() {
     echo "Configuring machine defaults (seal key + user-level editor hooks)..."
     "${INSTALL_DIR}/offsend" setup || {
       echo "warning: offsend setup failed; run: offsend setup" >&2
+      echo ""
+      echo "Offsend installed."
+      echo ""
+      echo "1. Check protection:"
+      echo "   offsend setup && offsend doctor"
+      echo ""
+      echo "2. See it in Cursor / Claude:"
+      echo "   Write /tmp/offsend-try.env:"
+      # offsend:ignore-next-line
+      echo "     DATABASE_URL=postgres://admin:sk-offsend-demo-123456789@db.internal/prod"
+      echo "   Ask the agent:"
+      echo "     Read /tmp/offsend-try.env and say which database and user it uses. Do not guess the password."
+      echo "   Expect {{PASSWORD:v1…}} — not the demo password."
+      echo "   Restore locally: offsend unseal"
     }
   fi
 }

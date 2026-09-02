@@ -315,3 +315,74 @@ fn phone_detects_formatted_numbers() {
         );
     }
 }
+
+#[test]
+fn database_url_seals_password_span_only() {
+    let text = "DATABASE_URL=postgres://admin:correct-horse-battery@db.internal/prod";
+    let result = DetectionEngine::scan(&DetectionRequest::new(text));
+    let found = result
+        .entities
+        .iter()
+        .find(|e| e.entity_type == EntityType::DatabaseUrlWithPassword)
+        .expect("database url password");
+    assert_eq!(found.value, "correct-horse-battery");
+    assert_eq!(
+        found.entity_type.placeholder_prefix(),
+        "PASSWORD"
+    );
+    assert!(text.contains("postgres://admin:"));
+    assert!(!text[found.start..found.end].contains("postgres"));
+    assert!(!text[found.start..found.end].contains("db.internal"));
+}
+
+#[test]
+fn https_url_with_userinfo_seals_password_only() {
+    let text = "proxy=https://deploy:s3cret-pass@git.example.com/org/repo.git";
+    let result = DetectionEngine::scan(&DetectionRequest::new(text));
+    let found = result
+        .entities
+        .iter()
+        .find(|e| e.entity_type == EntityType::DatabaseUrlWithPassword)
+        .expect("https userinfo password");
+    assert_eq!(found.value, "s3cret-pass");
+}
+
+#[test]
+fn bearer_token_seals_token_not_scheme() {
+    let token = "abcdefghijklmnopqrstuvwxyz012345";
+    let text = format!("Authorization: Bearer {token}");
+    let result = DetectionEngine::scan(&DetectionRequest::new(text));
+    let found = result
+        .entities
+        .iter()
+        .find(|e| e.entity_type == EntityType::BearerToken)
+        .expect("bearer");
+    assert_eq!(found.value, token);
+    assert_eq!(found.entity_type.placeholder_prefix(), "BEARER_TOKEN");
+}
+
+#[test]
+fn empty_url_password_is_not_a_partial_span() {
+    let text = "DATABASE_URL=postgres://admin:@db.internal/prod";
+    let result = DetectionEngine::scan(&DetectionRequest::new(text));
+    assert!(
+        result
+            .entities
+            .iter()
+            .filter(|e| e.entity_type == EntityType::DatabaseUrlWithPassword)
+            .all(|e| !e.value.is_empty()),
+        "{:?}",
+        result.entities
+    );
+}
+
+#[test]
+fn secret_type_labels_are_specific() {
+    assert_eq!(
+        EntityType::OpenAIAPIKey.placeholder_prefix(),
+        "OPENAI_API_KEY"
+    );
+    assert_eq!(EntityType::GithubToken.placeholder_prefix(), "GITHUB_TOKEN");
+    assert_eq!(EntityType::Jwt.placeholder_prefix(), "JWT");
+    assert_eq!(EntityType::ApiKeyGeneric.placeholder_prefix(), "SECRET");
+}

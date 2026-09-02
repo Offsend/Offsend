@@ -2,7 +2,10 @@
 
 pub const IGNORE_TEMPLATE_HEADER: &str = "# Offsend AI privacy defaults";
 
-pub const PRIVACY_RULE_TEXT: &str = "Keep secrets, credentials, private keys, and environment files out of AI context. Respect .cursorignore and other AI ignore files before reading or summarizing project contents.";
+pub const PRIVACY_RULE_TEXT: &str = "\
+Keep secrets, credentials, private keys, and environment files out of AI context. Respect .cursorignore and other AI ignore files before reading or summarizing project contents.
+
+Values matching {{TYPE:v1.…}} are sealed by Offsend. Treat each token as an opaque value of TYPE. Preserve the token exactly when editing or generating related content. Do not infer, expand, replace, or fabricate its plaintext value. You may continue reasoning from the surrounding non-sensitive structure.";
 
 pub const MANAGED_RULE_HEADER: &str =
     "<!-- Managed by Offsend. Do not edit: changes are overwritten on sync. Add your own rules in a separate file. -->";
@@ -122,5 +125,14 @@ mod tests {
         assert!(c.contains(".env*"));
         assert!(c.contains("*.pem"));
         assert!(c.ends_with('\n'));
+    }
+
+    #[test]
+    fn privacy_rule_includes_seal_contract() {
+        let cursor = cursor_privacy_rule_contents();
+        assert!(cursor.contains("Keep secrets"));
+        assert!(cursor.contains("{{TYPE:v1.…}}"));
+        assert!(cursor.contains("opaque value of TYPE"));
+        assert!(claude_privacy_rule_contents().contains("Do not infer, expand, replace"));
     }
 }

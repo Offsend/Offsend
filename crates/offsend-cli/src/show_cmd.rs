@@ -109,8 +109,15 @@ pub fn run(args: ShowArgs) -> Result<ExitCode, String> {
 
     match args.format.as_str() {
         "text" => {
-            for path in &paths {
-                println!("{path}");
+            print_boundary_status(&root, config.as_ref());
+            if paths.is_empty() {
+                println!("Exposed paths");
+                println!("  none");
+            } else {
+                println!("Exposed paths");
+                for path in &paths {
+                    println!("  {path}");
+                }
             }
             if let Some(history) = &history {
                 println!(
@@ -179,6 +186,86 @@ fn build_anonymized(
         .into(),
         history,
     }
+}
+
+fn print_boundary_status(root: &Path, config: Option<&OffsendProjectConfig>) {
+    println!("AI context boundary");
+    println!();
+    match config {
+        None => {
+            println!("Protected paths");
+            println!("  machine defaults (no .offsend.yml)");
+            println!();
+            println!("Runtime");
+            println!("  Read          seal");
+            println!("  MCP response  seal");
+            println!();
+            println!("Policy");
+            println!("  .offsend.yml  none — run offsend init");
+            println!();
+        }
+        Some(cfg) => {
+            println!("Protected paths");
+            let patterns = cfg
+                .ignore
+                .as_ref()
+                .map(|i| i.patterns_or_empty())
+                .unwrap_or(&[]);
+            if patterns.is_empty() {
+                println!("  (none in ignore.patterns)");
+            } else {
+                for pattern in patterns.iter().take(8) {
+                    println!("  {pattern}");
+                }
+                if patterns.len() > 8 {
+                    println!("  +{} more", patterns.len() - 8);
+                }
+            }
+            println!();
+            println!("Runtime");
+            println!("  Read          {}", context_mode(cfg, &["read", "on_secret"], "seal"));
+            println!("  Shell         {}", context_mode(cfg, &["shell", "mode"], "block"));
+            println!(
+                "  MCP response  {}",
+                context_mode(cfg, &["mcp", "responses"], "seal")
+            );
+            println!();
+            let tracked = crate::git::tracked_paths(root)
+                .ok()
+                .is_some_and(|paths| paths.iter().any(|p| p == ".offsend.yml"));
+            let drift = {
+                let sync = offsend_policy::IgnoreSyncService::run(root, true);
+                !sync.created_relative_paths.is_empty() || !sync.updated_relative_paths.is_empty()
+            };
+            let trust = match crate::policy_trust::status(root) {
+                crate::policy_trust::TrustStatus::Trusted => "trusted",
+                crate::policy_trust::TrustStatus::Missing => "run offsend policy trust",
+                crate::policy_trust::TrustStatus::Drift(_) => "drift — run offsend policy trust",
+                crate::policy_trust::TrustStatus::Invalid(_) => "invalid snapshot",
+            };
+            println!("Policy");
+            println!(
+                "  .offsend.yml  {}",
+                if tracked { "tracked" } else { "present, not tracked" }
+            );
+            println!(
+                "  Drift         {}",
+                if drift { "behind — run offsend sync" } else { "none" }
+            );
+            println!("  Trust         {trust}");
+            println!();
+        }
+    }
+}
+
+fn context_mode(config: &OffsendProjectConfig, keys: &[&str], default: &str) -> String {
+    let mut cur = config.context.as_ref();
+    for key in keys {
+        cur = cur.and_then(|v| v.get(*key));
+    }
+    cur.and_then(|v| v.as_str())
+        .unwrap_or(default)
+        .to_string()
 }
 
 fn write_report_output(json: &str, out: Option<&str>) -> Result<(), String> {

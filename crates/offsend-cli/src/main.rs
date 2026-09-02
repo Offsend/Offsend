@@ -27,6 +27,7 @@ mod seal_cmd;
 mod setup_cmd;
 mod show_cmd;
 mod sync_cmd;
+mod try_hint;
 mod yaml_ignore;
 
 use clap::{Parser, Subcommand};

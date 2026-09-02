@@ -31,10 +31,10 @@ Start on the [main README](../README.md) (quick start + [seal](../README.md#seal
 ## Suggested path
 
 1. Install (runs `offsend setup`) — [README → Quick Start](../README.md#quick-start)
-2. Shared repo? Follow [Add Offsend to a team repo](team.md): `init` → commit `.offsend.yml` → CI → clone `sync`
-3. Cloned a repo with `.offsend.yml`? `offsend sync` then `offsend doctor` (ignore files + `hooks.git` + editor hooks)
-4. Cursor/Claude MCP? Seal is on after `setup` — [README → Seal](../README.md#seal). Windsurf cannot seal MCP responses; Codex has prompt gates only
-5. Need egress denial beyond hooks? Set `sandbox.enabled: true` — [configuration → sandbox](configuration.md#sandbox)
-6. New solo project: `offsend init` → `offsend protect` → `offsend sync` → `offsend doctor`
+2. `offsend doctor`, then the `/tmp/offsend-try.env` prompt in Cursor — no `.offsend.yml` yet
+3. Shared repo? Follow [Add Offsend to a team repo](team.md): `init` → commit `.offsend.yml` → `protect` → `policy trust` → CI → clone `sync`
+4. Cloned a repo with `.offsend.yml`? `offsend sync` then `offsend doctor` (ignore files + `hooks.git` + editor hooks)
+5. Cursor/Claude MCP? Seal is on after `setup` — [README → Seal](../README.md#seal). Windsurf cannot seal MCP responses; Codex has prompt gates only
+6. Need egress denial beyond hooks? Set `sandbox.enabled: true` — [configuration → sandbox](configuration.md#sandbox)
 7. Tune rules — [configuration.md](configuration.md) (`detectors.disable`, templates)
 8. Understand limits — [What hooks cover / do not cover](cli.md#what-hooks-cover)

@@ -162,6 +162,24 @@ public enum SensitiveEntityType: String, CaseIterable, Codable, Hashable, Sendab
             return "ADDRESS"
         case .governmentId:
             return "GOV_ID"
+        case .databaseURLWithPassword:
+            return "PASSWORD"
+        case .openAIAPIKey:
+            return "OPENAI_API_KEY"
+        case .githubToken:
+            return "GITHUB_TOKEN"
+        case .awsAccessKeyId:
+            return "AWS_ACCESS_KEY_ID"
+        case .slackToken:
+            return "SLACK_TOKEN"
+        case .stripeKey:
+            return "STRIPE_KEY"
+        case .bearerToken:
+            return "BEARER_TOKEN"
+        case .jwt:
+            return "JWT"
+        case .privateKey, .sshPrivateKey:
+            return "PRIVATE_KEY"
         default:
             return "SECRET"
         }

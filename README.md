@@ -46,10 +46,17 @@ No install yet? [Scan a public GitHub repo with Check](https://check.offsend.io)
 
 ```bash
 curl -fsSL https://install.offsend.io/cli | bash   # also runs `offsend setup`
-offsend doctor                                     # cli, key, user hooks — no YAML needed
+offsend doctor                                     # Machine / Repository / CI — no YAML needed
 ```
 
-Then open Cursor or Claude in any folder. Files with secrets are handed to the agent as a sealed copy; MCP tool output with secrets is rewritten to tokens. Copy the agent's reply and run `offsend unseal` (clipboard in a terminal; or a file / pipe).
+See it in Cursor or Claude. Write `/tmp/offsend-try.env`:
+
+```text
+# offsend:ignore-next-line
+DATABASE_URL=postgres://admin:sk-offsend-demo-123456789@db.internal/prod
+```
+
+Ask the agent: `Read /tmp/offsend-try.env and say which database and user it uses.` The password becomes `{{PASSWORD:v1…}}`; host and user stay. Copy the reply and run `offsend unseal`.
 
 ### Your repo (team policy)
 
@@ -90,7 +97,13 @@ Other installs: [CLI docs → Install](docs/cli.md#install) · macOS app: `brew 
 
 MCP tools and file reads can put secrets into model context. **Seal** swaps those values for reversible `{{TYPE:v1.…}}` tokens — the agent keeps working; plaintext stays out. Restore with `offsend unseal`.
 
-This is the machine default after `setup` (no YAML). `offsend init` writes the same into `.offsend.yml` for the team. Without a key, secret-bearing MCP output is **withheld**, not passed through.
+```text
+# offsend:ignore-next-line
+DATABASE_URL=postgres://admin:secret@db.internal/prod
+DATABASE_URL=postgres://admin:{{PASSWORD:v1…}}@db.internal/prod
+```
+
+Remove the secret, not the useful structure. This is the machine default after `setup` (no YAML). `offsend init` writes the same into `.offsend.yml` for the team. Without a key, secret-bearing MCP output is **withheld**, not passed through.
 
 ```bash
 offsend setup                 # key + user hooks (install already does this)

@@ -63,6 +63,15 @@ impl EntityType {
             PersonName => "PERSON",
             StreetAddress => "ADDRESS",
             GovernmentId => "GOV_ID",
+            DatabaseUrlWithPassword => "PASSWORD",
+            OpenAIAPIKey => "OPENAI_API_KEY",
+            GithubToken => "GITHUB_TOKEN",
+            AwsAccessKeyId => "AWS_ACCESS_KEY_ID",
+            SlackToken => "SLACK_TOKEN",
+            StripeKey => "STRIPE_KEY",
+            BearerToken => "BEARER_TOKEN",
+            Jwt => "JWT",
+            PrivateKey | SshPrivateKey => "PRIVATE_KEY",
             _ => "SECRET",
         }
     }
