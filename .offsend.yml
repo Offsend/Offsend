@@ -59,6 +59,8 @@ check:
     - "apps/macos/Core/AIDetectionCore/Tests/**"
     - "apps/macos/Services/WorkspaceWatchService/Tests/**"
     - "scripts/ci/cli-e2e.sh"
+    - "benchmarks/seal-utility/tests/**"
+    - "benchmarks/seal-utility/reports/**"
     - "**/target/**"
     # Optional — uncomment only if these dirs never hold secrets:
     # - "**/.cache/**"
