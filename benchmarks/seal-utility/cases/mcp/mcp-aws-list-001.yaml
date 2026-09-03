@@ -1,0 +1,24 @@
+id: mcp-aws-list-001
+category: mcp
+task: |
+  This is an MCP tool result for listing a bucket.
+  Return JSON with tool, region, bucket.
+  JSON only. No markdown.
+input: |
+  {"jsonrpc":"2.0","id":11,"result":{"tool":"list_objects","region":"us-east-1","bucket":"acme-artifacts","aws_access_key_id": {{fixture:aws_key_002}}}}
+sensitive:
+  - type: aws_access_key
+    fixture: aws_key_002
+expected_structure:
+  - '"tool":"list_objects"'
+  - '"region":"us-east-1"'
+  - '"bucket":"acme-artifacts"'
+  - '"aws_access_key_id":'
+grader:
+  kind: json_fields
+  expected:
+    tool: list_objects
+    region: us-east-1
+    bucket: acme-artifacts
+placeholder:
+  eligible: false

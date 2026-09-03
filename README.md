@@ -110,7 +110,7 @@ offsend setup                 # key + user hooks (install already does this)
 offsend unseal                # copy the agent's {{TYPE:v1.…}} tokens, then run this
 ```
 
-Depth: [MCP-response-gate](docs/cli.md#mcp-response-gate-on-by-default) · [configuration](docs/configuration.md#contextmcp).
+Depth: [MCP-response-gate](docs/cli.md#mcp-response-gate-on-by-default) · [configuration](docs/configuration.md#contextmcp). After a successful seal, the model still completes the task and listed plaintext does not leak — [measured](benchmarks/seal-utility/README.md).
 
 ## Offsend and GitGuardian
 

@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://offsend.local/schemas/seal-utility-benchmark.json",
+  "title": "Seal utility benchmark config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "benchmark_version",
+    "prompt_template",
+    "conversation_mode",
+    "runs_per_case",
+    "temperature",
+    "runner_seed",
+    "fixture_seed",
+    "seal_token_version",
+    "models"
+  ],
+  "properties": {
+    "benchmark_version": { "type": "string", "enum": ["v0", "v0.1"] },
+    "prompt_template": { "type": "string", "const": "v1" },
+    "conversation_mode": { "type": "string", "const": "stateless" },
+    "runs_per_case": { "type": "integer", "minimum": 1 },
+    "temperature": { "type": "number", "minimum": 0 },
+    "max_tokens": { "type": "integer", "minimum": 1 },
+    "runner_seed": { "type": "string", "minLength": 1 },
+    "fixture_seed": { "type": "string", "minLength": 1 },
+    "seal_token_version": { "type": "string", "const": "v1" },
+    "models": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "provider"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "provider": { "type": "string", "enum": ["openai", "anthropic"] },
+          "family": { "type": "string" }
+        }
+      }
+    }
+  }
+}

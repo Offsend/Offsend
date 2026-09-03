@@ -1,0 +1,2743 @@
+{
+  "overall": {
+    "admitted": 30,
+    "clean_qualified": 7,
+    "excluded_because_clean_failed": 23,
+    "tsr": {
+      "clean": 0.6,
+      "delete": 0.43333333333333335,
+      "redacted": 0.5166666666666667,
+      "offsend": 0.55
+    },
+    "sur": {
+      "clean": 1.0,
+      "delete": 0.7857142857142857,
+      "redacted": 0.7142857142857143,
+      "offsend": 0.7857142857142857
+    },
+    "plr": {
+      "delete": 0.0,
+      "redacted": 0.0,
+      "offsend": 0.0
+    },
+    "ppr": 0.1,
+    "char_inflation": 2.210600440274797,
+    "prompt_token_inflation": 1.7324098304435653,
+    "char_inflation_by_variant": {
+      "offsend": 2.210600440274797,
+      "delete": 0.867524009487528,
+      "redacted": 1.0
+    },
+    "token_inflation_by_variant": {
+      "offsend": 1.7324098304435653,
+      "delete": 0.944330035299196,
+      "redacted": 1.0
+    },
+    "security_failure": false,
+    "fsr": 0.005555555555555556
+  },
+  "by_model": {
+    "claude-sonnet-4-5": {
+      "admitted": 30,
+      "clean_qualified": 8,
+      "excluded_because_clean_failed": 22,
+      "tsr": {
+        "clean": 0.26666666666666666,
+        "delete": 0.23333333333333334,
+        "redacted": 0.13333333333333333,
+        "offsend": 0.16666666666666666
+      },
+      "sur": {
+        "clean": 1.0,
+        "delete": 0.75,
+        "redacted": 0.5,
+        "offsend": 0.625
+      },
+      "plr": {
+        "delete": 0.0,
+        "redacted": 0.0,
+        "offsend": 0.0
+      },
+      "ppr": 0.2,
+      "char_inflation": 2.2106004402747965,
+      "prompt_token_inflation": 1.7978967408857542,
+      "char_inflation_by_variant": {
+        "offsend": 2.2106004402747965,
+        "delete": 0.8675240094875275,
+        "redacted": 1.0
+      },
+      "token_inflation_by_variant": {
+        "offsend": 1.7978967408857542,
+        "delete": 0.9563023652011543,
+        "redacted": 1.0
+      },
+      "security_failure": false,
+      "fsr": 0.011111111111111112
+    },
+    "gpt-4o-mini": {
+      "admitted": 30,
+      "clean_qualified": 28,
+      "excluded_because_clean_failed": 2,
+      "tsr": {
+        "clean": 0.9333333333333333,
+        "delete": 0.6333333333333333,
+        "redacted": 0.9,
+        "offsend": 0.9333333333333333
+      },
+      "sur": {
+        "clean": 1.0,
+        "delete": 0.6785714285714286,
+        "redacted": 0.9642857142857143,
+        "offsend": 1.0
+      },
+      "plr": {
+        "delete": 0.0,
+        "redacted": 0.0,
+        "offsend": 0.0
+      },
+      "ppr": 0.0,
+      "char_inflation": 2.2106004402747965,
+      "prompt_token_inflation": 1.666922920001375,
+      "char_inflation_by_variant": {
+        "offsend": 2.2106004402747965,
+        "delete": 0.8675240094875275,
+        "redacted": 1.0
+      },
+      "token_inflation_by_variant": {
+        "offsend": 1.666922920001375,
+        "delete": 0.9323577053972387,
+        "redacted": 1.0
+      },
+      "security_failure": false,
+      "fsr": 0.0
+    }
+  },
+  "by_category": {
+    "code": {
+      "admitted": 4,
+      "clean_qualified": 2,
+      "excluded_because_clean_failed": 2,
+      "tsr": {
+        "clean": 0.75,
+        "delete": 0.75,
+        "redacted": 0.625,
+        "offsend": 0.75
+      },
+      "sur": {
+        "clean": 1.0,
+        "delete": 1.0,
+        "redacted": 0.75,
+        "offsend": 1.0
+      },
+      "plr": {
+        "delete": 0.0,
+        "redacted": 0.0,
+        "offsend": 0.0
+      },
+      "ppr": null,
+      "char_inflation": 2.1395170125307836,
+      "prompt_token_inflation": 1.6949204769267776,
+      "char_inflation_by_variant": {
+        "offsend": 2.1395170125307836,
+        "delete": 0.8548436174230666,
+        "redacted": 1.0
+      },
+      "token_inflation_by_variant": {
+        "offsend": 1.6949204769267776,
+        "delete": 0.9361548751715768,
+        "redacted": 1.0
+      },
+      "security_failure": false,
+      "fsr": 0.041666666666666664
+    },
+    "config": {
+      "admitted": 10,
+      "clean_qualified": 1,
+      "excluded_because_clean_failed": 9,
+      "tsr": {
+        "clean": 0.55,
+        "delete": 0.35,
+        "redacted": 0.5,
+        "offsend": 0.5
+      },
+      "sur": {
+        "clean": 1.0,
+        "delete": 0.0,
+        "redacted": 0.5,
+        "offsend": 0.5
+      },
+      "plr": {
+        "delete": 0.0,
+        "redacted": 0.0,
+        "offsend": 0.0
+      },
+      "ppr": 0.0,
+      "char_inflation": 2.117214231454537,
+      "prompt_token_inflation": 1.6290826510440244,
+      "char_inflation_by_variant": {
+        "offsend": 2.117214231454537,
+        "delete": 0.8626176200997968,
+        "redacted": 1.0
+      },
+      "token_inflation_by_variant": {
+        "offsend": 1.6290826510440244,
+        "delete": 0.9473713869466536,
+        "redacted": 1.0
+      },
+      "security_failure": false,
+      "fsr": 0.0
+    },
+    "debugging": {
+      "admitted": 5,
+      "clean_qualified": 0,
+      "excluded_because_clean_failed": 5,
+      "tsr": {
+        "clean": 0.4,
+        "delete": 0.2,
+        "redacted": 0.4,
+        "offsend": 0.4
+      },
+      "sur": {
+        "clean": null,
+        "delete": null,
+        "redacted": null,
+        "offsend": null
+      },
+      "plr": {
+        "delete": 0.0,
+        "redacted": 0.0,
+        "offsend": 0.0
+      },
+      "ppr": null,
+      "char_inflation": 2.862004331662896,
+      "prompt_token_inflation": 2.1330600300659843,
+      "char_inflation_by_variant": {
+        "offsend": 2.862004331662896,
+        "delete": 0.8639075694637489,
+        "redacted": 1.0
+      },
+      "token_inflation_by_variant": {
+        "offsend": 2.1330600300659843,
+        "delete": 0.944281896989858,
+        "redacted": 1.0
+      },
+      "security_failure": false,
+      "fsr": 0.0
+    },
+    "editing": {
+      "admitted": 1,
+      "clean_qualified": 1,
+      "excluded_because_clean_failed": 0,
+      "tsr": {
+        "clean": 1.0,
+        "delete": 1.0,
+        "redacted": 1.0,
+        "offsend": 1.0
+      },
+      "sur": {
+        "clean": 1.0,
+        "delete": 1.0,
+        "redacted": 1.0,
+        "offsend": 1.0
+      },
+      "plr": {
+        "delete": 0.0,
+        "redacted": 0.0,
+        "offsend": 0.0
+      },
+      "ppr": null,
+      "char_inflation": 1.6814159292035398,
+      "prompt_token_inflation": 1.5600478468899521,
+      "char_inflation_by_variant": {
+        "offsend": 1.6814159292035398,
+        "delete": 0.911504424778761,
+        "redacted": 1.0
+      },
+      "token_inflation_by_variant": {
+        "offsend": 1.5600478468899521,
+        "delete": 0.9502392344497608,
+        "redacted": 1.0
+      },
+      "security_failure": false,
+      "fsr": 0.0
+    },
+    "mcp": {
+      "admitted": 5,
+      "clean_qualified": 0,
+      "excluded_because_clean_failed": 5,
+      "tsr": {
+        "clean": 0.5,
+        "delete": 0.3,
+        "redacted": 0.4,
+        "offsend": 0.5
+      },
+      "sur": {
+        "clean": null,
+        "delete": null,
+        "redacted": null,
+        "offsend": null
+      },
+      "plr": {
+        "delete": 0.0,
+        "redacted": 0.0,
+        "offsend": 0.0
+      },
+      "ppr": 0.0,
+      "char_inflation": 2.0008389932139243,
+      "prompt_token_inflation": 1.7051919804030917,
+      "char_inflation_by_variant": {
+        "offsend": 2.0008389932139243,
+        "delete": 0.8993328256185757,
+        "redacted": 1.0
+      },
+      "token_inflation_by_variant": {
+        "offsend": 1.7051919804030917,
+        "delete": 0.9486826524281484,
+        "redacted": 1.0
+      },
+      "security_failure": false,
+      "fsr": 0.0
+    },
+    "transformation": {
+      "admitted": 5,
+      "clean_qualified": 3,
+      "excluded_because_clean_failed": 2,
+      "tsr": {
+        "clean": 0.8,
+        "delete": 0.6,
+        "redacted": 0.6,
+        "offsend": 0.6
+      },
+      "sur": {
+        "clean": 1.0,
+        "delete": 0.8333333333333334,
+        "redacted": 0.6666666666666666,
+        "offsend": 0.6666666666666666
+      },
+      "plr": {
+        "delete": 0.0,
+        "redacted": 0.0,
+        "offsend": 0.0
+      },
+      "ppr": 0.5,
+      "char_inflation": 2.1184340579975505,
+      "prompt_token_inflation": 1.6300957191848533,
+      "char_inflation_by_variant": {
+        "offsend": 2.1184340579975505,
+        "delete": 0.8504926427490427,
+        "redacted": 1.0
+      },
+      "token_inflation_by_variant": {
+        "offsend": 1.6300957191848533,
+        "delete": 0.9393011414566514,
+        "redacted": 1.0
+      },
+      "security_failure": false,
+      "fsr": 0.0
+    }
+  },
+  "failure_buckets": {
+    "invalid_json": 94,
+    "fabricated_secret": 1,
+    "lost_structure": 5,
+    "wrong_field_interpretation": 15,
+    "placeholder_removed": 4
+  },
+  "admitted_case_ids": [
+    "aws-env-001",
+    "aws-region-parse-001",
+    "bearer-log-001",
+    "compose-multi-001",
+    "connect-fn-001",
+    "db-timeout-001",
+    "edit-dotenv-load-001",
+    "env-to-json-001",
+    "extract-host-001",
+    "github-clone-001",
+    "https-git-001",
+    "jwt-error-001",
+    "kube-db-001",
+    "mcp-aws-list-001",
+    "mcp-gh-clone-001",
+    "mcp-multi-secrets-001",
+    "mcp-read-env-001",
+    "mcp-sql-result-001",
+    "mongo-config-001",
+    "multi-client-001",
+    "multi-log-001",
+    "mysql-config-001",
+    "openai-env-001",
+    "parse-dsn-code-001",
+    "postgres-config-001",
+    "redact-logger-001",
+    "redis-config-001",
+    "rewrite-dsn-001",
+    "slack-retry-001",
+    "split-multi-001"
+  ],
+  "diagnostics": {
+    "clean_population": {
+      "overall": {
+        "qualified": [
+          "edit-dotenv-load-001",
+          "extract-host-001",
+          "openai-env-001",
+          "parse-dsn-code-001",
+          "redact-logger-001",
+          "rewrite-dsn-001",
+          "split-multi-001"
+        ],
+        "excluded": [
+          {
+            "case_id": "aws-env-001",
+            "category": "config",
+            "models_failed": [
+              "claude-sonnet-4-5"
+            ]
+          },
+          {
+            "case_id": "aws-region-parse-001",
+            "category": "transformation",
+            "models_failed": [
+              "claude-sonnet-4-5"
+            ]
+          },
+          {
+            "case_id": "bearer-log-001",
+            "category": "debugging",
+            "models_failed": [
+              "claude-sonnet-4-5"
+            ]
+          },
+          {
+            "case_id": "compose-multi-001",
+            "category": "config",
+            "models_failed": [
+              "claude-sonnet-4-5"
+            ]
+          },
+          {
+            "case_id": "connect-fn-001",
+            "category": "code",
+            "models_failed": [
+              "gpt-4o-mini"
+            ]
+          },
+          {
+            "case_id": "db-timeout-001",
+            "category": "debugging",
+            "models_failed": [
+              "claude-sonnet-4-5",
+              "gpt-4o-mini"
+            ]
+          },
+          {
+            "case_id": "env-to-json-001",
+            "category": "transformation",
+            "models_failed": [
+              "claude-sonnet-4-5"
+            ]
+          },
+          {
+            "case_id": "github-clone-001",
+            "category": "config",
+            "models_failed": [
+              "claude-sonnet-4-5"
+            ]
+          },
+          {
+            "case_id": "https-git-001",
+            "category": "config",
+            "models_failed": [
+              "claude-sonnet-4-5"
+            ]
+          },
+          {
+            "case_id": "jwt-error-001",
+            "category": "debugging",
+            "models_failed": [
+              "claude-sonnet-4-5"
+            ]
+          },
+          {
+            "case_id": "kube-db-001",
+            "category": "config",
+            "models_failed": [
+              "claude-sonnet-4-5"
+            ]
+          },
+          {
+            "case_id": "mcp-aws-list-001",
+            "category": "mcp",
+            "models_failed": [
+              "claude-sonnet-4-5"
+            ]
+          },
+          {
+            "case_id": "mcp-gh-clone-001",
+            "category": "mcp",
+            "models_failed": [
+              "claude-sonnet-4-5"
+            ]
+          },
+          {
+            "case_id": "mcp-multi-secrets-001",
+            "category": "mcp",
+            "models_failed": [
+              "claude-sonnet-4-5"
+            ]
+          },
+          {
+            "case_id": "mcp-read-env-001",
+            "category": "mcp",
+            "models_failed": [
+              "claude-sonnet-4-5"
+            ]
+          },
+          {
+            "case_id": "mcp-sql-result-001",
+            "category": "mcp",
+            "models_failed": [
+              "claude-sonnet-4-5"
+            ]
+          },
+          {
+            "case_id": "mongo-config-001",
+            "category": "config",
+            "models_failed": [
+              "claude-sonnet-4-5"
+            ]
+          },
+          {
+            "case_id": "multi-client-001",
+            "category": "code",
+            "models_failed": [
+              "claude-sonnet-4-5"
+            ]
+          },
+          {
+            "case_id": "multi-log-001",
+            "category": "debugging",
+            "models_failed": [
+              "claude-sonnet-4-5"
+            ]
+          },
+          {
+            "case_id": "mysql-config-001",
+            "category": "config",
+            "models_failed": [
+              "claude-sonnet-4-5"
+            ]
+          },
+          {
+            "case_id": "postgres-config-001",
+            "category": "config",
+            "models_failed": [
+              "claude-sonnet-4-5"
+            ]
+          },
+          {
+            "case_id": "redis-config-001",
+            "category": "config",
+            "models_failed": [
+              "claude-sonnet-4-5"
+            ]
+          },
+          {
+            "case_id": "slack-retry-001",
+            "category": "debugging",
+            "models_failed": [
+              "claude-sonnet-4-5"
+            ]
+          }
+        ]
+      },
+      "by_model": {
+        "claude-sonnet-4-5": {
+          "qualified": [
+            "connect-fn-001",
+            "edit-dotenv-load-001",
+            "extract-host-001",
+            "openai-env-001",
+            "parse-dsn-code-001",
+            "redact-logger-001",
+            "rewrite-dsn-001",
+            "split-multi-001"
+          ],
+          "excluded": [
+            {
+              "case_id": "aws-env-001",
+              "category": "config",
+              "failure_bucket": "invalid_json",
+              "failure_detail": "markdown_fence"
+            },
+            {
+              "case_id": "aws-region-parse-001",
+              "category": "transformation",
+              "failure_bucket": "invalid_json",
+              "failure_detail": "markdown_fence"
+            },
+            {
+              "case_id": "bearer-log-001",
+              "category": "debugging",
+              "failure_bucket": "invalid_json",
+              "failure_detail": "markdown_fence"
+            },
+            {
+              "case_id": "compose-multi-001",
+              "category": "config",
+              "failure_bucket": "invalid_json",
+              "failure_detail": "markdown_fence"
+            },
+            {
+              "case_id": "db-timeout-001",
+              "category": "debugging",
+              "failure_bucket": "invalid_json",
+              "failure_detail": "markdown_fence"
+            },
+            {
+              "case_id": "env-to-json-001",
+              "category": "transformation",
+              "failure_bucket": "invalid_json",
+              "failure_detail": "markdown_fence"
+            },
+            {
+              "case_id": "github-clone-001",
+              "category": "config",
+              "failure_bucket": "invalid_json",
+              "failure_detail": "markdown_fence"
+            },
+            {
+              "case_id": "https-git-001",
+              "category": "config",
+              "failure_bucket": "invalid_json",
+              "failure_detail": "markdown_fence"
+            },
+            {
+              "case_id": "jwt-error-001",
+              "category": "debugging",
+              "failure_bucket": "invalid_json",
+              "failure_detail": "markdown_fence"
+            },
+            {
+              "case_id": "kube-db-001",
+              "category": "config",
+              "failure_bucket": "invalid_json",
+              "failure_detail": "markdown_fence"
+            },
+            {
+              "case_id": "mcp-aws-list-001",
+              "category": "mcp",
+              "failure_bucket": "invalid_json",
+              "failure_detail": "markdown_fence"
+            },
+            {
+              "case_id": "mcp-gh-clone-001",
+              "category": "mcp",
+              "failure_bucket": "invalid_json",
+              "failure_detail": "markdown_fence"
+            },
+            {
+              "case_id": "mcp-multi-secrets-001",
+              "category": "mcp",
+              "failure_bucket": "invalid_json",
+              "failure_detail": "markdown_fence"
+            },
+            {
+              "case_id": "mcp-read-env-001",
+              "category": "mcp",
+              "failure_bucket": "invalid_json",
+              "failure_detail": "markdown_fence"
+            },
+            {
+              "case_id": "mcp-sql-result-001",
+              "category": "mcp",
+              "failure_bucket": "invalid_json",
+              "failure_detail": "markdown_fence"
+            },
+            {
+              "case_id": "mongo-config-001",
+              "category": "config",
+              "failure_bucket": "invalid_json",
+              "failure_detail": "markdown_fence"
+            },
+            {
+              "case_id": "multi-client-001",
+              "category": "code",
+              "failure_bucket": "invalid_json",
+              "failure_detail": "markdown_fence"
+            },
+            {
+              "case_id": "multi-log-001",
+              "category": "debugging",
+              "failure_bucket": "invalid_json",
+              "failure_detail": "markdown_fence"
+            },
+            {
+              "case_id": "mysql-config-001",
+              "category": "config",
+              "failure_bucket": "invalid_json",
+              "failure_detail": "markdown_fence"
+            },
+            {
+              "case_id": "postgres-config-001",
+              "category": "config",
+              "failure_bucket": "invalid_json",
+              "failure_detail": "markdown_fence"
+            },
+            {
+              "case_id": "redis-config-001",
+              "category": "config",
+              "failure_bucket": "invalid_json",
+              "failure_detail": "markdown_fence"
+            },
+            {
+              "case_id": "slack-retry-001",
+              "category": "debugging",
+              "failure_bucket": "invalid_json",
+              "failure_detail": "markdown_fence"
+            }
+          ]
+        },
+        "gpt-4o-mini": {
+          "qualified": [
+            "aws-env-001",
+            "aws-region-parse-001",
+            "bearer-log-001",
+            "compose-multi-001",
+            "edit-dotenv-load-001",
+            "env-to-json-001",
+            "extract-host-001",
+            "github-clone-001",
+            "https-git-001",
+            "jwt-error-001",
+            "kube-db-001",
+            "mcp-aws-list-001",
+            "mcp-gh-clone-001",
+            "mcp-multi-secrets-001",
+            "mcp-read-env-001",
+            "mcp-sql-result-001",
+            "mongo-config-001",
+            "multi-client-001",
+            "multi-log-001",
+            "mysql-config-001",
+            "openai-env-001",
+            "parse-dsn-code-001",
+            "postgres-config-001",
+            "redact-logger-001",
+            "redis-config-001",
+            "rewrite-dsn-001",
+            "slack-retry-001",
+            "split-multi-001"
+          ],
+          "excluded": [
+            {
+              "case_id": "connect-fn-001",
+              "category": "code",
+              "failure_bucket": "lost_structure",
+              "failure_detail": "missing_substring: os.environ"
+            },
+            {
+              "case_id": "db-timeout-001",
+              "category": "debugging",
+              "failure_bucket": "wrong_field_interpretation",
+              "failure_detail": "field_mismatch: exception (got str, expected str)"
+            }
+          ]
+        }
+      }
+    },
+    "utility_losses": [
+      {
+        "request_id": "d8bbdfc1-0e2b-425d-9bb0-fe65c32d8ee5",
+        "model": "claude-sonnet-4-5",
+        "case_id": "parse-dsn-code-001",
+        "category": "code",
+        "variant": "offsend",
+        "run": 1,
+        "score": 1,
+        "failure_bucket": "fabricated_secret",
+        "failure_detail": "fabricated_secret",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "Looking at the example DSN, I need to parse a database connection string and extract the protocol and host. ```python def parse_dsn(dsn): \"\"\" Parse a DSN (Data Source Name) URL and return protocol an\u2026"
+      },
+      {
+        "request_id": "e228b2d6-19f6-457c-96a1-73692d220966",
+        "model": "claude-sonnet-4-5",
+        "case_id": "redact-logger-001",
+        "category": "code",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "lost_structure",
+        "failure_detail": "missing_substring: /health",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```python logger.info(f\"{method} {path} {status}\") ``` This logs only the HTTP method, path, and status code without including any authorization headers or bearer tokens."
+      },
+      {
+        "request_id": "36e63e15-a582-418f-994c-168a35e8a3f4",
+        "model": "claude-sonnet-4-5",
+        "case_id": "openai-env-001",
+        "category": "config",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"model\": \"gpt-4o-mini\", \"api_host\": \"api.openai.com\", \"api_path\": \"/v1\", \"key_configured\": false } ```"
+      },
+      {
+        "request_id": "83bc3183-2e07-4e16-adeb-eb5fb869cc0a",
+        "model": "claude-sonnet-4-5",
+        "case_id": "openai-env-001",
+        "category": "config",
+        "variant": "offsend",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"model\": \"gpt-4o-mini\", \"api_host\": \"api.openai.com\", \"api_path\": \"/v1\", \"key_configured\": true } ```"
+      },
+      {
+        "request_id": "63f46915-cb94-480d-91c0-7cc64c8da96d",
+        "model": "claude-sonnet-4-5",
+        "case_id": "openai-env-001",
+        "category": "config",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"model\": \"gpt-4o-mini\", \"api_host\": \"api.openai.com\", \"api_path\": \"/v1\", \"key_configured\": true } ```"
+      },
+      {
+        "request_id": "0c1f4b50-b527-4174-a2bc-c9a09f95f048",
+        "model": "claude-sonnet-4-5",
+        "case_id": "rewrite-dsn-001",
+        "category": "transformation",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"protocol\": \"postgres\", \"username\": \"migrate\", \"host\": \"legacy.example.com\", \"database\": \"archive\" } ```"
+      },
+      {
+        "request_id": "6bc0c39b-4233-4ec4-b826-de308f596540",
+        "model": "claude-sonnet-4-5",
+        "case_id": "rewrite-dsn-001",
+        "category": "transformation",
+        "variant": "offsend",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": true,
+        "response_preview": "```json { \"connection\": \"postgres://migrate:[seal-token]@legacy.example.com/archive\", \"protocol\": \"postgres\", \"username\": \"migrate\", \"host\": \"legacy.example.com\", \"database\": \"archive\" } ```"
+      },
+      {
+        "request_id": "3038a30a-13e5-4b16-b759-07f306e9848c",
+        "model": "claude-sonnet-4-5",
+        "case_id": "rewrite-dsn-001",
+        "category": "transformation",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"protocol\": \"postgres\", \"username\": \"migrate\", \"host\": \"legacy.example.com\", \"database\": \"archive\" } ```"
+      },
+      {
+        "request_id": "c3232a56-f138-4cdd-b60e-5fd0f478313b",
+        "model": "claude-sonnet-4-5",
+        "case_id": "split-multi-001",
+        "category": "transformation",
+        "variant": "offsend",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"postgres_host\": \"primary.example.com\", \"redis_host\": \"cache-west.example.com\" } ```"
+      },
+      {
+        "request_id": "87e36ecd-10c3-4d18-94dc-5b88b7479a91",
+        "model": "claude-sonnet-4-5",
+        "case_id": "split-multi-001",
+        "category": "transformation",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"postgres_host\": \"primary.example.com\", \"redis_host\": \"cache-west.example.com\" } ```"
+      },
+      {
+        "request_id": "76566f41-20e7-4c98-9b12-103a756a5952",
+        "model": "gpt-4o-mini",
+        "case_id": "aws-env-001",
+        "category": "config",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "wrong_field_interpretation",
+        "failure_detail": "field_mismatch: access_key_configured (got bool, expected bool)",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "{ \"region\": \"eu-west-1\", \"output_format\": \"json\", \"access_key_configured\": false }"
+      },
+      {
+        "request_id": "104001d6-c6ba-4d78-b8b9-2f44ba517381",
+        "model": "gpt-4o-mini",
+        "case_id": "openai-env-001",
+        "category": "config",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "wrong_field_interpretation",
+        "failure_detail": "field_mismatch: key_configured (got bool, expected bool)",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "{ \"model\": \"gpt-4o-mini\", \"api_host\": \"api.openai.com\", \"api_path\": \"/v1\", \"key_configured\": false }"
+      },
+      {
+        "request_id": "bd96f7f1-13e2-4f2b-a2da-d1daa052c6e0",
+        "model": "gpt-4o-mini",
+        "case_id": "postgres-config-001",
+        "category": "config",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "wrong_field_interpretation",
+        "failure_detail": "field_mismatch: has_authentication (got bool, expected bool)",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "{ \"protocol\": \"postgres\", \"username\": \"admin\", \"host\": \"db.internal\", \"database\": \"prod\", \"has_authentication\": false }"
+      },
+      {
+        "request_id": "0669eae2-ec54-4431-8e68-eb2889fe5c8b",
+        "model": "gpt-4o-mini",
+        "case_id": "redis-config-001",
+        "category": "config",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "wrong_field_interpretation",
+        "failure_detail": "field_mismatch: username (got str, expected str)",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "{ \"protocol\": \"redis\", \"username\": \"\", \"host\": \"cache.example.com\", \"port\": 6379, \"db\": 0 }"
+      },
+      {
+        "request_id": "48c333bc-52c5-42db-b224-9fd7ab1a4bef",
+        "model": "gpt-4o-mini",
+        "case_id": "jwt-error-001",
+        "category": "debugging",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "wrong_field_interpretation",
+        "failure_detail": "field_mismatch: token_present (got bool, expected bool)",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "{ \"error_code\": \"TOKEN_EXPIRED\", \"endpoint\": \"/account/session\", \"token_present\": false }"
+      },
+      {
+        "request_id": "839704d4-0fa9-4eff-8c7a-611bdbb495d2",
+        "model": "gpt-4o-mini",
+        "case_id": "slack-retry-001",
+        "category": "debugging",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "wrong_field_interpretation",
+        "failure_detail": "field_mismatch: token_configured (got bool, expected bool)",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "{ \"retries\": 3, \"channel\": \"#ops-alerts\", \"token_configured\": false }"
+      },
+      {
+        "request_id": "b271d772-f181-4a88-8c1f-200c0d38d2d1",
+        "model": "gpt-4o-mini",
+        "case_id": "mcp-multi-secrets-001",
+        "category": "mcp",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "wrong_field_interpretation",
+        "failure_detail": "field_mismatch: secret_key_count (got int, expected int)",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "{ \"tool\": \"env_get\", \"secret_key_count\": 0, \"has_github\": false, \"has_openai\": false }"
+      },
+      {
+        "request_id": "33e7e082-abbe-41de-8963-7a209c5df95d",
+        "model": "gpt-4o-mini",
+        "case_id": "mcp-read-env-001",
+        "category": "mcp",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "wrong_field_interpretation",
+        "failure_detail": "field_mismatch: has_openai_key (got bool, expected bool)",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "{\"tool\":\"Read\",\"first_key\":\"APP_ENV\",\"second_key\":\"openai_api_key\",\"has_openai_key\":false}"
+      },
+      {
+        "request_id": "d3a6cdd0-c7f1-48d4-bb3e-509b4bf48240",
+        "model": "gpt-4o-mini",
+        "case_id": "mcp-read-env-001",
+        "category": "mcp",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "wrong_field_interpretation",
+        "failure_detail": "field_mismatch: first_key (got str, expected str)",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "{\"tool\":\"Read\",\"first_key\":\"path\",\"second_key\":\"text\",\"has_openai_key\":true}"
+      },
+      {
+        "request_id": "a2388f6e-57e3-4593-b2d0-931bfc6350d3",
+        "model": "gpt-4o-mini",
+        "case_id": "aws-region-parse-001",
+        "category": "transformation",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "wrong_field_interpretation",
+        "failure_detail": "field_mismatch: access_key_set (got bool, expected bool)",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "{ \"region\": \"ap-southeast-2\", \"output\": \"text\", \"access_key_set\": false }"
+      }
+    ],
+    "failures": [
+      {
+        "request_id": "993b3ae7-56d6-444f-ae74-de8a7327db37",
+        "model": "claude-sonnet-4-5",
+        "case_id": "multi-client-001",
+        "category": "code",
+        "variant": "clean",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"postgres_host\": \"jobs.example.com\", \"mongo_host\": \"docs.example.com\" } ```"
+      },
+      {
+        "request_id": "25440b37-4931-47f3-9b18-f32fae932d82",
+        "model": "claude-sonnet-4-5",
+        "case_id": "multi-client-001",
+        "category": "code",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"postgres_host\": \"jobs.example.com\", \"mongo_host\": \"docs.example.com\" } ```"
+      },
+      {
+        "request_id": "6e552afb-edd3-4977-9577-775a3083262e",
+        "model": "claude-sonnet-4-5",
+        "case_id": "multi-client-001",
+        "category": "code",
+        "variant": "offsend",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"postgres_host\": \"jobs.example.com\", \"mongo_host\": \"docs.example.com\" } ```"
+      },
+      {
+        "request_id": "29ecea04-16af-4af8-87fd-e832d84dfe25",
+        "model": "claude-sonnet-4-5",
+        "case_id": "multi-client-001",
+        "category": "code",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"postgres_host\": \"jobs.example.com\", \"mongo_host\": \"docs.example.com\" } ```"
+      },
+      {
+        "request_id": "d8bbdfc1-0e2b-425d-9bb0-fe65c32d8ee5",
+        "model": "claude-sonnet-4-5",
+        "case_id": "parse-dsn-code-001",
+        "category": "code",
+        "variant": "offsend",
+        "run": 1,
+        "score": 1,
+        "failure_bucket": "fabricated_secret",
+        "failure_detail": "fabricated_secret",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "Looking at the example DSN, I need to parse a database connection string and extract the protocol and host. ```python def parse_dsn(dsn): \"\"\" Parse a DSN (Data Source Name) URL and return protocol an\u2026"
+      },
+      {
+        "request_id": "e228b2d6-19f6-457c-96a1-73692d220966",
+        "model": "claude-sonnet-4-5",
+        "case_id": "redact-logger-001",
+        "category": "code",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "lost_structure",
+        "failure_detail": "missing_substring: /health",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```python logger.info(f\"{method} {path} {status}\") ``` This logs only the HTTP method, path, and status code without including any authorization headers or bearer tokens."
+      },
+      {
+        "request_id": "5b85f7fc-c7b2-4e54-961e-23aad439b532",
+        "model": "claude-sonnet-4-5",
+        "case_id": "aws-env-001",
+        "category": "config",
+        "variant": "clean",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"region\": \"eu-west-1\", \"output_format\": \"json\", \"access_key_configured\": true } ```"
+      },
+      {
+        "request_id": "2c736537-5218-4c95-8926-8247774a4f6c",
+        "model": "claude-sonnet-4-5",
+        "case_id": "aws-env-001",
+        "category": "config",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"region\": \"eu-west-1\", \"output_format\": \"json\", \"access_key_configured\": false } ```"
+      },
+      {
+        "request_id": "34dc546d-3312-4312-9e99-d3ffd19009a0",
+        "model": "claude-sonnet-4-5",
+        "case_id": "aws-env-001",
+        "category": "config",
+        "variant": "offsend",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"region\": \"eu-west-1\", \"output_format\": \"json\", \"access_key_configured\": true } ```"
+      },
+      {
+        "request_id": "80c2c043-4414-41f7-bbc7-28425630b494",
+        "model": "claude-sonnet-4-5",
+        "case_id": "aws-env-001",
+        "category": "config",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"region\": \"eu-west-1\", \"output_format\": \"json\", \"access_key_configured\": true } ```"
+      },
+      {
+        "request_id": "3b7f8326-0c0c-421a-aa78-7a27359654b4",
+        "model": "claude-sonnet-4-5",
+        "case_id": "compose-multi-001",
+        "category": "config",
+        "variant": "clean",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"postgres_host\": \"pg.example.com\", \"redis_host\": \"queue.example.com\", \"service_count\": 1 } ```"
+      },
+      {
+        "request_id": "53b4a22b-25ed-4a32-b5d7-fb6a5eb7c433",
+        "model": "claude-sonnet-4-5",
+        "case_id": "compose-multi-001",
+        "category": "config",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"postgres_host\": \"pg.example.com\", \"redis_host\": \"queue.example.com\", \"service_count\": 1 } ```"
+      },
+      {
+        "request_id": "5d944c17-0d07-45e0-8e14-663843dfc091",
+        "model": "claude-sonnet-4-5",
+        "case_id": "compose-multi-001",
+        "category": "config",
+        "variant": "offsend",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"postgres_host\": \"pg.example.com\", \"redis_host\": \"queue.example.com\", \"service_count\": 1 } ```"
+      },
+      {
+        "request_id": "a2fa8ad9-542d-4120-b1cc-70ef2c16d366",
+        "model": "claude-sonnet-4-5",
+        "case_id": "compose-multi-001",
+        "category": "config",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"postgres_host\": \"pg.example.com\", \"redis_host\": \"queue.example.com\", \"service_count\": 1 } ```"
+      },
+      {
+        "request_id": "c3f8c7fc-529a-4a76-ae32-c003eb6cbe03",
+        "model": "claude-sonnet-4-5",
+        "case_id": "github-clone-001",
+        "category": "config",
+        "variant": "clean",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"host\": \"github.com\", \"owner\": \"acme\", \"repo\": \"payments\", \"auth_configured\": true } ```"
+      },
+      {
+        "request_id": "dd14b6b5-7abd-4803-9906-740c2b432be7",
+        "model": "claude-sonnet-4-5",
+        "case_id": "github-clone-001",
+        "category": "config",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"host\": \"github.com\", \"owner\": \"acme\", \"repo\": \"payments\", \"auth_configured\": false } ```"
+      },
+      {
+        "request_id": "fa12d806-e0fe-41d7-a6b3-142361ce6f63",
+        "model": "claude-sonnet-4-5",
+        "case_id": "github-clone-001",
+        "category": "config",
+        "variant": "offsend",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"host\": \"github.com\", \"owner\": \"acme\", \"repo\": \"payments\", \"auth_configured\": true } ```"
+      },
+      {
+        "request_id": "053cb345-2c26-44f9-9e9d-39c251741cb0",
+        "model": "claude-sonnet-4-5",
+        "case_id": "github-clone-001",
+        "category": "config",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"host\": \"github.com\", \"owner\": \"acme\", \"repo\": \"payments\", \"auth_configured\": true } ```"
+      },
+      {
+        "request_id": "447595f6-b9c4-4c1c-876f-6bdc4c240c34",
+        "model": "claude-sonnet-4-5",
+        "case_id": "https-git-001",
+        "category": "config",
+        "variant": "clean",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"scheme\": \"https\", \"username\": \"deploy\", \"host\": \"git.example.com\", \"org\": \"acme\", \"repo\": \"ledger\", \"has_authentication\": true } ```"
+      },
+      {
+        "request_id": "036826a3-4d7d-4dde-8104-fa0e8d1ce51a",
+        "model": "claude-sonnet-4-5",
+        "case_id": "https-git-001",
+        "category": "config",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"scheme\": \"https\", \"username\": \"deploy\", \"host\": \"git.example.com\", \"org\": \"acme\", \"repo\": \"ledger\", \"has_authentication\": true } ```"
+      },
+      {
+        "request_id": "e449d2e3-3672-4f69-9c00-f279d45e7165",
+        "model": "claude-sonnet-4-5",
+        "case_id": "https-git-001",
+        "category": "config",
+        "variant": "offsend",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"scheme\": \"https\", \"username\": \"deploy\", \"host\": \"git.example.com\", \"org\": \"acme\", \"repo\": \"ledger\", \"has_authentication\": true } ```"
+      },
+      {
+        "request_id": "e17f9cb5-a16f-40b1-85e4-596e2e36cef9",
+        "model": "claude-sonnet-4-5",
+        "case_id": "https-git-001",
+        "category": "config",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"scheme\": \"https\", \"username\": \"deploy\", \"host\": \"git.example.com\", \"org\": \"acme\", \"repo\": \"ledger\", \"has_authentication\": true } ```"
+      },
+      {
+        "request_id": "abd4575a-10c0-45a8-a51c-f35297aad39b",
+        "model": "claude-sonnet-4-5",
+        "case_id": "kube-db-001",
+        "category": "config",
+        "variant": "clean",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"kind\": \"ConfigMap\", \"name\": \"billing-db\", \"db_host\": \"sql.example.com\", \"db_name\": \"billing\" } ```"
+      },
+      {
+        "request_id": "0c6ba974-3472-4269-b583-7c33f3c30315",
+        "model": "claude-sonnet-4-5",
+        "case_id": "kube-db-001",
+        "category": "config",
+        "variant": "offsend",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": false,
+        "response_preview": "```json { \"kind\": \"ConfigMap\", \"name\": \"billing-db\", \"db_host\": \"sql.example.com\", \"db_name\": \"billing\" } ```"
+      },
+      {
+        "request_id": "5fb67d86-1065-49cc-9eea-55f3c7c6909e",
+        "model": "claude-sonnet-4-5",
+        "case_id": "kube-db-001",
+        "category": "config",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"kind\": \"ConfigMap\", \"name\": \"billing-db\", \"db_host\": \"sql.example.com\", \"db_name\": \"billing\" } ```"
+      },
+      {
+        "request_id": "956585d8-5e73-4566-ab37-c999ea2d0890",
+        "model": "claude-sonnet-4-5",
+        "case_id": "mongo-config-001",
+        "category": "config",
+        "variant": "clean",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"protocol\": \"mongodb\", \"username\": \"writer\", \"host\": \"mongo.example.com\", \"port\": 27017, \"database\": \"events\" } ```"
+      },
+      {
+        "request_id": "a18b4e7b-7ca0-47d5-a6f4-492a89bf556d",
+        "model": "claude-sonnet-4-5",
+        "case_id": "mongo-config-001",
+        "category": "config",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"protocol\": \"mongodb\", \"username\": \"writer\", \"host\": \"mongo.example.com\", \"port\": 27017, \"database\": \"events\" } ```"
+      },
+      {
+        "request_id": "21339813-b4fa-44cf-a7d6-42ae294146c7",
+        "model": "claude-sonnet-4-5",
+        "case_id": "mongo-config-001",
+        "category": "config",
+        "variant": "offsend",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"protocol\": \"mongodb\", \"username\": \"writer\", \"host\": \"mongo.example.com\", \"port\": 27017, \"database\": \"events\" } ```"
+      },
+      {
+        "request_id": "5e92e07a-17d0-451f-b2f2-51d281135be2",
+        "model": "claude-sonnet-4-5",
+        "case_id": "mongo-config-001",
+        "category": "config",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"protocol\": \"mongodb\", \"username\": \"writer\", \"host\": \"mongo.example.com\", \"port\": 27017, \"database\": \"events\" } ```"
+      },
+      {
+        "request_id": "8acdf4b1-f010-4608-8a04-33011ba6f993",
+        "model": "claude-sonnet-4-5",
+        "case_id": "mysql-config-001",
+        "category": "config",
+        "variant": "clean",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"protocol\": \"mysql\", \"username\": \"app\", \"host\": \"db.example.com\", \"port\": 3306, \"database\": \"billing\" } ```"
+      },
+      {
+        "request_id": "1bc415f6-4068-4b8e-b58a-1d51546d420a",
+        "model": "claude-sonnet-4-5",
+        "case_id": "mysql-config-001",
+        "category": "config",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"protocol\": \"mysql\", \"username\": \"app\", \"host\": \"db.example.com\", \"port\": 3306, \"database\": \"billing\" } ```"
+      },
+      {
+        "request_id": "1c76fd2e-2423-499a-8d56-e720437c1df0",
+        "model": "claude-sonnet-4-5",
+        "case_id": "mysql-config-001",
+        "category": "config",
+        "variant": "offsend",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"protocol\": \"mysql\", \"username\": \"app\", \"host\": \"db.example.com\", \"port\": 3306, \"database\": \"billing\" } ```"
+      },
+      {
+        "request_id": "ef666b9f-faf9-48c8-b1cf-121a311e75f3",
+        "model": "claude-sonnet-4-5",
+        "case_id": "mysql-config-001",
+        "category": "config",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"protocol\": \"mysql\", \"username\": \"app\", \"host\": \"db.example.com\", \"port\": 3306, \"database\": \"billing\" } ```"
+      },
+      {
+        "request_id": "36e63e15-a582-418f-994c-168a35e8a3f4",
+        "model": "claude-sonnet-4-5",
+        "case_id": "openai-env-001",
+        "category": "config",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"model\": \"gpt-4o-mini\", \"api_host\": \"api.openai.com\", \"api_path\": \"/v1\", \"key_configured\": false } ```"
+      },
+      {
+        "request_id": "83bc3183-2e07-4e16-adeb-eb5fb869cc0a",
+        "model": "claude-sonnet-4-5",
+        "case_id": "openai-env-001",
+        "category": "config",
+        "variant": "offsend",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"model\": \"gpt-4o-mini\", \"api_host\": \"api.openai.com\", \"api_path\": \"/v1\", \"key_configured\": true } ```"
+      },
+      {
+        "request_id": "63f46915-cb94-480d-91c0-7cc64c8da96d",
+        "model": "claude-sonnet-4-5",
+        "case_id": "openai-env-001",
+        "category": "config",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"model\": \"gpt-4o-mini\", \"api_host\": \"api.openai.com\", \"api_path\": \"/v1\", \"key_configured\": true } ```"
+      },
+      {
+        "request_id": "7524b113-00f6-435d-94f9-2436daeb675c",
+        "model": "claude-sonnet-4-5",
+        "case_id": "postgres-config-001",
+        "category": "config",
+        "variant": "clean",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"protocol\": \"postgres\", \"username\": \"admin\", \"host\": \"db.internal\", \"database\": \"prod\", \"has_authentication\": true } ```"
+      },
+      {
+        "request_id": "623284f5-1236-4fcf-abb0-dcb58bcaa78f",
+        "model": "claude-sonnet-4-5",
+        "case_id": "postgres-config-001",
+        "category": "config",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"protocol\": \"postgres\", \"username\": \"admin\", \"host\": \"db.internal\", \"database\": \"prod\", \"has_authentication\": true } ```"
+      },
+      {
+        "request_id": "e5a8c6e1-3f9b-4fdb-9bff-6c742c67cba0",
+        "model": "claude-sonnet-4-5",
+        "case_id": "postgres-config-001",
+        "category": "config",
+        "variant": "offsend",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"protocol\": \"postgres\", \"username\": \"admin\", \"host\": \"db.internal\", \"database\": \"prod\", \"has_authentication\": true } ```"
+      },
+      {
+        "request_id": "3d383912-040d-41eb-8198-3f80efe82b1b",
+        "model": "claude-sonnet-4-5",
+        "case_id": "postgres-config-001",
+        "category": "config",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"protocol\": \"postgres\", \"username\": \"admin\", \"host\": \"db.internal\", \"database\": \"prod\", \"has_authentication\": true } ```"
+      },
+      {
+        "request_id": "2eca83c7-070e-4ac3-a0e5-2766145be92c",
+        "model": "claude-sonnet-4-5",
+        "case_id": "redis-config-001",
+        "category": "config",
+        "variant": "clean",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"protocol\": \"redis\", \"username\": \"cache\", \"host\": \"cache.example.com\", \"port\": 6379, \"db\": 0 } ```"
+      },
+      {
+        "request_id": "4184ff6a-c73d-4573-aa3d-5a124a1c6131",
+        "model": "claude-sonnet-4-5",
+        "case_id": "redis-config-001",
+        "category": "config",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"protocol\": \"redis\", \"username\": \"cache\", \"host\": \"cache.example.com\", \"port\": 6379, \"db\": 0 } ```"
+      },
+      {
+        "request_id": "9acbae0e-bec8-4614-b76e-5905251a0e0d",
+        "model": "claude-sonnet-4-5",
+        "case_id": "redis-config-001",
+        "category": "config",
+        "variant": "offsend",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"protocol\": \"redis\", \"username\": \"cache\", \"host\": \"cache.example.com\", \"port\": 6379, \"db\": 0 } ```"
+      },
+      {
+        "request_id": "8b308e5d-ad99-4f29-b566-235256d088ed",
+        "model": "claude-sonnet-4-5",
+        "case_id": "redis-config-001",
+        "category": "config",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"protocol\": \"redis\", \"username\": \"cache\", \"host\": \"cache.example.com\", \"port\": 6379, \"db\": 0 } ```"
+      },
+      {
+        "request_id": "6d7e8ec7-da38-4fba-86eb-23c13480ec92",
+        "model": "claude-sonnet-4-5",
+        "case_id": "bearer-log-001",
+        "category": "debugging",
+        "variant": "clean",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"method\": \"GET\", \"path\": \"/v1/invoices\", \"status\": 401, \"has_authorization\": true } ```"
+      },
+      {
+        "request_id": "a00b7699-3e78-40f1-998a-12b960a8158c",
+        "model": "claude-sonnet-4-5",
+        "case_id": "bearer-log-001",
+        "category": "debugging",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"method\": \"GET\", \"path\": \"/v1/invoices\", \"status\": 401, \"has_authorization\": true } ```"
+      },
+      {
+        "request_id": "dc4fd5e6-aa6b-40a9-ace4-cf0696cb2c6e",
+        "model": "claude-sonnet-4-5",
+        "case_id": "bearer-log-001",
+        "category": "debugging",
+        "variant": "offsend",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"method\": \"GET\", \"path\": \"/v1/invoices\", \"status\": 401, \"has_authorization\": true } ```"
+      },
+      {
+        "request_id": "f9e044d0-5501-47c3-98f0-ed3c1c203d52",
+        "model": "claude-sonnet-4-5",
+        "case_id": "bearer-log-001",
+        "category": "debugging",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"method\": \"GET\", \"path\": \"/v1/invoices\", \"status\": 401, \"has_authorization\": true } ```"
+      },
+      {
+        "request_id": "83a367b5-4020-4b52-9cc6-ed3a957b31c7",
+        "model": "claude-sonnet-4-5",
+        "case_id": "db-timeout-001",
+        "category": "debugging",
+        "variant": "clean",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"exception\": \"TimeoutError: connection timed out\", \"host\": \"analytics.example.com\", \"database\": \"warehouse\" } ```"
+      },
+      {
+        "request_id": "c143902e-8928-419f-adbd-7389da271b3e",
+        "model": "claude-sonnet-4-5",
+        "case_id": "db-timeout-001",
+        "category": "debugging",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "wrong_field_interpretation",
+        "failure_detail": "field_mismatch: exception (got str, expected str)",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "{ \"exception\": \"TimeoutError: connection timed out\", \"host\": \"analytics.example.com\", \"database\": \"warehouse\" }"
+      },
+      {
+        "request_id": "9facb593-63fa-4534-a4c7-6fb30ee1e9a8",
+        "model": "claude-sonnet-4-5",
+        "case_id": "db-timeout-001",
+        "category": "debugging",
+        "variant": "offsend",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"exception\": \"TimeoutError: connection timed out\", \"host\": \"analytics.example.com\", \"database\": \"warehouse\" } ```"
+      },
+      {
+        "request_id": "2ac185b7-e2a5-4af3-8172-db156de20af2",
+        "model": "claude-sonnet-4-5",
+        "case_id": "db-timeout-001",
+        "category": "debugging",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"exception\": \"TimeoutError: connection timed out\", \"host\": \"analytics.example.com\", \"database\": \"warehouse\" } ```"
+      },
+      {
+        "request_id": "f3d7a6cb-3506-463e-9e31-99679e670c46",
+        "model": "claude-sonnet-4-5",
+        "case_id": "jwt-error-001",
+        "category": "debugging",
+        "variant": "clean",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"error_code\": \"TOKEN_EXPIRED\", \"endpoint\": \"/account/session\", \"token_present\": true } ```"
+      },
+      {
+        "request_id": "86b7300c-0c11-47f4-a420-1d2dc0e74208",
+        "model": "claude-sonnet-4-5",
+        "case_id": "jwt-error-001",
+        "category": "debugging",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"error_code\": \"TOKEN_EXPIRED\", \"endpoint\": \"/account/session\", \"token_present\": false } ```"
+      },
+      {
+        "request_id": "7c8e329b-67a0-4743-8b36-8a6009fececf",
+        "model": "claude-sonnet-4-5",
+        "case_id": "jwt-error-001",
+        "category": "debugging",
+        "variant": "offsend",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"error_code\": \"TOKEN_EXPIRED\", \"endpoint\": \"/account/session\", \"token_present\": true } ```"
+      },
+      {
+        "request_id": "d6f21c85-bd50-40c1-a2eb-473ba3841b05",
+        "model": "claude-sonnet-4-5",
+        "case_id": "jwt-error-001",
+        "category": "debugging",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"error_code\": \"TOKEN_EXPIRED\", \"endpoint\": \"/account/session\", \"token_present\": true } ```"
+      },
+      {
+        "request_id": "8a4b4395-013e-4922-bf94-7905a43f271a",
+        "model": "claude-sonnet-4-5",
+        "case_id": "multi-log-001",
+        "category": "debugging",
+        "variant": "clean",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"http_status\": 503, \"db_host\": \"orders.example.com\", \"auth_header_present\": true } ```"
+      },
+      {
+        "request_id": "81d9d2bb-04e3-4ae3-ae5f-f890805cd034",
+        "model": "claude-sonnet-4-5",
+        "case_id": "multi-log-001",
+        "category": "debugging",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"http_status\": 503, \"db_host\": \"orders.example.com\", \"auth_header_present\": true } ```"
+      },
+      {
+        "request_id": "f9ebc39a-2115-4db8-96ca-1e5e6bc7d2d4",
+        "model": "claude-sonnet-4-5",
+        "case_id": "multi-log-001",
+        "category": "debugging",
+        "variant": "offsend",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"http_status\": 503, \"db_host\": \"orders.example.com\", \"auth_header_present\": true } ```"
+      },
+      {
+        "request_id": "32a8c5cb-fef1-4fbd-984a-0d4ddcfbdad2",
+        "model": "claude-sonnet-4-5",
+        "case_id": "multi-log-001",
+        "category": "debugging",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"http_status\": 503, \"db_host\": \"orders.example.com\", \"auth_header_present\": true } ```"
+      },
+      {
+        "request_id": "14f1c3d1-e4ba-487b-83a2-6d0d1257b145",
+        "model": "claude-sonnet-4-5",
+        "case_id": "slack-retry-001",
+        "category": "debugging",
+        "variant": "clean",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"retries\": 3, \"channel\": \"#ops-alerts\", \"token_configured\": true } ```"
+      },
+      {
+        "request_id": "fa506305-77c7-488c-ad86-2bf2b090d57c",
+        "model": "claude-sonnet-4-5",
+        "case_id": "slack-retry-001",
+        "category": "debugging",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"retries\": 3, \"channel\": \"#ops-alerts\", \"token_configured\": false } ```"
+      },
+      {
+        "request_id": "cad75cb2-0c2d-4c91-9e84-485250c44d8e",
+        "model": "claude-sonnet-4-5",
+        "case_id": "slack-retry-001",
+        "category": "debugging",
+        "variant": "offsend",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"retries\": 3, \"channel\": \"#ops-alerts\", \"token_configured\": true } ```"
+      },
+      {
+        "request_id": "e68f6562-71e1-4cad-aad1-9d0acc09633c",
+        "model": "claude-sonnet-4-5",
+        "case_id": "slack-retry-001",
+        "category": "debugging",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"retries\": 3, \"channel\": \"#ops-alerts\", \"token_configured\": true } ```"
+      },
+      {
+        "request_id": "75e29f00-b811-4f34-80ff-9e6d3c43048f",
+        "model": "claude-sonnet-4-5",
+        "case_id": "mcp-aws-list-001",
+        "category": "mcp",
+        "variant": "clean",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"tool\": \"list_objects\", \"region\": \"us-east-1\", \"bucket\": \"acme-artifacts\" } ```"
+      },
+      {
+        "request_id": "fac75207-e43f-4a4f-b284-637762ec86d8",
+        "model": "claude-sonnet-4-5",
+        "case_id": "mcp-aws-list-001",
+        "category": "mcp",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"tool\": \"list_objects\", \"region\": \"us-east-1\", \"bucket\": \"acme-artifacts\" } ```"
+      },
+      {
+        "request_id": "6e04d9fd-c5e6-416d-aca2-725e3d35ecf0",
+        "model": "claude-sonnet-4-5",
+        "case_id": "mcp-aws-list-001",
+        "category": "mcp",
+        "variant": "offsend",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"tool\": \"list_objects\", \"region\": \"us-east-1\", \"bucket\": \"acme-artifacts\" } ```"
+      },
+      {
+        "request_id": "c4746883-5d9e-4ea3-a249-9eae8dfa2d6f",
+        "model": "claude-sonnet-4-5",
+        "case_id": "mcp-aws-list-001",
+        "category": "mcp",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"tool\": \"list_objects\", \"region\": \"us-east-1\", \"bucket\": \"acme-artifacts\" } ```"
+      },
+      {
+        "request_id": "37b598c3-fd70-471b-a157-180674d5faf6",
+        "model": "claude-sonnet-4-5",
+        "case_id": "mcp-gh-clone-001",
+        "category": "mcp",
+        "variant": "clean",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"tool\": \"clone\", \"owner\": \"acme\", \"repo\": \"edge-agent\" } ```"
+      },
+      {
+        "request_id": "a0de2e29-4a32-4a57-8035-62640b690ce3",
+        "model": "claude-sonnet-4-5",
+        "case_id": "mcp-gh-clone-001",
+        "category": "mcp",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"tool\": \"clone\", \"owner\": \"acme\", \"repo\": \"edge-agent\" } ```"
+      },
+      {
+        "request_id": "dba103b9-3482-4123-ba60-b27398f99b7e",
+        "model": "claude-sonnet-4-5",
+        "case_id": "mcp-gh-clone-001",
+        "category": "mcp",
+        "variant": "offsend",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"tool\": \"clone\", \"owner\": \"acme\", \"repo\": \"edge-agent\" } ```"
+      },
+      {
+        "request_id": "2a4f96fe-d830-4f70-9afc-727c2182b1e8",
+        "model": "claude-sonnet-4-5",
+        "case_id": "mcp-gh-clone-001",
+        "category": "mcp",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"tool\": \"clone\", \"owner\": \"acme\", \"repo\": \"edge-agent\" } ```"
+      },
+      {
+        "request_id": "d2e65f38-4bd8-46c2-a771-c39c31908a29",
+        "model": "claude-sonnet-4-5",
+        "case_id": "mcp-multi-secrets-001",
+        "category": "mcp",
+        "variant": "clean",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"tool\": \"env_get\", \"secret_key_count\": 2, \"has_github\": true, \"has_openai\": true } ```"
+      },
+      {
+        "request_id": "2e493aac-2f90-4568-9d61-a51fad08054e",
+        "model": "claude-sonnet-4-5",
+        "case_id": "mcp-multi-secrets-001",
+        "category": "mcp",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"tool\": \"env_get\", \"secret_key_count\": 2, \"has_github\": true, \"has_openai\": true } ```"
+      },
+      {
+        "request_id": "32c46fb5-4841-47f0-800f-ca2a771b6ec9",
+        "model": "claude-sonnet-4-5",
+        "case_id": "mcp-multi-secrets-001",
+        "category": "mcp",
+        "variant": "offsend",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": false,
+        "response_preview": "```json { \"tool\": \"env_get\", \"secret_key_count\": 2, \"has_github\": true, \"has_openai\": true } ```"
+      },
+      {
+        "request_id": "e80ef6d4-6ec4-4fa2-bf20-95209b7fec79",
+        "model": "claude-sonnet-4-5",
+        "case_id": "mcp-multi-secrets-001",
+        "category": "mcp",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"tool\": \"env_get\", \"secret_key_count\": 2, \"has_github\": true, \"has_openai\": true } ```"
+      },
+      {
+        "request_id": "0da8f10d-7013-49a4-9c05-1bc2297cb29b",
+        "model": "claude-sonnet-4-5",
+        "case_id": "mcp-read-env-001",
+        "category": "mcp",
+        "variant": "clean",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"tool\": \"Read\", \"first_key\": \"APP_ENV\", \"second_key\": \"openai_api_key\", \"has_openai_key\": true } ```"
+      },
+      {
+        "request_id": "eba9dc0e-422b-474e-8c5b-839ec086b9f3",
+        "model": "claude-sonnet-4-5",
+        "case_id": "mcp-read-env-001",
+        "category": "mcp",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"tool\": \"Read\", \"first_key\": \"APP_ENV\", \"second_key\": \"openai_api_key\", \"has_openai_key\": false } ```"
+      },
+      {
+        "request_id": "1628d01f-b64f-42fe-a670-471246f14ddb",
+        "model": "claude-sonnet-4-5",
+        "case_id": "mcp-read-env-001",
+        "category": "mcp",
+        "variant": "offsend",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": false,
+        "response_preview": "```json { \"tool\": \"Read\", \"first_key\": \"APP_ENV\", \"second_key\": \"openai_api_key\", \"has_openai_key\": true } ```"
+      },
+      {
+        "request_id": "3f800abc-d3f7-4573-95d7-392ab35d7caa",
+        "model": "claude-sonnet-4-5",
+        "case_id": "mcp-read-env-001",
+        "category": "mcp",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"tool\": \"Read\", \"first_key\": \"APP_ENV\", \"second_key\": \"openai_api_key\", \"has_openai_key\": true } ```"
+      },
+      {
+        "request_id": "bd0a1a7a-e06f-440d-84fd-dfedc7874259",
+        "model": "claude-sonnet-4-5",
+        "case_id": "mcp-sql-result-001",
+        "category": "mcp",
+        "variant": "clean",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"tool\": \"query\", \"host\": \"reports.example.com\", \"database\": \"metrics\", \"row_count\": 2 } ```"
+      },
+      {
+        "request_id": "c92df061-9ee9-4d1a-8c91-6642c0fcc4ee",
+        "model": "claude-sonnet-4-5",
+        "case_id": "mcp-sql-result-001",
+        "category": "mcp",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"tool\": \"query\", \"host\": \"reports.example.com\", \"database\": \"metrics\", \"row_count\": 2 } ```"
+      },
+      {
+        "request_id": "36cef429-9586-4026-b5f9-4c1f531b9fd3",
+        "model": "claude-sonnet-4-5",
+        "case_id": "mcp-sql-result-001",
+        "category": "mcp",
+        "variant": "offsend",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"tool\": \"query\", \"host\": \"reports.example.com\", \"database\": \"metrics\", \"row_count\": 2 } ```"
+      },
+      {
+        "request_id": "e95789a0-7672-46b2-b327-a0c25c689a21",
+        "model": "claude-sonnet-4-5",
+        "case_id": "mcp-sql-result-001",
+        "category": "mcp",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"tool\": \"query\", \"host\": \"reports.example.com\", \"database\": \"metrics\", \"row_count\": 2 } ```"
+      },
+      {
+        "request_id": "dee6af44-097b-41e5-aa99-9cff7498a791",
+        "model": "claude-sonnet-4-5",
+        "case_id": "aws-region-parse-001",
+        "category": "transformation",
+        "variant": "clean",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"region\": \"ap-southeast-2\", \"output\": \"text\", \"access_key_set\": true } ```"
+      },
+      {
+        "request_id": "ccb8f887-14c6-423d-92f7-6e3b2230f31b",
+        "model": "claude-sonnet-4-5",
+        "case_id": "aws-region-parse-001",
+        "category": "transformation",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"region\": \"ap-southeast-2\", \"output\": \"text\", \"access_key_set\": false } ```"
+      },
+      {
+        "request_id": "170f7fd5-e405-4b8b-b999-cb032a2ccee2",
+        "model": "claude-sonnet-4-5",
+        "case_id": "aws-region-parse-001",
+        "category": "transformation",
+        "variant": "offsend",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"region\": \"ap-southeast-2\", \"output\": \"text\", \"access_key_set\": true } ```"
+      },
+      {
+        "request_id": "a3d86be4-bd52-43fb-a21e-9b7d5e5049f5",
+        "model": "claude-sonnet-4-5",
+        "case_id": "aws-region-parse-001",
+        "category": "transformation",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"region\": \"ap-southeast-2\", \"output\": \"text\", \"access_key_set\": true } ```"
+      },
+      {
+        "request_id": "731bbe49-9229-4eb5-bd81-a330ccab9487",
+        "model": "claude-sonnet-4-5",
+        "case_id": "env-to-json-001",
+        "category": "transformation",
+        "variant": "clean",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"var_count\": 2, \"db_host\": \"core.example.com\", \"has_password_var\": false } ```"
+      },
+      {
+        "request_id": "13509184-1262-4616-9162-686fa46994aa",
+        "model": "claude-sonnet-4-5",
+        "case_id": "env-to-json-001",
+        "category": "transformation",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"var_count\": 2, \"db_host\": \"core.example.com\", \"has_password_var\": false } ```"
+      },
+      {
+        "request_id": "34071419-206a-422e-a637-c3466905aaba",
+        "model": "claude-sonnet-4-5",
+        "case_id": "env-to-json-001",
+        "category": "transformation",
+        "variant": "offsend",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"var_count\": 2, \"db_host\": \"core.example.com\", \"has_password_var\": true } ```"
+      },
+      {
+        "request_id": "1f37bd20-1c2d-4e61-aed0-af479dfecd79",
+        "model": "claude-sonnet-4-5",
+        "case_id": "env-to-json-001",
+        "category": "transformation",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"var_count\": 2, \"db_host\": \"core.example.com\", \"has_password_var\": false } ```"
+      },
+      {
+        "request_id": "0c1f4b50-b527-4174-a2bc-c9a09f95f048",
+        "model": "claude-sonnet-4-5",
+        "case_id": "rewrite-dsn-001",
+        "category": "transformation",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"protocol\": \"postgres\", \"username\": \"migrate\", \"host\": \"legacy.example.com\", \"database\": \"archive\" } ```"
+      },
+      {
+        "request_id": "6bc0c39b-4233-4ec4-b826-de308f596540",
+        "model": "claude-sonnet-4-5",
+        "case_id": "rewrite-dsn-001",
+        "category": "transformation",
+        "variant": "offsend",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": true,
+        "response_preview": "```json { \"connection\": \"postgres://migrate:[seal-token]@legacy.example.com/archive\", \"protocol\": \"postgres\", \"username\": \"migrate\", \"host\": \"legacy.example.com\", \"database\": \"archive\" } ```"
+      },
+      {
+        "request_id": "3038a30a-13e5-4b16-b759-07f306e9848c",
+        "model": "claude-sonnet-4-5",
+        "case_id": "rewrite-dsn-001",
+        "category": "transformation",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"protocol\": \"postgres\", \"username\": \"migrate\", \"host\": \"legacy.example.com\", \"database\": \"archive\" } ```"
+      },
+      {
+        "request_id": "c3232a56-f138-4cdd-b60e-5fd0f478313b",
+        "model": "claude-sonnet-4-5",
+        "case_id": "split-multi-001",
+        "category": "transformation",
+        "variant": "offsend",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"postgres_host\": \"primary.example.com\", \"redis_host\": \"cache-west.example.com\" } ```"
+      },
+      {
+        "request_id": "87e36ecd-10c3-4d18-94dc-5b88b7479a91",
+        "model": "claude-sonnet-4-5",
+        "case_id": "split-multi-001",
+        "category": "transformation",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "invalid_json",
+        "failure_detail": "markdown_fence",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```json { \"postgres_host\": \"primary.example.com\", \"redis_host\": \"cache-west.example.com\" } ```"
+      },
+      {
+        "request_id": "0ed394b0-18c6-4e21-816a-5337571d4754",
+        "model": "gpt-4o-mini",
+        "case_id": "connect-fn-001",
+        "category": "code",
+        "variant": "clean",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "lost_structure",
+        "failure_detail": "missing_substring: os.environ",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```python import os import psycopg def connect(): dsn = os.getenv(\"DATABASE_URL\") return psycopg.connect(dsn) ```"
+      },
+      {
+        "request_id": "3689f3f7-fc5e-451f-aae3-5e71accd0246",
+        "model": "gpt-4o-mini",
+        "case_id": "connect-fn-001",
+        "category": "code",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "lost_structure",
+        "failure_detail": "missing_substring: os.environ",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```python import os import psycopg def connect(): dsn = os.getenv(\"DATABASE_URL\") return psycopg.connect(dsn) ```"
+      },
+      {
+        "request_id": "5e61ae6d-4ea5-4019-9d07-897c685dccc4",
+        "model": "gpt-4o-mini",
+        "case_id": "connect-fn-001",
+        "category": "code",
+        "variant": "offsend",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "lost_structure",
+        "failure_detail": "missing_substring: os.environ",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```python import os import psycopg def connect(): dsn = os.getenv(\"DATABASE_URL\") return psycopg.connect(dsn) ```"
+      },
+      {
+        "request_id": "fb60a264-5e33-4002-8d77-43aa0cfe2e28",
+        "model": "gpt-4o-mini",
+        "case_id": "connect-fn-001",
+        "category": "code",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "lost_structure",
+        "failure_detail": "missing_substring: os.environ",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "```python import os import psycopg def connect(): dsn = os.getenv(\"DATABASE_URL\") return psycopg.connect(dsn) ```"
+      },
+      {
+        "request_id": "76566f41-20e7-4c98-9b12-103a756a5952",
+        "model": "gpt-4o-mini",
+        "case_id": "aws-env-001",
+        "category": "config",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "wrong_field_interpretation",
+        "failure_detail": "field_mismatch: access_key_configured (got bool, expected bool)",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "{ \"region\": \"eu-west-1\", \"output_format\": \"json\", \"access_key_configured\": false }"
+      },
+      {
+        "request_id": "104001d6-c6ba-4d78-b8b9-2f44ba517381",
+        "model": "gpt-4o-mini",
+        "case_id": "openai-env-001",
+        "category": "config",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "wrong_field_interpretation",
+        "failure_detail": "field_mismatch: key_configured (got bool, expected bool)",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "{ \"model\": \"gpt-4o-mini\", \"api_host\": \"api.openai.com\", \"api_path\": \"/v1\", \"key_configured\": false }"
+      },
+      {
+        "request_id": "bd96f7f1-13e2-4f2b-a2da-d1daa052c6e0",
+        "model": "gpt-4o-mini",
+        "case_id": "postgres-config-001",
+        "category": "config",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "wrong_field_interpretation",
+        "failure_detail": "field_mismatch: has_authentication (got bool, expected bool)",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "{ \"protocol\": \"postgres\", \"username\": \"admin\", \"host\": \"db.internal\", \"database\": \"prod\", \"has_authentication\": false }"
+      },
+      {
+        "request_id": "0669eae2-ec54-4431-8e68-eb2889fe5c8b",
+        "model": "gpt-4o-mini",
+        "case_id": "redis-config-001",
+        "category": "config",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "wrong_field_interpretation",
+        "failure_detail": "field_mismatch: username (got str, expected str)",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "{ \"protocol\": \"redis\", \"username\": \"\", \"host\": \"cache.example.com\", \"port\": 6379, \"db\": 0 }"
+      },
+      {
+        "request_id": "cea44a83-25ce-49f7-ac45-ac23902cd3a7",
+        "model": "gpt-4o-mini",
+        "case_id": "db-timeout-001",
+        "category": "debugging",
+        "variant": "clean",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "wrong_field_interpretation",
+        "failure_detail": "field_mismatch: exception (got str, expected str)",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "{ \"exception\": \"TimeoutError: connection timed out\", \"host\": \"analytics.example.com\", \"database\": \"warehouse\" }"
+      },
+      {
+        "request_id": "952b5fed-a04e-43af-8257-31900a860c24",
+        "model": "gpt-4o-mini",
+        "case_id": "db-timeout-001",
+        "category": "debugging",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "wrong_field_interpretation",
+        "failure_detail": "field_mismatch: exception (got str, expected str)",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "{ \"exception\": \"TimeoutError: connection timed out\", \"host\": \"analytics.example.com\", \"database\": \"warehouse\" }"
+      },
+      {
+        "request_id": "a4013d90-bcb4-4877-8803-402bc9c5e9b2",
+        "model": "gpt-4o-mini",
+        "case_id": "db-timeout-001",
+        "category": "debugging",
+        "variant": "offsend",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "wrong_field_interpretation",
+        "failure_detail": "field_mismatch: exception (got str, expected str)",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "{ \"exception\": \"TimeoutError: connection timed out\", \"host\": \"analytics.example.com\", \"database\": \"warehouse\" }"
+      },
+      {
+        "request_id": "83a00864-d539-4697-8fcb-2e125eea72a9",
+        "model": "gpt-4o-mini",
+        "case_id": "db-timeout-001",
+        "category": "debugging",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "wrong_field_interpretation",
+        "failure_detail": "field_mismatch: exception (got str, expected str)",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "{ \"exception\": \"TimeoutError: connection timed out\", \"host\": \"analytics.example.com\", \"database\": \"warehouse\" }"
+      },
+      {
+        "request_id": "48c333bc-52c5-42db-b224-9fd7ab1a4bef",
+        "model": "gpt-4o-mini",
+        "case_id": "jwt-error-001",
+        "category": "debugging",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "wrong_field_interpretation",
+        "failure_detail": "field_mismatch: token_present (got bool, expected bool)",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "{ \"error_code\": \"TOKEN_EXPIRED\", \"endpoint\": \"/account/session\", \"token_present\": false }"
+      },
+      {
+        "request_id": "839704d4-0fa9-4eff-8c7a-611bdbb495d2",
+        "model": "gpt-4o-mini",
+        "case_id": "slack-retry-001",
+        "category": "debugging",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "wrong_field_interpretation",
+        "failure_detail": "field_mismatch: token_configured (got bool, expected bool)",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "{ \"retries\": 3, \"channel\": \"#ops-alerts\", \"token_configured\": false }"
+      },
+      {
+        "request_id": "b271d772-f181-4a88-8c1f-200c0d38d2d1",
+        "model": "gpt-4o-mini",
+        "case_id": "mcp-multi-secrets-001",
+        "category": "mcp",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "wrong_field_interpretation",
+        "failure_detail": "field_mismatch: secret_key_count (got int, expected int)",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "{ \"tool\": \"env_get\", \"secret_key_count\": 0, \"has_github\": false, \"has_openai\": false }"
+      },
+      {
+        "request_id": "33e7e082-abbe-41de-8963-7a209c5df95d",
+        "model": "gpt-4o-mini",
+        "case_id": "mcp-read-env-001",
+        "category": "mcp",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "wrong_field_interpretation",
+        "failure_detail": "field_mismatch: has_openai_key (got bool, expected bool)",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "{\"tool\":\"Read\",\"first_key\":\"APP_ENV\",\"second_key\":\"openai_api_key\",\"has_openai_key\":false}"
+      },
+      {
+        "request_id": "d3a6cdd0-c7f1-48d4-bb3e-509b4bf48240",
+        "model": "gpt-4o-mini",
+        "case_id": "mcp-read-env-001",
+        "category": "mcp",
+        "variant": "redacted",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "wrong_field_interpretation",
+        "failure_detail": "field_mismatch: first_key (got str, expected str)",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "{\"tool\":\"Read\",\"first_key\":\"path\",\"second_key\":\"text\",\"has_openai_key\":true}"
+      },
+      {
+        "request_id": "a2388f6e-57e3-4593-b2d0-931bfc6350d3",
+        "model": "gpt-4o-mini",
+        "case_id": "aws-region-parse-001",
+        "category": "transformation",
+        "variant": "delete",
+        "run": 1,
+        "score": 0,
+        "failure_bucket": "wrong_field_interpretation",
+        "failure_detail": "field_mismatch: access_key_set (got bool, expected bool)",
+        "leakage": false,
+        "placeholder_preserved": null,
+        "response_preview": "{ \"region\": \"ap-southeast-2\", \"output\": \"text\", \"access_key_set\": false }"
+      }
+    ],
+    "bucket_by_model_variant": [
+      {
+        "bucket": "fabricated_secret",
+        "model": "claude-sonnet-4-5",
+        "variant": "offsend",
+        "count": 1
+      },
+      {
+        "bucket": "invalid_json",
+        "model": "claude-sonnet-4-5",
+        "variant": "clean",
+        "count": 22
+      },
+      {
+        "bucket": "invalid_json",
+        "model": "claude-sonnet-4-5",
+        "variant": "delete",
+        "count": 22
+      },
+      {
+        "bucket": "invalid_json",
+        "model": "claude-sonnet-4-5",
+        "variant": "offsend",
+        "count": 25
+      },
+      {
+        "bucket": "invalid_json",
+        "model": "claude-sonnet-4-5",
+        "variant": "redacted",
+        "count": 25
+      },
+      {
+        "bucket": "lost_structure",
+        "model": "claude-sonnet-4-5",
+        "variant": "redacted",
+        "count": 1
+      },
+      {
+        "bucket": "lost_structure",
+        "model": "gpt-4o-mini",
+        "variant": "clean",
+        "count": 1
+      },
+      {
+        "bucket": "lost_structure",
+        "model": "gpt-4o-mini",
+        "variant": "delete",
+        "count": 1
+      },
+      {
+        "bucket": "lost_structure",
+        "model": "gpt-4o-mini",
+        "variant": "offsend",
+        "count": 1
+      },
+      {
+        "bucket": "lost_structure",
+        "model": "gpt-4o-mini",
+        "variant": "redacted",
+        "count": 1
+      },
+      {
+        "bucket": "placeholder_removed",
+        "model": "gpt-4o-mini",
+        "variant": "offsend",
+        "count": 4
+      },
+      {
+        "bucket": "wrong_field_interpretation",
+        "model": "claude-sonnet-4-5",
+        "variant": "delete",
+        "count": 1
+      },
+      {
+        "bucket": "wrong_field_interpretation",
+        "model": "gpt-4o-mini",
+        "variant": "clean",
+        "count": 1
+      },
+      {
+        "bucket": "wrong_field_interpretation",
+        "model": "gpt-4o-mini",
+        "variant": "delete",
+        "count": 10
+      },
+      {
+        "bucket": "wrong_field_interpretation",
+        "model": "gpt-4o-mini",
+        "variant": "offsend",
+        "count": 1
+      },
+      {
+        "bucket": "wrong_field_interpretation",
+        "model": "gpt-4o-mini",
+        "variant": "redacted",
+        "count": 2
+      }
+    ]
+  }
+}

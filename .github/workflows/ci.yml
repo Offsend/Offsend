@@ -62,6 +62,8 @@ jobs:
         run: cargo build -p offsend-cli --release
       - name: Run CLI E2E smoke
         run: bash scripts/ci/cli-e2e.sh target/release/offsend
+      - name: Seal utility benchmark (schema + preflight)
+        run: bash scripts/ci/seal-utility.sh target/release/offsend
 
   cli-linux:
     runs-on: ubuntu-22.04
@@ -75,3 +77,5 @@ jobs:
         run: cargo build -p offsend-cli --release
       - name: Run CLI E2E smoke
         run: bash scripts/ci/cli-e2e.sh target/release/offsend
+      - name: Seal utility benchmark (schema + preflight)
+        run: bash scripts/ci/seal-utility.sh target/release/offsend

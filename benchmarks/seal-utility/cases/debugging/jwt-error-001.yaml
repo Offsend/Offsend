@@ -1,0 +1,25 @@
+id: jwt-error-001
+category: debugging
+task: |
+  Inspect the auth error dump.
+  Return JSON with error_code, endpoint, token_present (boolean).
+  JSON only. No markdown.
+input: |
+  error_code=TOKEN_EXPIRED
+  endpoint=/account/session
+  jwt: {{fixture:jwt_001}}
+sensitive:
+  - type: jwt
+    fixture: jwt_001
+expected_structure:
+  - "error_code=TOKEN_EXPIRED"
+  - "endpoint=/account/session"
+  - "jwt:"
+grader:
+  kind: json_fields
+  expected:
+    error_code: TOKEN_EXPIRED
+    endpoint: /account/session
+    token_present: true
+placeholder:
+  eligible: false

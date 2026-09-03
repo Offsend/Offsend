@@ -1,0 +1,13 @@
+benchmark_version: v0
+prompt_template: v1
+conversation_mode: stateless
+runs_per_case: 1
+temperature: 0.0
+models:
+- claude-sonnet-4-5
+- gpt-4o-mini
+runner_seed: '67890'
+fixture_seed: '12345'
+git_sha: aaf9d44bb451401b655689b07667b6c2275278db
+offsend_version: 0.1.0
+seal_token_version: v1

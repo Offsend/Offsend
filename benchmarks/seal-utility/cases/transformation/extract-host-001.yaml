@@ -1,0 +1,22 @@
+id: extract-host-001
+category: transformation
+task: |
+  Extract connection fields from the DSN.
+  Return JSON with host, port (number), database.
+  JSON only. No markdown.
+input: |
+  DSN=postgres://etl:{{fixture:password_005}}@warehouse.example.com:5432/raw
+sensitive:
+  - type: password
+    fixture: password_005
+expected_structure:
+  - "postgres://etl:"
+  - "@warehouse.example.com:5432/raw"
+grader:
+  kind: json_fields
+  expected:
+    host: warehouse.example.com
+    port: 5432
+    database: raw
+placeholder:
+  eligible: false

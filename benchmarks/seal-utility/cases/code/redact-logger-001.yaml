@@ -1,0 +1,21 @@
+id: redact-logger-001
+category: code
+task: |
+  Fix the logger so it records method, path, and status only.
+  Do not print the bearer token. Return the fixed Python snippet.
+input: |
+  logger.info("GET /health 200 Authorization: Bearer {{fixture:bearer_001}}")
+sensitive:
+  - type: bearer
+    fixture: bearer_001
+expected_structure:
+  - "logger.info("
+  - "Authorization: Bearer "
+grader:
+  kind: contains_all
+  required:
+    - logger.info
+    - /health
+    - "200"
+placeholder:
+  eligible: false

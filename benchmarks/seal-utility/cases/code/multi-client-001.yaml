@@ -1,0 +1,25 @@
+id: multi-client-001
+category: code
+task: |
+  From the two DSNs, return JSON with postgres_host and mongo_host only.
+  JSON only. No markdown.
+input: |
+  POSTGRES=postgres://jobs:{{fixture:password_004}}@jobs.example.com/jobs
+  MONGO=mongodb://jobs:{{fixture:password_005}}@docs.example.com:27017/jobs
+sensitive:
+  - type: password
+    fixture: password_004
+  - type: password
+    fixture: password_005
+expected_structure:
+  - "postgres://jobs:"
+  - "@jobs.example.com/jobs"
+  - "mongodb://jobs:"
+  - "@docs.example.com:27017/jobs"
+grader:
+  kind: json_fields
+  expected:
+    postgres_host: jobs.example.com
+    mongo_host: docs.example.com
+placeholder:
+  eligible: false

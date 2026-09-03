@@ -1,0 +1,25 @@
+id: mcp-sql-result-001
+category: mcp
+task: |
+  This is an MCP tool result.
+  Return JSON with tool, host, database, row_count (number).
+  JSON only. No markdown.
+input: |
+  {"jsonrpc":"2.0","id":9,"result":{"tool":"query","row_count":2,"dsn":"postgres://reader:{{fixture:password_004}}@reports.example.com/metrics"}}
+sensitive:
+  - type: password
+    fixture: password_004
+expected_structure:
+  - '"tool":"query"'
+  - '"row_count":2'
+  - "postgres://reader:"
+  - "@reports.example.com/metrics"
+grader:
+  kind: json_fields
+  expected:
+    tool: query
+    host: reports.example.com
+    database: metrics
+    row_count: 2
+placeholder:
+  eligible: false

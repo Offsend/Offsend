@@ -42,6 +42,13 @@ xcuserdata/
 
 .env
 
+# Seal utility benchmark — materialized secrets and raw model I/O
+benchmarks/seal-utility/results/
+benchmarks/seal-utility/.cache/
+benchmarks/seal-utility/**/__pycache__/
+benchmarks/seal-utility/.venv/
+benchmarks/seal-utility/*.key
+
 # >>> offsend managed: ignore-files
 .aiderignore
 .aiexclude

@@ -1,0 +1,19 @@
+[project]
+name = "offsend-seal-utility"
+version = "0.0.0"
+description = "Offsend seal-utility benchmark v0"
+requires-python = ">=3.10"
+dependencies = [
+    "pyyaml>=6.0",
+    "jsonschema>=4.18",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+seal-utility = "runners.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
