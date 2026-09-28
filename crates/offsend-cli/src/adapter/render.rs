@@ -146,14 +146,94 @@ pub fn fail_open(adapter: Adapter, reason: &str, kind: GateKind) -> ExitCode {
     match kind {
         GateKind::Prompt => prompt_allow(adapter),
         GateKind::Permission => permission_response(adapter, Permission::Allow, None, None),
+        // Post-tool cannot safely pass the original payload through.
+        GateKind::PostTool => post_tool_withhold(adapter, "Offsend withheld tool output: hook error."),
         GateKind::Observe => empty_ok(),
     }
 }
 
-#[derive(Clone, Copy)]
+pub fn post_tool_replace(adapter: Adapter, output: serde_json::Value, message: &str) -> ExitCode {
+    match adapter {
+        Adapter::Cursor => {
+            print_json(&json!({
+                "updated_mcp_tool_output": output,
+                "additional_context": message,
+            }));
+        }
+        Adapter::Claude => {
+            print_json(&json!({
+                "hookSpecificOutput": {
+                    "hookEventName": "PostToolUse",
+                    "updatedToolOutput": output,
+                    "updatedMCPToolOutput": output,
+                    "additionalContext": message,
+                }
+            }));
+        }
+        Adapter::Windsurf => {
+            let _ = writeln!(io::stderr(), "offsend: mcp-response: {message}");
+        }
+        Adapter::Codex => {}
+    }
+    ExitCode::SUCCESS
+}
+
+pub fn post_tool_withhold(adapter: Adapter, message: &str) -> ExitCode {
+    match adapter {
+        Adapter::Cursor => {
+            print_json(&json!({
+                "updated_mcp_tool_output": {"error": message},
+                "additional_context": message,
+            }));
+            ExitCode::SUCCESS
+        }
+        Adapter::Claude => {
+            let withheld = json!({"error": message});
+            print_json(&json!({
+                "hookSpecificOutput": {
+                    "hookEventName": "PostToolUse",
+                    "updatedToolOutput": withheld,
+                    "updatedMCPToolOutput": withheld,
+                    "additionalContext": message,
+                }
+            }));
+            ExitCode::SUCCESS
+        }
+        // Post-hooks cannot block via exit code; surface on stderr so operators notice.
+        Adapter::Windsurf => {
+            let _ = writeln!(io::stderr(), "offsend: mcp-response withheld: {message}");
+            ExitCode::SUCCESS
+        }
+        Adapter::Codex => ExitCode::SUCCESS,
+    }
+}
+
+pub fn post_tool_warn(adapter: Adapter, message: &str) -> ExitCode {
+    match adapter {
+        Adapter::Cursor => {
+            print_json(&json!({"additional_context": message}));
+        }
+        Adapter::Claude => {
+            print_json(&json!({
+                "hookSpecificOutput": {
+                    "hookEventName": "PostToolUse",
+                    "additionalContext": message,
+                }
+            }));
+        }
+        Adapter::Windsurf => {
+            let _ = writeln!(io::stderr(), "offsend: mcp-response: {message}");
+        }
+        Adapter::Codex => {}
+    }
+    ExitCode::SUCCESS
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)]
 pub enum GateKind {
     Prompt,
     Permission,
+    PostTool,
     Observe,
 }

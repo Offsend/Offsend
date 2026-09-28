@@ -377,6 +377,35 @@ fn empty_url_password_is_not_a_partial_span() {
 }
 
 #[test]
+fn json_escaped_newline_keeps_url_password_and_aws_key() {
+    let plain = "DATABASE_URL=postgres://admin:my-real-looking-pass-781492@db.internal/prod\nAWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF";
+    let compact = serde_json::json!({
+        "content": [{ "text": plain }]
+    })
+    .to_string();
+    assert!(compact.contains("\\n"), "{compact}");
+
+    for text in [plain.to_string(), compact] {
+        let result = DetectionEngine::scan(&DetectionRequest::new(text.clone()));
+        let types: Vec<_> = result.entities.iter().map(|e| e.entity_type).collect();
+        let password = result
+            .entities
+            .iter()
+            .find(|e| e.entity_type == EntityType::DatabaseUrlWithPassword)
+            .unwrap_or_else(|| panic!("password missing in {text:?}: {types:?}"));
+        let aws = result
+            .entities
+            .iter()
+            .find(|e| e.entity_type == EntityType::AwsAccessKeyId)
+            .unwrap_or_else(|| panic!("aws key missing in {text:?}: {types:?}"));
+        assert_eq!(password.value, "my-real-looking-pass-781492");
+        assert_eq!(&text[password.start..password.end], password.value);
+        assert_eq!(aws.value, "AKIA1234567890ABCDEF");
+        assert_eq!(&text[aws.start..aws.end], aws.value);
+    }
+}
+
+#[test]
 fn secret_type_labels_are_specific() {
     assert_eq!(
         EntityType::OpenAIAPIKey.placeholder_prefix(),

@@ -356,7 +356,7 @@ fn merge_cursor(
         hooks_obj,
         "postToolUse",
         mcp_resp.as_deref(),
-        false,
+        true,
         Some(CURSOR_MCP_MATCHER),
     );
 
@@ -907,6 +907,22 @@ mod tests {
         assert!(text.contains("--shell-gate"), "{text}");
         assert!(!text.contains("--subagent-gate"), "{text}");
         assert!(!text.contains("--grep-gate"), "{text}");
+        let root: Value = serde_json::from_str(&text).unwrap();
+        let post = root
+            .pointer("/hooks/postToolUse")
+            .and_then(|v| v.as_array())
+            .and_then(|a| {
+                a.iter().find(|e| {
+                    e.get("command")
+                        .and_then(|c| c.as_str())
+                        .is_some_and(|c| c.contains("--mcp-response-gate"))
+                })
+            });
+        assert_eq!(
+            post.and_then(|e| e.get("failClosed")).and_then(|v| v.as_bool()),
+            Some(true),
+            "{text}"
+        );
         let _ = fs::remove_dir_all(&home);
     }
 

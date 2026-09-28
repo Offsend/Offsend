@@ -104,8 +104,10 @@ impl DetectionEngine {
             &request.options.enabled_types,
             &request.options.custom_dictionaries,
         ));
-        entities = overlap::resolve(entities);
+        // Narrow credential spans before overlap so a wide URL match cannot
+        // swallow a neighboring secret, then drop only nested duplicates.
         entities = crate::span_refine::refine_secret_spans(entities, text);
+        entities = overlap::resolve(entities);
         for e in &mut entities {
             if e.end <= text.len() && e.start <= e.end && text.is_char_boundary(e.start) && text.is_char_boundary(e.end) {
                 e.value = text[e.start..e.end].to_string();

@@ -30,7 +30,7 @@ H2: SUR(offsend) ≥ SUR(delete)
 | `clean` | materialized case input |
 | `delete` | exact listed spans removed (URL becomes `user:@host`, not an empty line) |
 | `redacted` | the same spans → `[REDACTED]` |
-| `offsend` | production `DetectionEngine` + `SealEngine.seal_spans` via `offsend seal` |
+| `offsend` | production `DetectionEngine` + `SealEngine.seal_spans` via `offsend seal --secrets-only` (critical secrets only; host/user/path stay in place) |
 
 Offsend is never a `str.replace` of listed values.
 

@@ -168,6 +168,17 @@ pub fn run(args: DoctorArgs) -> Result<ExitCode, String> {
         suggestions.push("offsend setup".into());
     }
 
+    checks.push(CheckOut {
+        name: "hook-coverage".into(),
+        status: "ok".into(),
+        message: "Cursor/Claude MCP post-hooks can replace output; Windsurf MCP responses are withheld on stderr (exit 0, no replace API). Shell output is audit-only. Hook config present is not a live-editor proof.".into(),
+    });
+    checks.push(CheckOut {
+        name: "live-verification".into(),
+        status: "optional".into(),
+        message: "editor apply not recorded — CLI stdout/fixture checks exist; Cursor/Claude live Read/MCP/deny runs are unverified".into(),
+    });
+
     // User-level editor hooks (machine setup). Independent of `.offsend.yml`.
     let user_home = dirs_home();
     for t in crate::hook_ai::user_targets() {

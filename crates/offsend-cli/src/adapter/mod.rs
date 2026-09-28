@@ -178,11 +178,15 @@ pub fn run(flags: AdapterFlags, stdin_for_gate: &str) -> Result<ExitCode, String
     };
     let mcp_allow = context_str_list(&flags.context, &["mcp", "allow"]);
     let mcp_deny = context_str_list(&flags.context, &["mcp", "deny"]);
-    // No `.offsend.yml` (or no `context.mcp.responses`): seal. Explicit observe/warn
-    // in the project file still win.
-    let mcp_responses = Some(
-        context_str(&flags.context, &["mcp", "responses"]).unwrap_or_else(|| "seal".to_string()),
-    );
+    // Machine default is seal. observe/warn loosen replacement and need a trusted
+    // snapshot. Unknown values are passed through so the gate can error and seal.
+    let mcp_responses = Some(match context_str(&flags.context, &["mcp", "responses"]).as_deref() {
+        None | Some("seal") => "seal".to_string(),
+        Some("observe") if trusted => "observe".to_string(),
+        Some("warn") if trusted => "warn".to_string(),
+        Some("observe") | Some("warn") => "seal".to_string(),
+        Some(other) => other.to_string(),
+    });
     let subagents_mode = match context_str(&flags.context, &["subagents", "mode"]).as_deref() {
         Some("deny") => Some("deny".to_string()),
         Some(other) if trusted => Some(other.to_string()),
@@ -244,6 +248,11 @@ pub fn run(flags: AdapterFlags, stdin_for_gate: &str) -> Result<ExitCode, String
             flags.secrets_only,
             &stdin_for_gate,
             mcp_responses.as_deref(),
+            mcp::ResponseFlags {
+                key_file: flags.key_file.as_deref(),
+                key_name: flags.key_name.as_deref(),
+                project_root: &flags.project_root,
+            },
         )
     } else if flags.subagent_gate {
         subagent::run(
@@ -275,12 +284,13 @@ pub fn run(flags: AdapterFlags, stdin_for_gate: &str) -> Result<ExitCode, String
 /// be rendered in this shape, otherwise editors ignore the deny and fail open
 /// (e.g. a `PreToolUse` permission shape emitted on a prompt event is dropped).
 fn gate_kind(flags: &AdapterFlags) -> GateKind {
-    if flags.read_gate
+    if flags.mcp_response_gate {
+        GateKind::PostTool
+    } else if flags.read_gate
         || flags.grep_gate
         || flags.write_gate
         || flags.shell_gate
         || flags.mcp_gate
-        || flags.mcp_response_gate
         || flags.subagent_gate
     {
         GateKind::Permission
@@ -291,7 +301,7 @@ fn gate_kind(flags: &AdapterFlags) -> GateKind {
     }
 }
 
-fn fail_closed_policy(adapter: Adapter, kind: GateKind, reason: &str) -> ExitCode {
+pub fn fail_closed_policy(adapter: Adapter, kind: GateKind, reason: &str) -> ExitCode {
     let message = format!(
         "Offsend blocked this operation: {reason}. Review .offsend.yml, then run `offsend policy trust` yourself in a terminal."
     );
@@ -308,6 +318,7 @@ fn fail_closed_policy(adapter: Adapter, kind: GateKind, reason: &str) -> ExitCod
             Some(&message),
             Some(&message),
         ),
+        GateKind::PostTool => render::post_tool_withhold(adapter, &message),
         // Observational gates (shell-audit, artifact-audit) run post-hoc and
         // cannot block; emit the neutral shape rather than a bogus deny.
         GateKind::Observe => render::empty_ok(),

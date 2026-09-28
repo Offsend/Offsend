@@ -59,6 +59,11 @@ pub struct SealArgs {
 
     #[arg(long)]
     pub working_directory: Option<String>,
+
+    /// Seal only critical secret-shaped findings (keys, tokens, passwords).
+    /// Hosts, emails, and other non-secret matches stay in the text.
+    #[arg(long = "secrets-only", default_value_t = false)]
+    pub secrets_only: bool,
 }
 
 #[derive(Debug, Args)]
@@ -156,6 +161,9 @@ pub fn run_seal(args: SealArgs) -> Result<ExitCode, CmdError> {
     let spans: Vec<SealSpan> = detection
         .entities
         .iter()
+        .filter(|e| {
+            !args.secrets_only || e.entity_type.counts_as_critical_secret()
+        })
         .map(|e| SealSpan {
             start: e.start,
             end: e.end,

@@ -465,7 +465,7 @@ offsend hook install --target cursor --no-mcp-gate
 | `--shell-gate` / `--no-shell-gate` | Shell-command gate (**Cursor, Claude, Windsurf**). **On by default**; sensitive-path / ask-class findings follow `context.shell.mode` (default **deny**); control-plane findings always deny. Cursor `beforeShellExecution` with `failClosed: true`. `--no-shell-gate` disables |
 | `--shell-audit` / `--no-shell-audit` | Shell-**output** audit (**Cursor, Claude, Windsurf**). **On by default**; reports only — editors cannot replace terminal output. `--no-shell-audit` disables |
 | `--mcp-gate` / `--no-mcp-gate` | MCP tool-call gate (**Cursor, Claude, Windsurf**). **On by default**. Codex has no MCP gates. `--no-mcp-gate` disables |
-| `--mcp-response-gate` / `--no-mcp-response-gate` | MCP tool-**response** gate. **On by default** for Cursor/Claude (can rewrite output in `seal` mode). Windsurf can only withhold via exit 2. `--no-mcp-response-gate` disables |
+| `--mcp-response-gate` / `--no-mcp-response-gate` | MCP tool-**response** gate. **On by default** for Cursor/Claude (can rewrite output in `seal` mode). Windsurf has no replace API: secret-bearing output is withheld on stderr with exit 0. `--no-mcp-response-gate` disables |
 | `--subagent-gate` / `--no-subagent-gate` | Subagent spawn gate (**Cursor only**). **On by default**; `subagentStart` with `failClosed: true`. `--no-subagent-gate` disables |
 | `--cli-path PATH` | CLI executable referenced by local editor-hook commands |
 | `--force` | Overwrite a foreign git hook; managed editor entries refresh automatically |
@@ -545,7 +545,7 @@ Treat editor hooks as **defense-in-depth**, not a hard perimeter. Prefer this st
 | Agent shell (`Bash` / `beforeShellExecution`) | Shell-gate | On by default for Cursor/Claude/Windsurf; sensitive paths, safe PATH/HOME overrides, and lower-risk daemon mutations follow `context.shell.mode` (default **deny**); control-plane, environment injection, container execution, and direct privileged-socket operations hard-deny. Invalid / oversized hook input fails closed |
 | Agent shell **output** (`afterShellExecution` / `PostToolUse Bash`) | Shell-output audit | On by default for Cursor/Claude/Windsurf. Reports only: editors cannot replace terminal output, so secrets a command printed are logged and notified for rotation, not withheld |
 | MCP tool calls | MCP-gate | On by default for Cursor/Claude/Windsurf. Policy + path/secret scan on **args**; see `context.mcp` in `.offsend.yml`. Codex: not supported |
-| MCP tool responses | MCP-response-gate | Cursor/Claude `PostToolUse` can **replace** output (`context.mcp.responses: seal`). Windsurf withholds via exit 2 (no replace API) |
+| MCP tool responses | MCP-response-gate | Cursor/Claude `PostToolUse` can **replace** output (`context.mcp.responses: seal`). Windsurf has no replace API — secret-bearing output is withheld on stderr (exit 0, not a block) |
 | Subagent spawn (Cursor Task) | Subagent-gate | On by default for Cursor `subagentStart` + `preToolUse` (`Task`); secret-scan of the task prompt (`deny` on findings; no `ask`). Claude subagents skip parent hooks; path deny from `ignore.patterns` in `.claude/settings.json` still applies |
 | Editor Grep (Cursor) | Grep-gate | On by default with read-gate; seal mode denies Grep (no rewrite API); otherwise single-file content deny |
 
@@ -560,7 +560,7 @@ These walk past a path-based file hook by design. Close them with ignore rules a
 | **Indirect executable-config mutation** | Dynamic commands, generated scripts, MCP tools, or custom binaries may not expose the final path or invocation as static shell arguments | The shell-gate hard-denies recognized execution-sensitive `git config`, `git -c`, and `--config-env` calls. Dynamic Git and daemon clients remain residual gaps |
 | **Privileged daemon through an indirect client** | MCP tools, generated scripts, custom binaries, remote contexts, or dynamically built endpoints can hide Docker/Podman/containerd access | Shell-gate denies recognized container execution and direct socket clients; remove unnecessary socket access and require manual review for daemon operations |
 | **Environment poisoning outside static shell argv** | Process APIs, command substitution, generated scripts, parent-process state, or custom launchers can hide PATH/loader/helper overrides | Shell-gate denies recognized execution-sensitive assignments; write-gate protects common shell/direnv startup files; start agents from a clean environment |
-| **MCP responses without active sealing** | `observe`/`warn` or an older install does not replace plaintext output; `seal` without a key safely withholds secret-bearing responses instead of passing them through | Set `context.mcp.responses: seal`, generate a seal key, and re-run hook install for Cursor/Claude |
+| **MCP responses without active sealing** | Trusted `observe`/`warn`, or an older install, does not replace plaintext output; `seal` without a key safely withholds secret-bearing responses instead of passing them through | Set `context.mcp.responses: seal`, run `offsend policy trust`, generate a seal key, and re-run hook install for Cursor/Claude |
 | **MCP without mcp-gate** | Older installs, or `--no-mcp-gate` | Re-run `offsend hook install --target cursor\|claude` (mcp-gate is on by default) |
 | **Subagents (Claude / ungated Cursor)** | Claude subagents may skip parent hooks; Cursor without `--subagent-gate` does not scan task text | Cursor: `offsend hook install --target cursor` (`subagentStart` + `preToolUse` `Task`). Claude: `permissions.deny` from `offsend sync` (not `.claudeignore`); no plaintext secrets on disk |
 | **Grep/search (Cursor)** | Cursor `postToolUse` can replace **MCP** output only — Grep match bodies cannot be sealed | With `context.read.on_secret: seal`, `--grep-gate` denies Grep and points the agent at Read. Without seal, single-file Grep with secrets is denied; workspace Grep remains a residual |
@@ -570,7 +570,7 @@ These walk past a path-based file hook by design. Close them with ignore rules a
 | **Open editor tabs (Cursor)** | Cursor may not always enforce `beforeReadFile` deny | `offsend protect` / `.cursorignore` for hard blocks |
 | **Cloud agent sessions** | Remote/cloud agents do not run local editor hooks | Keep secrets out of the repo; CI `check --policy`; rotate if leaked |
 
-These residuals are documented here — `offsend doctor` does not emit a `hook-coverage-gaps` check. MCP response sealing is active only when the editor can replace output (Cursor/Claude), `context.mcp.responses: seal` is set, and a seal key exists. Without a key, secret-bearing responses are withheld. Cloud sessions never run local hooks.
+These residuals are documented here. `offsend doctor` reports `hook-coverage` (what the install can do) and `live-verification` (editor apply is not recorded). MCP response sealing is active only when the editor can replace output (Cursor/Claude), `context.mcp.responses: seal` is in effect (machine default, or trusted YAML), and a seal key exists. Without a key, secret-bearing responses are withheld. Cloud sessions never run local hooks.
 
 ### Hook policies
 
@@ -680,9 +680,11 @@ Installed by default for Cursor and Claude (disable with `--no-mcp-response-gate
 | --- | --- | --- |
 | `observe` | stderr + debug log | stderr + debug log |
 | `warn` | Also warns the agent via `additionalContext` (“do not echo/store/reuse these values”) | Warns via `additional_context` |
-| `seal` (default when unset) | Replaces `updatedToolOutput` with the sealed output as a **string** (the documented field type; only detected values become tokens) | Replaces `updated_mcp_tool_output` with a sealed version, preserving the JSON object shape |
+| `seal` (default when unset) | Replaces `updatedToolOutput` (and the `updatedMCPToolOutput` alias) with sealed text or a sealed JSON value of the same type; Claude responses include `hookEventName: PostToolUse` | Decodes the Cursor `tool_output` JSON string, then replaces `updated_mcp_tool_output` with a sealed object/array (or a sealed string if that is the decoded payload), preserving non-string fields |
 
-Responses are scanned in full up to the 2 MiB hook-input limit. Larger responses are replaced with a safe withholding message instead of being partially scanned or passed through. In `seal` mode a response whose secrets **fail to seal** (for example a single value over the plaintext size cap), or cannot be sealed because no key is available, is withheld the same way — never downgraded to a warning. Generate the key with `offsend setup` (or `offsend keygen --default`).
+`observe` and `warn` in `.offsend.yml` apply only after `offsend policy trust`. An untrusted or drifted policy keeps the machine default (`seal`). An unknown `responses` value is a configuration error and also stays on `seal`. Malformed JSON, invalid UTF-8 stdin, a missing required response field, invalid inner `tool_output` JSON, `result_json` (Cursor cannot replace that field), Windsurf `mcp_result`, a secret in a JSON key, and decode-budget exhaustion withhold the output instead of passing it through.
+
+Responses are scanned in full up to the 2 MiB hook-input limit. Larger responses are replaced with a safe withholding message instead of being partially scanned or passed through. In `seal` mode a response whose secrets **fail to seal** (for example a single value over the plaintext size cap), or cannot be sealed because no key is available, is withheld the same way — never downgraded to a warning. Generate the key with `offsend setup` (or `offsend keygen --default`). Cursor MCP `postToolUse` is installed with `failClosed: true` so a missing/crashed binary does not deliver the original output.
 
 Cursor caveat: `warn` relies on `additional_context`, which Cursor builds before 3.9.8 did not deliver to the model — on those builds `warn` is effectively `observe`. For real protection on Cursor use `responses: seal` with a seal key; `offsend doctor` warns about this combination.
 
@@ -772,6 +774,7 @@ cat prompt.txt | offsend seal
 | `--force` | Atomically replace an existing output; requires `--output` |
 | `--max-plaintext-bytes N` | Fail if any single value exceeds N UTF-8 bytes |
 | `--quiet` | Suppress `sealed N` on stderr |
+| `--secrets-only` | Seal only critical secret-shaped findings (keys, tokens, passwords). Hosts, emails, and other non-secret matches stay in the text |
 | `--working-directory PATH` | Base for relative input, output, and `--key-file` paths |
 
 Key resolution order: `--key-file` → `--key-name` → `OFFSEND_SEAL_KEY` → `~/.offsend/seal.key`.

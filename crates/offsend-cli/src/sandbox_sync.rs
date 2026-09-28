@@ -244,7 +244,22 @@ pub fn run_targets(
     targets: &[EditorTarget],
     dry_run: bool,
 ) -> SyncReport {
-    let trusted = crate::policy_trust::is_trusted(root);
+    run_targets_with_trust(
+        root,
+        config,
+        targets,
+        dry_run,
+        crate::policy_trust::is_trusted(root),
+    )
+}
+
+fn run_targets_with_trust(
+    root: &Path,
+    config: Option<&OffsendProjectConfig>,
+    targets: &[EditorTarget],
+    dry_run: bool,
+    trusted: bool,
+) -> SyncReport {
     if !effective_sandbox_enabled(config, trusted) {
         return SyncReport {
             enabled: false,
@@ -748,12 +763,16 @@ sandbox:
   provider: nono
 "#;
         fs::write(dir.join(".offsend.yml"), yaml).unwrap();
-        crate::policy_trust::trust(&dir).unwrap();
         let cfg = OffsendProjectConfig::parse_yaml(yaml).unwrap();
-        let report = run(&dir, Some(&cfg), EditorTarget::Claude);
+        let report = run_targets_with_trust(
+            &dir,
+            Some(&cfg),
+            &[EditorTarget::Claude],
+            false,
+            true,
+        );
         assert!(!report.enabled);
         assert!(!dir.join(".offsend/nono/offsend-claude.json").is_file());
-        let _ = crate::policy_trust::forget(&dir);
         let _ = fs::remove_dir_all(&dir);
     }
 }
