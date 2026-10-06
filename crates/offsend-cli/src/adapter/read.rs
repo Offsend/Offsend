@@ -140,7 +140,7 @@ pub fn run(
                     findings.clone()
                 };
                 if !entities.is_empty() {
-                    let outcome = seal_copy::attempt(content, &entities, &key);
+                    let outcome = seal_copy::attempt(content, &entities, &key, false);
                     if let Some(sealed_path) = outcome.path {
                         // Keep the sealed path as the last filesystem path in the
                         // message so e2e / agents can extract `…/offsend-seal/sealed-*.txt`.

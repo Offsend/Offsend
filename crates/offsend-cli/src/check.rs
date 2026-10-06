@@ -134,6 +134,24 @@ impl CheckArgs {
     }
 }
 
+fn adapter_gate_kind(args: &CheckArgs) -> crate::adapter::GateKind {
+    if args.mcp_response_gate {
+        crate::adapter::GateKind::PostTool
+    } else if args.read_gate
+        || args.grep_gate
+        || args.write_gate
+        || args.shell_gate
+        || args.mcp_gate
+        || args.subagent_gate
+    {
+        crate::adapter::GateKind::Permission
+    } else if args.shell_audit || args.artifact_audit {
+        crate::adapter::GateKind::Observe
+    } else {
+        crate::adapter::GateKind::Prompt
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum CheckError {
     #[error("{0}")]
@@ -214,14 +232,27 @@ pub fn run(args: CheckArgs) -> Result<ExitCode, CheckError> {
             ))
         })?;
         let Some(hook_policy) = crate::adapter::HookPolicy::parse(&args.hook_policy) else {
-            // Invalid policy in a hook invocation must fail-open so editors are not wedged.
-            return Ok(crate::adapter::fail_open(
-                adapter,
-                "invalid_hook_policy",
-                crate::adapter::GateKind::Prompt,
-            ));
+            let kind = adapter_gate_kind(&args);
+            return Ok(if kind == crate::adapter::GateKind::Prompt {
+                crate::adapter::fail_open(adapter, "invalid_hook_policy", kind)
+            } else {
+                crate::adapter::fail_closed_policy(
+                    adapter,
+                    kind,
+                    "invalid --hook-policy value",
+                )
+            });
         };
-        let stdin_for_gate = crate::adapter::read_hook_stdin().map_err(CheckError::Message)?;
+        let stdin_for_gate = match crate::adapter::read_hook_stdin() {
+            Ok(s) => s,
+            Err(reason) => {
+                return Ok(crate::adapter::fail_open(
+                    adapter,
+                    &reason,
+                    adapter_gate_kind(&args),
+                ));
+            }
+        };
         let search = crate::adapter::workspace_from_hook_payload(&stdin_for_gate, &cwd)
             .unwrap_or_else(|| cwd.clone());
         let loaded = OffsendProjectConfig::find_and_load(&search).ok().flatten();

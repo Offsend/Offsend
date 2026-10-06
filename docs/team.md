@@ -83,7 +83,7 @@ context:
 offsend sync && offsend doctor
 ```
 
-`fields` (`seal` / `drop` / `pass`) apply to JSON object/array MCP output when the effective `responses` mode is `seal`. Cursor and Claude can rewrite MCP output; Windsurf cannot (deny via exit code). Codex has no MCP gates. Rename `server` / `tool` to match your MCP config. Full key catalog: [`.offsend.full.yml`](../.offsend.full.yml). Recipe: [configuration.md → MCP rules](configuration.md#mcp-rules-recipe). Short overview: [README → Seal](../README.md#seal).
+`context.mcp.rules` / `fields` are accepted in YAML and **ignored** by the current Rust CLI. Protection is the global `responses` mode (default `seal`; `observe`/`warn` only after `offsend policy trust`). Cursor and Claude can rewrite MCP output; Windsurf has no replace API (stderr withhold, exit 0). Codex has no MCP gates. Full key catalog: [`.offsend.full.yml`](../.offsend.full.yml). Recipe: [configuration.md → MCP rules](configuration.md#mcp-rules-recipe). Short overview: [README → Seal](../README.md#seal).
 
 ## 3. Commit the source of truth
 

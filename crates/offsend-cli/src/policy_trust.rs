@@ -50,10 +50,10 @@ pub fn store_dir() -> PathBuf {
     }
 }
 
-fn snapshot_path(repo_root: &Path) -> PathBuf {
+fn snapshot_path_in(store: &Path, repo_root: &Path) -> PathBuf {
     let mut hasher = Sha256::new();
     hasher.update(repo_root.display().to_string().as_bytes());
-    store_dir().join(format!("{}.json", hex_encode(&hasher.finalize())))
+    store.join(format!("{}.json", hex_encode(&hasher.finalize())))
 }
 
 fn config_hash(bytes: &[u8]) -> String {
@@ -109,7 +109,11 @@ pub fn is_trusted(repo_root: &Path) -> bool {
 }
 
 pub fn status(repo_root: &Path) -> TrustStatus {
-    let path = snapshot_path(repo_root);
+    status_in(repo_root, &store_dir())
+}
+
+pub fn status_in(repo_root: &Path, store: &Path) -> TrustStatus {
+    let path = snapshot_path_in(store, repo_root);
     if !path.is_file() {
         return TrustStatus::Missing;
     }
@@ -157,6 +161,10 @@ pub fn status(repo_root: &Path) -> TrustStatus {
 }
 
 pub fn trust(repo_root: &Path) -> Result<PathBuf, String> {
+    trust_in(repo_root, &store_dir())
+}
+
+pub fn trust_in(repo_root: &Path, store: &Path) -> Result<PathBuf, String> {
     let config_path = repo_root.join(".offsend.yml");
     let bytes = fs::read(&config_path).map_err(|_| {
         format!(
@@ -164,12 +172,11 @@ pub fn trust(repo_root: &Path) -> Result<PathBuf, String> {
             repo_root.display()
         )
     })?;
-    let dir = store_dir();
-    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    fs::create_dir_all(store).map_err(|e| e.to_string())?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(&dir, fs::Permissions::from_mode(0o700));
+        let _ = fs::set_permissions(store, fs::Permissions::from_mode(0o700));
     }
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -184,7 +191,7 @@ pub fn trust(repo_root: &Path) -> Result<PathBuf, String> {
         provider_id,
         trusted_at: format!("{now}"),
     };
-    let path = snapshot_path(repo_root);
+    let path = snapshot_path_in(store, repo_root);
     let text = serde_json::to_string_pretty(&snap).map_err(|e| e.to_string())?;
     fs::write(&path, text + "\n").map_err(|e| e.to_string())?;
     #[cfg(unix)]
@@ -196,7 +203,11 @@ pub fn trust(repo_root: &Path) -> Result<PathBuf, String> {
 }
 
 pub fn forget(repo_root: &Path) -> Result<bool, String> {
-    let path = snapshot_path(repo_root);
+    forget_in(repo_root, &store_dir())
+}
+
+pub fn forget_in(repo_root: &Path, store: &Path) -> Result<bool, String> {
+    let path = snapshot_path_in(store, repo_root);
     if !path.is_file() {
         return Ok(false);
     }
@@ -209,63 +220,66 @@ mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    #[test]
-    fn trust_then_drift_on_change() {
+    fn temp_pair(label: &str) -> (PathBuf, PathBuf) {
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!("offsend-trust-{nanos}"));
-        fs::create_dir_all(dir.join(".git")).unwrap();
+        let base = std::env::temp_dir().join(format!("offsend-trust-{label}-{nanos}"));
+        let repo = base.join("repo");
+        let store = base.join("store");
+        fs::create_dir_all(repo.join(".git")).unwrap();
+        fs::create_dir_all(&store).unwrap();
+        (repo, store)
+    }
+
+    fn cleanup(repo: &Path, store: &Path) {
+        let _ = fs::remove_dir_all(repo.parent().unwrap_or(repo));
+        let _ = store;
+    }
+
+    #[test]
+    fn trust_then_drift_on_change() {
+        let (dir, store) = temp_pair("change");
         fs::write(dir.join(".offsend.yml"), "version: 1\n").unwrap();
-        trust(&dir).unwrap();
-        assert_eq!(status(&dir), TrustStatus::Trusted);
+        trust_in(&dir, &store).unwrap();
+        assert_eq!(status_in(&dir, &store), TrustStatus::Trusted);
         fs::write(
             dir.join(".offsend.yml"),
             "version: 1\ncheck:\n  fail_on: none\n",
         )
         .unwrap();
-        assert!(matches!(status(&dir), TrustStatus::Drift(_)));
-        forget(&dir).unwrap();
-        assert_eq!(status(&dir), TrustStatus::Missing);
-        let _ = fs::remove_dir_all(dir);
+        assert!(matches!(status_in(&dir, &store), TrustStatus::Drift(_)));
+        forget_in(&dir, &store).unwrap();
+        assert_eq!(status_in(&dir, &store), TrustStatus::Missing);
+        cleanup(&dir, &store);
     }
 
     #[test]
     fn trust_drifts_when_project_provider_added() {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!("offsend-trust-prov-{nanos}"));
-        fs::create_dir_all(dir.join(".git")).unwrap();
+        let (dir, store) = temp_pair("prov");
         fs::write(
             dir.join(".offsend.yml"),
             "version: 1\nsandbox:\n  enabled: true\n  provider: nono\n",
         )
         .unwrap();
-        trust(&dir).unwrap();
-        assert_eq!(status(&dir), TrustStatus::Trusted);
+        trust_in(&dir, &store).unwrap();
+        assert_eq!(status_in(&dir, &store), TrustStatus::Trusted);
         fs::create_dir_all(dir.join(".offsend")).unwrap();
         fs::write(
             dir.join(".offsend/sandbox.nono.yml"),
             "name: nono\nbinary: /bin/echo\nprofile_directory: .offsend/nono\nrun_args: []\n",
         )
         .unwrap();
-        assert!(matches!(status(&dir), TrustStatus::Drift(_)));
-        forget(&dir).unwrap();
-        let _ = fs::remove_dir_all(dir);
+        assert!(matches!(status_in(&dir, &store), TrustStatus::Drift(_)));
+        forget_in(&dir, &store).unwrap();
+        cleanup(&dir, &store);
     }
 
     #[test]
     fn trust_drifts_when_project_provider_modified() {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!("offsend-trust-mod-{nanos}"));
+        let (dir, store) = temp_pair("mod");
         fs::create_dir_all(dir.join(".offsend")).unwrap();
-        fs::create_dir_all(dir.join(".git")).unwrap();
         fs::write(
             dir.join(".offsend.yml"),
             "version: 1\nsandbox:\n  enabled: true\n  provider: custom\n",
@@ -276,28 +290,23 @@ mod tests {
             "name: custom\nbinary: /usr/bin/true\nprofile_directory: .offsend/c\nrun_args: []\n",
         )
         .unwrap();
-        trust(&dir).unwrap();
-        assert_eq!(status(&dir), TrustStatus::Trusted);
+        trust_in(&dir, &store).unwrap();
+        assert_eq!(status_in(&dir, &store), TrustStatus::Trusted);
         fs::write(
             dir.join(".offsend/sandbox.custom.yml"),
             "name: custom\nbinary: /bin/echo\nprofile_directory: .offsend/c\nrun_args: []\n",
         )
         .unwrap();
-        let st = status(&dir);
+        let st = status_in(&dir, &store);
         assert!(matches!(st, TrustStatus::Drift(_)), "{st:?}");
-        forget(&dir).unwrap();
-        let _ = fs::remove_dir_all(dir);
+        forget_in(&dir, &store).unwrap();
+        cleanup(&dir, &store);
     }
 
     #[test]
     fn trust_drifts_when_project_provider_removed() {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!("offsend-trust-rm-{nanos}"));
+        let (dir, store) = temp_pair("rm");
         fs::create_dir_all(dir.join(".offsend")).unwrap();
-        fs::create_dir_all(dir.join(".git")).unwrap();
         fs::write(
             dir.join(".offsend.yml"),
             "version: 1\nsandbox:\n  enabled: true\n  provider: custom\n",
@@ -309,21 +318,16 @@ mod tests {
             "name: custom\nbinary: /usr/bin/true\nprofile_directory: .offsend/c\nrun_args: []\n",
         )
         .unwrap();
-        trust(&dir).unwrap();
+        trust_in(&dir, &store).unwrap();
         fs::remove_file(&prov).unwrap();
-        assert!(matches!(status(&dir), TrustStatus::Drift(_)));
-        forget(&dir).unwrap();
-        let _ = fs::remove_dir_all(dir);
+        assert!(matches!(status_in(&dir, &store), TrustStatus::Drift(_)));
+        forget_in(&dir, &store).unwrap();
+        cleanup(&dir, &store);
     }
 
     #[test]
     fn v1_snapshot_drifts_when_project_provider_appears() {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!("offsend-trust-v1-{nanos}"));
-        fs::create_dir_all(dir.join(".git")).unwrap();
+        let (dir, store) = temp_pair("v1");
         let config = "version: 1\nsandbox:\n  enabled: true\n  provider: nono\n";
         fs::write(dir.join(".offsend.yml"), config).unwrap();
         // Synthesize a legacy v1 snapshot (config hash only).
@@ -337,10 +341,10 @@ mod tests {
             "config_hash": config_hash,
             "trusted_at": "1",
         });
-        let path = snapshot_path(&dir);
+        let path = snapshot_path_in(&store, &dir);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, snap.to_string() + "\n").unwrap();
-        assert_eq!(status(&dir), TrustStatus::Trusted);
+        assert_eq!(status_in(&dir, &store), TrustStatus::Trusted);
 
         fs::create_dir_all(dir.join(".offsend")).unwrap();
         fs::write(
@@ -348,13 +352,13 @@ mod tests {
             "name: nono\nbinary: /bin/echo\nprofile_directory: .offsend/nono\nrun_args: []\n",
         )
         .unwrap();
-        let st = status(&dir);
+        let st = status_in(&dir, &store);
         assert!(
             matches!(&st, TrustStatus::Drift(msg) if msg.contains("predates provider hashing")),
             "{st:?}"
         );
-        forget(&dir).unwrap();
-        let _ = fs::remove_dir_all(dir);
+        forget_in(&dir, &store).unwrap();
+        cleanup(&dir, &store);
     }
 
     #[test]

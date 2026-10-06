@@ -242,6 +242,7 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
+    #[ignore = "requires a GUI session and the real clipboard; run with --ignored"]
     fn clipboard_roundtrip() {
         let marker = format!("offsend-unseal-test-{}", std::process::id());
         let mut child = Command::new("/usr/bin/pbcopy")

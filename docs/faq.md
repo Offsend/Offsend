@@ -56,7 +56,7 @@ Not in the direction that matters. Without a trusted snapshot, hooks read the li
 | Prompt / read / shell / MCP **args** on Cursor, Claude, and Windsurf; Cursor subagent + Grep | Codex file/MCP gates (prompt only); Claude subagent **hooks** (path deny in `permissions.deny` still applies); Cursor Grep without seal; cloud agent sessions |
 | Optional OS sandbox config (`sandbox.enabled`) — generate + verify; `offsend run` launches via nono when configured | Cursor IDE process wrap; Windsurf sandbox; silent `policy trust` |
 | User-approved policy snapshot outside the workspace | Containing arbitrary IDE tasks, Git helpers, venv discovery, or host automation outside static shell argv |
-| MCP **response** sealing on Cursor/Claude (`context.mcp.responses: seal`); seal-for-agents read copies | Windsurf MCP response seal (deny via exit code only); Codex MCP; responses in `observe`/`warn`; missing keys withhold secret-bearing output |
+| MCP **response** sealing on Cursor/Claude (`context.mcp.responses: seal`); seal-for-agents read copies | Windsurf MCP response replace (stderr withhold, exit 0); Codex MCP; trusted `observe`/`warn`; missing keys withhold secret-bearing output |
 | Local agent-history audit / scrub after a leak | Undoing secrets already sent to a remote/cloud agent |
 
 Credentials in agent context are leverage for further tool use (read, shell, MCP), not only a privacy leak. Prefer `offsend protect` + ignore files first; hooks are defense-in-depth; sandbox when you need kernel egress denial. Details: [what hooks cover / do not cover](cli.md#what-hooks-cover), [sandbox](configuration.md#sandbox).

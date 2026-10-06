@@ -80,7 +80,7 @@ hooks:
 #     allow: [github]    # non-empty allow = allowlist mode
 #     high_risk: [filesystem, postgres]
 #     responses: seal    # observe | warn | seal — needs: offsend keygen --default
-#     rules:             # optional per-tool overrides (most specific match wins)
+#     rules:             # accepted but ignored by the Rust CLI (not implemented)
 #       - match: { server: github, tool: list_issues }
 #         responses: observe
 #       - match: { server: crm, tool: get_customer }
@@ -361,12 +361,12 @@ Optional MCP policy used by the MCP-gate (`offsend sync` / `offsend hook install
 | `allow` | Server name patterns permitted. A non-empty list switches to allowlist mode: servers not matching are flagged |
 | `deny` | Server name patterns to block. `"*"` also enables allowlist mode |
 | `high_risk` | Server name patterns treated as high-risk by the MCP-gate (defaults include `filesystem`, `postgres`, …) |
-| `responses` | MCP **response** scanning (`check --mcp-response-gate`): `seal` (default when unset — Cursor/Claude replace MCP output with tokens before the model sees it; needs a seal key), `warn` (warn the agent), or `observe` (log/stderr only). Explicit `observe`/`warn` in YAML still win. Cursor keeps the JSON object shape; Claude receives the sealed output as text (`updatedToolOutput` is a string). Responses above the 2 MiB safety limit, responses whose secrets fail to seal, and secret-bearing responses encountered without a seal key are withheld |
-| `rules` | Optional per-tool overrides. Each entry has `match.server` and/or `match.tool` (glob with `*`), plus `mode` and/or `responses`, and optional `fields`. Most specific match wins for `mode` / `responses`; unset values inherit the globals above. `fields` from **all** matching rules are merged (more specific path wins; on equal specificity the earlier list entry wins) — a narrow override without `fields` keeps fields from a broader match. `fields` maps JSON path patterns to `seal` \| `drop` \| `pass` (applied in `responses: seal` for object/array tool output, including JSON encoded as a string). Bare key names match at any depth; dotted paths support `*` and `**`. `pass` skips field sealing for that path but does **not** bypass secret detectors. `drop` keeps the key and sets JSON `null`. |
+| `responses` | MCP **response** scanning (`check --mcp-response-gate`): `seal` (default when unset — Cursor/Claude replace MCP output with tokens before the model sees it; needs a seal key), `warn` (warn the agent), or `observe` (log/stderr only). `observe`/`warn` apply only after `offsend policy trust`; an untrusted or drifted file keeps `seal`. Cursor `tool_output` arrives as a JSON string: Offsend decodes it, then keeps the object/array shape (plain string payloads stay strings). Invalid inner JSON, a missing required response field, invalid UTF-8 stdin, responses above the 2 MiB safety limit, unrecognized hook JSON, `result_json` (no replace API), secrets in JSON keys, responses whose secrets fail to seal, and secret-bearing responses encountered without a seal key are withheld |
+| `rules` | **Not implemented in the Rust CLI.** The YAML field is accepted and ignored. Per-tool `match` / `fields` (`seal` \| `drop` \| `pass`) do not change dispatch. Documented examples below are a future contract, not current behavior. |
 
 #### MCP rules recipe
 
-Use this when third-party MCP tools over-return data, or when you want per-tool `mode` / `responses` / `fields` instead of the globals.
+The recipe below is the intended contract. The Rust CLI does **not** evaluate `context.mcp.rules` yet — entries are ignored. Do not rely on per-tool `observe` or field `pass`/`drop` for protection.
 
 ```yaml
 context:

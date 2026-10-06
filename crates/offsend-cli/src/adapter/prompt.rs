@@ -88,7 +88,7 @@ pub fn run(
     if should_seal {
         match crate::keys::resolve(key_file, key_name, project_root) {
             Ok(key) => {
-                let outcome = seal_copy::attempt(&scanned, &findings, &key);
+                let outcome = seal_copy::attempt(&scanned, &findings, &key, true);
                 summary.push_str(&outcome.message_suffix);
             }
             Err(_) => {

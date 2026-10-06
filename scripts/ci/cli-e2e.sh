@@ -383,8 +383,13 @@ if [[ -L "$seal_work/output-link.txt" || "$(cat "$seal_work/target.txt")" != 'ta
 fi
 
 # unseal with no path on a TTY reads the clipboard (macOS pbpaste).
-if [[ "$(uname -s)" == Darwin ]]; then
+# Opt-in: this overwrites the operator clipboard. Restore the previous
+# contents afterward so a required suite never leaves a dirty pasteboard.
+if [[ "$(uname -s)" == Darwin && "${OFFSEND_E2E_CLIPBOARD:-}" == "1" ]]; then
+  clip_backup="$seal_work/clipboard-backup.bin"
+  /usr/bin/pbpaste > "$clip_backup" || true
   /usr/bin/pbcopy < "$seal_work/sealed.txt"
+  set +e
   python3 - "$CLI_PATH" "$seal_work" <<'PY'
 import os, pty, select, sys, time
 cli, work = sys.argv[1], sys.argv[2]
@@ -413,6 +418,12 @@ if "contact=user@example.com" not in text.replace("\r", ""):
     sys.stderr.write(text + "\n")
     sys.exit(1)
 PY
+  clip_status=$?
+  set -e
+  /usr/bin/pbcopy < "$clip_backup" || true
+  if [[ "$clip_status" -ne 0 ]]; then
+    exit "$clip_status"
+  fi
 fi
 
 dd if=/dev/zero bs=1048576 count=2 2>/dev/null | tr '\0' a > "$seal_work/exact-limit.txt"
@@ -1207,10 +1218,12 @@ fi
 # Shell-output audit: a printed secret is recorded and notified, never blocked.
 shell_audit_repo="$workdir/shell-audit"
 mkdir -p "$shell_audit_repo"
-# The audit log lives in the user-local store, next to mcp-activity.log, so the
-# assertions below read the last line rather than the whole file.
-shell_audit_log="$HOME/Library/Application Support/Offsend/shell-output-audit.log"
-if [[ ! -d "$(dirname "$shell_audit_log")" ]]; then
+# Same path as `audit_log_path()` in shell_audit.rs. Do not probe whether the
+# directory already exists: a fresh runner has no Application Support/Offsend
+# yet, and the CLI creates it only when it appends the log.
+if [[ "$(uname -s)" == Darwin ]]; then
+  shell_audit_log="$HOME/Library/Application Support/Offsend/shell-output-audit.log"
+else
   shell_audit_log="${XDG_CONFIG_HOME:-$HOME/.config}/offsend/shell-output-audit.log"
 fi
 set +e
@@ -1427,13 +1440,14 @@ mcpresp_claude_payload='{"tool_name":"mcp__github__get_secret","tool_response":"
 set +e
 mcpresp_warn_out="$(printf '%s' "$mcpresp_claude_payload" | "$CLI_PATH" check --adapter claude --mcp-response-gate --no-notify --working-directory "$mcpresp_warn_repo" 2>/dev/null)"
 set -e
-if ! echo "$mcpresp_warn_out" | grep -q 'additionalContext'; then
-  echo "Expected claude warn mode additionalContext" >&2
+# Untrusted YAML cannot loosen seal → withhold/replace, not observe/warn.
+if ! echo "$mcpresp_warn_out" | grep -q 'updatedToolOutput'; then
+  echo "Untrusted context.mcp.responses: warn must not disable replacement" >&2
   echo "$mcpresp_warn_out" >&2
   exit 1
 fi
-if echo "$mcpresp_warn_out" | grep -q 'updatedToolOutput'; then
-  echo "warn mode must not rewrite tool output" >&2
+if echo "$mcpresp_warn_out" | grep -q 'AKIA1234567890ABCDEF'; then
+  echo "Untrusted warn must not pass plaintext" >&2
   echo "$mcpresp_warn_out" >&2
   exit 1
 fi
@@ -1472,6 +1486,11 @@ if ! echo "$mcpresp_seal_out" | grep -q 'updatedToolOutput'; then
   echo "$mcpresp_seal_out" >&2
   exit 1
 fi
+if ! echo "$mcpresp_seal_out" | grep -q '"hookEventName":"PostToolUse"'; then
+  echo "Expected claude PostToolUse hookEventName" >&2
+  echo "$mcpresp_seal_out" >&2
+  exit 1
+fi
 if ! echo "$mcpresp_seal_out" | grep -q 'updatedMCPToolOutput'; then
   echo "Expected claude seal mode legacy updatedMCPToolOutput alias" >&2
   echo "$mcpresp_seal_out" >&2
@@ -1499,6 +1518,81 @@ if echo "$mcpresp_cursor_seal_out" | grep -q 'AKIA1234567890ABCDEF'; then
   echo "Cursor sealed output must not contain the plaintext secret" >&2
   exit 1
 fi
+python3 - "$CLI_PATH" "$mcpresp_seal_home" "$mcpresp_seal_repo" <<'PY'
+import json, os, subprocess, sys
+cli, home, repo = sys.argv[1], sys.argv[2], sys.argv[3]
+env = {**os.environ, "HOME": home}
+
+def run(adapter, payload):
+    if isinstance(payload, (bytes, bytearray)):
+        raw = payload
+    else:
+        raw = json.dumps(payload).encode()
+    p = subprocess.run(
+        [cli, "check", "--adapter", adapter, "--mcp-response-gate", "--no-notify",
+         "--working-directory", repo],
+        input=raw,
+        capture_output=True, env=env,
+    )
+    out = json.loads(p.stdout) if p.stdout.strip() else {}
+    return p, out
+
+body = json.dumps({"content": [{"type": "text", "text": "AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF"}]})
+p, out = run("cursor", {"cwd": repo, "tool_name": "mcp__demo__read", "tool_output": body})
+replaced = out.get("updated_mcp_tool_output")
+if p.returncode != 0 or not isinstance(replaced, dict):
+    sys.stderr.write("Expected Cursor string tool_output to replace with an object\n")
+    sys.stderr.write(f"rc={p.returncode} out={out} stderr={p.stderr.decode(errors='replace')}\n")
+    sys.exit(1)
+if "AKIA1234567890ABCDEF" in json.dumps(out):
+    sys.stderr.write("Cursor object replacement leaked the AWS key\n")
+    sys.exit(1)
+
+escaped = body.replace("AKIA", r"\u0041KIA")
+p, out = run("cursor", {"cwd": repo, "tool_name": "mcp__demo__read", "tool_output": escaped})
+replaced = out.get("updated_mcp_tool_output")
+if p.returncode != 0 or not isinstance(replaced, dict):
+    sys.stderr.write("Expected Unicode-escaped Cursor tool_output to decode and replace\n")
+    sys.stderr.write(f"rc={p.returncode} out={out} stderr={p.stderr.decode(errors='replace')}\n")
+    sys.exit(1)
+if "AKIA1234567890ABCDEF" in json.dumps(out) or r"\u0041KIA" in json.dumps(out):
+    sys.stderr.write("Unicode-escaped Cursor tool_output leaked the AWS key\n")
+    sys.exit(1)
+
+p, out = run("claude", {"cwd": repo, "tool_name": "mcp__demo__read", "result": "AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF"})
+hook = (out.get("hookSpecificOutput") or {})
+if p.returncode != 0 or hook.get("hookEventName") != "PostToolUse":
+    sys.stderr.write("Expected missing tool_response to withhold with PostToolUse\n")
+    sys.stderr.write(f"rc={p.returncode} out={out} stderr={p.stderr.decode(errors='replace')}\n")
+    sys.exit(1)
+if "AKIA1234567890ABCDEF" in json.dumps(out):
+    sys.stderr.write("Missing-field withhold leaked the AWS key\n")
+    sys.exit(1)
+
+p, out = run("claude", b'{"tool_response":"\xffAKIA1234567890ABCDEF"}')
+hook = (out.get("hookSpecificOutput") or {})
+if p.returncode != 0 or hook.get("hookEventName") != "PostToolUse":
+    sys.stderr.write("Expected invalid UTF-8 stdin to withhold with PostToolUse\n")
+    sys.stderr.write(f"rc={p.returncode} out={out} stderr={p.stderr.decode(errors='replace')}\n")
+    sys.exit(1)
+if "AKIA1234567890ABCDEF" in json.dumps(out):
+    sys.stderr.write("Invalid UTF-8 withhold leaked the AWS key\n")
+    sys.exit(1)
+PY
+
+set +e
+mcpresp_result_json_out="$(printf '%s' '{"tool_name":"MCP:db/query","result_json":{"secret":"AKIA1234567890ABCDEF"}}' | HOME="$mcpresp_seal_home" "$CLI_PATH" check --adapter cursor --mcp-response-gate --no-notify --working-directory "$mcpresp_seal_repo" 2>/dev/null)"
+set -e
+if ! echo "$mcpresp_result_json_out" | grep -q 'updated_mcp_tool_output'; then
+  echo "Expected Cursor result_json (no replace API) to withhold" >&2
+  echo "$mcpresp_result_json_out" >&2
+  exit 1
+fi
+if echo "$mcpresp_result_json_out" | grep -q 'AKIA1234567890ABCDEF'; then
+  echo "Cursor result_json must not pass plaintext" >&2
+  echo "$mcpresp_result_json_out" >&2
+  exit 1
+fi
 
 set +e
 mcpresp_oversized_out="$(
@@ -1518,8 +1612,13 @@ fi
 set +e
 mcpresp_fail_open="$(printf '%s' 'not-json' | "$CLI_PATH" check --adapter claude --mcp-response-gate --no-notify --working-directory "$repo" 2>/dev/null)"
 set -e
-if [[ "$mcpresp_fail_open" != "{}" ]]; then
-  echo "Expected mcp-response-gate fail-open {}" >&2
+if ! echo "$mcpresp_fail_open" | grep -q 'updatedToolOutput'; then
+  echo "Expected mcp-response-gate to withhold on malformed JSON" >&2
+  echo "$mcpresp_fail_open" >&2
+  exit 1
+fi
+if echo "$mcpresp_fail_open" | grep -q 'AKIA'; then
+  echo "Malformed MCP JSON must not pass secrets" >&2
   echo "$mcpresp_fail_open" >&2
   exit 1
 fi

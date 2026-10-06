@@ -59,6 +59,7 @@ def seal_text(offsend: Path, key_path: Path, text: str) -> str:
                 "seal",
                 "--key-file",
                 str(key_path),
+                "--secrets-only",
                 "--quiet",
                 "--working-directory",
                 tmp,

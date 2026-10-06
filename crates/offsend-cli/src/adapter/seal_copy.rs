@@ -14,11 +14,14 @@ pub struct SealCopyOutcome {
     pub message_suffix: String,
 }
 
-/// Seal `entities` in `text`, write 0600 temp file, best-effort pbcopy on Darwin.
+/// Seal `entities` in `text` and write a 0600 temp file.
+/// Clipboard copy is opt-in (`copy_to_clipboard`) so automatic read-gate
+/// substitution does not overwrite the user's clipboard.
 pub fn attempt(
     text: &str,
     entities: &[SensitiveEntity],
     key: &[u8],
+    copy_to_clipboard: bool,
 ) -> SealCopyOutcome {
     let spans: Vec<SealSpan> = entities
         .iter()
@@ -65,13 +68,18 @@ pub fn attempt(
         }
     };
 
-    let _ = copy_clipboard(&sealed);
+    if copy_to_clipboard {
+        let _ = copy_clipboard(&sealed);
+    }
 
     SealCopyOutcome {
         ok: true,
         path: Some(path),
-        message_suffix: " A sealed copy is on the clipboard (and in a private temp file)."
-            .into(),
+        message_suffix: if copy_to_clipboard {
+            " A sealed copy is on the clipboard (and in a private temp file).".into()
+        } else {
+            " A sealed copy is in a private temp file.".into()
+        },
     }
 }
 
