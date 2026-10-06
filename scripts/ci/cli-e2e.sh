@@ -1218,10 +1218,12 @@ fi
 # Shell-output audit: a printed secret is recorded and notified, never blocked.
 shell_audit_repo="$workdir/shell-audit"
 mkdir -p "$shell_audit_repo"
-# The audit log lives in the user-local store, next to mcp-activity.log, so the
-# assertions below read the last line rather than the whole file.
-shell_audit_log="$HOME/Library/Application Support/Offsend/shell-output-audit.log"
-if [[ ! -d "$(dirname "$shell_audit_log")" ]]; then
+# Same path as `audit_log_path()` in shell_audit.rs. Do not probe whether the
+# directory already exists: a fresh runner has no Application Support/Offsend
+# yet, and the CLI creates it only when it appends the log.
+if [[ "$(uname -s)" == Darwin ]]; then
+  shell_audit_log="$HOME/Library/Application Support/Offsend/shell-output-audit.log"
+else
   shell_audit_log="${XDG_CONFIG_HOME:-$HOME/.config}/offsend/shell-output-audit.log"
 fi
 set +e
