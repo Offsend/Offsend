@@ -585,6 +585,7 @@ mod tests {
     fn object_body_keeps_shape_and_both_secrets() {
         let dir = temp_dir();
         let key = write_key(&dir);
+        // offsend:ignore-next-line
         let plain = "DATABASE_URL=postgres://admin:my-real-looking-pass-781492@db.internal/prod\nAWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF";
         let stdin = json!({
             "tool_output": {
@@ -599,7 +600,9 @@ mod tests {
         assert_eq!(sealed.get("ok"), Some(&json!(true)));
         assert_eq!(sealed.get("count"), Some(&json!(1)));
         let text = sealed["content"][0]["text"].as_str().unwrap();
+        // offsend:ignore-next-line
         assert!(!text.contains("my-real-looking-pass-781492"), "{text}");
+        // offsend:ignore-next-line
         assert!(!text.contains("AKIA1234567890ABCDEF"), "{text}");
         assert!(text.contains("postgres://admin:"), "{text}");
         assert!(text.contains("v1."), "{text}");
@@ -611,6 +614,7 @@ mod tests {
         let dir = temp_dir();
         let key = write_key(&dir);
         let inner = json!({
+            // offsend:ignore-next-line
             "text": "DATABASE_URL=postgres://admin:my-real-looking-pass-781492@db.internal/prod\nAWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF"
         })
         .to_string();
@@ -623,13 +627,16 @@ mod tests {
         )
         .unwrap();
         let s = sealed.as_str().unwrap();
+        // offsend:ignore-next-line
         assert!(!s.contains("my-real-looking-pass-781492"), "{s}");
+        // offsend:ignore-next-line
         assert!(!s.contains("AKIA1234567890ABCDEF"), "{s}");
         let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
     fn result_json_cannot_replace() {
+        // offsend:ignore-next-line
         let root = json!({"result_json": {"secret": "AKIA1234567890ABCDEF"}});
         let (_, can_replace) = extract_response_body(&root, Adapter::Cursor).unwrap();
         assert!(!can_replace);
@@ -642,6 +649,7 @@ mod tests {
         let inner = json!({
             "content": [{
                 "type": "text",
+                // offsend:ignore-next-line
                 "text": "AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF"
             }],
             "ok": true
@@ -662,6 +670,7 @@ mod tests {
         assert!(sealed.is_object(), "{sealed}");
         assert_eq!(sealed.get("ok"), Some(&json!(true)));
         let text = sealed["content"][0]["text"].as_str().unwrap();
+        // offsend:ignore-next-line
         assert!(!text.contains("AKIA1234567890ABCDEF"), "{text}");
         assert!(text.contains("v1."), "{text}");
         let wire = json!({
@@ -682,6 +691,7 @@ mod tests {
         let inner = json!({
             "content": [{
                 "type": "text",
+                // offsend:ignore-next-line
                 "text": "AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF"
             }]
         })
@@ -692,6 +702,7 @@ mod tests {
         assert!(can_replace);
         let text = body["content"][0]["text"].as_str().unwrap();
         assert!(
+            // offsend:ignore-next-line
             text.contains("AKIA1234567890ABCDEF"),
             "expected decoded AWS key, got {text}"
         );
@@ -705,6 +716,7 @@ mod tests {
         .unwrap();
         assert!(sealed.is_object(), "{sealed}");
         assert!(
+            // offsend:ignore-next-line
             !sealed.to_string().contains("AKIA1234567890ABCDEF"),
             "{sealed}"
         );
@@ -720,6 +732,7 @@ mod tests {
 
     #[test]
     fn missing_response_field_is_unchecked() {
+        // offsend:ignore-next-line
         let root = json!({"result": "AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF"});
         let err = extract_response_body(&root, Adapter::Claude).unwrap_err();
         assert!(err.contains("missing tool_response"), "{err}");
@@ -746,6 +759,7 @@ mod tests {
     fn secret_in_json_key_is_rejected() {
         let dir = temp_dir();
         let key = write_key(&dir);
+        // offsend:ignore-next-line
         let value = json!({ "AKIA1234567890ABCDEF": "ok" });
         let err = seal_value(&value, false, Some(key.to_str().unwrap()), None, &dir).unwrap_err();
         assert!(err.contains("JSON key"), "{err}");
