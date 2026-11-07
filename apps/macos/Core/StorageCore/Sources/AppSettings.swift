@@ -45,6 +45,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var launchAtLogin: Bool
     public var defaultNoRiskAction: DefaultNoRiskAction
     public var enabledDetectors: Set<SensitiveEntityType>
+    public var highEntropySensitivity: HighEntropySensitivity
     public var mappingTTL: MappingTTL
     public var restoreBehavior: RestoreBehavior
     public var preserveOriginalClipboard: Bool
@@ -85,6 +86,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case launchAtLogin
         case defaultNoRiskAction
         case enabledDetectors
+        case highEntropySensitivity
         case mappingTTL
         case restoreBehavior
         case preserveOriginalClipboard
@@ -110,6 +112,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         launchAtLogin: Bool = false,
         defaultNoRiskAction: DefaultNoRiskAction = .pasteOriginal,
         enabledDetectors: Set<SensitiveEntityType> = Set(SensitiveEntityType.allCases),
+        highEntropySensitivity: HighEntropySensitivity = .normal,
         mappingTTL: MappingTTL = .oneHour,
         restoreBehavior: RestoreBehavior = .copyToClipboard,
         preserveOriginalClipboard: Bool = true,
@@ -135,6 +138,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.launchAtLogin = launchAtLogin
         self.defaultNoRiskAction = defaultNoRiskAction
         self.enabledDetectors = enabledDetectors
+        self.highEntropySensitivity = highEntropySensitivity
         self.mappingTTL = mappingTTL
         self.restoreBehavior = restoreBehavior
         self.preserveOriginalClipboard = preserveOriginalClipboard
@@ -162,6 +166,10 @@ public struct AppSettings: Codable, Equatable, Sendable {
             launchAtLogin: try container.decode(Bool.self, forKey: .launchAtLogin),
             defaultNoRiskAction: try container.decode(DefaultNoRiskAction.self, forKey: .defaultNoRiskAction),
             enabledDetectors: try container.decode(Set<SensitiveEntityType>.self, forKey: .enabledDetectors),
+            highEntropySensitivity: try container.decodeIfPresent(
+                HighEntropySensitivity.self,
+                forKey: .highEntropySensitivity
+            ) ?? .normal,
             mappingTTL: try container.decode(MappingTTL.self, forKey: .mappingTTL),
             restoreBehavior: try container.decode(RestoreBehavior.self, forKey: .restoreBehavior),
             preserveOriginalClipboard: try container.decode(Bool.self, forKey: .preserveOriginalClipboard),

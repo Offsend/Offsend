@@ -94,5 +94,21 @@
     "confidence": 0.95,
     "pattern_b64": "ZGFwaVswLTlhLWZdezMyfQ==",
     "case_insensitive": false
+  },
+  {
+    "id": "labeled-password",
+    "type": "apiKeyGeneric",
+    "source": "secret",
+    "confidence": 0.9,
+    "pattern_b64": "KD88IVtBLVphLXowLTldKSg/OltBLVphLXowLTldK1tfLi1dKSooPzpwYXNzd29yZHxwYXNzd2R8cGFzc3BocmFzZXxwd2QpWyciXT9ccypbOj1dXHMqKD86KFsiJ10pXEsoPyFbJCVdKVteIidcc117OCx9KD89XDEpfFxLKD8hWyQlL34uXSkoPz1bXlxzJyIsO10qWzAtOSFAIyQlXiYqKz0/fl0pW15ccyciKClcW1xde30sOzw+XXs4LH0oPyFbXlxzJyIsO10pKQ==",
+    "case_insensitive": true
+  },
+  {
+    "id": "standalone-symbol-secret",
+    "type": "highEntropyString",
+    "source": "secret",
+    "confidence": 0.6,
+    "pattern_b64": "KD9tKV5bIFx0XSpcSyg/PVshIy0mKC1fYS1+XSpbISMkJSYoKSosLjo7PD4/QFxbXFxcXV57fH1+XSlbISMtJigtX2Etfl17MTIsfSg/PVsgXHRdKlxyPyQp",
+    "case_insensitive": false
   }
 ]

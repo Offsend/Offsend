@@ -2,7 +2,8 @@
 
 use offsend_detect::{
     assess_risk, mask_text, restore_text, CustomDictionaryItem, CustomDictionaryKind,
-    DetectionEngine, DetectionOptions, DetectionRequest, EntityType, MaskSpan, SensitivityTier,
+    DetectionEngine, DetectionOptions, DetectionRequest, EntityType, HighEntropySensitivity,
+    MaskSpan, SensitivityTier,
 };
 use offsend_policy::{
     build_check_report, check_report_to_json, resolve_audit_configuration, AuditConfigOverrides,
@@ -34,7 +35,8 @@ macro_rules! ffi_guard {
 /// Scan `text` for sensitive entities. Returns heap-allocated UTF-8 JSON, or NULL on error.
 ///
 /// `options_json_or_null` is optional JSON (camelCase) with `enabledTypes`, `maximumLength`,
-/// `honorInlineIgnore`, and `customDictionaries`. Null uses defaults.
+/// `honorInlineIgnore`, `customDictionaries`, and `highEntropySensitivity`
+/// (`strict` | `normal` | `relaxed`). Null uses defaults.
 ///
 /// On error, if `err_out` is non-null, writes a heap-allocated error message there
 /// (also freed with [`offsend_string_free`]).
@@ -493,6 +495,8 @@ struct DetectOptionsJson {
     honor_inline_ignore: Option<bool>,
     #[serde(default)]
     custom_dictionaries: Option<Vec<CustomDictionaryJson>>,
+    #[serde(default)]
+    high_entropy_sensitivity: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -581,6 +585,12 @@ fn parse_detect_options(raw: &str) -> Result<DetectionOptions, String> {
             });
         }
         options.custom_dictionaries = items;
+    }
+    if let Some(name) = parsed.high_entropy_sensitivity {
+        let Some(level) = HighEntropySensitivity::from_swift_name(&name) else {
+            return Err(format!("unknown high entropy sensitivity '{name}'"));
+        };
+        options.high_entropy_sensitivity = level;
     }
     Ok(options)
 }

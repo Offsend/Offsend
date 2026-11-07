@@ -291,7 +291,7 @@
     "type": "highEntropyString",
     "source": "secret",
     "confidence": 0.65,
-    "pattern_b64": "KD88IVtBLVphLXowLTkrLz1fLV0pW0EtWmEtejAtOSsvPV8tXXs0MCx9KD8hW0EtWmEtejAtOSsvPV8tXSk=",
+    "pattern_b64": "KD88IVtBLVphLXowLTkrLz1fLV0pW0EtWmEtejAtOSsvPV8tXXsyNCx9KD8hW0EtWmEtejAtOSsvPV8tXSk=",
     "pattern_len": 62,
     "case_insensitive": true
   }

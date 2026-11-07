@@ -179,6 +179,28 @@ struct SettingsDetectionPanel: View {
                 }
             }
 
+            OFSettingsGroup(
+                title: OffsendStrings.settingsDetectionRandomStringsTitle,
+                hint: OffsendStrings.settingsDetectionRandomStringsHint
+            ) {
+                OFSettingsRow(
+                    label: OffsendStrings.settingsDetectionRandomStringsSensitivity,
+                    hint: OffsendStrings.settingsDetectionRandomStringsSensitivityHint
+                ) {
+                    OFSelectMenu(
+                        selection: binder.setting(\.highEntropySensitivity),
+                        options: HighEntropySensitivity.allCases.map {
+                            OFSelectOption(
+                                value: $0,
+                                label: AppLocalization.highEntropySensitivityName($0),
+                                detail: AppLocalization.highEntropySensitivityDetail($0)
+                            )
+                        }
+                    )
+                }
+            }
+            .padding(.bottom, 18)
+
             if customDictionariesEnabled {
                 customDictionariesSection(binder: binder)
             } else {
