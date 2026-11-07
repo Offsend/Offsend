@@ -109,7 +109,10 @@ impl DetectionEngine {
         entities = crate::span_refine::refine_secret_spans(entities, text);
         // Drop rejected candidates first: a failed IBAN/card/phone checksum must
         // not win overlap and then take a real finding down with it.
-        entities = sanitizers::filter_false_positives(entities);
+        entities = sanitizers::filter_false_positives(
+            entities,
+            request.options.high_entropy_sensitivity,
+        );
         entities = overlap::resolve(entities);
         for e in &mut entities {
             if e.end <= text.len() && e.start <= e.end && text.is_char_boundary(e.start) && text.is_char_boundary(e.end) {

@@ -10,6 +10,15 @@ public struct DetectionRequest: Sendable {
     }
 }
 
+/// How short a `highEntropyString` finding may be. Raw values are the Rust FFI names.
+public enum HighEntropySensitivity: String, Codable, CaseIterable, Identifiable, Sendable {
+    case strict
+    case normal
+    case relaxed
+
+    public var id: String { rawValue }
+}
+
 public struct DetectionOptions: Equatable, Sendable {
     public var enabledTypes: Set<SensitiveEntityType>
     public var customDictionaries: [CustomDictionaryItem]
@@ -20,6 +29,7 @@ public struct DetectionOptions: Equatable, Sendable {
     /// when scanning trusted, user-authored files (e.g. `offsend check`). Must stay `false` for the
     /// clipboard guard, otherwise copied content carrying the directive could silently disable masking.
     public var honorInlineIgnore: Bool
+    public var highEntropySensitivity: HighEntropySensitivity
 
     public init(
         enabledTypes: Set<SensitiveEntityType> = Set(SensitiveEntityType.allCases),
@@ -27,7 +37,8 @@ public struct DetectionOptions: Equatable, Sendable {
         maximumLength: Int = 50_000,
         aiDetectionEnabled: Bool = false,
         selectedAIModelID: String? = nil,
-        honorInlineIgnore: Bool = false
+        honorInlineIgnore: Bool = false,
+        highEntropySensitivity: HighEntropySensitivity = .normal
     ) {
         self.enabledTypes = enabledTypes
         self.customDictionaries = customDictionaries
@@ -35,6 +46,7 @@ public struct DetectionOptions: Equatable, Sendable {
         self.aiDetectionEnabled = aiDetectionEnabled
         self.selectedAIModelID = selectedAIModelID
         self.honorInlineIgnore = honorInlineIgnore
+        self.highEntropySensitivity = highEntropySensitivity
     }
 
     public static let `default` = DetectionOptions()

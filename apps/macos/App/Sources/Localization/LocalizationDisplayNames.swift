@@ -26,6 +26,28 @@ enum AppLocalization {
         }
     }
 
+    static func highEntropySensitivityName(_ level: HighEntropySensitivity) -> String {
+        switch level {
+        case .strict:
+            return OffsendStrings.settingsDetectionRandomStringsStrict
+        case .normal:
+            return OffsendStrings.settingsDetectionRandomStringsNormal
+        case .relaxed:
+            return OffsendStrings.settingsDetectionRandomStringsRelaxed
+        }
+    }
+
+    static func highEntropySensitivityDetail(_ level: HighEntropySensitivity) -> String {
+        switch level {
+        case .strict:
+            return OffsendStrings.settingsDetectionRandomStringsStrictDetail
+        case .normal:
+            return OffsendStrings.settingsDetectionRandomStringsNormalDetail
+        case .relaxed:
+            return OffsendStrings.settingsDetectionRandomStringsRelaxedDetail
+        }
+    }
+
     static func restoreBehaviorName(_ behavior: RestoreBehavior) -> String {
         switch behavior {
         case .copyToClipboard:

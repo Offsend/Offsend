@@ -108,7 +108,7 @@
     "type": "highEntropyString",
     "source": "secret",
     "confidence": 0.6,
-    "pattern_b64": "KD9tKV5bIFx0XSpcSyg/PVshIy0mKC1fYS1+XSpbISMkJSYoKSosLjo7PD4/QFxbXFxcXV57fH1+XSlbISMtJigtX2Etfl17MTYsfSg/PVsgXHRdKlxyPyQp",
+    "pattern_b64": "KD9tKV5bIFx0XSpcSyg/PVshIy0mKC1fYS1+XSpbISMkJSYoKSosLjo7PD4/QFxbXFxcXV57fH1+XSlbISMtJigtX2Etfl17MTIsfSg/PVsgXHRdKlxyPyQp",
     "case_insensitive": false
   }
 ]

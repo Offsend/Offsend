@@ -1,4 +1,4 @@
-use crate::types::{EntityType, SensitiveEntity};
+use crate::types::{EntityType, HighEntropySensitivity, SensitiveEntity};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
 use fancy_regex::Regex;
@@ -29,7 +29,10 @@ static SEAL_TOKEN_INNER: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"(?i)^[A-Z][A-Z0-9_]*:v1\.[A-Za-z0-9_-]+$").unwrap()
 });
 
-pub fn filter_false_positives(entities: Vec<SensitiveEntity>) -> Vec<SensitiveEntity> {
+pub fn filter_false_positives(
+    entities: Vec<SensitiveEntity>,
+    sensitivity: HighEntropySensitivity,
+) -> Vec<SensitiveEntity> {
     entities
         .into_iter()
         .filter(|e| match e.entity_type {
@@ -38,7 +41,9 @@ pub fn filter_false_positives(entities: Vec<SensitiveEntity>) -> Vec<SensitiveEn
             EntityType::CreditCardLike => !should_reject_card(&e.value),
             EntityType::Iban => !should_reject_iban(&e.value),
             EntityType::Jwt => !should_reject_jwt(&e.value),
-            EntityType::HighEntropyString => !should_reject_high_entropy(&e.value),
+            EntityType::HighEntropyString => {
+                !is_too_short(&e.value, sensitivity) && !should_reject_high_entropy(&e.value)
+            }
             t if t.is_secret() => !is_placeholder(&e.value),
             _ => true,
         })
@@ -242,6 +247,15 @@ static CODE_OR_STRUCTURED: Lazy<Vec<Regex>> = Lazy::new(|| {
 
 fn is_base_alphabet(c: char) -> bool {
     c.is_ascii_alphanumeric() || matches!(c, '+' | '/' | '=' | '_' | '-')
+}
+
+fn is_too_short(value: &str, sensitivity: HighEntropySensitivity) -> bool {
+    let min = if value.chars().all(is_base_alphabet) {
+        sensitivity.min_base_length()
+    } else {
+        sensitivity.min_symbol_length()
+    };
+    value.chars().count() < min
 }
 
 fn should_reject_high_entropy(value: &str) -> bool {

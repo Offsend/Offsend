@@ -195,6 +195,16 @@
 "settings.detection.customDictionaries.savedCount" = "%d saved — upgrade to Pro to use them again";
 "settings.detection.severity.medium" = "Medium";
 "settings.detection.severity.critical" = "Critical";
+"settings.detection.randomStrings.title" = "Random strings";
+"settings.detection.randomStrings.hint" = "Applies to long random secret-like strings only. Tokens, keys, and labeled passwords are always detected.";
+"settings.detection.randomStrings.sensitivity" = "Sensitivity";
+"settings.detection.randomStrings.sensitivityHint" = "How short a random-looking string can be before it is flagged.";
+"settings.detection.randomStrings.strict" = "Strict";
+"settings.detection.randomStrings.strictDetail" = "From 24 characters, or 12 with symbols. Catches more, with more false alarms.";
+"settings.detection.randomStrings.normal" = "Normal";
+"settings.detection.randomStrings.normalDetail" = "From 40 characters, or 16 with symbols.";
+"settings.detection.randomStrings.relaxed" = "Relaxed";
+"settings.detection.randomStrings.relaxedDetail" = "From 48 characters, or 24 with symbols. Fewer false alarms.";
 
 "settings.ai.summary.title" = "Local AI models";
 "settings.ai.summary.body" = "Import or download NER and PII models from Hugging Face, a local folder, direct URL, or manifest. ONNX models use Core ML on Apple Silicon when available. Add a Hugging Face token for gated repos. Everything stays on this Mac.";

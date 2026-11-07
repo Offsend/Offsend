@@ -1,6 +1,6 @@
 use offsend_detect::{
     CustomDictionaryItem, CustomDictionaryKind, DetectionEngine, DetectionOptions, DetectionRequest,
-    DetectionSource, EntityType,
+    DetectionSource, EntityType, HighEntropySensitivity,
 };
 
 #[test]
@@ -753,6 +753,116 @@ fn symbol_secret_detection_rate_on_generated_passwords() {
             assert!(rate >= 0.85, "{name} len {len}: detection rate {rate:.3} below 0.85");
         }
     }
+}
+
+fn high_entropy_values_at(text: &str, sensitivity: HighEntropySensitivity) -> Vec<String> {
+    let mut options = DetectionOptions::default();
+    options.high_entropy_sensitivity = sensitivity;
+    DetectionEngine::scan(&DetectionRequest {
+        text: text.to_string(),
+        options,
+    })
+    .entities
+    .into_iter()
+    .filter(|e| e.entity_type == EntityType::HighEntropyString)
+    .map(|e| e.value)
+    .collect()
+}
+
+#[test]
+fn high_entropy_sensitivity_defaults_to_normal() {
+    assert_eq!(
+        DetectionOptions::default().high_entropy_sensitivity,
+        HighEntropySensitivity::Normal
+    );
+    for name in ["strict", "normal", "relaxed"] {
+        let level = HighEntropySensitivity::from_swift_name(name).unwrap();
+        assert_eq!(level.swift_name(), name);
+    }
+    assert!(HighEntropySensitivity::from_swift_name("paranoid").is_none());
+}
+
+#[test]
+fn high_entropy_sensitivity_sets_minimum_lengths() {
+    const BASE: &str = "Zq8Lm3Xv7Rt2Yb9Kp4Wn6Hc1Jd5Fs0GaQe8UiO3Mx7Vz2NbT6";
+    const SYMBOL: &str = "Zq8$Lm3!Xv7#Rt2@Yb9%Kp4^Wn6&";
+    let levels = [
+        (HighEntropySensitivity::Strict, 24, 12),
+        (HighEntropySensitivity::Normal, 40, 16),
+        (HighEntropySensitivity::Relaxed, 48, 24),
+    ];
+    for (level, base_min, symbol_min) in levels {
+        assert_eq!(level.min_base_length(), base_min);
+        assert_eq!(level.min_symbol_length(), symbol_min);
+        for (source, min) in [(BASE, base_min), (SYMBOL, symbol_min)] {
+            let short = &source[..min - 1];
+            let exact = &source[..min];
+            assert!(
+                high_entropy_values_at(short, level).is_empty(),
+                "{level:?}: {short} should be too short"
+            );
+            assert_eq!(
+                high_entropy_values_at(exact, level),
+                vec![exact.to_string()],
+                "{level:?}: {exact} should be detected"
+            );
+        }
+    }
+}
+
+#[test]
+fn high_entropy_sensitivity_leaves_exact_detectors_alone() {
+    // Strings shorter than every level stay critical secrets regardless of setting.
+    let text = "token ghp_ZEDtJxZsQ0w2lc3YvPCgxBQqEkt7vU1X4Ruq password: Zq8$Lm3!Xv";
+    for level in [HighEntropySensitivity::Strict, HighEntropySensitivity::Relaxed] {
+        let mut options = DetectionOptions::default();
+        options.high_entropy_sensitivity = level;
+        let result = DetectionEngine::scan(&DetectionRequest {
+            text: text.to_string(),
+            options,
+        });
+        let types: Vec<EntityType> = result.entities.iter().map(|e| e.entity_type).collect();
+        assert!(types.contains(&EntityType::GithubToken), "{level:?}: {types:?}");
+        assert!(types.contains(&EntityType::ApiKeyGeneric), "{level:?}: {types:?}");
+    }
+}
+
+#[test]
+fn strict_sensitivity_still_rejects_names_and_code() {
+    let samples = [
+        "getUserAccountPreferences",
+        "SettingsDetectionPanelView",
+        "my-component-name-v2-build",
+        "user_profile_settings_dark_mode",
+        "apps/macos/Core/DetectionCore",
+        "2026-11-07T10-23-00-report",
+        "abcdefghijklmnopqrstuvwxyz",
+        "000000000000000000000000",
+        "ExitCode::from(1)",
+        "items[0].price*qty2",
+        "192.168.0.1:8080",
+        "certifi==2021.05.30",
+        "https://a.io/x?q=1",
+    ];
+    for s in samples {
+        let values = high_entropy_values_at(s, HighEntropySensitivity::Strict);
+        assert!(values.is_empty(), "unexpected highEntropyString in {s}: {values:?}");
+    }
+}
+
+#[test]
+fn strict_sensitivity_detects_short_random_strings() {
+    let mut rng = XorShift(0x2545_F491_4F6C_DD1D);
+    let base62 = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let samples = 2000;
+    let detected = (0..samples)
+        .filter(|_| {
+            let s = rng.string(base62, 24);
+            !high_entropy_values_at(&s, HighEntropySensitivity::Strict).is_empty()
+        })
+        .count();
+    let rate = detected as f64 / samples as f64;
+    assert!(rate >= 0.95, "base62 len 24: strict detection rate {rate:.4} below 0.95");
 }
 
 #[test]

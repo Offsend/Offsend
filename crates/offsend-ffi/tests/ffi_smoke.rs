@@ -24,6 +24,38 @@ fn detect_scan_returns_json() {
     }
 }
 
+unsafe fn scan_with_options(text: &str, options: &str) -> Result<String, String> {
+    let text = CString::new(text).unwrap();
+    let options = CString::new(options).unwrap();
+    let mut err: *mut c_char = ptr::null_mut();
+    let raw = offsend_ffi::offsend_detect_scan(text.as_ptr(), options.as_ptr(), &mut err);
+    match take_cstr(raw) {
+        Some(json) => Ok(json),
+        None => Err(take_cstr(err).unwrap_or_default()),
+    }
+}
+
+#[test]
+fn detect_scan_applies_high_entropy_sensitivity() {
+    let text = "Zq8Lm3Xv7Rt2Yb9Kp4Wn6Hc1Jd5Fs0";
+    unsafe {
+        let strict = scan_with_options(text, r#"{"highEntropySensitivity":"strict"}"#).unwrap();
+        assert!(strict.contains("highEntropyString"), "strict: {strict}");
+        let normal = scan_with_options(text, r#"{"highEntropySensitivity":"normal"}"#).unwrap();
+        assert!(!normal.contains("highEntropyString"), "normal: {normal}");
+        let default = scan_with_options(text, "{}").unwrap();
+        assert!(!default.contains("highEntropyString"), "default: {default}");
+    }
+}
+
+#[test]
+fn detect_scan_rejects_unknown_high_entropy_sensitivity() {
+    unsafe {
+        let err = scan_with_options("x", r#"{"highEntropySensitivity":"paranoid"}"#).unwrap_err();
+        assert!(err.contains("paranoid"), "err={err}");
+    }
+}
+
 #[test]
 fn audit_temp_directory() {
     let dir = tempfile_dir();

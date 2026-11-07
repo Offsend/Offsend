@@ -348,7 +348,8 @@ extension AppCoordinator {
             customDictionaries: tariffFeatures.customDictionaries ? customDictionaries : [],
             maximumLength: maximumLength,
             aiDetectionEnabled: aiEnabled,
-            selectedAIModelID: settings.selectedAIModelID
+            selectedAIModelID: settings.selectedAIModelID,
+            highEntropySensitivity: settings.highEntropySensitivity
         )
     }
 

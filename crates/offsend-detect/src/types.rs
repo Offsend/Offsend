@@ -282,12 +282,61 @@ pub struct CustomDictionaryItem {
     pub value: String,
 }
 
+/// How short a `highEntropyString` finding may be. Other detectors are unaffected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum HighEntropySensitivity {
+    Strict,
+    #[default]
+    Normal,
+    Relaxed,
+}
+
+impl HighEntropySensitivity {
+    pub fn from_swift_name(name: &str) -> Option<Self> {
+        Some(match name {
+            "strict" => Self::Strict,
+            "normal" => Self::Normal,
+            "relaxed" => Self::Relaxed,
+            _ => return None,
+        })
+    }
+
+    pub fn swift_name(self) -> &'static str {
+        match self {
+            Self::Strict => "strict",
+            Self::Normal => "normal",
+            Self::Relaxed => "relaxed",
+        }
+    }
+
+    /// Minimum length of a base64-alphabet run anywhere in text. Built-in rules
+    /// match from the `Strict` value, so it must stay the smallest.
+    pub fn min_base_length(self) -> usize {
+        match self {
+            Self::Strict => 24,
+            Self::Normal => 40,
+            Self::Relaxed => 48,
+        }
+    }
+
+    /// Minimum length of a standalone token with symbols. Built-in rules match
+    /// from the `Strict` value, so it must stay the smallest.
+    pub fn min_symbol_length(self) -> usize {
+        match self {
+            Self::Strict => 12,
+            Self::Normal => 16,
+            Self::Relaxed => 24,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct DetectionOptions {
     pub enabled_types: HashSet<EntityType>,
     pub maximum_length: usize,
     pub honor_inline_ignore: bool,
     pub custom_dictionaries: Vec<CustomDictionaryItem>,
+    pub high_entropy_sensitivity: HighEntropySensitivity,
 }
 
 impl Default for DetectionOptions {
@@ -297,6 +346,7 @@ impl Default for DetectionOptions {
             maximum_length: 50_000,
             honor_inline_ignore: false,
             custom_dictionaries: Vec::new(),
+            high_entropy_sensitivity: HighEntropySensitivity::default(),
         }
     }
 }

@@ -22,6 +22,7 @@ private struct RustDetectOptionsDTO: Encodable {
     let maximumLength: Int?
     let honorInlineIgnore: Bool?
     let customDictionaries: [RustCustomDictionaryDTO]?
+    let highEntropySensitivity: String?
 }
 
 private struct RustCustomDictionaryDTO: Encodable {
@@ -51,7 +52,8 @@ public enum RustDetection {
             honorInlineIgnore: options.honorInlineIgnore,
             customDictionaries: options.customDictionaries.map {
                 RustCustomDictionaryDTO(kind: $0.kind.rawValue, value: $0.value)
-            }
+            },
+            highEntropySensitivity: options.highEntropySensitivity.rawValue
         )
         let data = try JSONEncoder().encode(dto)
         guard let json = String(data: data, encoding: .utf8) else {
