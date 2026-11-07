@@ -189,29 +189,189 @@ fn should_reject_jwt(value: &str) -> bool {
     json.get("alg").is_none()
 }
 
+/// Thresholds measured on random hex/base36/base62/base64 vs identifiers and slugs:
+/// random hex stays above 3.15 bits/char, other random alphabets above 3.9, and
+/// random strings keep word coverage under 0.5 while names/slugs sit at 0.5+.
+/// Real paths sit at 0.4+, while random base64 with `/` stays under 0.3.
+const MIN_HEX_ENTROPY: f64 = 3.0;
+const MIN_ENTROPY: f64 = 3.5;
+const MAX_WORD_COVERAGE: f64 = 0.5;
+const MAX_PATH_WORD_COVERAGE: f64 = 0.3;
+/// Charset literals (`abc…xyzABC…0123…`) step by one code point almost everywhere.
+const MAX_SEQUENTIAL_PAIRS: f64 = 0.5;
+
+/// Standalone tokens with symbols (passwords): measured on generated passwords vs
+/// every whole-line token of this repository (code, docs, vendored Python, plists).
+const MIN_SYMBOL_ENTROPY: f64 = 3.0;
+const MAX_SYMBOL_WORD_COVERAGE: f64 = 0.4;
+const MIN_CLASS_TRANSITIONS: f64 = 0.45;
+
+/// Letter runs that read like words: `user`, `Account`, `RELEASE`.
+static WORD_RUN: Lazy<Regex> = Lazy::new(|| Regex::new(r"[A-Z]?[a-z]{4,}|[A-Z]{5,}").unwrap());
+
+/// Shapes of code, markup and structured values that random passwords almost never contain.
+static CODE_OR_STRUCTURED: Lazy<Vec<Regex>> = Lazy::new(|| {
+    [
+        // URL
+        r"(?i)://|^www\.|^mailto:",
+        // email
+        r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}",
+        // path
+        r"^(?:~|\.{1,2})?/",
+        // XML / HTML tag
+        r"</?[A-Za-z][A-Za-z0-9]*>",
+        // regex group or character range
+        r"\(\?|\[[^\]]*[0-9a-zA-Z]-[0-9a-zA-Z][^\]]*\]",
+        // call: `name_by_id(`, `Self(`
+        r"(?<![A-Za-z0-9])[A-Za-z_][A-Za-z0-9_]{4,}\(|(?<![A-Za-z0-9])[A-Z][a-z]{2,}\(",
+        // member access: `a.method`, `Type::item`, `ptr->field`
+        r"[A-Za-z_][A-Za-z0-9_]*(?:\.|::|->)[A-Za-z_][A-Za-z0-9_]{3,}",
+        // index / slice: `[0]`, `[2:-1]`
+        r"\[-?\d*:?-?\d*\]",
+        // date / time
+        r"\d{4}-\d{2}-\d{2}|\d{1,2}:\d{2}:\d{2}",
+        // version, IP, decimal
+        r"\d+\.\d+",
+        // snake_case / SCREAMING_CASE identifier
+        r"[A-Za-z0-9]{2,}_[A-Za-z0-9]{2,}_[A-Za-z0-9]{2,}",
+    ]
+    .iter()
+    .map(|p| Regex::new(p).unwrap())
+    .collect()
+});
+
+fn is_base_alphabet(c: char) -> bool {
+    c.is_ascii_alphanumeric() || matches!(c, '+' | '/' | '=' | '_' | '-')
+}
+
 fn should_reject_high_entropy(value: &str) -> bool {
-    if is_likely_source_identifier(value) {
-        return true;
-    }
-    if value.contains('/') && !value.contains('+') && !value.contains('=') {
-        return true;
+    if !value.chars().all(is_base_alphabet) {
+        return should_reject_symbol_secret(value);
     }
     let has_secret_signal = value
         .chars()
         .any(|c| c.is_ascii_digit() || c == '+' || c == '=');
-    !has_secret_signal
+    if !has_secret_signal {
+        return true;
+    }
+    let min_entropy = if value.chars().all(|c| c.is_ascii_hexdigit()) {
+        MIN_HEX_ENTROPY
+    } else {
+        MIN_ENTROPY
+    };
+    if shannon_entropy(value) < min_entropy || sequential_pair_ratio(value) >= MAX_SEQUENTIAL_PAIRS {
+        return true;
+    }
+    let coverage = word_coverage(value);
+    let path_like = value.contains('/') && !value.contains('+') && !value.contains('=');
+    coverage >= MAX_WORD_COVERAGE || (path_like && coverage >= MAX_PATH_WORD_COVERAGE)
 }
 
-fn is_likely_source_identifier(value: &str) -> bool {
-    let Some(first) = value.chars().next() else {
+fn should_reject_symbol_secret(value: &str) -> bool {
+    let has_letter = value.chars().any(|c| c.is_ascii_alphabetic());
+    let has_digit = value.chars().any(|c| c.is_ascii_digit());
+    if !has_letter || !has_digit {
+        return true;
+    }
+    // Code lines end with `,` `;` `:`; backslashes are escapes or Windows paths.
+    if value.ends_with([',', ';', ':']) || value.contains('\\') || has_single_delimiter(value) {
+        return true;
+    }
+    if CODE_OR_STRUCTURED
+        .iter()
+        .any(|re| re.is_match(value).unwrap_or(true))
+    {
+        return true;
+    }
+    shannon_entropy(value) < MIN_SYMBOL_ENTROPY
+        || word_coverage(value) >= MAX_SYMBOL_WORD_COVERAGE
+        || class_transition_ratio(value) < MIN_CLASS_TRANSITIONS
+}
+
+/// `a:b:c:d`, `1-2-3-4`: every separator is the same character.
+fn has_single_delimiter(value: &str) -> bool {
+    let mut symbols = value.chars().filter(|c| !c.is_ascii_alphanumeric());
+    let Some(first) = symbols.next() else {
         return false;
     };
-    if !(first.is_ascii_alphabetic() || first == '_') {
-        return false;
+    let mut count = 1;
+    for c in symbols {
+        if c != first {
+            return false;
+        }
+        count += 1;
     }
-    value
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_')
+    count >= 3
+}
+
+/// Share of adjacent pairs that switch between lowercase, uppercase, digit and symbol.
+fn class_transition_ratio(value: &str) -> f64 {
+    fn class(c: char) -> u8 {
+        if c.is_ascii_lowercase() {
+            0
+        } else if c.is_ascii_uppercase() {
+            1
+        } else if c.is_ascii_digit() {
+            2
+        } else {
+            3
+        }
+    }
+    let classes: Vec<u8> = value.chars().map(class).collect();
+    if classes.len() < 2 {
+        return 0.0;
+    }
+    let switches = classes.windows(2).filter(|w| w[0] != w[1]).count();
+    switches as f64 / (classes.len() - 1) as f64
+}
+
+/// Bits per byte.
+fn shannon_entropy(value: &str) -> f64 {
+    let mut counts = [0usize; 256];
+    for b in value.bytes() {
+        counts[b as usize] += 1;
+    }
+    let len = value.len() as f64;
+    counts
+        .iter()
+        .filter(|&&c| c > 0)
+        .map(|&c| {
+            let p = c as f64 / len;
+            -p * p.log2()
+        })
+        .sum()
+}
+
+fn sequential_pair_ratio(value: &str) -> f64 {
+    let bytes = value.as_bytes();
+    if bytes.len() < 2 {
+        return 0.0;
+    }
+    let sequential = bytes.windows(2).filter(|w| w[1] == w[0].wrapping_add(1)).count();
+    sequential as f64 / (bytes.len() - 1) as f64
+}
+
+/// Share of `value` covered by word-like letter runs. A run counts only with a
+/// natural-language vowel ratio, so random lowercase stretches are not words.
+fn word_coverage(value: &str) -> f64 {
+    if value.is_empty() {
+        return 0.0;
+    }
+    let covered: usize = WORD_RUN
+        .find_iter(value)
+        .filter_map(|m| m.ok())
+        .map(|m| m.as_str())
+        .filter(|run| {
+            let vowels = run
+                .chars()
+                .filter(|c| matches!(c.to_ascii_lowercase(), 'a' | 'e' | 'i' | 'o' | 'u' | 'y'))
+                .count();
+            let ratio = vowels as f64 / run.len() as f64;
+            (0.25..=0.65).contains(&ratio)
+        })
+        .map(str::len)
+        .sum();
+    covered as f64 / value.len() as f64
 }
 
 fn is_placeholder(value: &str) -> bool {
@@ -241,4 +401,131 @@ fn is_placeholder(value: &str) -> bool {
     }
     let lower = value.to_ascii_lowercase();
     MARKERS.iter().any(|m| lower.contains(m))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn entropy_of_uniform_and_constant_strings() {
+        assert_eq!(shannon_entropy("aaaaaaaa"), 0.0);
+        assert!((shannon_entropy("0123456789abcdef") - 4.0).abs() < 1e-9);
+        assert!((shannon_entropy("abab") - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn word_coverage_counts_only_pronounceable_runs() {
+        assert!((word_coverage("release") - 1.0).abs() < 1e-9);
+        assert!((word_coverage("UsersAccount") - 1.0).abs() < 1e-9);
+        assert!((word_coverage("RELEASE") - 1.0).abs() < 1e-9);
+        // Random lowercase runs without a natural vowel ratio are not words.
+        assert_eq!(word_coverage("gjmwwftvxbmfqbqgd"), 0.0);
+        // Runs shorter than five letters are ignored.
+        assert_eq!(word_coverage("ab1cd2ef3"), 0.0);
+        assert_eq!(word_coverage(""), 0.0);
+    }
+
+    #[test]
+    fn rejects_by_shape_not_first_character() {
+        // offsend:ignore-next-line
+        let secret = "Zq8Lm3Xv7Rt2Yb9Kp4Wn6Hc1Jd5Fs0GaQe8UiO3Mx7Vz2NbT6";
+        assert!(!should_reject_high_entropy(secret));
+        assert!(!should_reject_high_entropy(&format!("8{secret}")));
+        assert!(!should_reject_high_entropy(&format!("_{secret}")));
+    }
+
+    #[test]
+    fn hex_uses_lower_entropy_floor() {
+        // 3.0..3.5 bits: kept for hex, rejected for other alphabets.
+        // offsend:ignore-next-line
+        let hex = "0371526403715264037152640371526403715264";
+        assert!(shannon_entropy(hex) >= MIN_HEX_ENTROPY && shannon_entropy(hex) < MIN_ENTROPY);
+        assert!(!should_reject_high_entropy(hex));
+        let not_hex = "0371526g0371526g0371526g0371526g0371526g";
+        assert!(should_reject_high_entropy(not_hex));
+    }
+
+    #[test]
+    fn rejects_charset_literals() {
+        assert!(should_reject_high_entropy(
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+        ));
+        assert!(should_reject_high_entropy(
+            "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+/"
+        ));
+        // offsend:ignore-next-line
+        assert!(sequential_pair_ratio("Zq8Lm3Xv7Rt2Yb9Kp4Wn6Hc1Jd5Fs0GaQe8UiO3Mx7Vz2NbT6") < 0.1);
+    }
+
+    #[test]
+    fn symbol_secret_accepts_generated_passwords() {
+        let passwords = [
+            "Zq8$Lm3!Xv7#Rt2@Yb9%Kp4^Wn6&Hc1*Jd5(Fs0)Ga",
+            "Zq8$Lm3!Xv7#Rt2@",
+            "x7#Kp2!vQ9&mL4^z",
+            "N3v3r$h@r3-Th1s!",
+            "R5&tY8*uI1(oP3)a",
+            "aB3$dE5^fG7&hI9*",
+            "4hT!9qZ%2mW^7xK&8",
+            "Gq7}k2~Vb9|Lx4<Nz",
+            "p@55W0rd!Zx81#Qm",
+        ];
+        for p in passwords {
+            assert!(!should_reject_high_entropy(p), "expected secret: {p}");
+        }
+    }
+
+    #[test]
+    fn symbol_secret_requires_letters_and_digits() {
+        assert!(should_reject_high_entropy("Zq$Lm!Xv#Rt@Yb%Kp^Wn&"));
+        assert!(should_reject_high_entropy("12$34!56#78@90%12^34&"));
+    }
+
+    #[test]
+    fn symbol_secret_rejects_code_markup_and_structured_values() {
+        let samples = [
+            "https://google.com/search?q=teszt1",
+            "user@example.com:22",
+            "~/Library/Caches/offsend-1.2",
+            "C:\\Users\\me\\offsend2.exe",
+            "<key>77FAE1A8-B98D-4B60-B1A8-B7CF93A8AAD9</key>",
+            "(?P<dev_n>[0-9]+)?",
+            "[a-zA-Z0-9_-]{20,}",
+            "ExitCode::from(1)",
+            "Self(kVK_ANSI_Keypad0)",
+            "perms.set_mode(0o755)",
+            "items[0].price*qty2",
+            "$XDG_DATA_DIRS[0]",
+            "2026-11-07T10:23:00Z",
+            "192.168.0.1:8080/health",
+            "v1.2.3-beta.4+build.5",
+            "solaris-2.6-sun4u!",
+            "45:14:0b:32:47:eb:9c:c8:c5:b4:f0:d7",
+            "Node(UInt16.max),",
+            "type[BaseExcT_1]:",
+            "#[derive(Debug,Clone)]2",
+            "certifi==2021.05.30",
+            "Summer2024!Vacation#",
+        ];
+        for s in samples {
+            assert!(should_reject_high_entropy(s), "unexpected secret: {s}");
+        }
+    }
+
+    #[test]
+    fn class_transitions_and_delimiters() {
+        assert_eq!(class_transition_ratio("aaaa"), 0.0);
+        assert!((class_transition_ratio("a1B$") - 1.0).abs() < 1e-9);
+        assert!(has_single_delimiter("ab:cd:ef:01"));
+        assert!(!has_single_delimiter("ab:cd-ef:01"));
+        assert!(!has_single_delimiter("ab:cd"));
+    }
+
+    #[test]
+    fn rejects_low_entropy_repetition() {
+        assert!(should_reject_high_entropy("0000000000000000000000000000000000000000"));
+        assert!(should_reject_high_entropy("abcdefabcdefabcdefabcdefabcdefabcdefabcdef12"));
+        assert!(should_reject_high_entropy("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1"));
+    }
 }
