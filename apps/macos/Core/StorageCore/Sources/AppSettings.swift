@@ -46,6 +46,9 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var defaultNoRiskAction: DefaultNoRiskAction
     public var enabledDetectors: Set<SensitiveEntityType>
     public var highEntropySensitivity: HighEntropySensitivity
+    /// When true, `sensitiveTerm` dictionary values are AES-GCM sealed in the local store.
+    /// Defaults to false so existing plaintext dictionary files stay readable.
+    public var encryptSensitiveTerms: Bool
     public var mappingTTL: MappingTTL
     public var restoreBehavior: RestoreBehavior
     public var preserveOriginalClipboard: Bool
@@ -87,6 +90,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case defaultNoRiskAction
         case enabledDetectors
         case highEntropySensitivity
+        case encryptSensitiveTerms
         case mappingTTL
         case restoreBehavior
         case preserveOriginalClipboard
@@ -113,6 +117,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         defaultNoRiskAction: DefaultNoRiskAction = .pasteOriginal,
         enabledDetectors: Set<SensitiveEntityType> = Set(SensitiveEntityType.allCases),
         highEntropySensitivity: HighEntropySensitivity = .normal,
+        encryptSensitiveTerms: Bool = false,
         mappingTTL: MappingTTL = .oneHour,
         restoreBehavior: RestoreBehavior = .copyToClipboard,
         preserveOriginalClipboard: Bool = true,
@@ -139,6 +144,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.defaultNoRiskAction = defaultNoRiskAction
         self.enabledDetectors = enabledDetectors
         self.highEntropySensitivity = highEntropySensitivity
+        self.encryptSensitiveTerms = encryptSensitiveTerms
         self.mappingTTL = mappingTTL
         self.restoreBehavior = restoreBehavior
         self.preserveOriginalClipboard = preserveOriginalClipboard
@@ -170,6 +176,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
                 HighEntropySensitivity.self,
                 forKey: .highEntropySensitivity
             ) ?? .normal,
+            encryptSensitiveTerms: try container.decodeIfPresent(Bool.self, forKey: .encryptSensitiveTerms) ?? false,
             mappingTTL: try container.decode(MappingTTL.self, forKey: .mappingTTL),
             restoreBehavior: try container.decode(RestoreBehavior.self, forKey: .restoreBehavior),
             preserveOriginalClipboard: try container.decode(Bool.self, forKey: .preserveOriginalClipboard),

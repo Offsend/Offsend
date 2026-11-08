@@ -5,6 +5,7 @@ import XCTest
 final class HighEntropySensitivitySettingsTests: XCTestCase {
     func testAppSettingsDefaultsToNormal() {
         XCTAssertEqual(AppSettings.default.highEntropySensitivity, .normal)
+        XCTAssertFalse(AppSettings.default.encryptSensitiveTerms)
         XCTAssertEqual(DetectionOptions.default.highEntropySensitivity, .normal)
     }
 
@@ -27,6 +28,7 @@ final class HighEntropySensitivitySettingsTests: XCTestCase {
 
         let settings = try JSONDecoder().decode(AppSettings.self, from: json)
         XCTAssertEqual(settings.highEntropySensitivity, .normal)
+        XCTAssertFalse(settings.encryptSensitiveTerms)
     }
 
     func testAppSettingsRoundTripsSensitivity() throws {

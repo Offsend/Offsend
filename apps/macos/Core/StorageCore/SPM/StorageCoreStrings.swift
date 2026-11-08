@@ -13,5 +13,7 @@ public enum StorageCoreStrings: Sendable {
     public static func storageErrorKeychainWriteFailed(_ status: OSStatus) -> String {
         "Failed to store encryption key in Keychain: \(status)"
     }
+
+    public static let storageErrorSensitiveTermProtectionFailed = "Failed to encrypt or decrypt a sensitive term."
 }
 #endif
