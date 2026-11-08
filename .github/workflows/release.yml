@@ -117,7 +117,8 @@ jobs:
           test -n "${P12_BASE64:-}" || { echo "Missing secret MACOS_APPLICATION_CERTIFICATE_P12"; exit 1; }
           test -n "${P12_PASSWORD:-}" || { echo "Missing secret MACOS_APPLICATION_CERTIFICATE_P12_PASSWORD"; exit 1; }
 
-          KEYCHAIN_PASSWORD="github-actions-signing"
+          # Ephemeral keychain on the runner. A generated password is not a committed secret.
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
           KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
