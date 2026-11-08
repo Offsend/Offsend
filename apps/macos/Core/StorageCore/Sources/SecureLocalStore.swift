@@ -8,7 +8,7 @@ import Security
 public final class SecureLocalStore: LocalStoring {
     private let directory: URL
     private let codec = LocalStoreJSONCodec()
-    private let keyProvider: KeychainKeyProvider
+    private let loadMasterKey: () throws -> Data
     private let maskingEngine: TextMasking
 
     public init(
@@ -17,9 +17,17 @@ public final class SecureLocalStore: LocalStoring {
         maskingEngine: TextMasking
     ) throws {
         self.directory = directory ?? LocalStoreDirectory.defaultURL()
-        self.keyProvider = keyProvider
+        self.loadMasterKey = { try keyProvider.masterKey() }
         self.maskingEngine = maskingEngine
         try FileManager.default.createDirectory(at: self.directory, withIntermediateDirectories: true)
+    }
+
+    /// Test initializer. Production code uses the Keychain-backed initializer.
+    init(directory: URL, masterKey: Data, maskingEngine: TextMasking) throws {
+        self.directory = directory
+        self.loadMasterKey = { masterKey }
+        self.maskingEngine = maskingEngine
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 
     public func loadSettings() throws -> AppSettings {
@@ -27,15 +35,31 @@ public final class SecureLocalStore: LocalStoring {
     }
 
     public func saveSettings(_ settings: AppSettings) throws {
+        let previous = try loadSettings()
         try codec.save(settings, to: files.settings)
+        guard previous.encryptSensitiveTerms != settings.encryptSensitiveTerms else { return }
+        _ = try loadCustomDictionaries()
     }
 
     public func loadCustomDictionaries() throws -> [CustomDictionaryItem] {
-        try codec.load([CustomDictionaryItem].self, from: files.customDictionaries) ?? []
+        let stored = try codec.load([StoredCustomDictionaryItem].self, from: files.customDictionaries) ?? []
+        let items = try stored.map { try plaintextItem($0) }
+        let seal = try shouldSealSensitiveTerms()
+        if stored.contains(where: { storedNeedsRewrite($0, seal: seal) }) {
+            try saveCustomDictionaries(items)
+        }
+        return items
     }
 
     public func saveCustomDictionaries(_ items: [CustomDictionaryItem]) throws {
-        try codec.save(items, to: files.customDictionaries)
+        let seal = try shouldSealSensitiveTerms()
+        let stored: [StoredCustomDictionaryItem] = try items.map { item in
+            guard seal, item.kind == .sensitiveTerm else {
+                return StoredCustomDictionaryItem(item)
+            }
+            return StoredCustomDictionaryItem(item, sealedValue: try sealSensitiveTerm(item.value))
+        }
+        try codec.save(stored, to: files.customDictionaries)
     }
 
     public func saveMapping(_ result: MaskingResult) throws {
@@ -120,14 +144,85 @@ public final class SecureLocalStore: LocalStoring {
     }
 
     private func encrypt(_ data: Data) throws -> Data {
-        let key = SymmetricKey(data: try keyProvider.masterKey())
+        let key = SymmetricKey(data: try loadMasterKey())
         return try AES.GCM.seal(data, using: key).combined ?? Data()
     }
 
     private func decrypt(_ data: Data) throws -> Data {
-        let key = SymmetricKey(data: try keyProvider.masterKey())
+        let key = SymmetricKey(data: try loadMasterKey())
         let box = try AES.GCM.SealedBox(combined: data)
         return try AES.GCM.open(box, using: key)
+    }
+
+    private func sealSensitiveTerm(_ plaintext: String) throws -> String {
+        let key = SymmetricKey(data: try loadMasterKey())
+        let box: AES.GCM.SealedBox
+        do {
+            box = try AES.GCM.seal(Data(plaintext.utf8), using: key)
+        } catch {
+            throw StorageError.sensitiveTermProtectionFailed
+        }
+        guard let combined = box.combined else {
+            throw StorageError.sensitiveTermProtectionFailed
+        }
+        return combined.base64EncodedString()
+    }
+
+    private func openSensitiveTerm(_ sealed: String) throws -> String {
+        let key = SymmetricKey(data: try loadMasterKey())
+        guard let data = Data(base64Encoded: sealed) else {
+            throw StorageError.sensitiveTermProtectionFailed
+        }
+        do {
+            let plain = try AES.GCM.open(try AES.GCM.SealedBox(combined: data), using: key)
+            guard let string = String(data: plain, encoding: .utf8) else {
+                throw StorageError.sensitiveTermProtectionFailed
+            }
+            return string
+        } catch let error as StorageError {
+            throw error
+        } catch {
+            throw StorageError.sensitiveTermProtectionFailed
+        }
+    }
+
+    private func shouldSealSensitiveTerms() throws -> Bool {
+        try loadSettings().encryptSensitiveTerms
+    }
+
+    private func storedNeedsRewrite(_ stored: StoredCustomDictionaryItem, seal: Bool) -> Bool {
+        stored.kind == .sensitiveTerm && (stored.valueSealed == true) != seal
+    }
+
+    private func plaintextItem(_ stored: StoredCustomDictionaryItem) throws -> CustomDictionaryItem {
+        let value: String
+        if stored.kind == .sensitiveTerm, stored.valueSealed == true {
+            value = try openSensitiveTerm(stored.value)
+        } else {
+            value = stored.value
+        }
+        return CustomDictionaryItem(id: stored.id, kind: stored.kind, value: value, createdAt: stored.createdAt)
+    }
+}
+
+private struct StoredCustomDictionaryItem: Codable, Equatable {
+    var id: UUID
+    var kind: CustomDictionaryKind
+    var value: String
+    var createdAt: Date
+    var valueSealed: Bool?
+
+    init(_ item: CustomDictionaryItem, sealedValue: String? = nil) {
+        id = item.id
+        kind = item.kind
+        createdAt = item.createdAt
+        if let sealedValue {
+            value = sealedValue
+            valueSealed = true
+        } else {
+            value = item.value
+            valueSealed = nil
+        }
     }
 }
 
@@ -195,6 +290,7 @@ public enum StorageError: LocalizedError {
     case keyGenerationFailed(OSStatus)
     case keychainReadFailed(OSStatus)
     case keychainWriteFailed(OSStatus)
+    case sensitiveTermProtectionFailed
 
     public var errorDescription: String? {
         switch self {
@@ -204,6 +300,8 @@ public enum StorageError: LocalizedError {
             return StorageCoreStrings.storageErrorKeychainReadFailed(status)
         case .keychainWriteFailed(let status):
             return StorageCoreStrings.storageErrorKeychainWriteFailed(status)
+        case .sensitiveTermProtectionFailed:
+            return StorageCoreStrings.storageErrorSensitiveTermProtectionFailed
         }
     }
 }

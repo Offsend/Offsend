@@ -193,6 +193,8 @@
 "settings.detection.customDictionaries.proTitle" = "Custom dictionaries";
 "settings.detection.customDictionaries.proBody" = "Teach Offsend your company names, codenames, and internal domains. Saved entries stay on this Mac and apply during Safe Paste.";
 "settings.detection.customDictionaries.savedCount" = "%d saved — upgrade to Pro to use them again";
+"settings.detection.encryptSensitiveTerms" = "Encrypt sensitive terms";
+"settings.detection.encryptSensitiveTerms.hint" = "Encrypts Sensitive term values in the on-disk dictionary. Off keeps them readable by older versions.";
 "settings.detection.severity.medium" = "Medium";
 "settings.detection.severity.critical" = "Critical";
 "settings.detection.randomStrings.title" = "Random strings";

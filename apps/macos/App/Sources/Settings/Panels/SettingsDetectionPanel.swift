@@ -204,7 +204,7 @@ struct SettingsDetectionPanel: View {
             if customDictionariesEnabled {
                 customDictionariesSection(binder: binder)
             } else {
-                customDictionariesProLockedSection
+                customDictionariesProLockedSection(binder: binder)
             }
         }
         .onAppear {
@@ -347,12 +347,14 @@ struct SettingsDetectionPanel: View {
         }
     }
 
-    private var customDictionariesProLockedSection: some View {
+    private func customDictionariesProLockedSection(binder: SettingsCoordinatorBinder) -> some View {
         OFSettingsGroup(
             title: OffsendStrings.settingsCustomDictionaries,
             hint: OffsendStrings.settingsDetectionCustomDictionariesProHint
         ) {
             VStack(alignment: .leading, spacing: 10) {
+                encryptSensitiveTermsRow(binder: binder)
+                OFSettingsGroupDivider()
                 HStack(spacing: 8) {
                     Text(OffsendStrings.settingsDetectionCustomDictionariesProTitle)
                         .font(.system(size: 12.5, weight: .medium))
@@ -383,9 +385,11 @@ struct SettingsDetectionPanel: View {
         }
     }
 
-    private func customDictionariesSection(binder _: SettingsCoordinatorBinder) -> some View {
+    private func customDictionariesSection(binder: SettingsCoordinatorBinder) -> some View {
         OFSettingsGroup(title: OffsendStrings.settingsCustomDictionaries, hint: OffsendStrings.settingsDictionaryPlaceholder) {
             VStack(alignment: .leading, spacing: 10) {
+                encryptSensitiveTermsRow(binder: binder)
+                OFSettingsGroupDivider()
                 HStack(spacing: 8) {
                     OFSelectMenu(
                         selection: $newDictionaryKind,
@@ -448,6 +452,16 @@ struct SettingsDetectionPanel: View {
                 }
             }
             .padding(.vertical, 14)
+        }
+    }
+
+    private func encryptSensitiveTermsRow(binder: SettingsCoordinatorBinder) -> some View {
+        OFSettingsRow(
+            label: OffsendStrings.settingsDetectionEncryptSensitiveTerms,
+            hint: OffsendStrings.settingsDetectionEncryptSensitiveTermsHint,
+            alignTop: true
+        ) {
+            OFToggle(isOn: binder.setting(\.encryptSensitiveTerms))
         }
     }
 
